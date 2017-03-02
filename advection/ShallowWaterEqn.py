@@ -18,16 +18,20 @@ class SWEqn:
 		det = 0.5*lx/topo.nx
 		self.detInv = 1.0/det
 
+		# 1 form matrix inverse
+		M1 = Umat(topo,quad).M
+		self.M1inv = la.inv(M1)
+
 		# Lie derivative for the mass equation
 		self.lie = LieDeriv(topo,quad,lx,ly)
 
 		# 0 form matrix inverse
 		M0 = Pmat(topo,quad).M
-		self.M0inv = la.inv(M0)
-
-		# 1 form matrix inverse
-		M1 = Umat(topo,quad).M
-		self.M1inv = la.inv(M1)
+		M0inv = la.inv(M0)
+		D10 = BoundaryMat10(topo).M
+		D01 = D10.transpose()
+		M0invD01 = M0inv*D01
+		self.D = M0invD01*M1
 
 		# 2 form gradient matrix
 		M2 = Wmat(topo,quad).M
@@ -92,7 +96,7 @@ class SWEqn:
 		### half step
 
 		# 1.1.1: solve for the 0 form vorticity
-		w = self.M0inv*u
+		w = self.D*u
 		# 1.1.2: assemble rotational matrix
 		R = RotationalMat(self.topo,self.quad,w).M
 
@@ -123,7 +127,7 @@ class SWEqn:
 		### full step
 		
 		# 1.1.1: solve for the 0 form vorticity
-		w = self.M0inv*uh
+		w = self.D*uh
 		# 1.1.2: assemble rotational matrix
 		R = RotationalMat(self.topo,self.quad,w).M
 

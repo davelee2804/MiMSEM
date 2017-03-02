@@ -137,7 +137,6 @@ class Pmat:
 		np1 = topo.n + 1
 		np12 = np1*np1
 		np14 = np12*np12
-		nnz = topo.nx*topo.ny*n4
 		rows = np.zeros(nnz,dtype=np.int32)
 		cols = np.zeros(nnz,dtype=np.int32)
 		vals = np.zeros(nnz,dtype=np.float64)
@@ -145,12 +144,14 @@ class Pmat:
 			for ex in np.arange(topo.nx):
 				inds0 = topo.localToGlobal0(ex,ey)
 				for jj in np.arange(np14):
-					r = jj/np12
-					c = jj%np12
-					ii = maps[r,c]
-					rows[ii] = inds0[r]
-					cols[ii] = inds0[c]
-					vals[ii] = vals[ii] + self.Me[r,c]
+					row = inds0[jj/np12]
+					col = inds0[jj%np12]
+					ii = maps[row,col]
+					if ii == -1:
+						print 'ERROR! assembly'
+					rows[ii] = row
+					cols[ii] = col
+					vals[ii] = vals[ii] + self.Me[jj/np12,jj%np12]
 
 		nr = topo.nx*topo.ny*n2
 		nc = topo.nx*topo.ny*n2
