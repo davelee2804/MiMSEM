@@ -91,6 +91,7 @@ class Umat:
 
 		return maps, ii
 
+# 2 form mass matrix
 class Wmat:
 	def __init__(self,topo,quad):
 		W = M2_j_xy_i(topo.n,quad.n).A
@@ -120,6 +121,59 @@ class Wmat:
 		nr = topo.nx*topo.ny*n2
 		nc = topo.nx*topo.ny*n2
 		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+# 0 form mass matrix
+class Pmat:
+	def __init__(self,topo,quad):
+		P = M0_j_xy_i(topo.n,quad.n).A
+		Pt = P.transpose()
+		Q = Wii(quad.n).A
+		PtQ = mult(Pt,Q)
+		self.Me = mult(PtQ,P)
+
+		maps,nnz = self.genMap(topo)
+
+		n2 = topo.n*topo.n
+		np1 = topo.n + 1
+		np12 = np1*np1
+		np14 = np12*np12
+		nnz = topo.nx*topo.ny*n4
+		rows = np.zeros(nnz,dtype=np.int32)
+		cols = np.zeros(nnz,dtype=np.int32)
+		vals = np.zeros(nnz,dtype=np.float64)
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds0 = topo.localToGlobal0(ex,ey)
+				for jj in np.arange(np14):
+					r = jj/np12
+					c = jj%np12
+					ii = maps[r,c]
+					rows[ii] = inds0[r]
+					cols[ii] = inds0[c]
+					vals[ii] = vals[ii] + self.Me[r,c]
+
+		nr = topo.nx*topo.ny*n2
+		nc = topo.nx*topo.ny*n2
+		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+	def genMap(self,topo):
+		np1 = topo.n+1
+		ne = np1*np1
+		nr = topo.nx*topo.ny*topo.n*topo.n
+		nc = topo.nx*topo.ny*topo.n*topo.n
+		maps = -1*np.ones((nr,nc),dtype=np.int32)
+		ii = 0
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds0 = topo.localToGlobal0(ex,ey)
+				for jj in np.arange(ne*ne):
+					row = inds0[jj/ne]
+					col = inds0[jj%ne]
+					if maps[row][col] == -1:
+						maps[row][col] = ii
+						ii = ii + 1
+
+		return maps, ii
 
 # Right hand side matrix for the L2 projection of an analytic function
 # defined at the quadrature points onto the 2-forms
@@ -356,6 +410,8 @@ class UtQWmat:
 
 		return maps, ii
 
+# Projects 2 form field onto the 1 forms and interpolates
+# the velocity there (for the advection equation)
 class InteriorProdAdjMat:
 	def __init__(self,topo,quad,u):
 		Q = Wii(quad.n).A
@@ -380,7 +436,9 @@ class InteriorProdAdjMat:
 
 				for j in np.arange(nrl):
 					cj[j] = u[inds1[j]]
-				#U = M1xC_j_xy_i(topo.n,quad.n,cj).A
+
+				# TODO: should u be interpolated onto the quadrature
+				# points from the U^T matrix or the W matrix??
 				U = M1x_j_Cxy_i(topo.n,quad.n,cj).A
 				Ut = U.transpose()
 				UtQW = mult(Ut,QW)
@@ -400,7 +458,9 @@ class InteriorProdAdjMat:
 
 				for j in np.arange(nrl):
 					cj[j] = u[inds1[j]]
-				#V = M1yC_j_xy_i(topo.n,quad.n,cj).A
+
+				# TODO: should u be interpolated onto the quadrature
+				# points from the U^T matrix or the W matrix??
 				V = M1y_j_Cxy_i(topo.n,quad.n,cj).A
 				Vt = V.transpose()
 				VtQW = mult(Vt,QW)
@@ -444,6 +504,111 @@ class InteriorProdAdjMat:
 				for jj in np.arange(nrl*ncl):
 					row = inds1[jj/ncl]
 					col = inds2[jj%ncl]
+					if maps[row][col] == -1:
+						maps[row][col] = ii
+						ii = ii + 1
+
+		return maps, ii
+
+# 1 form mass matrix with 0 form interpolated to quadrature points
+# (for rotational term in the momentum equation)
+class RotationalMat:
+	def __init__(self,topo,quad,w):
+		self.topo = topo
+		self.quad = quad
+
+		Q = Wii(quad.n).A
+		U = M1x_j_xy_i(topo.n,quad.n).A
+		V = M1y_j_xy_i(topo.n,quad.n).A
+		Ut = U.transpose()
+		Vt = V.transpose()
+		UtQ = mult(Ut,Q)
+		VtQ = mult(Vt,Q)
+
+		maps,nnz = self.genMap(topo)
+		
+		shift = (topo.n*topo.nx)*(topo.n*topo.ny)
+		rows = np.zeros(nnz,dtype=np.int32)
+		cols = np.zeros(nnz,dtype=np.int32)
+		vals = np.zeros(nnz,dtype=np.float64)
+
+		np1 = topo.n+1
+		nrl = topo.n*np1
+		ncl = topo.n*np1
+		n2 = topo.n*topo.n
+		cj = np.zeros((n2),dtype=np.float64)
+
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds0 = topo.localToGlobal0(ex,ey)
+				inds1 = topo.localToGlobal1x(ex,ey)
+
+				for j in np.arange(n2):
+					cj[j] = u[inds0[j]]
+
+				# TODO: should u be interpolated onto the quadrature
+				# points from the U^T matrix or the W matrix??
+				U = M1x_j_Dxy_i(topo.n,quad.n,cj).A
+				UtQU = mult(UtQ,U)
+
+				for jj in np.arange(nrl*ncl):
+					row = inds1[jj/ncl]
+					col = inds1[jj%ncl]
+					ii = maps[row][col]
+					rows[ii] = row
+					cols[ii] = col
+					vals[ii] = vals[ii] + UtQU[jj/ncl][jj%ncl]
+		
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds0 = topo.localToGlobal0(ex,ey)
+				inds1 = topo.localToGlobal1y(ex,ey) + shift
+
+				for j in np.arange(n2):
+					cj[j] = u[inds0[j]]
+
+				# TODO: should u be interpolated onto the quadrature
+				# points from the U^T matrix or the W matrix??
+				V = M1y_j_Dxy_i(topo.n,quad.n,cj).A
+				VtQV = mult(VtQ,V)
+
+				for jj in np.arange(nrl*ncl):
+					row = inds1[jj/ncl]
+					col = inds1[jj%ncl]
+					ii = maps[row][col]
+					rows[ii] = row
+					cols[ii] = col
+					vals[ii] = vals[ii] + VtQV[jj/ncl][jj%ncl]
+
+		nr = 2*topo.nx*topo.ny*topo.n*topo.n
+		nc = 2*topo.nx*topo.ny*topo.n*topo.n
+		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+	# TODO: same as for the 1 from mass matrix, consolidate these
+	def genMap(self,topo):
+		np1 = topo.n+1
+		ne = np1*topo.n
+		nr = topo.nx*topo.ny*2*topo.n*topo.n
+		nc = topo.nx*topo.ny*2*topo.n*topo.n
+		maps = -1*np.ones((nr,nc),dtype=np.int32)
+		shift = (topo.n*topo.nx)*(topo.n*topo.ny)
+		ii = 0
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds1 = topo.localToGlobal1x(ex,ey)
+				for jj in np.arange(ne*ne):
+					row = inds1[jj/ne]
+					col = inds1[jj%ne]
+					if maps[row][col] == -1:
+						maps[row][col] = ii
+						ii = ii + 1
+
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				for jj in np.arange(ne*ne):
+					row = inds1[jj/ne]
+					col = inds1[jj%ne]
 					if maps[row][col] == -1:
 						maps[row][col] = ii
 						ii = ii + 1

@@ -15,16 +15,18 @@ from LieDeriv import *
 from AdvEqn import *
 
 def velx_func(x,y):
-	return np.cos(x)*np.sin(y)
+	return +1.0*np.cos(x)*np.sin(y)
 
 def vely_func(x,y):
-	return np.sin(x)*np.cos(y)
+	return -1.0*np.sin(x)*np.cos(y)
 
 def pres_func(x,y):
 	xi = 2.0*np.pi/8.0 + 2.0*np.pi/4.0
 	xf = 6.0*np.pi/8.0 + 2.0*np.pi/4.0
-	yi = 2.0*np.pi/8.0 + 2.0*np.pi/16.0
-	yf = 6.0*np.pi/8.0 + 2.0*np.pi/16.0
+	#yi = 2.0*np.pi/8.0 + 2.0*np.pi/16.0
+	#yf = 6.0*np.pi/8.0 + 2.0*np.pi/16.0
+	yi = 2.0*np.pi/8.0 + 2.0*np.pi/8.0
+	yf = 6.0*np.pi/8.0 + 2.0*np.pi/8.0
 	xo = 0.5*(xi + xf)
 	yo = 0.5*(yi + yf)
 	xi = xo - 1.5*(xo - xi)
@@ -39,15 +41,47 @@ def pres_func(x,y):
 	return 0.25*(1.0 + np.cos(2.0*np.pi*(x-xo)/dx))*(1.0 + np.cos(2.0*np.pi*(y-yo)/dy))
 
 def Plot(x,y,dat,title,fname):
-	plt.contourf(x,y,dat,100)
+	levs = np.linspace(-0.01,1.0,102,endpoint=True)
+	plt.contourf(x,y,dat,levs)
 	plt.colorbar()
 	plt.title(title)
 	plt.savefig(fname)
 	plt.clf()
 
-nx = 32
-ny = 32
-n = 2
+def Integrate2Form(topo,quad,lx,ly,q):
+	det = 0.5*lx/topo.nx*0.5*ly/topo.ny
+	edge = LagrangeEdge(topo.n)
+
+	qt = 0.0
+	for ex in np.arange(topo.nx):
+		for ey in np.arange(topo.ny):
+			inds2 = topo.localToGlobal2(ex,ey)
+
+			qe = 0.0
+			for jj in np.arange(quad.n*quad.n):
+				jx = jj%quad.n
+				jy = jj/quad.n
+				xl = quad.x[jx]
+				yl = quad.x[jy]
+				wx = quad.w[jx]
+				wy = quad.w[jy]
+				wt = wx*wy
+
+				qi = 0.0
+				for ii in np.arange(topo.n*topo.n):
+					ix = ii%topo.n
+					iy = ii/topo.n
+					qi = qi + q[inds2[ii]]*edge.eval(xl,ix)*edge.eval(yl,iy)
+
+				qe = qe + wt*qi
+
+			qt = qt + qe
+
+	return det*qt
+
+nx = 24
+ny = 24
+n = 3
 m = n
 np1 = n+1
 mp1 = m+1
@@ -146,10 +180,16 @@ dt = 0.4*dx/1.0/n
 qi = p
 adv = AdvectionEqn(topo,quad,lx,ly)
 
-for step in np.arange(20) + 1:
+intp0 = Integrate2Form(topo,quad,lx,ly,p)
+print 'initial mass: %12.8e'%intp0
+
+for step in np.arange(60) + 1:
 	print '\tsolving advection equation for step: %.3u'%step
 
-	qf = adv.solveRK2(u,qi,dt)
+	if step == 1:
+		qf = adv.solveRK2(u,qi,dt,True)
+	else:
+		qf = adv.solveRK2(u,qi,dt,False)
 
 	print '\tplotting q 2 forms for step:         %.3u'%step
 	for ey in np.arange(ny):
@@ -166,6 +206,9 @@ for step in np.arange(20) + 1:
 				p2d[j][i] = 0.0
 				for kk in np.arange(n*n):
 					p2d[j][i] = p2d[j][i] + qf[inds2[kk]]*edge.eval(xl,kk%n)*edge.eval(yl,kk/n)
+
+	intpf = Integrate2Form(topo,quad,lx,ly,qf)
+	print '\tmass conservation: %16.14e'%((intpf - intp0)/intp0)
 
 	Plot(x,y,p2d,'p (numeric)','pres_n_%.4u'%step + '.png')
 

@@ -67,13 +67,14 @@ class M1x_j_Cxy_i:
 
 				self.A[i,j] = Njx*Mjy*ck
 
-# As above but with coefficients
-class M1xC_j_xy_i:
+# As above but with 0 forms interpolated to quadrature points
+class M1x_j_Dxy_i:
 	def __init__(self,n,m,c):
 		np1 = n+1
 		mp1 = m+1
 		mi = mp1*mp1
 		nj = np1*n
+		n2 = n*n
 		q = GaussLobatto(m)
 		self.A = np.zeros((mi,nj),dtype=np.float64)
 		Nj = LagrangeNode(n)
@@ -85,7 +86,12 @@ class M1xC_j_xy_i:
 				y = q.x[i/mp1]
 				Njx = Nj.eval(x,j%np1)
 				Mjy = Mj.eval(y,j/np1)
-				self.A[i,j] = c[j]*Njx*Mjy
+
+				ck = 0.0
+				for k in np.arange(n2):
+					ck = ck + c[k]*Mj.eval(x,k%n)*Mj.eval(y,k/n)
+
+				self.A[i,j] = Njx*Mjy*ck
 
 # Outer product of 1-form in x and 0-form in y (columns)
 # evaluated at the Gauss Lobatto quadrature points (rows)
@@ -135,13 +141,14 @@ class M1y_j_Cxy_i:
 
 				self.A[i,j] = Mjx*Njy*ck
 
-# As above but with coefficients
-class M1yC_j_xy_i:
+# As above but with 0 forms interpolated to quadrature points
+class M1y_j_Dxy_i:
 	def __init__(self,n,m,c):
 		np1 = n+1
 		mp1 = m+1
 		mi = mp1*mp1
 		nj = np1*n
+		n2 = n*n
 		q = GaussLobatto(m)
 		self.A = np.zeros((mi,nj),dtype=np.float64)
 		Nj = LagrangeNode(n)
@@ -153,7 +160,12 @@ class M1yC_j_xy_i:
 				y = q.x[i/mp1]
 				Mjx = Mj.eval(x,j%n)
 				Njy = Nj.eval(y,j/n)
-				self.A[i,j] = c[j]*Mjx*Njy
+
+				ck = 0.0
+				for k in np.arange(n2):
+					ck = ck + c[k]*Mj.eval(x,k%n)*Mj.eval(y,k/n)
+
+				self.A[i,j] = Mjx*Njy*ck
 
 # Outer product of 1-form in x and 1-form in y
 # evaluated at the Gauss Lobatto quadrature points
@@ -175,6 +187,25 @@ class M2_j_xy_i:
 				Mjx = Mj.eval(x,j%n)
 				Mjy = Mj.eval(y,j/n)
 				self.A[i,j] = Mjx*Mjy
+
+# 0 form basis function terms (j) evaluated at the
+# quadrature points (i)
+class M0_j_xy_i:
+	def __init__(self,n,m):
+		np1 = n+1
+		mp1 = m+1
+		mi = mp1*mp1
+		nj = np1*np1
+		q = GaussLobatto(m)
+		self.A = np.zeros((mi,nj),dtype=np.float64)
+		Nj = LagrangeNode(n)
+		for j in np.arange(nj):
+			for i in np.arange(mi):
+				x = q.x[i%mp1]
+				y = q.x[i/mp1]
+				Njx = Nj.eval(x,j%np1)
+				Njy = Nj.eval(y,j/np1)
+				self.A[i,j] = Njx*Njy
 
 # Quadrature weights diagonal matrix
 class Wii:
