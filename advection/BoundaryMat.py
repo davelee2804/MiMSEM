@@ -63,12 +63,12 @@ class BoundaryMat10:
 				rows[ii+0] = f_y*nfx + f_x
 				cols[ii+0] = f_y*nfx + f_x
 				vals[ii+0] = -1
-		
+
 				rows[ii+1] = f_y*nfx + f_x
-				if f_x == nfx - 1:
-					cols[ii+1] = f_y*nfx
+				if f_y == nfy - 1:
+					cols[ii+1] = f_x
 				else:
-					cols[ii+1] = f_y*nfx + f_x + 1
+					cols[ii+1] = (f_y+1)*nfx + f_x
 				vals[ii+1] = +1
 
 				ii = ii + 2
@@ -78,17 +78,17 @@ class BoundaryMat10:
 			for f_x in np.arange(nfx):
 				rows[ii+0] = f_y*nfx + f_x + shift
 				cols[ii+0] = f_y*nfx + f_x
-				vals[ii+0] = -1
-
+				vals[ii+0] = +1
+		
 				rows[ii+1] = f_y*nfx + f_x + shift
-				if f_y == nfy - 1:
-					cols[ii+1] = f_x
+				if f_x == nfx - 1:
+					cols[ii+1] = f_y*nfx
 				else:
-					cols[ii+1] = (f_y+1)*nfx + f_x
-				vals[ii+1] = +1
+					cols[ii+1] = f_y*nfx + f_x + 1
+				vals[ii+1] = -1
 
 				ii = ii + 2
 
-		nr = 2*nfx*nfy
+		nr = n1form
 		nc = nfx*nfy
 		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.int8)
