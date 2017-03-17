@@ -253,7 +253,8 @@ class UtQmat:
 		mp1 = topo_q.n+1
 		nrl = topo.n*np1  # number of rows in local matrix, (u or v)
 		ncl = mp1*mp1     # number of columns in local matrix (quad pts)
-		shift = (topo.n*topo.nx)*(topo.n*topo.ny)
+		shift1Forms = (topo.n*topo.nx)*(topo.n*topo.ny)
+		shift0Forms = (topo_q.n*topo_q.nx)*(topo_q.n*topo_q.ny)
 		rows = np.zeros(nnz,dtype=np.int32)
 		cols = np.zeros(nnz,dtype=np.int32)
 		vals = np.zeros(nnz,dtype=np.float64)
@@ -274,8 +275,8 @@ class UtQmat:
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds0 = topo_q.localToGlobal0(ex,ey) + shift
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds0 = topo_q.localToGlobal0(ex,ey) + shift0Forms
+				inds1 = topo.localToGlobal1y(ex,ey) + shift1Forms
 				for jj in np.arange(nrl*ncl):
 					row = inds1[jj/ncl]
 					col = inds0[jj%ncl]
@@ -298,7 +299,8 @@ class UtQmat:
 		nr = 2*topo.nx*topo.ny*topo.n*topo.n
 		nc = 2*topo.nx*topo.ny*topo_q.n*topo_q.n
 		maps = -1*np.ones((nr,nc),dtype=np.int32)
-		shift = (topo.n*topo.nx)*(topo.n*topo.ny)
+		shift1Forms = (topo.n*topo.nx)*(topo.n*topo.ny)
+		shift0Forms = (topo_q.n*topo_q.nx)*(topo_q.n*topo_q.ny)
 		ii = 0
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
@@ -313,8 +315,8 @@ class UtQmat:
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds0 = topo_q.localToGlobal0(ex,ey) + shift
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds0 = topo_q.localToGlobal0(ex,ey) + shift0Forms
+				inds1 = topo.localToGlobal1y(ex,ey) + shift1Forms
 				for jj in np.arange(nrl*ncl):
 					row = inds1[jj/ncl]
 					col = inds0[jj%ncl]
