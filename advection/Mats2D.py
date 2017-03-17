@@ -44,28 +44,47 @@ class M1x_j_xy_i:
 
 # As above but with 1 forms interpolated to quadrature points
 class M1x_j_Cxy_i:
-	def __init__(self,n,m,c):
+	def __init__(self,n,m):
+		self.n = n
+		self.m = m
+
 		np1 = n+1
 		mp1 = m+1
 		mi = mp1*mp1
 		nj = np1*n
 		q = GaussLobatto(m)
 		self.A = np.zeros((mi,nj),dtype=np.float64)
-		Nj = LagrangeNode(n)
-		Mj = LagrangeEdge(n)
 
-		for j in np.arange(nj):
-			for i in np.arange(mi):
-				x = q.x[i%mp1]
-				y = q.x[i/mp1]
-				Njx = Nj.eval(x,j%np1)
-				Mjy = Mj.eval(y,j/np1)
+		node = LagrangeNode(n)
+		self.N = np.zeros((mp1,np1),dtype=np.float64)
+		for j in np.arange(np1):
+			for i in np.arange(mp1):
+				self.N[i,j] = node.eval(q.x[i],j)
 
-				ck = 0.0
-				for k in np.arange(nj):
-					ck = ck + c[k]*Nj.eval(x,k%np1)*Mj.eval(y,k/np1)
+		edge = LagrangeEdge(n)
+		self.E = np.zeros((mp1,n),dtype=np.float64)
+		for j in np.arange(n):
+			for i in np.arange(mp1):
+				self.E[i,j] = edge.eval(q.x[i],j)
+
+	def assemble(self,c):
+		np1 = self.n+1
+		mp1 = self.m+1
+		mi = mp1*mp1
+		nj = np1*self.n
+
+		for i in np.arange(mi):
+			ck = 0.0
+			for k in np.arange(nj):
+				ck = ck + c[k]*self.N[i%mp1,k%np1]*self.E[i/mp1,k/np1]
+
+			for j in np.arange(nj):
+				Njx = self.N[i%mp1,j%np1]
+				Mjy = self.E[i/mp1,j/np1]
 
 				self.A[i,j] = Njx*Mjy*ck
+
+		return self.A
 
 # As above but with 0 forms interpolated to quadrature points
 class M1x_j_Dxy_i:
@@ -118,28 +137,48 @@ class M1y_j_xy_i:
 
 # As above but with 1 forms interpolated to quadrature points
 class M1y_j_Cxy_i:
-	def __init__(self,n,m,c):
+	def __init__(self,n,m):
+		self.n = n
+		self.m = m
+
 		np1 = n+1
 		mp1 = m+1
 		mi = mp1*mp1
 		nj = np1*n
 		q = GaussLobatto(m)
 		self.A = np.zeros((mi,nj),dtype=np.float64)
-		Nj = LagrangeNode(n)
-		Mj = LagrangeEdge(n)
 
-		for j in np.arange(nj):
-			for i in np.arange(mi):
-				x = q.x[i%mp1]
-				y = q.x[i/mp1]
-				Mjx = Mj.eval(x,j%n)
-				Njy = Nj.eval(y,j/n)
+		node = LagrangeNode(n)
+		self.N = np.zeros((mp1,np1),dtype=np.float64)
+		for j in np.arange(np1):
+			for i in np.arange(mp1):
+				self.N[i,j] = node.eval(q.x[i],j)
 
-				ck = 0.0
-				for k in np.arange(nj):
-					ck = ck + c[k]*Mj.eval(x,k%n)*Nj.eval(y,k/n)
+		edge = LagrangeEdge(n)
+		self.E = np.zeros((mp1,n),dtype=np.float64)
+		for j in np.arange(n):
+			for i in np.arange(mp1):
+				self.E[i,j] = edge.eval(q.x[i],j)
+
+	def assemble(self,c):
+		np1 = self.n+1
+		mp1 = self.m+1
+		n = self.n
+		mi = mp1*mp1
+		nj = np1*self.n
+
+		for i in np.arange(mi):
+			ck = 0.0
+			for k in np.arange(nj):
+				ck = ck + c[k]*self.E[i%mp1,k%n]*self.N[i/mp1,k/n]
+
+			for j in np.arange(nj):
+				Mjx = self.E[i%mp1,j%n]
+				Njy = self.N[i/mp1,j/n]
 
 				self.A[i,j] = Mjx*Njy*ck
+
+		return self.A
 
 # As above but with 0 forms interpolated to quadrature points
 class M1y_j_Dxy_i:

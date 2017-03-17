@@ -413,6 +413,118 @@ class UtQWmat:
 
 		return maps, ii
 
+class WtQUmat:
+	def __init__(self,topo,quad):
+		Q = Wii(quad.n).A
+		U = M1x_j_xy_i(topo.n,quad.n).A
+		W = M2_j_xy_i(topo.n,quad.n).A
+		Wt = W.transpose()
+		WtQ = mult(Wt,Q)
+		WtQU = mult(WtQ,U)
+		
+		maps,nnz = self.genMap(topo)
+		rows = np.zeros(nnz,dtype=np.int32)
+		cols = np.zeros(nnz,dtype=np.int32)
+		vals = np.zeros(nnz,dtype=np.float64)
+
+		np1 = topo.n+1
+		nrl = topo.n*topo.n
+		ncl = topo.n*np1
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds1 = topo.localToGlobal1x(ex,ey)
+				inds2 = topo.localToGlobal2(ex,ey)
+				for jj in np.arange(nrl*ncl):
+					row = inds2[jj/ncl]
+					col = inds1[jj%ncl]
+					ii = maps[row][col]
+					if ii == -1:
+						print 'ERROR! assembly'
+					rows[ii] = row
+					cols[ii] = col
+					vals[ii] = vals[ii] + WtQU[jj/ncl][jj%ncl]
+		
+		nr = topo.nx*topo.ny*topo.n*topo.n
+		nc = topo.nx*topo.ny*topo.n*topo.n
+		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+	def genMap(self,topo):
+		np1 = topo.n+1
+		nrl = topo.n*topo.n
+		ncl = topo.n*np1
+		nr = topo.nx*topo.ny*topo.n*topo.n
+		nc = topo.nx*topo.ny*topo.n*topo.n
+		maps = -1*np.ones((nr,nc),dtype=np.int32)
+		ii = 0
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds1 = topo.localToGlobal1x(ex,ey)
+				inds2 = topo.localToGlobal2(ex,ey)
+				for jj in np.arange(nrl*ncl):
+					row = inds2[jj/ncl]
+					col = inds1[jj%ncl]
+					if maps[row][col] == -1:
+						maps[row][col] = ii;
+						ii = ii + 1
+
+		return maps, ii
+
+class WtQVmat:
+	def __init__(self,topo,quad):
+		Q = Wii(quad.n).A
+		V = M1y_j_xy_i(topo.n,quad.n).A
+		W = M2_j_xy_i(topo.n,quad.n).A
+		Wt = W.transpose()
+		WtQ = mult(Wt,Q)
+		WtQV = mult(WtQ,V)
+		
+		maps,nnz = self.genMap(topo)
+		rows = np.zeros(nnz,dtype=np.int32)
+		cols = np.zeros(nnz,dtype=np.int32)
+		vals = np.zeros(nnz,dtype=np.float64)
+
+		np1 = topo.n+1
+		nrl = topo.n*topo.n
+		ncl = topo.n*np1
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds1 = topo.localToGlobal1y(ex,ey)
+				inds2 = topo.localToGlobal2(ex,ey)
+				for jj in np.arange(nrl*ncl):
+					row = inds2[jj/ncl]
+					col = inds1[jj%ncl]
+					ii = maps[row][col]
+					if ii == -1:
+						print 'ERROR! assembly'
+					rows[ii] = row
+					cols[ii] = col
+					vals[ii] = vals[ii] + WtQV[jj/ncl][jj%ncl]
+		
+		nr = topo.nx*topo.ny*topo.n*topo.n
+		nc = topo.nx*topo.ny*topo.n*topo.n
+		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+	def genMap(self,topo):
+		np1 = topo.n+1
+		nrl = topo.n*topo.n
+		ncl = topo.n*np1
+		nr = topo.nx*topo.ny*topo.n*topo.n
+		nc = topo.nx*topo.ny*topo.n*topo.n
+		maps = -1*np.ones((nr,nc),dtype=np.int32)
+		ii = 0
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds1 = topo.localToGlobal1y(ex,ey)
+				inds2 = topo.localToGlobal2(ex,ey)
+				for jj in np.arange(nrl*ncl):
+					row = inds2[jj/ncl]
+					col = inds1[jj%ncl]
+					if maps[row][col] == -1:
+						maps[row][col] = ii;
+						ii = ii + 1
+
+		return maps, ii
+
 # Projects 2 form field onto the 1 forms and interpolates
 # the velocity there (for the advection equation)
 class InteriorProdAdjMat:
@@ -432,6 +544,9 @@ class InteriorProdAdjMat:
 		ncl = topo.n*topo.n
 		cj = np.zeros((nrl),dtype=np.float64)
 
+		M1x = M1x_j_Cxy_i(topo.n,quad.n)
+		M1y = M1y_j_Cxy_i(topo.n,quad.n)
+
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds1 = topo.localToGlobal1x(ex,ey)
@@ -442,7 +557,8 @@ class InteriorProdAdjMat:
 
 				# TODO: should u be interpolated onto the quadrature
 				# points from the U^T matrix or the W matrix??
-				U = M1x_j_Cxy_i(topo.n,quad.n,cj).A
+				#U = M1x_j_Cxy_i(topo.n,quad.n,cj).A
+				U = M1x.assemble(cj)
 				Ut = U.transpose()
 				UtQW = mult(Ut,QW)
 
@@ -464,7 +580,8 @@ class InteriorProdAdjMat:
 
 				# TODO: should u be interpolated onto the quadrature
 				# points from the U^T matrix or the W matrix??
-				V = M1y_j_Cxy_i(topo.n,quad.n,cj).A
+				#V = M1y_j_Cxy_i(topo.n,quad.n,cj).A
+				V = M1y.assemble(cj)
 				Vt = V.transpose()
 				VtQW = mult(Vt,QW)
 
