@@ -52,15 +52,17 @@ def Integrate2Form(topo,quad,lx,ly,q):
 	det = 0.5*lx/topo.nx*0.5*ly/topo.ny
 	edge = LagrangeEdge(topo.n)
 
+	np1 = quad.n + 1
+
 	qt = 0.0
 	for ex in np.arange(topo.nx):
 		for ey in np.arange(topo.ny):
 			inds2 = topo.localToGlobal2(ex,ey)
 
 			qe = 0.0
-			for jj in np.arange(quad.n*quad.n):
-				jx = jj%quad.n
-				jy = jj/quad.n
+			for jj in np.arange(np1*np1):
+				jx = jj%np1
+				jy = jj/np1
 				xl = quad.x[jx]
 				yl = quad.x[jy]
 				wx = quad.w[jx]
