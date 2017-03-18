@@ -414,13 +414,13 @@ class UtQWmat:
 		return maps, ii
 
 class WtQUmat:
-	def __init__(self,topo,quad):
+	def __init__(self,topo,quad,u):
 		Q = Wii(quad.n).A
-		U = M1x_j_xy_i(topo.n,quad.n).A
+		M1x = M1x_j_Cxy_i(topo.n,quad.n)
+		M1y = M1y_j_Cxy_i(topo.n,quad.n)
 		W = M2_j_xy_i(topo.n,quad.n).A
 		Wt = W.transpose()
 		WtQ = mult(Wt,Q)
-		WtQU = mult(WtQ,U)
 		
 		maps,nnz = self.genMap(topo)
 		rows = np.zeros(nnz,dtype=np.int32)
@@ -430,10 +430,20 @@ class WtQUmat:
 		np1 = topo.n+1
 		nrl = topo.n*topo.n
 		ncl = topo.n*np1
+
+		cj = np.zeros((ncl),dtype=np.float64)
+
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds1 = topo.localToGlobal1x(ex,ey)
 				inds2 = topo.localToGlobal2(ex,ey)
+
+				for kk in np.arange(ncl):
+					cj[kk] = u[inds1[kk]]
+
+				U = M1x.assemble(cj)
+				WtQU = mult(WtQ,U)
+
 				for jj in np.arange(nrl*ncl):
 					row = inds2[jj/ncl]
 					col = inds1[jj%ncl]
@@ -444,8 +454,30 @@ class WtQUmat:
 					cols[ii] = col
 					vals[ii] = vals[ii] + WtQU[jj/ncl][jj%ncl]
 		
+		shift = topo.nx*topo.ny*topo.n*topo.n
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds2 = topo.localToGlobal2(ex,ey)
+
+				for kk in np.arange(ncl):
+					cj[kk] = u[inds1[kk]]
+
+				V = M1y.assemble(cj)
+				WtQV = mult(WtQ,V)
+
+				for jj in np.arange(nrl*ncl):
+					row = inds2[jj/ncl]
+					col = inds1[jj%ncl]
+					ii = maps[row][col]
+					if ii == -1:
+						print 'ERROR! assembly'
+					rows[ii] = row
+					cols[ii] = col
+					vals[ii] = vals[ii] + WtQV[jj/ncl][jj%ncl]
+
 		nr = topo.nx*topo.ny*topo.n*topo.n
-		nc = topo.nx*topo.ny*topo.n*topo.n
+		nc = 2*topo.nx*topo.ny*topo.n*topo.n
 		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
 
 	def genMap(self,topo):
@@ -453,7 +485,7 @@ class WtQUmat:
 		nrl = topo.n*topo.n
 		ncl = topo.n*np1
 		nr = topo.nx*topo.ny*topo.n*topo.n
-		nc = topo.nx*topo.ny*topo.n*topo.n
+		nc = 2*topo.nx*topo.ny*topo.n*topo.n
 		maps = -1*np.ones((nr,nc),dtype=np.int32)
 		ii = 0
 		for ey in np.arange(topo.ny):
@@ -467,54 +499,10 @@ class WtQUmat:
 						maps[row][col] = ii;
 						ii = ii + 1
 
-		return maps, ii
-
-class WtQVmat:
-	def __init__(self,topo,quad):
-		Q = Wii(quad.n).A
-		V = M1y_j_xy_i(topo.n,quad.n).A
-		W = M2_j_xy_i(topo.n,quad.n).A
-		Wt = W.transpose()
-		WtQ = mult(Wt,Q)
-		WtQV = mult(WtQ,V)
-		
-		maps,nnz = self.genMap(topo)
-		rows = np.zeros(nnz,dtype=np.int32)
-		cols = np.zeros(nnz,dtype=np.int32)
-		vals = np.zeros(nnz,dtype=np.float64)
-
-		np1 = topo.n+1
-		nrl = topo.n*topo.n
-		ncl = topo.n*np1
+		shift = topo.nx*topo.ny*topo.n*topo.n
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey)
-				inds2 = topo.localToGlobal2(ex,ey)
-				for jj in np.arange(nrl*ncl):
-					row = inds2[jj/ncl]
-					col = inds1[jj%ncl]
-					ii = maps[row][col]
-					if ii == -1:
-						print 'ERROR! assembly'
-					rows[ii] = row
-					cols[ii] = col
-					vals[ii] = vals[ii] + WtQV[jj/ncl][jj%ncl]
-		
-		nr = topo.nx*topo.ny*topo.n*topo.n
-		nc = topo.nx*topo.ny*topo.n*topo.n
-		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
-
-	def genMap(self,topo):
-		np1 = topo.n+1
-		nrl = topo.n*topo.n
-		ncl = topo.n*np1
-		nr = topo.nx*topo.ny*topo.n*topo.n
-		nc = topo.nx*topo.ny*topo.n*topo.n
-		maps = -1*np.ones((nr,nc),dtype=np.int32)
-		ii = 0
-		for ey in np.arange(topo.ny):
-			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey)
+				inds1 = topo.localToGlobal1y(ex,ey) + shift
 				inds2 = topo.localToGlobal2(ex,ey)
 				for jj in np.arange(nrl*ncl):
 					row = inds2[jj/ncl]
