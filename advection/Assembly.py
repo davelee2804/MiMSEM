@@ -643,8 +643,12 @@ class RotationalMat:
 		np1 = topo.n+1
 		nrl = topo.n*np1
 		ncl = topo.n*np1
-		n2 = topo.n*topo.n
+		n2 = np1*np1
+
 		cj = np.zeros((n2),dtype=np.float64)
+
+		M1x = M1x_j_Dxy_i(topo.n,quad.n)
+		M1y = M1y_j_Dxy_i(topo.n,quad.n)
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
@@ -652,11 +656,11 @@ class RotationalMat:
 				inds1 = topo.localToGlobal1x(ex,ey)
 
 				for j in np.arange(n2):
-					cj[j] = u[inds0[j]]
+					cj[j] = w[inds0[j]]
 
 				# TODO: should u be interpolated onto the quadrature
 				# points from the U^T matrix or the W matrix??
-				U = M1x_j_Dxy_i(topo.n,quad.n,cj).A
+				U = M1x.assemble(cj)
 				UtQU = mult(UtQ,U)
 
 				for jj in np.arange(nrl*ncl):
@@ -673,11 +677,11 @@ class RotationalMat:
 				inds1 = topo.localToGlobal1y(ex,ey) + shift
 
 				for j in np.arange(n2):
-					cj[j] = u[inds0[j]]
+					cj[j] = w[inds0[j]]
 
 				# TODO: should u be interpolated onto the quadrature
 				# points from the U^T matrix or the W matrix??
-				V = M1y_j_Dxy_i(topo.n,quad.n,cj).A
+				V = M1y.assemble(cj)
 				VtQV = mult(VtQ,V)
 
 				for jj in np.arange(nrl*ncl):
