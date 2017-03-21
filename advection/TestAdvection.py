@@ -15,10 +15,12 @@ from LieDeriv import *
 from AdvEqn import *
 
 def velx_func(x,y):
-	return +1.0*np.cos(x)*np.sin(y)
+	#return +1.0*np.cos(x)*np.sin(y)
+	return +1.0*np.sin(y)
 
 def vely_func(x,y):
-	return -1.0*np.sin(x)*np.cos(y)
+	#return -1.0*np.sin(x)*np.cos(y)
+	return -1.0*np.sin(x)
 
 def pres_func(x,y):
 	xi = 2.0*np.pi/8.0 + 2.0*np.pi/4.0
@@ -40,8 +42,8 @@ def pres_func(x,y):
 
 	return 0.25*(1.0 + np.cos(2.0*np.pi*(x-xo)/dx))*(1.0 + np.cos(2.0*np.pi*(y-yo)/dy))
 
-def Plot(x,y,dat,title,fname):
-	levs = np.linspace(-0.01,1.0,102,endpoint=True)
+def Plot(x,y,dat,title,fname,tmin,tmax):
+	levs = np.linspace(tmin,tmax,201,endpoint=True)
 	plt.contourf(x,y,dat,levs)
 	plt.colorbar()
 	plt.title(title)
@@ -81,10 +83,10 @@ def Integrate2Form(topo,quad,lx,ly,q):
 
 	return det*qt
 
-nx = 24
-ny = 24
+nx = 20
+ny = 20
 n = 3
-m = n
+m = 3
 np1 = n+1
 mp1 = m+1
 nxn = nx*n
@@ -95,6 +97,7 @@ shift = nxm*nym
 
 topo = Topo(nx,ny,n)
 quad = GaussLobatto(m)
+#quad = GaussLegendre(m)
 topo_q = Topo(nx,ny,m)
 
 lx = 2.0*np.pi
@@ -151,7 +154,7 @@ for ey in np.arange(ny):
 			for kk in np.arange(n*n):
 				p2d[j][i] = p2d[j][i] + p[inds2[kk]]*edge.eval(xl,kk%n)*edge.eval(yl,kk/n)
 
-Plot(x,y,p2d,'p (numeric)','pres_n.png')
+Plot(x,y,p2d,'p (numeric)','pres_n.png',-0.01,1.01)
 
 print 'plotting u 1 forms................'
 
@@ -173,8 +176,8 @@ for ey in np.arange(ny):
 				u2d[j][i] = u2d[j][i] + u[inds1x[kk]]*node.eval(xl,kk%np1)*edge.eval(yl,kk/np1)
 				v2d[j][i] = v2d[j][i] + u[inds1y[kk]]*edge.eval(xl,kk%n)*node.eval(yl,kk/n)
 
-Plot(x,y,u2d,'u (numeric)','velx_n.png')
-Plot(x,y,v2d,'v (numeric)','vely_n.png')
+Plot(x,y,u2d,'u (numeric)','velx_n.png',-1.0,+1.0)
+Plot(x,y,v2d,'v (numeric)','vely_n.png',-1.0,+1.0)
 
 print 'initializing advection equation...'
 
@@ -212,7 +215,7 @@ for step in np.arange(60) + 1:
 	intpf = Integrate2Form(topo,quad,lx,ly,qf)
 	print '\tmass conservation: %16.14e'%((intpf - intp0)/intp0)
 
-	Plot(x,y,p2d,'p (numeric)','pres_n_%.4u'%step + '.png')
+	Plot(x,y,p2d,'p (numeric)','pres_n_%.4u'%step + '.png',-0.01,+1.01)
 
 	qi[:] = qf[:]
 
