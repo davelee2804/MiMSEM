@@ -20,14 +20,14 @@ class BoundaryMat:
 			for f_x in np.arange(nfx):
 				rows[ii+0] = f_y*nfx + f_x
 				cols[ii+0] = f_y*nfx + f_x
-				vals[ii+0] = -1
+				vals[ii+0] = +1
 
 				rows[ii+1] = f_y*nfx + f_x
 				if f_x == nfx - 1:
 					cols[ii+1] = f_y*nfx
 				else:
 					cols[ii+1] = f_y*nfx + f_x + 1
-				vals[ii+1] = +1
+				vals[ii+1] = -1
 
 				rows[ii+2] = f_y*nfx + f_x
 				cols[ii+2] = shift + f_y*nfx + f_x
