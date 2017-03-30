@@ -42,7 +42,8 @@ class M1x_j_xy_i:
 				Mjy = Mj.eval(y,j/np1)
 				self.A[i,j] = Njx*Mjy
 
-# As above but with 1 forms interpolated to quadrature points
+## As above but with 1 forms interpolated to quadrature points
+# As above but with 1 forms (tangent) interpolated to quadrature points
 class M1x_j_Cxy_i:
 	def __init__(self,n,m):
 		self.n = n
@@ -68,6 +69,7 @@ class M1x_j_Cxy_i:
 				self.E[i,j] = edge.eval(q.x[i],j)
 
 	def assemble(self,c):
+		n = self.n
 		np1 = self.n+1
 		mp1 = self.m+1
 		mi = mp1*mp1
@@ -77,6 +79,7 @@ class M1x_j_Cxy_i:
 			ck = 0.0
 			for k in np.arange(nj):
 				ck = ck + c[k]*self.N[i%mp1,k%np1]*self.E[i/mp1,k/np1]
+				#ck = ck + c[k]*self.E[i%mp1,k%n]*self.N[i/mp1,k/n]
 
 			for j in np.arange(nj):
 				Njx = self.N[i%mp1,j%np1]
@@ -154,7 +157,8 @@ class M1y_j_xy_i:
 				Njy = Nj.eval(y,j/n)
 				self.A[i,j] = Mjx*Njy
 
-# As above but with 1 forms interpolated to quadrature points
+## As above but with 1 forms interpolated to quadrature points
+# As above but with 1 forms (tangent) interpolated to quadrature points
 class M1y_j_Cxy_i:
 	def __init__(self,n,m):
 		self.n = n
@@ -190,6 +194,7 @@ class M1y_j_Cxy_i:
 			ck = 0.0
 			for k in np.arange(nj):
 				ck = ck + c[k]*self.E[i%mp1,k%n]*self.N[i/mp1,k/n]
+				#ck = ck + c[k]*self.N[i%mp1,k%np1]*self.E[i/mp1,k/np1]
 
 			for j in np.arange(nj):
 				Mjx = self.E[i%mp1,j%n]

@@ -75,7 +75,8 @@ class LieDeriv:
 
 		self.initBndry()
 
-		det = 0.5*lx/topo.nx#*0.5*ly/topo.ny
+		det = 0.5*lx/topo.nx
+		#det = 0.5*lx/topo.nx*0.5*ly/topo.ny
 		self.detInv = 1.0/det
 
 	def initBndry(self):
@@ -124,14 +125,15 @@ class LieDeriv:
 		nc = 2*shift
 		self.D = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.int8)
 
-	def assemble(self,u,q):
-		# Project normal to tangent velocities
-		ut = self.Utn.apply(u)
+	def assemble(self,u,q,do_assembly):
+		if do_assembly:
+			# Project normal to tangent velocities
+			ut = self.Utn.apply(u)
+			# Assemble the interior product adjoint matrix (for the tangent velocities)
+			Iu = InteriorProdAdjMat(self.topo,self.quad,ut).M
+			self.M = self.M1inv*Iu
 
-		# Assemble the interior product adjoint matrix (for the tangent velocities)
-		Iu = InteriorProdAdjMat(self.topo,self.quad,ut).M
-		M = self.M1inv*Iu
-		uq = M*q
+		uq = self.M*q
 
 		# Project back to normal components to calculate divergence
 		uqn = self.Utn.apply(uq)

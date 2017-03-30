@@ -5,6 +5,7 @@ def P7(x):
 	a = -35.0*x + 315.0*np.power(x,3) - 693.0*np.power(x,5) + 429.0*np.power(x,7)
 	return a/16.0
 
+# exact for polynomial of degree 2n - 1
 class GaussLobatto:
 	def __init__(self,n):
 		self.n = n
@@ -42,8 +43,10 @@ class GaussLobatto:
 		if np.abs(np.sum(self.w) - 2.0) > 1.0e-8:
 			print 'quadrature weights error!'
 
+# exact for polynomial of degree 2n + 1
 class GaussLegendre:
 	def __init__(self,n):
+		self.n = n
 		if n == 2:
 			self.x = np.array([-np.sqrt(1.0/3.0),+np.sqrt(1.0/3.0)])
 			self.w = np.array([1.0,1.0])

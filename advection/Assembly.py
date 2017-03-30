@@ -415,6 +415,7 @@ class UtQWmat:
 
 class WtQUmat:
 	def __init__(self,topo,quad,u):
+	#def __init__(self,topo,quad,ut):
 		Q = Wii(quad.n).A
 		M1x = M1x_j_Cxy_i(topo.n,quad.n)
 		M1y = M1y_j_Cxy_i(topo.n,quad.n)
@@ -430,6 +431,7 @@ class WtQUmat:
 		np1 = topo.n+1
 		nrl = topo.n*topo.n
 		ncl = topo.n*np1
+		shift = topo.nx*topo.ny*topo.n*topo.n
 
 		cj = np.zeros((ncl),dtype=np.float64)
 
@@ -437,9 +439,11 @@ class WtQUmat:
 			for ex in np.arange(topo.nx):
 				inds1 = topo.localToGlobal1x(ex,ey)
 				inds2 = topo.localToGlobal2(ex,ey)
+				#inds1y = topo.localToGlobal1y(ex,ey) + shift
 
 				for kk in np.arange(ncl):
 					cj[kk] = u[inds1[kk]]
+					#cj[kk] = ut[inds1y[kk]]
 
 				U = M1x.assemble(cj)
 				WtQU = mult(WtQ,U)
@@ -454,14 +458,15 @@ class WtQUmat:
 					cols[ii] = col
 					vals[ii] = vals[ii] + WtQU[jj/ncl][jj%ncl]
 		
-		shift = topo.nx*topo.ny*topo.n*topo.n
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds1 = topo.localToGlobal1y(ex,ey) + shift
 				inds2 = topo.localToGlobal2(ex,ey)
+				#inds1x = topo.localToGlobal1x(ex,ey)
 
 				for kk in np.arange(ncl):
 					cj[kk] = u[inds1[kk]]
+					#cj[kk] = ut[inds1x[kk]]
 
 				V = M1y.assemble(cj)
 				WtQV = mult(WtQ,V)

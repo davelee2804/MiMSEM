@@ -18,13 +18,13 @@ class AdvectionEqn:
 
 		self.lie = LieDeriv(topo,quad,lx,ly)
 
-	def solveRK2(self,u,qi,dt):
+	def solveRK2(self,u,qi,dt,do_assembly):
 		qh = self.qh
 		qf = self.qf
 
-		duqi = self.lie.assemble(u,qi)
+		duqi = self.lie.assemble(u,qi,do_assembly)
 		qh = qi + 0.5*dt*duqi
-		duqh = self.lie.assemble(u,qh)
+		duqh = self.lie.assemble(u,qh,do_assembly)
 		qf = qi + dt*duqh
 
 		return qf

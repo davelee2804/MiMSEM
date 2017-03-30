@@ -181,13 +181,14 @@ for ey in np.arange(ny):
 			x[i] = ex*dx + 0.5*dx*(quad.x[jj%mp1] + 1.0)
 			y[j] = ey*dy + 0.5*dy*(quad.x[jj/mp1] + 1.0)
 			#px[inds0[jj]] = 1.0 + 0.1*np.cos(x[i])*np.cos(y[j])
+			#ux[inds0[jj]] = 0.0
 			px[inds0[jj]] = 1.0
-			ux[inds0[jj]] = 1.0 + 0.1*np.sin(y[j])
+			ux[inds0[jj]] = 0.2 + 0.1*np.sin(y[j])
 
-			u2d[j,i] = 1.0 + 0.1*np.sin(y[j])
-			k2d[j,i] = 0.5*(1.0 + 0.1*np.sin(y[j]))*(1.0 + 0.1*np.sin(y[j]))
-			dk2d[j,i] = +0.5*2.0*(1.0 + 0.1*np.sin(y[j]))*0.1*np.cos(y[j])
-			wu2d[j,i] = -0.5*2.0*(1.0 + 0.1*np.sin(y[j]))*0.1*np.cos(y[j])
+			u2d[j,i] = 0.2 + 0.1*np.sin(y[j])
+			k2d[j,i] = 0.5*(0.2 + 0.1*np.sin(y[j]))*(0.2 + 0.1*np.sin(y[j]))
+			dk2d[j,i] = +0.5*2.0*(0.2 + 0.1*np.sin(y[j]))*0.1*np.cos(y[j])
+			wu2d[j,i] = -0.5*2.0*(0.2 + 0.1*np.sin(y[j]))*0.1*np.cos(y[j])
 
 Plot(x,y,u2d,'vel x (initial)','ux_000.png',0.9,1.1)
 Plot(x,y,k2d,'ke (initial)','ke_000.png',0.0,0.0)
@@ -219,7 +220,15 @@ ki = 0.5*M2invWtQU*ui
 dt = 0.4*dx/1.0/n
 g = 1.0
 sw = SWEqn(topo,quad,topo_q,lx,ly,g)
-nsteps = 100
+nsteps = 20
+
+dt = 0.5*dt
+nsteps = 2*nsteps
+
+volC = np.zeros((nsteps),dtype=np.float64)
+pvC = np.zeros((nsteps),dtype=np.float64)
+peC = np.zeros((nsteps),dtype=np.float64)
+teC = np.zeros((nsteps),dtype=np.float64)
 
 vol0, pv0, pe0, te0 = TestConservation(topo,quad,lx,ly,g,hi,wi,ki)
 print 'initial volume              %10.8e'%vol0
@@ -335,8 +344,19 @@ for step in np.arange(nsteps) + 1:
 
 	print '\tvolume conservation:               %10.8e'%((vol - vol0)/vol0)
 	print '\tpotential vorticity conservation:  %10.8e'%((pv - pv0))
-	print '\tpotential enstrophy conservation:  %10.8e'%((pe - pe0)/pe0)
+	#print '\tpotential enstrophy conservation:  %10.8e'%((pe - pe0)/pe0)
+	print '\tpotential enstrophy conservation:  %10.8e'%((pe - pe0))
 	print '\ttotal energy conservation:         %10.8e'%((te - te0)/te0)
+
+	volC[step-1] = (vol-vol0)/vol0
+	pvC[step-1] = (pv-pv0)
+	peC[step-1] = (pe-pe0)
+	teC[step-1] = (te-te0)/te0
+
+	print volC[:step]
+	print pvC[:step]
+	print peC[:step]
+	print teC[:step]
 
 	ui[:] = uf[:]
 	hi[:] = hf[:]
