@@ -7,10 +7,9 @@ from Mats2D import *
 from Assembly import *
 from BoundaryMat import *
 from Proj import *
-from LieDeriv import *
 
 class SWEqn:
-	def __init__(self,topo,quad,topo_q,lx,ly,g):
+	def __init__(self,topo,quad,topo_q,lx,ly,f,g):
 		self.topo = topo
 		self.quad = quad
 		self.topo_q = topo_q # topology for the quadrature points as 0 forms
@@ -26,132 +25,77 @@ class SWEqn:
 		M2 = Wmat(topo,quad).M
 		self.M2inv = la.inv(M2)
 
-		# Lie derivative for the mass equation
-		self.lie = LieDeriv(topo,quad,lx,ly)
-
 		# 0 form matrix inverse
-		M0 = Pmat(topo,quad).M
-		M0inv = la.inv(M0)
+		self.M0 = Pmat(topo,quad).M
+		M0inv = la.inv(self.M0)
 		D10 = BoundaryMat10(topo).M
 		D01 = D10.transpose()
-		M0invD01 = M0inv*D01
-		self.D01 = self.detInv*M0invD01*M1
+		self.D01M1 = self.detInv*D01*M1
 
 		# 2 form gradient matrix
-		D21 = BoundaryMat(topo).M
-		D12 = D21.transpose()
-		self.D12 = D12*M2
+		self.D21 = BoundaryMat(topo).M
+		self.D12 = -1.0*self.D21.transpose()
+		self.D12M2 = self.detInv*self.D12*M2
 
-		# Normal to tangent velocity transformation
-		self.Utn = UNormToTang(topo,quad)
+		# 0 form coriolis vector
+		Mxto0 = Xto0(topo,quad).M
+		self.f = Mxto0*f
 
-	def solveRK2(self,u,h,dt):
-		uh = np.zeros((u.shape[0]),dtype=np.float64)
-		hh = np.zeros((h.shape[0]),dtype=np.float64)
-		uf = np.zeros((u.shape[0]),dtype=np.float64)
-		hf = np.zeros((h.shape[0]),dtype=np.float64)
+		M0 = Pmat(topo,quad).M
+		M0inv = la.inv(M0)
 
-		### half step
+		self.Curl = self.detInv*M0inv*D01*M1
 
-		# 1.1.1: solve for the 0 form vorticity
-		w = self.D01*u
-		# 1.1.2: assemble rotational matrix
-		R = RotationalMat(self.topo,self.quad,w).M
-		# 1.1.3: assemble kinetic energy matrix
-		ut = self.Utn.apply(u)
-		WtQU = WtQUmat(self.topo,self.quad,u).M
-		#WtQU = WtQUmat(self.topo,self.quad,ut).M
-		K = self.M2inv*WtQU
-		k = 0.5*K*u
-		hBar = k + self.g*h
+	def diagnose_q(self,h,u):
+		w = self.D01M1*u
+		f = self.M0*self.f
+		M0h = Phmat(self.topo,self.quad,h).M
+		M0hinv = la.inv(M0h)
+		q = M0hinv*(w+f)
+		return q
 
-		# 1.2.1: generate the tangent velocities (*u) and rescale ux tangent velocity by -1
-		#ut = self.Utn.apply(u)
-		topo = self.topo
-		shift = topo.nx*topo.ny*topo.n*topo.n
-		ut[:shift] = -1.0*ut[:shift]
+	def diagnose_F(self,h,u):
+		M1h = Uhmat(self.topo,self.quad,h).M
+		M1invM1h = self.M1inv*M1h
+		F = M1invM1h*u
+		return F
 
-		# 1.3.1: assemble rotational vector
-		rhs = R*ut
-		# 1.3.2: assemble 2 form gradient vector
-		rhs = rhs + self.D12*hBar
+	def prognose_h(self,hi,F,dt):
+		hf = hi - dt*self.detInv*self.D21*F
+		return hf
 
-		# 1.5.1: update u half step
-		uh[:] = u[:] + 0.5*dt*self.detInv*self.M1inv*rhs
-
-		# 1.6.1: assemble lie derivative operator
-		duh = self.lie.assemble(u,h,True)
-		# 1.6.2: update h half step
-		hh[:] = h[:] + 0.5*dt*duh
-
-		### full step
+	def prognose_u(self,hi,ui,hd,ud,q,F,dt):
+		R = RotationalMat2(self.topo,self.quad,q).M
+		qCrossF = R*F
 		
-		# 2.1.1: solve for the 0 form vorticity
-		wh = self.D01*uh
-		# 2.1.2: assemble rotational matrix
-		R = RotationalMat(self.topo,self.quad,wh).M
-		# 2.1.3: assemble kinetic energy matrix
-		ut = self.Utn.apply(uh)
-		WtQU = WtQUmat(self.topo,self.quad,uh).M
-		#WtQU = WtQUmat(self.topo,self.quad,ut).M
+		WtQU = WtQUmat(self.topo,self.quad,ud).M
 		K = self.M2inv*WtQU
-		kh = 0.5*K*uh
-		hBarh = kh + self.g*hh
+		k = 0.5*K*ud
+		hBar = k + self.g*hd
+		gE = self.D12M2*hBar
 
-		# 2.2.1: generate the tangent velocities (*u) and rescale ux tangent velocity by -1
-		#ut = self.Utn.apply(uh)
-		topo = self.topo
-		shift = topo.nx*topo.ny*topo.n*topo.n
-		ut[:shift] = -1.0*ut[:shift]
+		uf = ui - dt*self.M1inv*(qCrossF + gE)
 
-		# 2.3.1: assemble rotational vector
-		rhs = R*ut
-		# 2.3.2: assemble 2 form gradient vector
-		rhs = rhs + self.D12*hBarh
+		#WtQU = WtQUmat(self.topo,self.quad,ud).M
+		#k = WtQU*ud
+		#dk = self.detInv*self.D12*k
+		#dh = self.D12M2*hd
 
-		# 2.5.1: update u half step
-		uf[:] = u[:] + dt*self.detInv*self.M1inv*rhs
+		#uf = ui - dt*self.M1inv*(qCrossF + 0.5*dk + self.g*dh)
 
-		# 2.6.1: assemble lie derivative operator
-		duf = self.lie.assemble(uh,hh,True)
-		# 2.6.2: update h half step
-		hf[:] = h[:] + dt*duf
+		return uf
 
-		return uf, hf, w, k
-		
-	def solveEuler(self,u,h,dt):
-		uf = np.zeros((u.shape[0]),dtype=np.float64)
-		hf = np.zeros((h.shape[0]),dtype=np.float64)
+	def solveEuler(self,hi,ui,hd,ud,dt):
+		q = self.diagnose_q(hd,ud)
+		F = self.diagnose_F(hd,ud)
 
-		# 1.1.1: solve for the 0 form vorticity
-		w = self.D01*u
-		# 1.1.2: assemble rotational matrix
-		R = RotationalMat(self.topo,self.quad,w).M
-		# 1.1.3: assemble kinetic energy matrix
-		ut = self.Utn.apply(u)
-		WtQU = WtQUmat(self.topo,self.quad,u).M
-		#WtQU = WtQUmat(self.topo,self.quad,ut).M
-		K = self.M2inv*WtQU
-		k = 0.5*K*u
-		hBar = k + self.g*h
+		hf = self.prognose_h(hi,F,dt)
+		uf = self.prognose_u(hi,ui,hd,ud,q,F,dt)
 
-		# 1.2.1: generate the tangent velocities (*u) and rescale ux tangent velocity by -1
-		#ut = self.Utn.apply(u)
-		topo = self.topo
-		shift = topo.nx*topo.ny*topo.n*topo.n
-		ut[:shift] = -1.0*ut[:shift]
+		return hf,uf
 
-		# 1.3.1: assemble rotational vector
-		rhs = R*ut
-		# 1.3.2: assemble 2 form gradient vector
-		rhs = rhs + self.D12*hBar
+	def solveRK2(self,hi,ui,dt):
+		hh,uh = self.solveEuler(hi,ui,hi,ui,0.5*dt)
+		hf,uf = self.solveEuler(hi,ui,hh,uh,dt)
 
-		# 1.5.1: update u half step
-		uf[:] = u[:] + dt*self.detInv*self.M1inv*rhs
-
-		# 1.6.1: assemble lie derivative operator
-		duh = self.lie.assemble(u,h,True)
-		# 1.6.2: update h half step
-		hf[:] = h[:] + dt*duh
-
-		return uf, hf, w, k
+		return hf,uf

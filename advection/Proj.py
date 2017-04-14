@@ -22,6 +22,14 @@ class Xto2:
 		WtQ = WtQmat(topo,quad).M
 		self.M = M2inv*WtQ
 
+# Map spatial data to 0 forms
+class Xto0:
+	def __init__(self,topo,quad):
+		M0 = Pmat(topo,quad).M
+		M0inv = la.inv(M0)
+		PtQ = PtQmat(topo,quad).M
+		self.M = M0inv*PtQ
+
 # Map the tangent velocities to normal velocities
 class UNormToTang:
 	def __init__(self,topo,quad):

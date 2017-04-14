@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 import scipy.sparse.linalg as la
-import matplotlib.pyplot as plt
 
 from Basis import *
 from Topo import *
@@ -11,48 +11,79 @@ from BoundaryMat import *
 from Mats2D import *
 from Assembly import *
 from Proj import *
-from LieDeriv import *
-from AdvEqn import *
 from ShallowWaterEqn import *
 
+def psi1(x,y):
+	xl = x - np.pi - np.pi/3.0
+	yo = y - np.pi
+	return np.exp(-4.0*(xl*xl + yo*yo))
+
+def psi2(x,y):
+	xr = x - np.pi + np.pi/3.0
+	yo = y - np.pi
+	return np.exp(-4.0*(xr*xr + yo*yo))
+
+def strm_func(x,y):
+	return psi1(x,y) + psi2(x,y)
+
 def velx_func(x,y):
-	return +1.0*np.cos(x)*np.sin(y)
+	yo = y - np.pi
+	return +8.0*yo*psi1(x,y) + 8.0*yo*psi2(x,y)
 
 def vely_func(x,y):
-	return -1.0*np.sin(x)*np.cos(y)
+	xl = x - np.pi - np.pi/3.0
+	xr = x - np.pi + np.pi/3.0
+	return -8.0*xl*psi1(x,y) - 8.0*xr*psi2(x,y)
 
 def pres_func(x,y):
-	xi = 2.0*np.pi/8.0 + 2.0*np.pi/4.0
-	xf = 6.0*np.pi/8.0 + 2.0*np.pi/4.0
-	yi = 2.0*np.pi/8.0 + 2.0*np.pi/8.0
-	yf = 6.0*np.pi/8.0 + 2.0*np.pi/8.0
-	xo = 0.5*(xi + xf)
-	yo = 0.5*(yi + yf)
-	xi = xo - 1.5*(xo - xi)
-	xf = xo + 1.5*(xf - xo)
-	yi = yo - 1.5*(yo - yi)
-	yf = yo + 1.5*(yf - yo)
-	dx = xf - xi
-	dy = yf - yi
-	if (x < xi or x > xf or y < yi or y > yf):
-		return 0.0
+	H = 1.0
+	f = 10.0
+	g = 10.0
+	return (f/g)*strm_func(x,y) + H
 
-	return 0.25*(1.0 + np.cos(2.0*np.pi*(x-xo)/dx))*(1.0 + np.cos(2.0*np.pi*(y-yo)/dy))
+def dpdx_func(x,y):
+	xl = x - np.pi - np.pi/3.0
+	xr = x - np.pi + np.pi/3.0
+	return -8.0*xl*psi1(x,y) - 8.0*xr*psi2(x,y)
+
+def dpdy_func(x,y):
+	yo = y - np.pi
+	return -8.0*yo*psi1(x,y) - 8.0*yo*psi2(x,y)
+
+def d2pdxx_func(x,y):
+	xl = x - np.pi - np.pi/3.0
+	xr = x - np.pi + np.pi/3.0
+	return - 8.0*psi1(x,y) - 8.0*psi2(x,y) + 64.0*xl*xl*psi1(x,y) + 64.0*xr*xr*psi2(x,y)
+
+def d2pdyy_func(x,y):
+	yo = y - np.pi
+	return - 8.0*psi1(x,y) - 8.0*psi2(x,y) + 64.0*yo*yo*psi1(x,y) + 64.0*yo*yo*psi2(x,y)
 
 def vort_func(x,y):
-	return -2.0*np.cos(x)*np.cos(y)
+	xl = x - np.pi - np.pi/3.0
+	xr = x - np.pi + np.pi/3.0
+	yo = y - np.pi
+	w1 = 16.0*(4.0*(xl*xl + yo*yo) - 1.0)*psi1(x,y)
+	w2 = 16.0*(4.0*(xr*xr + yo*yo) - 1.0)*psi2(x,y)
+	return (w1 + w2 + 10.0)/pres_func(x,y)
+
+def momx_func(x,y):
+	return pres_func(x,y)*velx_func(x,y)
+
+def momy_func(x,y):
+	return pres_func(x,y)*vely_func(x,y)
 
 def Plot(x,y,dat,title,fname,zmin,zmax):
 	levs = np.linspace(zmin,zmax,201,endpoint=True)
-	#plt.contourf(x,y,dat,levs)
 	plt.contourf(x,y,dat,101)
 	plt.colorbar()
 	plt.title(title)
 	plt.savefig(fname)
 	plt.clf()
 
-def TestConservation(topo,quad,lx,ly,g,h,w,k):
+def TestConservation(topo,quad,lx,ly,f,g,h,u,q,D01):
 	det = 0.5*lx/topo.nx*0.5*ly/topo.ny
+	shift1Form = topo.nx*topo.ny*topo.n*topo.n
 
 	n = topo.n
 	np1 = topo.n + 1
@@ -70,6 +101,8 @@ def TestConservation(topo,quad,lx,ly,g,h,w,k):
 		for i in np.arange(mp1):
 			Njxi[i,j] = node.eval(quad.x[i],j)
 
+	w = D01*u
+
 	volume = 0.0
 	potVort = 0.0
 	potEnst = 0.0
@@ -79,6 +112,8 @@ def TestConservation(topo,quad,lx,ly,g,h,w,k):
 		for ey in np.arange(topo.ny):
 			inds0 = topo.localToGlobal0(ex,ey)
 			inds2 = topo.localToGlobal2(ex,ey)
+			inds1x = topo.localToGlobal1x(ex,ey)
+			inds1y = topo.localToGlobal1x(ex,ey) + shift1Form
 
 			volume_e = 0.0
 			potVort_e = 0.0
@@ -87,30 +122,41 @@ def TestConservation(topo,quad,lx,ly,g,h,w,k):
 			for jj in np.arange(mp1*mp1):
 				jx = jj%mp1
 				jy = jj/mp1
-				xl = quad.x[jx]
-				yl = quad.x[jy]
 				wx = quad.w[jx]
 				wy = quad.w[jy]
 				wt = wx*wy
 
+				qq = 0.0
 				wq = 0.0
 				for ii in np.arange(np1*np1):
 					ix = ii%np1
 					iy = ii/np1
+					qq = qq + q[inds0[ii]]*Njxi[jx,ix]*Njxi[jy,iy]
 					wq = wq + w[inds0[ii]]*Njxi[jx,ix]*Njxi[jy,iy]
 
 				hq = 0.0
-				kq = 0.0
 				for ii in np.arange(n*n):
 					ix = ii%n
 					iy = ii/n
 					hq = hq + h[inds2[ii]]*Ejxi[jx,ix]*Ejxi[jy,iy]
-					kq = kq + k[inds2[ii]]*Ejxi[jx,ix]*Ejxi[jy,iy]
+
+				uq = 0.0
+				for ii in np.arange(n*np1):
+					ix = ii%np1
+					iy = ii/np1
+					uq = uq + u[inds1x[ii]]*Njxi[jx,ix]*Ejxi[jy,iy]
+
+				vq = 0.0
+				for ii in np.arange(n*np1):
+					ix = ii%n
+					iy = ii/n
+					vq = vq + u[inds1y[ii]]*Ejxi[jx,ix]*Njxi[jy,iy]
 
 				volume_e = volume_e + wt*hq
-				potVort_e = potVort_e + wt*wq/hq
-				potEnst_e = potEnst_e + wt*wq*wq/hq
-				totEner_e = totEner_e + wt*(hq*kq + 0.5*g*hq*hq)
+				#potVort_e = potVort_e + wt*(qq*hq-f)
+				potVort_e = potVort_e + wt*wq
+				potEnst_e = potEnst_e + 0.5*wt*qq*qq*hq
+				totEner_e = totEner_e + 0.5*wt*(hq*(uq*uq + vq*vq) + g*hq*hq)
 
 			volume = volume + volume_e
 			potVort = potVort + potVort_e
@@ -122,7 +168,7 @@ def TestConservation(topo,quad,lx,ly,g,h,w,k):
 nx = 16
 ny = 16
 n = 3 # basis order
-m = 6 # quadrature order
+m = 3 # quadrature order
 np1 = n+1
 mp1 = m+1
 nxn = nx*n
@@ -156,15 +202,22 @@ for j in np.arange(n):
 p2d = np.zeros((nym,nxm),dtype=np.float64)
 u2d = np.zeros((nym,nxm),dtype=np.float64)
 v2d = np.zeros((nym,nxm),dtype=np.float64)
-w2d = np.zeros((nym,nxm),dtype=np.float64)
-k2d = np.zeros((nym,nxm),dtype=np.float64)
-dk2d = np.zeros((nxm,nxm),dtype=np.float64)
-wu2d = np.zeros((nxm,nxm),dtype=np.float64)
+q2d = np.zeros((nym,nxm),dtype=np.float64)
+h2d = np.zeros((nym,nxm),dtype=np.float64)
+
+dt = 0.20*dx/2.0/n
+f = 10.0
+g = 10.0
+nsteps = 10
 
 x = np.zeros(nxm)
 y = np.zeros(nym)
 px = np.zeros(nxm*nym,dtype=np.float64)
 ux = np.zeros(2*nxm*nym,dtype=np.float64)
+wx = np.zeros(nxm*nym,dtype=np.float64)
+fx = f*np.ones(nxm*nym,dtype=np.float64)
+
+sw = SWEqn(topo,quad,topo_q,lx,ly,fx,g)
 
 print 'initializing shallow water equation...'
 
@@ -180,148 +233,219 @@ for ey in np.arange(ny):
 			j = inds0[jj]/nxm
 			x[i] = ex*dx + 0.5*dx*(quad.x[jj%mp1] + 1.0)
 			y[j] = ey*dy + 0.5*dy*(quad.x[jj/mp1] + 1.0)
-			#px[inds0[jj]] = 1.0 + 0.1*np.cos(x[i])*np.cos(y[j])
-			#ux[inds0[jj]] = 0.0
-			px[inds0[jj]] = 1.0
-			ux[inds0[jj]] = 0.2 + 0.1*np.sin(y[j])
-
-			u2d[j,i] = 0.2 + 0.1*np.sin(y[j])
-			k2d[j,i] = 0.5*(0.2 + 0.1*np.sin(y[j]))*(0.2 + 0.1*np.sin(y[j]))
-			dk2d[j,i] = +0.5*2.0*(0.2 + 0.1*np.sin(y[j]))*0.1*np.cos(y[j])
-			wu2d[j,i] = -0.5*2.0*(0.2 + 0.1*np.sin(y[j]))*0.1*np.cos(y[j])
-
-Plot(x,y,u2d,'vel x (initial)','ux_000.png',0.9,1.1)
-Plot(x,y,k2d,'ke (initial)','ke_000.png',0.0,0.0)
-Plot(x,y,dk2d,'grad ke (initial)','dkx_000.png',0.0,0.0)
-Plot(x,y,wu2d,'wu (initial)','wux_000.png',0.0,0.0)
+			ux[inds0[jj]] = velx_func(x[i],y[j])
+			ux[inds0[jj]+shiftQuad] = vely_func(x[i],y[j])
+			px[inds0[jj]] = pres_func(x[i],y[j])
 
 Mxto1 = Xto1(topo,quad).M
+ui = Mxto1*ux
+Mxto0 = Xto0(topo,quad).M
 Mxto2 = Xto2(topo,quad).M
 hi = Mxto2*px
-ui = Mxto1*ux
+qi = sw.diagnose_q(hi,ui)
 
-M0 = Pmat(topo,quad).M
+for ey in np.arange(ny):
+	for ex in np.arange(nx):
+		inds0 = topo_q.localToGlobal0(ex,ey)
+		inds0n = topo.localToGlobal0(ex,ey)
+		inds1x = topo.localToGlobal1x(ex,ey)
+		inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
+		inds2 = topo.localToGlobal2(ex,ey)
+		for jj in np.arange(mp1*mp1):
+			if jj%mp1 == m or jj/mp1 == m:
+				continue
+			i = inds0[jj]%nxm
+			j = inds0[jj]/nxm
+			ii = i%m
+			jj = j%m
+			u2d[j][i] = 0.0
+			v2d[j][i] = 0.0
+			for kk in np.arange(np1*n):
+				u2d[j][i] = u2d[j][i] + ui[inds1x[kk]]*Njxi[ii,kk%np1]*Ejxi[jj,kk/np1]
+				v2d[j][i] = v2d[j][i] + ui[inds1y[kk]]*Ejxi[ii,kk%n]*Njxi[jj,kk/n]
+			h2d[j][i] = 0.0
+			for kk in np.arange(n*n):
+				h2d[j][i] = h2d[j][i] + hi[inds2[kk]]*Ejxi[ii,kk%n]*Ejxi[jj,kk/n]
+			q2d[j][i] = 0.0
+			for kk in np.arange(np1*np1):
+				q2d[j][i] = q2d[j][i] + qi[inds0n[kk]]*Njxi[ii,kk%np1]*Njxi[jj,kk/np1]
+
+Plot(x,y,h2d,'h (initial)','pres_000.png',0.0,0.0)
+Plot(x,y,u2d,'u (initial)','velx_000.png',0.0,0.0)
+Plot(x,y,v2d,'v (initial)','vely_000.png',0.0,0.0)
+Plot(x,y,q2d,'w (initial)','vort_000.png',0.0,0.0)
+
+for ey in np.arange(ny):
+	for ex in np.arange(nx):
+		inds0 = topo_q.localToGlobal0(ex,ey)
+		inds0n = topo.localToGlobal0(ex,ey)
+		inds1x = topo.localToGlobal1x(ex,ey)
+		inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
+		inds2 = topo.localToGlobal2(ex,ey)
+		for jj in np.arange(mp1*mp1):
+			if jj%mp1 == m or jj/mp1 == m:
+				continue
+			i = inds0[jj]%nxm
+			j = inds0[jj]/nxm
+			ii = i%m
+			jj = j%m
+			q2d[j][i] = vort_func(x[i],y[j])
+			u2d[j][i] = momx_func(x[i],y[j])
+			v2d[j][i] = momy_func(x[i],y[j])
+
+Plot(x,y,q2d,'w (test)','vort_tst.png',0.0,0.0)
+Plot(x,y,u2d,'hu (test)','hu_tst.png',0.0,0.0)
+Plot(x,y,v2d,'hv (test)','hv_tst.png',0.0,0.0)
+
+Fi = sw.diagnose_F(hi,ui)
+for ey in np.arange(ny):
+	for ex in np.arange(nx):
+		inds0 = topo_q.localToGlobal0(ex,ey)
+		inds0n = topo.localToGlobal0(ex,ey)
+		inds1x = topo.localToGlobal1x(ex,ey)
+		inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
+		inds2 = topo.localToGlobal2(ex,ey)
+		for jj in np.arange(mp1*mp1):
+			if jj%mp1 == m or jj/mp1 == m:
+				continue
+			i = inds0[jj]%nxm
+			j = inds0[jj]/nxm
+			ii = i%m
+			jj = j%m
+			u2d[j][i] = 0.0
+			v2d[j][i] = 0.0
+			for kk in np.arange(np1*n):
+				u2d[j][i] = u2d[j][i] + Fi[inds1x[kk]]*Njxi[ii,kk%np1]*Ejxi[jj,kk/np1]
+				v2d[j][i] = v2d[j][i] + Fi[inds1y[kk]]*Ejxi[ii,kk%n]*Njxi[jj,kk/n]
+
+Plot(x,y,u2d,'hu (numeric)','hu_num.png',0.0,0.0)
+Plot(x,y,v2d,'hv (numeric)','hv_num.png',0.0,0.0)
+
+print 'testing boundary matrix........'
+
+for ey in np.arange(ny):
+	for ex in np.arange(nx):
+		inds0 = topo_q.localToGlobal0(ex,ey)
+		for jj in np.arange(mp1*mp1):
+			if jj%mp1 == m or jj/mp1 == m:
+				continue
+			i = inds0[jj]%nxm
+			j = inds0[jj]/nxm
+			ux[inds0[jj]] = dpdx_func(x[i],y[j])
+			ux[inds0[jj]+shiftQuad] = dpdy_func(x[i],y[j])
+
+u2 = Mxto1*ux
+D21 = BoundaryMat(topo).M
+D12 = -1.0*D21.transpose()
+du = (2.0*nx/lx)*D21*u2
+
+for ey in np.arange(ny):
+	for ex in np.arange(nx):
+		inds0 = topo_q.localToGlobal0(ex,ey)
+		inds2 = topo.localToGlobal2(ex,ey)
+		for jj in np.arange(mp1*mp1):
+			if jj%mp1 == m or jj/mp1 == m:
+				continue
+			i = inds0[jj]%nxm
+			j = inds0[jj]/nxm
+			ii = i%m
+			jj = j%m
+			h2d[j][i] = 0.0
+			for kk in np.arange(n*n):
+				h2d[j][i] = h2d[j][i] + du[inds2[kk]]*Ejxi[ii,kk%n]*Ejxi[jj,kk/n]
+
+Plot(x,y,h2d,'du (numeric)','du_tst.png',0.0,0.0)
+
+for ey in np.arange(ny):
+	for ex in np.arange(nx):
+		inds0 = topo_q.localToGlobal0(ex,ey)
+		inds2 = topo.localToGlobal2(ex,ey)
+		for jj in np.arange(mp1*mp1):
+			if jj%mp1 == m or jj/mp1 == m:
+				continue
+			i = inds0[jj]%nxm
+			j = inds0[jj]/nxm
+			ii = i%m
+			jj = j%m
+			h2d[j][i] = d2pdxx_func(x[i],y[j]) + d2pdyy_func(x[i],y[j])
+
+Plot(x,y,h2d,'du (analytic)','du_ana.png',0.0,0.0)
+
 M1 = Umat(topo,quad).M
 M2 = Wmat(topo,quad).M
-M0inv = la.inv(M0)
-M2inv = la.inv(M2)
+M1inv = la.inv(M1)
+dp = (2.0*nx/lx)*M1inv*D12*M2*hi
 
-D10 = BoundaryMat10(topo).M
-D01 = D10.transpose()
+for ey in np.arange(ny):
+	for ex in np.arange(nx):
+		inds0 = topo_q.localToGlobal0(ex,ey)
+		inds1x = topo.localToGlobal1x(ex,ey)
+		inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
+		for jj in np.arange(mp1*mp1):
+			if jj%mp1 == m or jj/mp1 == m:
+				continue
+			i = inds0[jj]%nxm
+			j = inds0[jj]/nxm
+			ii = i%m
+			jj = j%m
+			u2d[j][i] = 0.0
+			v2d[j][i] = 0.0
+			for kk in np.arange(np1*n):
+				u2d[j][i] = u2d[j][i] + dp[inds1x[kk]]*Njxi[ii,kk%np1]*Ejxi[jj,kk/np1]
+				v2d[j][i] = v2d[j][i] + dp[inds1y[kk]]*Ejxi[ii,kk%n]*Njxi[jj,kk/n]
 
-M0invD01 = M0inv*D01
-D = M0invD01*M1
-wi = (2.0*nx/lx)*D*ui
+Plot(x,y,u2d,'dpx (numeric)','dpx_num.png',0.0,0.0)
+Plot(x,y,v2d,'dpy (numeric)','dpy_num.png',0.0,0.0)
 
-WtQU = WtQUmat(topo,quad,ui).M
-M2invWtQU = M2inv*WtQU
-ki = 0.5*M2invWtQU*ui
+for ey in np.arange(ny):
+	for ex in np.arange(nx):
+		inds0 = topo_q.localToGlobal0(ex,ey)
+		for jj in np.arange(mp1*mp1):
+			if jj%mp1 == m or jj/mp1 == m:
+				continue
+			i = inds0[jj]%nxm
+			j = inds0[jj]/nxm
+			u2d[j][i] = dpdx_func(x[i],y[j])
+			v2d[j][i] = dpdy_func(x[i],y[j])
 
-dt = 0.4*dx/1.0/n
-g = 1.0
-sw = SWEqn(topo,quad,topo_q,lx,ly,g)
-nsteps = 20
+Plot(x,y,u2d,'dpx (analytic)','dpx_tst.png',0.0,0.0)
+Plot(x,y,v2d,'dpy (analytic)','dpy_tst.png',0.0,0.0)
 
-dt = 0.5*dt
-nsteps = 2*nsteps
+dt = 1.0*dt
+nsteps = 1*nsteps
 
 volC = np.zeros((nsteps),dtype=np.float64)
 pvC = np.zeros((nsteps),dtype=np.float64)
 peC = np.zeros((nsteps),dtype=np.float64)
 teC = np.zeros((nsteps),dtype=np.float64)
 
-vol0, pv0, pe0, te0 = TestConservation(topo,quad,lx,ly,g,hi,wi,ki)
+M0 = Pmat(topo,quad).M
+M1 = Umat(topo,quad).M
+M0inv = la.inv(M0)
+D10 = BoundaryMat10(topo).M
+D01 = D10.transpose()
+Curl = M0inv*D01*M1
+vol0, pv0, pe0, te0 = TestConservation(topo,quad,lx,ly,f,g,hi,ui,qi,Curl)
 print 'initial volume              %10.8e'%vol0
-print 'initial potential vorticity %10.8e'%pv0
+print 'initial vorticity           %10.8e'%pv0
 print 'initial potential enstrophy %10.8e'%pe0
 print 'initial total energy        %10.8e'%te0
 
 for step in np.arange(nsteps) + 1:
 	print '\tsolving shallow water for time step %.3d'%step
 
-	uf,hf,wi,ki = sw.solveRK2(ui,hi,dt)
+	hf,uf = sw.solveRK2(hi,ui,dt)
+	qf = sw.diagnose_q(hf,uf)
 
 	print '\tplotting height and velocity fields %.3d'%step
-
-	for ey in np.arange(ny):
-		for ex in np.arange(nx):
-			inds0 = topo_q.localToGlobal0(ex,ey)
-			inds2 = topo.localToGlobal2(ex,ey)
-			for jj in np.arange(mp1*mp1):
-				if jj%mp1 == m or jj/mp1 == m:
-					continue
-				i = inds0[jj]%nxm
-				j = inds0[jj]/nxm
-				ii = i%m
-				jj = j%m
-				p2d[j][i] = 0.0
-				for kk in np.arange(n*n):
-					p2d[j][i] = p2d[j][i] + hf[inds2[kk]]*Ejxi[ii,kk%n]*Ejxi[jj,kk/n]
-
-	Plot(x,y,p2d,'p (numeric)','pres_%.3d'%step + '.png',-0.1,+0.1)
-
-	for ey in np.arange(ny):
-		for ex in np.arange(nx):
-			inds0 = topo_q.localToGlobal0(ex,ey)
-			inds1x = topo.localToGlobal1x(ex,ey)
-			inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
-			for jj in np.arange(mp1*mp1):
-				if jj%mp1 == m or jj/mp1 == m:
-					continue
-				i = inds0[jj]%nxm
-				j = inds0[jj]/nxm
-				ii = i%m
-				jj = j%m
-				u2d[j][i] = 0.0
-				v2d[j][i] = 0.0
-				for kk in np.arange(np1*n):
-					u2d[j][i] = u2d[j][i] + uf[inds1x[kk]]*Njxi[ii,kk%np1]*Ejxi[jj,kk/np1]
-					v2d[j][i] = v2d[j][i] + uf[inds1y[kk]]*Ejxi[ii,kk%n]*Njxi[jj,kk/n]
-
-	Plot(x,y,u2d,'u (numeric)','velx_%.3d'%step + '.png',-1.0,+1.0)
-	Plot(x,y,v2d,'v (numeric)','vely_%.3d'%step + '.png',-1.0,+1.0)
-
-	for ey in np.arange(ny):
-		for ex in np.arange(nx):
-			inds0q = topo_q.localToGlobal0(ex,ey)
-			inds0n = topo.localToGlobal0(ex,ey)
-			for jj in np.arange(mp1*mp1):
-				if jj%mp1 == m or jj/mp1 == m:
-					continue
-				i = inds0q[jj]%nxm
-				j = inds0q[jj]/nxm
-				ii = i%m
-				jj = j%m
-				w2d[j][i] = 0.0
-				for kk in np.arange(np1*np1):
-					w2d[j][i] = w2d[j][i] + wi[inds0n[kk]]*Njxi[ii,kk%np1]*Njxi[jj,kk/np1]
-
-	Plot(x,y,w2d,'w (numeric)','vort_%.3d'%step + '.png',-0.1,+0.1)
-
-	for ey in np.arange(ny):
-		for ex in np.arange(nx):
-			inds0 = topo_q.localToGlobal0(ex,ey)
-			inds2 = topo.localToGlobal2(ex,ey)
-			for jj in np.arange(mp1*mp1):
-				if jj%mp1 == m or jj/mp1 == m:
-					continue
-				i = inds0[jj]%nxm
-				j = inds0[jj]/nxm
-				ii = i%m
-				jj = j%m
-				k2d[j][i] = 0.0
-				for kk in np.arange(n*n):
-					k2d[j][i] = k2d[j][i] + ki[inds2[kk]]*Ejxi[ii,kk%n]*Ejxi[jj,kk/n]
-
-	Plot(x,y,k2d,'ke (numeric)','ke_%.3d'%step + '.png',0.0,+0.5)
-
-	vol, pv, pe, te = TestConservation(topo,quad,lx,ly,g,hi,wi,ki)
 
 	for ey in np.arange(ny):
 		for ex in np.arange(nx):
 			inds0q = topo_q.localToGlobal0(ex,ey)
 			inds0 = topo.localToGlobal0(ex,ey)
 			inds1x = topo.localToGlobal1x(ex,ey)
+			inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
+			inds2 = topo.localToGlobal2(ex,ey)
 			for jj in np.arange(mp1*mp1):
 				if jj%mp1 == m or jj/mp1 == m:
 					continue
@@ -330,33 +454,41 @@ for step in np.arange(nsteps) + 1:
 				ii = i%m
 				jj = j%m
 
-				wq = 0.0
+				q2d[j][i] = 0.0
 				for kk in np.arange(np1*np1):
-					wq = wq + wi[inds0[kk]]*Njxi[ii,kk%np1]*Njxi[jj,kk/np1]
+					q2d[j][i] = q2d[j][i] + qf[inds0[kk]]*Njxi[ii,kk%np1]*Njxi[jj,kk/np1]
 
-				uq = 0.0
+				u2d[j][i] = 0.0
+				v2d[j][i] = 0.0
 				for kk in np.arange(np1*n):
-					uq = uq + ui[inds1x[kk]]*Njxi[ii,kk%np1]*Ejxi[jj,kk/np1]
+					u2d[j][i] = u2d[j][i] + uf[inds1x[kk]]*Njxi[ii,kk%np1]*Ejxi[jj,kk/np1]
+					v2d[j][i] = v2d[j][i] + uf[inds1y[kk]]*Ejxi[ii,kk%n]*Njxi[jj,kk/n]
 
-				wu2d[j,i] = wq*uq
+				p2d[j][i] = 0.0
+				for kk in np.arange(n*n):
+					p2d[j][i] = p2d[j][i] + hf[inds2[kk]]*Ejxi[ii,kk%n]*Ejxi[jj,kk/n]
 
-	Plot(x,y,wu2d,'wu (numeric)','wux_%.3d'%step + '.png',0.0,+0.5)
+	Plot(x,y,q2d,'w (numeric)','vort_%.3d'%step + '.png',0.0,0.0)
+	Plot(x,y,u2d,'u (numeric)','velx_%.3d'%step + '.png',0.0,0.0)
+	Plot(x,y,v2d,'v (numeric)','vely_%.3d'%step + '.png',0.0,0.0)
+	Plot(x,y,p2d,'h (numeric)','pres_%.3d'%step + '.png',0.0,0.0)
+
+	vol, pv, pe, te = TestConservation(topo,quad,lx,ly,f,g,hf,uf,qf,Curl)
 
 	print '\tvolume conservation:               %10.8e'%((vol - vol0)/vol0)
-	print '\tpotential vorticity conservation:  %10.8e'%((pv - pv0))
-	#print '\tpotential enstrophy conservation:  %10.8e'%((pe - pe0)/pe0)
-	print '\tpotential enstrophy conservation:  %10.8e'%((pe - pe0))
+	print '\tvorticity conservation:            %10.8e'%(pv - pv0)
+	print '\tpotential enstrophy conservation:  %10.8e'%((pe - pe0)/pe0)
 	print '\ttotal energy conservation:         %10.8e'%((te - te0)/te0)
 
 	volC[step-1] = (vol-vol0)/vol0
 	pvC[step-1] = (pv-pv0)
-	peC[step-1] = (pe-pe0)
+	peC[step-1] = (pe-pe0)/pe0
 	teC[step-1] = (te-te0)/te0
 
-	print volC[:step]
-	print pvC[:step]
-	print peC[:step]
-	print teC[:step]
+	print repr(volC[:step])
+	print repr(pvC[:step])
+	print repr(peC[:step])
+	print repr(teC[:step])
 
-	ui[:] = uf[:]
 	hi[:] = hf[:]
+	ui[:] = uf[:]
