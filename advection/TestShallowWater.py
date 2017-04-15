@@ -205,10 +205,10 @@ v2d = np.zeros((nym,nxm),dtype=np.float64)
 q2d = np.zeros((nym,nxm),dtype=np.float64)
 h2d = np.zeros((nym,nxm),dtype=np.float64)
 
-dt = 0.20*dx/2.0/n
+dt = 0.10*dx/2.0/n
 f = 10.0
 g = 10.0
-nsteps = 10
+nsteps = 20
 
 x = np.zeros(nxm)
 y = np.zeros(nym)
@@ -225,7 +225,7 @@ for ey in np.arange(ny):
 	for ex in np.arange(nx):
 		inds0 = topo_q.localToGlobal0(ex,ey)
 		inds1x = topo.localToGlobal1x(ex,ey)
-		inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
+		inds1y = topo.localToGlobal1y(ex,ey)
 		for jj in np.arange(mp1*mp1):
 			if jj%mp1 == m or jj/mp1 == m:
 				continue
@@ -249,7 +249,7 @@ for ey in np.arange(ny):
 		inds0 = topo_q.localToGlobal0(ex,ey)
 		inds0n = topo.localToGlobal0(ex,ey)
 		inds1x = topo.localToGlobal1x(ex,ey)
-		inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
+		inds1y = topo.localToGlobal1y(ex,ey)
 		inds2 = topo.localToGlobal2(ex,ey)
 		for jj in np.arange(mp1*mp1):
 			if jj%mp1 == m or jj/mp1 == m:
@@ -280,7 +280,7 @@ for ey in np.arange(ny):
 		inds0 = topo_q.localToGlobal0(ex,ey)
 		inds0n = topo.localToGlobal0(ex,ey)
 		inds1x = topo.localToGlobal1x(ex,ey)
-		inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
+		inds1y = topo.localToGlobal1y(ex,ey)
 		inds2 = topo.localToGlobal2(ex,ey)
 		for jj in np.arange(mp1*mp1):
 			if jj%mp1 == m or jj/mp1 == m:
@@ -303,7 +303,7 @@ for ey in np.arange(ny):
 		inds0 = topo_q.localToGlobal0(ex,ey)
 		inds0n = topo.localToGlobal0(ex,ey)
 		inds1x = topo.localToGlobal1x(ex,ey)
-		inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
+		inds1y = topo.localToGlobal1y(ex,ey)
 		inds2 = topo.localToGlobal2(ex,ey)
 		for jj in np.arange(mp1*mp1):
 			if jj%mp1 == m or jj/mp1 == m:
@@ -380,7 +380,7 @@ for ey in np.arange(ny):
 	for ex in np.arange(nx):
 		inds0 = topo_q.localToGlobal0(ex,ey)
 		inds1x = topo.localToGlobal1x(ex,ey)
-		inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
+		inds1y = topo.localToGlobal1y(ex,ey)
 		for jj in np.arange(mp1*mp1):
 			if jj%mp1 == m or jj/mp1 == m:
 				continue
@@ -444,7 +444,7 @@ for step in np.arange(nsteps) + 1:
 			inds0q = topo_q.localToGlobal0(ex,ey)
 			inds0 = topo.localToGlobal0(ex,ey)
 			inds1x = topo.localToGlobal1x(ex,ey)
-			inds1y = topo.localToGlobal1y(ex,ey) + shift1Form
+			inds1y = topo.localToGlobal1y(ex,ey)
 			inds2 = topo.localToGlobal2(ex,ey)
 			for jj in np.arange(mp1*mp1):
 				if jj%mp1 == m or jj/mp1 == m:

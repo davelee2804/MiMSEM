@@ -32,7 +32,7 @@ from Proj import *
 #		for ey in np.arange(ny):
 #			for ex in np.arange(nx):
 #				inds1x = self.topo.localToGlobal1x(ex,ey)
-#				inds1y = self.topo.localToGlobal1y(ex,ey) + shift
+#				inds1y = self.topo.localToGlobal1y(ex,ey)
 #				inds2 = self.topo.localToGlobal2(ex,ey)
 				# inner product of vorticity and x velocities
 #				for jj in np.arange(n):
@@ -93,7 +93,7 @@ class LieDeriv:
 			ex = el%self.topo.nx
 			ey = el/self.topo.nx
 			inds1x = self.topo.localToGlobal1x(ex,ey)
-			inds1y = self.topo.localToGlobal1y(ex,ey) + shift
+			inds1y = self.topo.localToGlobal1y(ex,ey)
 			inds2 = self.topo.localToGlobal2(ex,ey)
 			for ii in np.arange(n2):
 				ix = ii%n

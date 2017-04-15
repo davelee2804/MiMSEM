@@ -162,7 +162,7 @@ for ey in np.arange(ny):
 	for ex in np.arange(nx):
 		inds0 = topo_q.localToGlobal0(ex,ey)
 		inds1x = topo.localToGlobal1x(ex,ey)
-		inds1y = topo.localToGlobal1y(ex,ey) + nxn*nyn
+		inds1y = topo.localToGlobal1y(ex,ey)
 		for jj in np.arange(mp1*mp1):
 			if jj%mp1 == m or jj/mp1 == m:
 				continue

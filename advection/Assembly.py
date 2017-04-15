@@ -46,7 +46,7 @@ class Umat:
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 				for jj in np.arange(ncl*ncl):
 					row = inds1[jj/ncl]
 					col = inds1[jj%ncl]
@@ -81,7 +81,7 @@ class Umat:
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 				for jj in np.arange(ne*ne):
 					row = inds1[jj/ne]
 					col = inds1[jj%ne]
@@ -226,7 +226,7 @@ class Uhmat:
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 				inds2 = topo.localToGlobal2(ex,ey)
 
 				for kk in np.arange(n2):
@@ -270,7 +270,7 @@ class Uhmat:
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 				for jj in np.arange(ne*ne):
 					row = inds1[jj/ne]
 					col = inds1[jj%ne]
@@ -445,7 +445,7 @@ class UtQmat:
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds0 = topo_q.localToGlobal0(ex,ey) + shift0Forms
-				inds1 = topo.localToGlobal1y(ex,ey) + shift1Forms
+				inds1 = topo.localToGlobal1y(ex,ey)
 				for jj in np.arange(nrl*ncl):
 					row = inds1[jj/ncl]
 					col = inds0[jj%ncl]
@@ -485,7 +485,7 @@ class UtQmat:
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds0 = topo_q.localToGlobal0(ex,ey) + shift0Forms
-				inds1 = topo.localToGlobal1y(ex,ey) + shift1Forms
+				inds1 = topo.localToGlobal1y(ex,ey)
 				for jj in np.arange(nrl*ncl):
 					row = inds1[jj/ncl]
 					col = inds0[jj%ncl]
@@ -579,7 +579,7 @@ class UtQPmat:
 			for ex in np.arange(topo.nx):
 				inds1 = topo.localToGlobal1x(ex,ey)
 				inds0 = topo.localToGlobal0(ex,ey)
-				inds1y = topo.localToGlobal1y(ex,ey) + shift
+				inds1y = topo.localToGlobal1y(ex,ey)
 
 				for kk in np.arange(nrl):
 					c[kk] = +1.0*u[inds1y[kk]]
@@ -600,7 +600,7 @@ class UtQPmat:
 		
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 				inds0 = topo.localToGlobal0(ex,ey)
 				inds1x = topo.localToGlobal1x(ex,ey)
 
@@ -648,7 +648,7 @@ class UtQPmat:
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 				inds0 = topo.localToGlobal0(ex,ey)
 				for jj in np.arange(nrl*ncl):
 					row = inds1[jj/ncl]
@@ -703,7 +703,7 @@ class WtQUmat:
 		
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 				inds2 = topo.localToGlobal2(ex,ey)
 
 				for kk in np.arange(ncl):
@@ -748,7 +748,7 @@ class WtQUmat:
 		shift = topo.nx*topo.ny*topo.n*topo.n
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 				inds2 = topo.localToGlobal2(ex,ey)
 				for jj in np.arange(nrl*ncl):
 					row = inds2[jj/ncl]
@@ -806,7 +806,7 @@ class InteriorProdAdjMat:
 		
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 				inds2 = topo.localToGlobal2(ex,ey)
 
 				for j in np.arange(nrl):
@@ -853,7 +853,7 @@ class InteriorProdAdjMat:
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 				inds2 = topo.localToGlobal2(ex,ey)
 				for jj in np.arange(nrl*ncl):
 					row = inds1[jj/ncl]
@@ -920,7 +920,7 @@ class RotationalMat:
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds0 = topo.localToGlobal0(ex,ey)
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 
 				for j in np.arange(n2):
 					cj[j] = w[inds0[j]]
@@ -963,7 +963,7 @@ class RotationalMat:
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey) + shift
+				inds1 = topo.localToGlobal1y(ex,ey)
 				for jj in np.arange(ne*ne):
 					row = inds1[jj/ne]
 					col = inds1[jj%ne]
@@ -1008,7 +1008,7 @@ class RotationalMat2:
 			for ex in np.arange(topo.nx):
 				inds0 = topo.localToGlobal0(ex,ey)
 				inds1x = topo.localToGlobal1x(ex,ey)
-				inds1y = topo.localToGlobal1y(ex,ey) + shift
+				inds1y = topo.localToGlobal1y(ex,ey)
 
 				for j in np.arange(n2):
 					cj[j] = w[inds0[j]]
@@ -1030,7 +1030,7 @@ class RotationalMat2:
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds0 = topo.localToGlobal0(ex,ey)
-				inds1y = topo.localToGlobal1y(ex,ey) + shift
+				inds1y = topo.localToGlobal1y(ex,ey)
 				inds1x = topo.localToGlobal1x(ex,ey)
 				inds2 = topo.localToGlobal2(ex,ey)
 
@@ -1065,7 +1065,7 @@ class RotationalMat2:
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds1x = topo.localToGlobal1x(ex,ey)
-				inds1y = topo.localToGlobal1y(ex,ey) + shift
+				inds1y = topo.localToGlobal1y(ex,ey)
 				for jj in np.arange(ne*ne):
 					row = inds1x[jj/ne]
 					col = inds1y[jj%ne]
@@ -1075,7 +1075,7 @@ class RotationalMat2:
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1y = topo.localToGlobal1y(ex,ey) + shift
+				inds1y = topo.localToGlobal1y(ex,ey)
 				inds1x = topo.localToGlobal1x(ex,ey)
 				for jj in np.arange(ne*ne):
 					row = inds1y[jj/ne]
