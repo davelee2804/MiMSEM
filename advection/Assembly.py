@@ -1159,10 +1159,11 @@ class UyyMat:
 		rows = np.zeros(nnz,dtype=np.int32)
 		cols = np.zeros(nnz,dtype=np.int32)
 		vals = np.zeros(nnz,dtype=np.float64)
+		shift = (topo.n*topo.nx)*(topo.n*topo.ny)
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey)
+				inds1 = topo.localToGlobal1y(ex,ey) - shift
 				for jj in np.arange(ncl*ncl):
 					row = inds1[jj/ncl]
 					col = inds1[jj%ncl]
@@ -1187,7 +1188,7 @@ class UyyMat:
 		ii = 0
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
-				inds1 = topo.localToGlobal1y(ex,ey)
+				inds1 = topo.localToGlobal1y(ex,ey) - shift
 				for jj in np.arange(ne*ne):
 					row = inds1[jj/ne]
 					col = inds1[jj%ne]
@@ -1216,11 +1217,12 @@ class UxyMat:
 		rows = np.zeros(nnz,dtype=np.int32)
 		cols = np.zeros(nnz,dtype=np.int32)
 		vals = np.zeros(nnz,dtype=np.float64)
+		shift = (topo.n*topo.nx)*(topo.n*topo.ny)
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds1x = topo.localToGlobal1x(ex,ey)
-				inds1y = topo.localToGlobal1y(ex,ey)
+				inds1y = topo.localToGlobal1y(ex,ey) - shift
 				for jj in np.arange(ncl*ncl):
 					row = inds1x[jj/ncl]
 					col = inds1y[jj%ncl]
@@ -1246,7 +1248,7 @@ class UxyMat:
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds1x = topo.localToGlobal1x(ex,ey)
-				inds1y = topo.localToGlobal1y(ex,ey)
+				inds1y = topo.localToGlobal1y(ex,ey) - shift
 				for jj in np.arange(ne*ne):
 					row = inds1x[jj/ne]
 					col = inds1y[jj%ne]
@@ -1275,11 +1277,12 @@ class UyxMat:
 		rows = np.zeros(nnz,dtype=np.int32)
 		cols = np.zeros(nnz,dtype=np.int32)
 		vals = np.zeros(nnz,dtype=np.float64)
+		shift = (topo.n*topo.nx)*(topo.n*topo.ny)
 
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds1x = topo.localToGlobal1x(ex,ey)
-				inds1y = topo.localToGlobal1y(ex,ey)
+				inds1y = topo.localToGlobal1y(ex,ey) - shift
 				for jj in np.arange(ncl*ncl):
 					row = inds1y[jj/ncl]
 					col = inds1x[jj%ncl]
@@ -1305,7 +1308,7 @@ class UyxMat:
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds1x = topo.localToGlobal1x(ex,ey)
-				inds1y = topo.localToGlobal1y(ex,ey)
+				inds1y = topo.localToGlobal1y(ex,ey) - shift
 				for jj in np.arange(ne*ne):
 					row = inds1y[jj/ne]
 					col = inds1x[jj%ne]

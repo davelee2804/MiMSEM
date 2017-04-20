@@ -41,11 +41,6 @@ class SWEqn:
 		Mxto0 = Xto0(topo,quad).M
 		self.f = Mxto0*f
 
-		M0 = Pmat(topo,quad).M
-		M0inv = la.inv(M0)
-
-		self.Curl = self.detInv*M0inv*D01*M1
-
 	def diagnose_q(self,h,u):
 		w = self.D01M1*u
 		f = self.M0*self.f
@@ -60,6 +55,12 @@ class SWEqn:
 		F = M1invM1h*u
 		return F
 
+	def diagnose_K(self,u):
+		WtQU = WtQUmat(self.topo,self.quad,u).M
+		K = self.M2inv*WtQU
+		k = 0.5*K*u
+		return k
+
 	def prognose_h(self,hi,F,dt):
 		hf = hi - dt*self.detInv*self.D21*F
 		return hf
@@ -68,9 +69,7 @@ class SWEqn:
 		R = RotationalMat2(self.topo,self.quad,q).M
 		qCrossF = R*F
 		
-		WtQU = WtQUmat(self.topo,self.quad,ud).M
-		K = self.M2inv*WtQU
-		k = 0.5*K*ud
+		k = self.diagnose_K(ud)
 		hBar = k + self.g*hd
 		gE = self.D12M2*hBar
 

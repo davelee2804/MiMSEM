@@ -74,14 +74,17 @@ def momy_func(x,y):
 	return pres_func(x,y)*vely_func(x,y)
 
 def Plot(x,y,dat,title,fname,zmin,zmax):
-	levs = np.linspace(zmin,zmax,201,endpoint=True)
-	plt.contourf(x,y,dat,101)
+	if np.abs(zmin) > 0.01 or np.abs(zmax) > 0.01:
+		levs = np.linspace(zmin,zmax,101,endpoint=True)
+		plt.contourf(x,y,dat,levs)
+	else:
+		plt.contourf(x,y,dat,101)
 	plt.colorbar()
 	plt.title(title)
 	plt.savefig(fname)
 	plt.clf()
 
-def TestConservation(topo,quad,lx,ly,f,g,h,u,q,D01):
+def TestConservation(topo,quad,lx,ly,f,g,h,u,q,k,D01):
 	det = 0.5*lx/topo.nx*0.5*ly/topo.ny
 	shift1Form = topo.nx*topo.ny*topo.n*topo.n
 
@@ -135,28 +138,17 @@ def TestConservation(topo,quad,lx,ly,f,g,h,u,q,D01):
 					wq = wq + w[inds0[ii]]*Njxi[jx,ix]*Njxi[jy,iy]
 
 				hq = 0.0
+				kq = 0.0
 				for ii in np.arange(n*n):
 					ix = ii%n
 					iy = ii/n
 					hq = hq + h[inds2[ii]]*Ejxi[jx,ix]*Ejxi[jy,iy]
-
-				uq = 0.0
-				for ii in np.arange(n*np1):
-					ix = ii%np1
-					iy = ii/np1
-					uq = uq + u[inds1x[ii]]*Njxi[jx,ix]*Ejxi[jy,iy]
-
-				vq = 0.0
-				for ii in np.arange(n*np1):
-					ix = ii%n
-					iy = ii/n
-					vq = vq + u[inds1y[ii]]*Ejxi[jx,ix]*Njxi[jy,iy]
+					kq = kq + k[inds2[ii]]*Ejxi[jx,ix]*Ejxi[jy,iy]
 
 				volume_e = volume_e + wt*hq
-				#potVort_e = potVort_e + wt*(qq*hq-f)
 				potVort_e = potVort_e + wt*wq
 				potEnst_e = potEnst_e + 0.5*wt*qq*qq*hq
-				totEner_e = totEner_e + 0.5*wt*(hq*(uq*uq + vq*vq) + g*hq*hq)
+				totEner_e = totEner_e + wt*(hq*kq + 0.5*g*hq*hq)
 
 			volume = volume + volume_e
 			potVort = potVort + potVort_e
@@ -168,7 +160,7 @@ def TestConservation(topo,quad,lx,ly,f,g,h,u,q,D01):
 nx = 16
 ny = 16
 n = 3 # basis order
-m = 3 # quadrature order
+m = 6 # quadrature order
 np1 = n+1
 mp1 = m+1
 nxn = nx*n
@@ -411,8 +403,9 @@ for ey in np.arange(ny):
 Plot(x,y,u2d,'dpx (analytic)','dpx_tst.png',0.0,0.0)
 Plot(x,y,v2d,'dpy (analytic)','dpy_tst.png',0.0,0.0)
 
-dt = 1.0*dt
-nsteps = 1*nsteps
+timeStride = 2
+dt = dt/timeStride
+nsteps = timeStride*nsteps
 
 volC = np.zeros((nsteps),dtype=np.float64)
 pvC = np.zeros((nsteps),dtype=np.float64)
@@ -425,7 +418,8 @@ M0inv = la.inv(M0)
 D10 = BoundaryMat10(topo).M
 D01 = D10.transpose()
 Curl = M0inv*D01*M1
-vol0, pv0, pe0, te0 = TestConservation(topo,quad,lx,ly,f,g,hi,ui,qi,Curl)
+ki = sw.diagnose_K(ui)
+vol0, pv0, pe0, te0 = TestConservation(topo,quad,lx,ly,f,g,hi,ui,qi,ki,Curl)
 print 'initial volume              %10.8e'%vol0
 print 'initial vorticity           %10.8e'%pv0
 print 'initial potential enstrophy %10.8e'%pe0
@@ -436,44 +430,47 @@ for step in np.arange(nsteps) + 1:
 
 	hf,uf = sw.solveRK2(hi,ui,dt)
 	qf = sw.diagnose_q(hf,uf)
+	kf = sw.diagnose_K(uf)
 
-	print '\tplotting height and velocity fields %.3d'%step
+	if np.mod(step,timeStride) == 0:
+		print '\tplotting height and velocity fields %.3d'%step
+		for ey in np.arange(ny):
+			for ex in np.arange(nx):
+				inds0q = topo_q.localToGlobal0(ex,ey)
+				inds0 = topo.localToGlobal0(ex,ey)
+				inds1x = topo.localToGlobal1x(ex,ey)
+				inds1y = topo.localToGlobal1y(ex,ey)
+				inds2 = topo.localToGlobal2(ex,ey)
+				for jj in np.arange(mp1*mp1):
+					if jj%mp1 == m or jj/mp1 == m:
+						continue
+					i = inds0q[jj]%nxm
+					j = inds0q[jj]/nxm
+					ii = i%m
+					jj = j%m
 
-	for ey in np.arange(ny):
-		for ex in np.arange(nx):
-			inds0q = topo_q.localToGlobal0(ex,ey)
-			inds0 = topo.localToGlobal0(ex,ey)
-			inds1x = topo.localToGlobal1x(ex,ey)
-			inds1y = topo.localToGlobal1y(ex,ey)
-			inds2 = topo.localToGlobal2(ex,ey)
-			for jj in np.arange(mp1*mp1):
-				if jj%mp1 == m or jj/mp1 == m:
-					continue
-				i = inds0q[jj]%nxm
-				j = inds0q[jj]/nxm
-				ii = i%m
-				jj = j%m
+					q2d[j][i] = 0.0
+					for kk in np.arange(np1*np1):
+						q2d[j][i] = q2d[j][i] + qf[inds0[kk]]*Njxi[ii,kk%np1]*Njxi[jj,kk/np1]
 
-				q2d[j][i] = 0.0
-				for kk in np.arange(np1*np1):
-					q2d[j][i] = q2d[j][i] + qf[inds0[kk]]*Njxi[ii,kk%np1]*Njxi[jj,kk/np1]
+					u2d[j][i] = 0.0
+					v2d[j][i] = 0.0
+					for kk in np.arange(np1*n):
+						u2d[j][i] = u2d[j][i] + uf[inds1x[kk]]*Njxi[ii,kk%np1]*Ejxi[jj,kk/np1]
+						v2d[j][i] = v2d[j][i] + uf[inds1y[kk]]*Ejxi[ii,kk%n]*Njxi[jj,kk/n]
 
-				u2d[j][i] = 0.0
-				v2d[j][i] = 0.0
-				for kk in np.arange(np1*n):
-					u2d[j][i] = u2d[j][i] + uf[inds1x[kk]]*Njxi[ii,kk%np1]*Ejxi[jj,kk/np1]
-					v2d[j][i] = v2d[j][i] + uf[inds1y[kk]]*Ejxi[ii,kk%n]*Njxi[jj,kk/n]
+					p2d[j][i] = 0.0
+					for kk in np.arange(n*n):
+						p2d[j][i] = p2d[j][i] + hf[inds2[kk]]*Ejxi[ii,kk%n]*Ejxi[jj,kk/n]
 
-				p2d[j][i] = 0.0
-				for kk in np.arange(n*n):
-					p2d[j][i] = p2d[j][i] + hf[inds2[kk]]*Ejxi[ii,kk%n]*Ejxi[jj,kk/n]
+		Plot(x,y,q2d,'w (numeric)','vort_%.3d'%(step/timeStride) + '.png',0.0,0.0)
+		Plot(x,y,u2d,'u (numeric)','velx_%.3d'%(step/timeStride) + '.png',0.0,0.0)
+		Plot(x,y,v2d,'v (numeric)','vely_%.3d'%(step/timeStride) + '.png',0.0,0.0)
+		Plot(x,y,p2d,'h (numeric)','pres_%.3d'%(step/timeStride) + '.png',0.9,2.0)
 
-	Plot(x,y,q2d,'w (numeric)','vort_%.3d'%step + '.png',0.0,0.0)
-	Plot(x,y,u2d,'u (numeric)','velx_%.3d'%step + '.png',0.0,0.0)
-	Plot(x,y,v2d,'v (numeric)','vely_%.3d'%step + '.png',0.0,0.0)
-	Plot(x,y,p2d,'h (numeric)','pres_%.3d'%step + '.png',0.0,0.0)
+	print '\tdiagnosing conservation for time step %.3d'%step
 
-	vol, pv, pe, te = TestConservation(topo,quad,lx,ly,f,g,hf,uf,qf,Curl)
+	vol, pv, pe, te = TestConservation(topo,quad,lx,ly,f,g,hf,uf,qf,kf,Curl)
 
 	print '\tvolume conservation:               %10.8e'%((vol - vol0)/vol0)
 	print '\tvorticity conservation:            %10.8e'%(pv - pv0)
@@ -485,10 +482,10 @@ for step in np.arange(nsteps) + 1:
 	peC[step-1] = (pe-pe0)/pe0
 	teC[step-1] = (te-te0)/te0
 
-	print repr(volC[:step])
-	print repr(pvC[:step])
-	print repr(peC[:step])
-	print repr(teC[:step])
+	np.save('volume_%d'%timeStride,volC[:step])
+	np.save('vorticity_%d'%timeStride,pvC[:step])
+	np.save('potentialEnstrophy_%d'%timeStride,peC[:step])
+	np.save('energy_%d'%timeStride,teC[:step])
 
 	hi[:] = hf[:]
 	ui[:] = uf[:]
