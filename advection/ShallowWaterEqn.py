@@ -66,7 +66,7 @@ class SWEqn:
 		return hf
 
 	def prognose_u(self,hi,ui,hd,ud,q,F,dt):
-		R = RotationalMat2(self.topo,self.quad,q).M
+		R = RotationalMat(self.topo,self.quad,q).M
 		qCrossF = R*F
 		
 		k = self.diagnose_K(ud)

@@ -16,55 +16,62 @@ from ShallowWaterEqn import *
 def psi1(x,y):
 	xl = x - np.pi - np.pi/3.0
 	yo = y - np.pi
-	return np.exp(-4.0*(xl*xl + yo*yo))
+	#return np.exp(-2.5*(xl*xl + yo*yo))
+	return -1.0*np.exp(-2.5*(xl*xl + yo*yo))
 
 def psi2(x,y):
 	xr = x - np.pi + np.pi/3.0
 	yo = y - np.pi
-	return np.exp(-4.0*(xr*xr + yo*yo))
+	#return np.exp(-2.5*(xr*xr + yo*yo))
+	return -1.0*np.exp(-2.5*(xr*xr + yo*yo))
 
 def strm_func(x,y):
 	return psi1(x,y) + psi2(x,y)
 
 def velx_func(x,y):
 	yo = y - np.pi
-	return +8.0*yo*psi1(x,y) + 8.0*yo*psi2(x,y)
+	return +5.0*yo*psi1(x,y) + 5.0*yo*psi2(x,y)
 
 def vely_func(x,y):
 	xl = x - np.pi - np.pi/3.0
 	xr = x - np.pi + np.pi/3.0
-	return -8.0*xl*psi1(x,y) - 8.0*xr*psi2(x,y)
+	return -5.0*xl*psi1(x,y) - 5.0*xr*psi2(x,y)
 
 def pres_func(x,y):
 	H = 1.0
 	f = 10.0
 	g = 10.0
-	return (f/g)*strm_func(x,y) + H
+	#return (f/g)*strm_func(x,y) + H
+	return (-1.0*f/g)*strm_func(x,y) + H
 
 def dpdx_func(x,y):
 	xl = x - np.pi - np.pi/3.0
 	xr = x - np.pi + np.pi/3.0
-	return -8.0*xl*psi1(x,y) - 8.0*xr*psi2(x,y)
+	#return -5.0*xl*psi1(x,y) - 5.0*xr*psi2(x,y)
+	return 5.0*xl*psi1(x,y) + 5.0*xr*psi2(x,y)
 
 def dpdy_func(x,y):
 	yo = y - np.pi
-	return -8.0*yo*psi1(x,y) - 8.0*yo*psi2(x,y)
+	#return -5.0*yo*psi1(x,y) - 5.0*yo*psi2(x,y)
+	return 5.0*yo*psi1(x,y) + 5.0*yo*psi2(x,y)
 
 def d2pdxx_func(x,y):
 	xl = x - np.pi - np.pi/3.0
 	xr = x - np.pi + np.pi/3.0
-	return - 8.0*psi1(x,y) - 8.0*psi2(x,y) + 64.0*xl*xl*psi1(x,y) + 64.0*xr*xr*psi2(x,y)
+	#return - 5.0*psi1(x,y) - 5.0*psi2(x,y) + 25.0*xl*xl*psi1(x,y) + 25.0*xr*xr*psi2(x,y)
+	return 5.0*psi1(x,y) + 5.0*psi2(x,y) - 25.0*xl*xl*psi1(x,y) - 25.0*xr*xr*psi2(x,y)
 
 def d2pdyy_func(x,y):
 	yo = y - np.pi
-	return - 8.0*psi1(x,y) - 8.0*psi2(x,y) + 64.0*yo*yo*psi1(x,y) + 64.0*yo*yo*psi2(x,y)
+	#return - 5.0*psi1(x,y) - 5.0*psi2(x,y) + 25.0*yo*yo*psi1(x,y) + 25.0*yo*yo*psi2(x,y)
+	return 5.0*psi1(x,y) + 5.0*psi2(x,y) - 25.0*yo*yo*psi1(x,y) - 25.0*yo*yo*psi2(x,y)
 
 def vort_func(x,y):
 	xl = x - np.pi - np.pi/3.0
 	xr = x - np.pi + np.pi/3.0
 	yo = y - np.pi
-	w1 = 16.0*(4.0*(xl*xl + yo*yo) - 1.0)*psi1(x,y)
-	w2 = 16.0*(4.0*(xr*xr + yo*yo) - 1.0)*psi2(x,y)
+	w1 = 6.25*(2.5*(xl*xl + yo*yo) - 1.0)*psi1(x,y)
+	w2 = 6.25*(2.5*(xr*xr + yo*yo) - 1.0)*psi2(x,y)
 	return (w1 + w2 + 10.0)/pres_func(x,y)
 
 def momx_func(x,y):
@@ -200,7 +207,7 @@ h2d = np.zeros((nym,nxm),dtype=np.float64)
 dt = 0.10*dx/2.0/n
 f = 10.0
 g = 10.0
-nsteps = 20
+nsteps = 50
 
 x = np.zeros(nxm)
 y = np.zeros(nym)
@@ -403,7 +410,7 @@ for ey in np.arange(ny):
 Plot(x,y,u2d,'dpx (analytic)','dpx_tst.png',0.0,0.0)
 Plot(x,y,v2d,'dpy (analytic)','dpy_tst.png',0.0,0.0)
 
-timeStride = 2
+timeStride = 1
 dt = dt/timeStride
 nsteps = timeStride*nsteps
 
@@ -489,3 +496,6 @@ for step in np.arange(nsteps) + 1:
 
 	hi[:] = hf[:]
 	ui[:] = uf[:]
+
+np.save('velocity',uf)
+np.save('pressure',hf)
