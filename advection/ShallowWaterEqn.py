@@ -39,7 +39,8 @@ class SWEqn:
 
 		# 0 form coriolis vector
 		Mxto0 = Xto0(topo,quad).M
-		self.f = Mxto0*f
+		fx = f*np.ones((topo_q.n*topo_q.n*topo.nx*topo.ny),dtype=np.float64)
+		self.f = Mxto0*fx
 
 	def diagnose_q(self,h,u):
 		w = self.D01M1*u
@@ -74,13 +75,6 @@ class SWEqn:
 		gE = self.D12M2*hBar
 
 		uf = ui - dt*self.M1inv*(qCrossF + gE)
-
-		#WtQU = WtQUmat(self.topo,self.quad,ud).M
-		#k = WtQU*ud
-		#dk = self.detInv*self.D12*k
-		#dh = self.D12M2*hd
-
-		#uf = ui - dt*self.M1inv*(qCrossF + 0.5*dk + self.g*dh)
 
 		return uf
 
