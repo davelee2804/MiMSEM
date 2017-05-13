@@ -13,172 +13,12 @@ from Mats2D import *
 from Assembly import *
 from Proj import *
 from ShallowWaterEqn import *
-
-def psi1(x,y):
-	xl = x - np.pi - np.pi/3.0
-	yo = y - np.pi
-	return np.exp(-2.5*(xl*xl + yo*yo))
-
-def psi2(x,y):
-	xr = x - np.pi + np.pi/3.0
-	yo = y - np.pi
-	return np.exp(-2.5*(xr*xr + yo*yo))
-
-def strm_func(x,y):
-	return psi1(x,y) + psi2(x,y)
-
-def velx_func(x,y):
-	yo = y - np.pi
-	return +5.0*yo*psi1(x,y) + 5.0*yo*psi2(x,y)
-
-def vely_func(x,y):
-	xl = x - np.pi - np.pi/3.0
-	xr = x - np.pi + np.pi/3.0
-	return -5.0*xl*psi1(x,y) - 5.0*xr*psi2(x,y)
-
-def pres_func(x,y):
-	f = 8.0
-	g = 8.0
-	H = 8.0
-	return (f/g)*strm_func(x,y) + H
-
-def vort_func(x,y):
-	f = 8.0
-	xl = x - np.pi - np.pi/3.0
-	xr = x - np.pi + np.pi/3.0
-	yo = y - np.pi
-	w1 = 10.0*(2.5*(xl*xl + yo*yo) - 1.0)*psi1(x,y)
-	w2 = 10.0*(2.5*(xr*xr + yo*yo) - 1.0)*psi2(x,y)
-	return (w1 + w2 + f)/pres_func(x,y)
-
-def qFx_func(x,y):
-	f = 8.0
-	xl = x - np.pi - np.pi/3.0
-	xr = x - np.pi + np.pi/3.0
-	yo = y - np.pi
-	w1 = 10.0*(2.5*(xl*xl + yo*yo) - 1.0)*psi1(x,y)
-	w2 = 10.0*(2.5*(xr*xr + yo*yo) - 1.0)*psi2(x,y)
-	return (w1 + w2 + f)*velx_func(x,y)
-	
-def qFy_func(x,y):
-	f = 8.0
-	xl = x - np.pi - np.pi/3.0
-	xr = x - np.pi + np.pi/3.0
-	yo = y - np.pi
-	w1 = 10.0*(2.5*(xl*xl + yo*yo) - 1.0)*psi1(x,y)
-	w2 = 10.0*(2.5*(xr*xr + yo*yo) - 1.0)*psi2(x,y)
-	return (w1 + w2 + f)*vely_func(x,y)
-
-def dpdx_func(x,y):
-	yo = y - np.pi
-	xl = x - np.pi - np.pi/3.0
-	xr = x - np.pi + np.pi/3.0
-	return -5.0*xl*psi1(x,y) - 5.0*xr*psi2(x,y)
-
-def d2pdxx_func(x,y):
-	yo = y - np.pi
-	xl = x - np.pi - np.pi/3.0
-	xr = x - np.pi + np.pi/3.0
-	return -5.0*psi1(x,y) - 5.0*psi2(x,y) +25.0*xl*xl*psi1(x,y) + 25.0*xr*xr*psi2(x,y)
-
-def dpdy_func(x,y):
-	yo = y - np.pi
-	xl = x - np.pi - np.pi/3.0
-	xr = x - np.pi + np.pi/3.0
-	return -5.0*yo*psi1(x,y) - 5.0*yo*psi2(x,y)
-
-def d2pdyy_func(x,y):
-	yo = y - np.pi
-	xl = x - np.pi - np.pi/3.0
-	xr = x - np.pi + np.pi/3.0
-	return -5.0*psi1(x,y) - 5.0*psi2(x,y) + 25.0*yo*yo*psi1(x,y) + 25.0*yo*yo*psi2(x,y)
-
-def Plot(x,y,dat,title,fname,zmin,zmax):
-	if np.abs(zmin) > 0.01 or np.abs(zmax) > 0.01:
-		levs = np.linspace(zmin,zmax,101,endpoint=True)
-		plt.contourf(x,y,dat,levs)
-	else:
-		plt.contourf(x,y,dat,101)
-	plt.colorbar()
-	plt.title(title)
-	plt.savefig(fname)
-	plt.clf()
-
-def TestConservation(topo,quad,lx,ly,f,g,h,u,q,k,w):
-	det = 0.5*lx/topo.nx*0.5*ly/topo.ny
-	shift1Form = topo.nx*topo.ny*topo.n*topo.n
-
-	n = topo.n
-	np1 = topo.n + 1
-	mp1 = quad.n + 1
-
-	edge = LagrangeEdge(n)
-	Ejxi = np.zeros((mp1,n),dtype=np.float64)
-	for j in np.arange(n):
-		for i in np.arange(mp1):
-			Ejxi[i,j] = edge.eval(quad.x[i],j)
-
-	node = LagrangeNode(n)
-	Njxi = np.zeros((mp1,np1),dtype=np.float64)
-	for j in np.arange(np1):
-		for i in np.arange(mp1):
-			Njxi[i,j] = node.eval(quad.x[i],j)
-
-	volume = 0.0
-	potVort = 0.0
-	potEnst = 0.0
-	totEner = 0.0
-
-	for ex in np.arange(topo.nx):
-		for ey in np.arange(topo.ny):
-			inds0 = topo.localToGlobal0(ex,ey)
-			inds2 = topo.localToGlobal2(ex,ey)
-			inds1x = topo.localToGlobal1x(ex,ey)
-			inds1y = topo.localToGlobal1x(ex,ey) + shift1Form
-
-			volume_e = 0.0
-			potVort_e = 0.0
-			potEnst_e = 0.0
-			totEner_e = 0.0
-			for jj in np.arange(mp1*mp1):
-				jx = jj%mp1
-				jy = jj/mp1
-				wx = quad.w[jx]
-				wy = quad.w[jy]
-				wt = wx*wy
-
-				qq = 0.0
-				wq = 0.0
-				for ii in np.arange(np1*np1):
-					ix = ii%np1
-					iy = ii/np1
-					qq = qq + q[inds0[ii]]*Njxi[jx,ix]*Njxi[jy,iy]
-					wq = wq + w[inds0[ii]]*Njxi[jx,ix]*Njxi[jy,iy]
-
-				hq = 0.0
-				kq = 0.0
-				for ii in np.arange(n*n):
-					ix = ii%n
-					iy = ii/n
-					hq = hq + h[inds2[ii]]*Ejxi[jx,ix]*Ejxi[jy,iy]
-					kq = kq + k[inds2[ii]]*Ejxi[jx,ix]*Ejxi[jy,iy]
-
-				volume_e = volume_e + wt*hq
-				potVort_e = potVort_e + wt*wq
-				potEnst_e = potEnst_e + 0.5*wt*qq*qq*hq
-				totEner_e = totEner_e + wt*(hq*kq + 0.5*g*hq*hq)
-
-			volume = volume + volume_e
-			potVort = potVort + potVort_e
-			potEnst = potEnst + potEnst_e
-			totEner = totEner + totEner_e
-
-	return det*volume, det*potVort, det*potEnst, det*totEner
+from Utils import *
 
 nx = 20
 ny = 20
 n = 3 # basis order
-m = 6 # quadrature order
+m = 3 # quadrature order
 np1 = n+1
 mp1 = m+1
 nxn = nx*n
@@ -224,9 +64,9 @@ K2da = np.zeros((nym,nxm),dtype=np.float64)
 Fx2da = np.zeros((nym,nxm),dtype=np.float64)
 Fy2da = np.zeros((nym,nxm),dtype=np.float64)
 
-f = 8.0
-g = 8.0
-H = 8.0
+f = 5.0
+g = 5.0
+H = 5.0
 
 x = np.zeros(nxm)
 y = np.zeros(nym)
@@ -281,10 +121,17 @@ else:
 				y[j] = ey*dy + 0.5*dy*(quad.x[jj/mp1] + 1.0)
 
 qi = sw.diagnose_q(hi,ui)
-Ki = sw.diagnose_K(ui)
 Fi = sw.diagnose_F(hi,ui)
+Ki = sw.diagnose_K(ui)
 
 if startStep == 0:
+	l2Err_q,l2Err_Fx,l2Err_Fy,l2Err_K = TestDiagnosticError(topo,quad,dx,dy,qi,Fi,Ki)
+
+	print 'diagnostic error: q...%10.8e'%l2Err_q
+	print 'diagnostic error: Fx..%10.8e'%l2Err_Fx
+	print 'diagnostic error: Fy..%10.8e'%l2Err_Fy
+	print 'diagnostic error: K...%10.8e'%l2Err_K
+
 	print 'testing diagnostic terms...'
 	for ey in np.arange(ny):
 		for ex in np.arange(nx):
@@ -496,14 +343,14 @@ for step in np.arange(nsteps) + 1 + startStep*timeStride:
 	Kf = sw.diagnose_K(uf)
 	wf = Curl*uf
 
-	if np.mod(step,8*timeStride) == 0:
+	if np.mod(step,1*timeStride) == 0:
 		print '\tplotting height and velocity fields %.4d'%step
 		for ey in np.arange(ny):
 			for ex in np.arange(nx):
 				inds0q = topo_q.localToGlobal0(ex,ey)
 				inds0 = topo.localToGlobal0(ex,ey)
-				inds1x = topo.localToGlobal1x(ex,ey)
-				inds1y = topo.localToGlobal1y(ex,ey)
+				#inds1x = topo.localToGlobal1x(ex,ey)
+				#inds1y = topo.localToGlobal1y(ex,ey)
 				inds2 = topo.localToGlobal2(ex,ey)
 				for jj in np.arange(mp1*mp1):
 					if jj%mp1 == m or jj/mp1 == m:
@@ -513,26 +360,26 @@ for step in np.arange(nsteps) + 1 + startStep*timeStride:
 					ii = i%m
 					jj = j%m
 
-					q2dn[j][i] = 0.0
+					#q2dn[j][i] = 0.0
 					q2da[j][i] = 0.0
 					for kk in np.arange(np1*np1):
-						q2dn[j][i] = q2dn[j][i] + qf[inds0[kk]]*Njxi[ii,kk%np1]*Njxi[jj,kk/np1]
+						#q2dn[j][i] = q2dn[j][i] + qf[inds0[kk]]*Njxi[ii,kk%np1]*Njxi[jj,kk/np1]
 						q2da[j][i] = q2da[j][i] + wf[inds0[kk]]*Njxi[ii,kk%np1]*Njxi[jj,kk/np1]
 
-					u2dn[j][i] = 0.0
-					v2dn[j][i] = 0.0
-					for kk in np.arange(np1*n):
-						u2dn[j][i] = u2dn[j][i] + uf[inds1x[kk]]*Njxi[ii,kk%np1]*Ejxi[jj,kk/np1]
-						v2dn[j][i] = v2dn[j][i] + uf[inds1y[kk]]*Ejxi[ii,kk%n]*Njxi[jj,kk/n]
+					#u2dn[j][i] = 0.0
+					#v2dn[j][i] = 0.0
+					#for kk in np.arange(np1*n):
+					#	u2dn[j][i] = u2dn[j][i] + uf[inds1x[kk]]*Njxi[ii,kk%np1]*Ejxi[jj,kk/np1]
+					#	v2dn[j][i] = v2dn[j][i] + uf[inds1y[kk]]*Ejxi[ii,kk%n]*Njxi[jj,kk/n]
 
 					h2dn[j][i] = 0.0
 					for kk in np.arange(n*n):
 						h2dn[j][i] = h2dn[j][i] + hf[inds2[kk]]*Ejxi[ii,kk%n]*Ejxi[jj,kk/n]
 
 		Plot(x,y,q2da,'w (numeric)','vort_%.4d'%(step/timeStride) + '.png',0.0,0.0)
-		Plot(x,y,q2dn,'q (numeric)','potv_%.4d'%(step/timeStride) + '.png',0.0,0.0)
-		Plot(x,y,u2dn,'u (numeric)','velx_%.4d'%(step/timeStride) + '.png',0.0,0.0)
-		Plot(x,y,v2dn,'v (numeric)','vely_%.4d'%(step/timeStride) + '.png',0.0,0.0)
+		#Plot(x,y,q2dn,'q (numeric)','potv_%.4d'%(step/timeStride) + '.png',0.0,0.0)
+		#Plot(x,y,u2dn,'u (numeric)','velx_%.4d'%(step/timeStride) + '.png',0.0,0.0)
+		#Plot(x,y,v2dn,'v (numeric)','vely_%.4d'%(step/timeStride) + '.png',0.0,0.0)
 		Plot(x,y,h2dn,'h (numeric)','pres_%.4d'%(step/timeStride) + '.png',0.0,0.0)
 
 	print '\tdiagnosing conservation for time step %.4d'%step
