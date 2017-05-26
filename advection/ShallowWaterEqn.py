@@ -9,11 +9,12 @@ from BoundaryMat import *
 from Proj import *
 
 class SWEqn:
-	def __init__(self,topo,quad,topo_q,lx,ly,f,g):
+	def __init__(self,topo,quad,topo_q,lx,ly,f,g,apvm):
 		self.topo = topo
 		self.quad = quad
 		self.topo_q = topo_q # topology for the quadrature points as 0 forms
 		self.g = g
+		self.apvm = apvm
 		det = 0.5*lx/topo.nx
 		self.detInv = 1.0/det
 
@@ -31,6 +32,9 @@ class SWEqn:
 		D10 = BoundaryMat10(topo).M
 		D01 = D10.transpose()
 		self.D01M1 = self.detInv*D01*M1
+
+		self.D10 = self.detInv*D10
+		self.M0inv = M0inv
 
 		# 2 form gradient matrix
 		self.D21 = BoundaryMat(topo).M
@@ -67,6 +71,13 @@ class SWEqn:
 		return hf
 
 	def prognose_u(self,hi,ui,hd,ud,q,F,dt):
+		# remove the anticipated potential vorticity from q
+		if self.apvm .gt. 0.0:
+			dq = self.D10*q
+			PtQU = PtQUmat(self.topo,self.quad,dq).M
+			udq = self.M0inv*PtQU*ud
+			q = q - self.apvm*udq
+
 		R = RotationalMat(self.topo,self.quad,q).M
 		qCrossF = R*F
 		

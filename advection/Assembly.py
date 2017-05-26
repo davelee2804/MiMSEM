@@ -759,6 +759,108 @@ class WtQUmat:
 
 		return maps, ii
 
+# project the potential vorticity gradient velocity product onto the 0 forms
+class PtQUmat:
+	def __init__(self,topo,quad,dq):
+		Q = Wii(quad.n).A
+		M1x = M1x_j_Exy_i(topo.n,quad.n)
+		M1y = M1y_j_Exy_i(topo.n,quad.n)
+		P = M0_j_xy_i(topo.n,quad.n).A
+		Pt = P.transpose()
+		PtQ = mult(Pt,Q)
+		
+		maps,nnz = self.genMap(topo)
+		rows = np.zeros(nnz,dtype=np.int32)
+		cols = np.zeros(nnz,dtype=np.int32)
+		vals = np.zeros(nnz,dtype=np.float64)
+
+		np1 = topo.n+1
+		nrl = np1*np1
+		ncl = topo.n*np1
+		shift = topo.nx*topo.ny*topo.n*topo.n
+
+		cj = np.zeros((ncl),dtype=np.float64)
+
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds1x = topo.localToGlobal1x(ex,ey)
+				inds1y = topo.localToGlobal1y(ex,ey)
+				inds0 = topo.localToGlobal0(ex,ey)
+
+				for kk in np.arange(ncl):
+					cj[kk] = dq[inds1y[kk]]
+
+				U = M1x.assemble(-1.0*cj)
+				PtQU = mult(PtQ,U)
+
+				for jj in np.arange(nrl*ncl):
+					row = inds0[jj/ncl]
+					col = inds1x[jj%ncl]
+					ii = maps[row][col]
+					if ii == -1:
+						print 'ERROR! assembly'
+					rows[ii] = row
+					cols[ii] = col
+					vals[ii] = vals[ii] + PtQU[jj/ncl][jj%ncl]
+		
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds1x = topo.localToGlobal1x(ex,ey)
+				inds1y = topo.localToGlobal1y(ex,ey)
+				inds0 = topo.localToGlobal0(ex,ey)
+
+				for kk in np.arange(ncl):
+					cj[kk] = dq[inds1x[kk]]
+
+				V = M1y.assemble(cj)
+				PtQV = mult(PtQ,V)
+
+				for jj in np.arange(nrl*ncl):
+					row = inds0[jj/ncl]
+					col = inds1y[jj%ncl]
+					ii = maps[row][col]
+					if ii == -1:
+						print 'ERROR! assembly'
+					rows[ii] = row
+					cols[ii] = col
+					vals[ii] = vals[ii] + PtQV[jj/ncl][jj%ncl]
+
+		nr = topo.nx*topo.ny*topo.n*topo.n
+		nc = 2*topo.nx*topo.ny*topo.n*topo.n
+		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+	def genMap(self,topo):
+		np1 = topo.n+1
+		nrl = np1*np1
+		ncl = topo.n*np1
+		nr = topo.nx*topo.ny*topo.n*topo.n
+		nc = 2*topo.nx*topo.ny*topo.n*topo.n
+		maps = -1*np.ones((nr,nc),dtype=np.int32)
+		ii = 0
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds1 = topo.localToGlobal1x(ex,ey)
+				inds0 = topo.localToGlobal0(ex,ey)
+				for jj in np.arange(nrl*ncl):
+					row = inds0[jj/ncl]
+					col = inds1[jj%ncl]
+					if maps[row][col] == -1:
+						maps[row][col] = ii;
+						ii = ii + 1
+
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds1 = topo.localToGlobal1y(ex,ey)
+				inds0 = topo.localToGlobal0(ex,ey)
+				for jj in np.arange(nrl*ncl):
+					row = inds0[jj/ncl]
+					col = inds1[jj%ncl]
+					if maps[row][col] == -1:
+						maps[row][col] = ii;
+						ii = ii + 1
+
+		return maps, ii
+
 # Projects 2 form field onto the 1 forms and interpolates
 # the velocity there (for the advection equation)
 class InteriorProdAdjMat:
