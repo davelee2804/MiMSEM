@@ -72,7 +72,7 @@ class SWEqn:
 
 	def prognose_u(self,hi,ui,hd,ud,q,F,dt):
 		# remove the anticipated potential vorticity from q
-		if self.apvm .gt. 0.0:
+		if self.apvm > 0.0:
 			dq = self.D10*q
 			PtQU = PtQUmat(self.topo,self.quad,dq).M
 			udq = self.M0inv*PtQU*ud

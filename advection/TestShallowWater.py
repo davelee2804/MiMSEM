@@ -74,10 +74,10 @@ hx = np.zeros(nxm*nym,dtype=np.float64)
 ux = np.zeros(2*nxm*nym,dtype=np.float64)
 wx = np.zeros(nxm*nym,dtype=np.float64)
 
-sw = SWEqn(topo,quad,topo_q,lx,ly,f,g)
+sw = SWEqn(topo,quad,topo_q,lx,ly,f,g,4.0e-7)
 
 startStep = int(sys.argv[1])
-timeStride = 2
+timeStride = 1
 print 'starting from step: %d'%startStep
 if startStep == 0:
 	print 'initializing primitive variables...'
@@ -311,7 +311,7 @@ else:
 
 
 print 'initializing conservation terms...'
-nsteps = 2000
+nsteps = 8000
 #dt = 0.10*dx/2.0/n
 dt = 0.10*dx/np.sqrt(g*H)/n
 dt = dt/timeStride
@@ -327,7 +327,7 @@ M1 = Umat(topo,quad).M
 M0inv = la.inv(M0)
 D10 = BoundaryMat10(topo).M
 D01 = D10.transpose()
-Curl = M0inv*D01*M1
+Curl = (2.0*nx/lx)*M0inv*D01*M1
 wi = Curl*ui
 vol0, pv0, pe0, te0 = TestConservation(topo,quad,lx,ly,f,g,hi,ui,qi,Ki,wi)
 print 'initial volume              %10.8e'%vol0
@@ -343,7 +343,7 @@ for step in np.arange(nsteps) + 1 + startStep*timeStride:
 	Kf = sw.diagnose_K(uf)
 	wf = Curl*uf
 
-	if np.mod(step,1*timeStride) == 0:
+	if np.mod(step,10*timeStride) == 0:
 		print '\tplotting height and velocity fields %.4d'%step
 		for ey in np.arange(ny):
 			for ex in np.arange(nx):
