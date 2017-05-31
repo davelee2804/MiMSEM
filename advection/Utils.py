@@ -17,53 +17,79 @@ def psi2(x,y):
 def strm_func(x,y):
 	return psi1(x,y) + psi2(x,y)
 
-def velx_func(x,y):
+def velx_test(x,y):
 	yo = y - np.pi
 	return +5.0*yo*psi1(x,y) + 5.0*yo*psi2(x,y)
 
-def vely_func(x,y):
+def velx_func(x,y):
+	yo = y - 5.0
+	eps = 2.0#0.5
+	fy = (1.0 - yo*yo)/eps + 1.0
+	return (2.0*yo/eps)*0.1/(np.cosh(fy)*np.cosh(fy))
+
+def vely_test(x,y):
 	xl = x - np.pi - np.pi/3.0
 	xr = x - np.pi + np.pi/3.0
 	return -5.0*xl*psi1(x,y) - 5.0*xr*psi2(x,y)
 
-def pres_func(x,y):
-	f = 5.0
-	g = 5.0
-	H = 5.0
+def vely_func(x,y):
+	return 0.0
+
+def pres_test(x,y):
+	f = 1.0
+	g = 1.0
+	H = 1.0
 	return (f/g)*strm_func(x,y) + H
 
+def pres_test_2(x,y):
+	return 0.25*(np.cos(x-np.pi) + 1.0)*(np.cos(y-np.pi) + 1.0)
+
+def pres_func(x,y):
+	xo = x - 5.0
+	yo = y - 5.0
+	r2 = xo*xo + yo*yo
+	eps = 2.0#0.5
+	fy = (1.0 - yo*yo)/eps + 1.0
+	return 1.0 + 0.1*np.tanh(fy) + 0.005*np.exp(-r2)
+
 def vort_func(x,y):
-	f = 5.0
+	f = 1.0
 	xl = x - np.pi - np.pi/3.0
 	xr = x - np.pi + np.pi/3.0
 	yo = y - np.pi
 	w1 = 10.0*(2.5*(xl*xl + yo*yo) - 1.0)*psi1(x,y)
 	w2 = 10.0*(2.5*(xr*xr + yo*yo) - 1.0)*psi2(x,y)
-	return (w1 + w2 + f)/pres_func(x,y)
+	#return (w1 + w2 + f)/pres_func(x,y)
+	return (w1 + w2 + f)/pres_test(x,y)
 
 def qFx_func(x,y):
-	f = 5.0
+	f = 1.0
 	xl = x - np.pi - np.pi/3.0
 	xr = x - np.pi + np.pi/3.0
 	yo = y - np.pi
 	w1 = 10.0*(2.5*(xl*xl + yo*yo) - 1.0)*psi1(x,y)
 	w2 = 10.0*(2.5*(xr*xr + yo*yo) - 1.0)*psi2(x,y)
-	return (w1 + w2 + f)*velx_func(x,y)
+	#return (w1 + w2 + f)*velx_func(x,y)
+	return (w1 + w2 + f)*velx_test(x,y)
 	
 def qFy_func(x,y):
-	f = 5.0
+	f = 1.0
 	xl = x - np.pi - np.pi/3.0
 	xr = x - np.pi + np.pi/3.0
 	yo = y - np.pi
 	w1 = 10.0*(2.5*(xl*xl + yo*yo) - 1.0)*psi1(x,y)
 	w2 = 10.0*(2.5*(xr*xr + yo*yo) - 1.0)*psi2(x,y)
-	return (w1 + w2 + f)*vely_func(x,y)
+	#return (w1 + w2 + f)*vely_func(x,y)
+	return (w1 + w2 + f)*vely_test(x,y)
 
 def dpdx_func(x,y):
 	yo = y - np.pi
 	xl = x - np.pi - np.pi/3.0
 	xr = x - np.pi + np.pi/3.0
 	return -5.0*xl*psi1(x,y) - 5.0*xr*psi2(x,y)
+
+def dpdx_func_2(x,y):
+	return -0.25*np.sin(x-np.pi)*(np.cos(y-np.pi) + 1.0)
 
 def d2pdxx_func(x,y):
 	yo = y - np.pi
@@ -76,6 +102,9 @@ def dpdy_func(x,y):
 	xl = x - np.pi - np.pi/3.0
 	xr = x - np.pi + np.pi/3.0
 	return -5.0*yo*psi1(x,y) - 5.0*yo*psi2(x,y)
+
+def dpdy_func_2(x,y):
+	return -0.25*(np.cos(x-np.pi) + 1.0)*np.sin(y-np.pi)
 
 def d2pdyy_func(x,y):
 	yo = y - np.pi
