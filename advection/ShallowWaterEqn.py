@@ -46,22 +46,38 @@ class SWEqn:
 		fx = f*np.ones((topo_q.n*topo_q.n*topo.nx*topo.ny),dtype=np.float64)
 		self.f = Mxto0*fx
 
+		self.M0f = self.M0*self.f
+
+		self.Uh = Uhmat(topo,quad)
+		self.WU = WtQUmat(topo,quad)
+		self.PU = PtQUmat(topo,quad)
+		self.Rq = RotationalMat(topo,quad)
+
+		self.q = np.zeros((self.M0f.shape[0]),dtype=np.float64)
+		self.hvec = Phvec(topo,quad)
+
 	def diagnose_q(self,h,u):
 		w = self.D01M1*u
-		f = self.M0*self.f
-		M0h = Phmat(self.topo,self.quad,h).M
-		M0hinv = la.inv(M0h)
-		q = M0hinv*(w+f)
-		return q
+		#f = self.M0*self.f
+		#M0h = Phmat(self.topo,self.quad,h).M
+		#M0hinv = la.inv(M0h)
+		#q = M0hinv*(w+f)
+		hv = self.hvec.assemble(h)
+		for ii in np.arange(hv.shape[0]):
+			self.q[ii] = (w[ii]+self.M0f[ii])/hv[ii]
+			
+		return self.q
 
 	def diagnose_F(self,h,u):
-		M1h = Uhmat(self.topo,self.quad,h).M
+		#M1h = Uhmat(self.topo,self.quad,h).M
+		M1h = self.Uh.assemble(h)
 		M1invM1h = self.M1inv*M1h
 		F = M1invM1h*u
 		return F
 
 	def diagnose_K(self,u):
-		WtQU = WtQUmat(self.topo,self.quad,u).M
+		#WtQU = WtQUmat(self.topo,self.quad,u).M
+		WtQU = self.WU.assemble(u)
 		K = self.M2inv*WtQU
 		k = 0.5*K*u
 		return k
@@ -74,11 +90,13 @@ class SWEqn:
 		# remove the anticipated potential vorticity from q
 		if self.apvm > 0.0:
 			dq = self.D10*q
-			PtQU = PtQUmat(self.topo,self.quad,dq).M
+			#PtQU = PtQUmat(self.topo,self.quad,dq).M
+			PtQU = self.PU.assemble(dq)
 			udq = self.M0inv*PtQU*ud
 			q = q - self.apvm*udq
 
-		R = RotationalMat(self.topo,self.quad,q).M
+		#R = RotationalMat(self.topo,self.quad,q).M
+		R = self.Rq.assemble(q)
 		qCrossF = R*F
 		
 		k = self.diagnose_K(ud)

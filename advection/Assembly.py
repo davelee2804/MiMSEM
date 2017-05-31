@@ -178,20 +178,26 @@ class Pmat:
 
 # 1 form mass matrix with 2 forms interpolated to quadrature points
 class Uhmat:
-	def __init__(self,topo,quad,h):
-		maps, nnz = self.genMap(topo)
-		self.assemble(topo,quad,maps,nnz,h)
+	def __init__(self,topo,quad):
+		self.topo = topo
+		self.quad = quad
+		self.maps, self.nnz = self.genMap(topo)
+		#self.assemble(topo,quad,maps,nnz,h)
 
-	def assemble(self,topo,quad,maps,nnz,h):
 		Q = Wii(quad.n).A
 		U = M1x_j_xy_i(topo.n,quad.n).A
 		V = M1y_j_xy_i(topo.n,quad.n).A
-		QU = mult(Q,U)
-		QV = mult(Q,V)
+		self.QU = mult(Q,U)
+		self.QV = mult(Q,V)
 		
-		M1x = M1x_j_Fxy_i(topo.n,quad.n)
-		M1y = M1y_j_Fxy_i(topo.n,quad.n)
+		self.M1x = M1x_j_Fxy_i(topo.n,quad.n)
+		self.M1y = M1y_j_Fxy_i(topo.n,quad.n)
 
+	def assemble(self,h):
+		topo = self.topo
+		quad = self.quad
+		maps = self.maps
+		nnz = self.nnz
 		n2 = topo.n*topo.n
 		np1 = topo.n+1
 		ncl = np1*topo.n        # number of columns in local matrix, u or v (same as number of rows)
@@ -210,9 +216,9 @@ class Uhmat:
 				for kk in np.arange(n2):
 					ck[kk] = h[inds2[kk]]
 
-				U = M1x.assemble(ck)
+				U = self.M1x.assemble(ck)
 				Ut = U.transpose()
-				UtQU = mult(Ut,QU)
+				UtQU = mult(Ut,self.QU)
 
 				for jj in np.arange(ncl*ncl):
 					row = inds1[jj/ncl]
@@ -232,9 +238,9 @@ class Uhmat:
 				for kk in np.arange(n2):
 					ck[kk] = h[inds2[kk]]
 
-				V = M1y.assemble(ck)
+				V = self.M1y.assemble(ck)
 				Vt = V.transpose()
-				VtQV = mult(Vt,QV)
+				VtQV = mult(Vt,self.QV)
 
 				for jj in np.arange(ncl*ncl):
 					row = inds1[jj/ncl]
@@ -249,6 +255,8 @@ class Uhmat:
 		nr = 2*topo.nx*topo.ny*topo.n*topo.n
 		nc = 2*topo.nx*topo.ny*topo.n*topo.n
 		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+		return self.M
 
 	def genMap(self,topo):
 		np1 = topo.n+1
@@ -344,6 +352,52 @@ class Phmat:
 						ii = ii + 1
 
 		return maps, ii
+
+# assumes inexact integration and a diagonal mass matrix for the 
+# 0 form function space (ie: quadrature and basis functions are 
+# the same order)
+class Phvec:
+	def __init__(self,topo,quad):
+		self.topo = topo
+		self.quad = quad
+		n = topo.n
+		np1 = n+1
+
+		self.v = np.zeros((topo.nx*topo.ny*topo.n*topo.n),dtype=np.float64)
+
+		edge = LagrangeEdge(n)
+		self.E = np.zeros((np1,n),dtype=np.float64)
+		for j in np.arange(n):
+			for i in np.arange(np1):
+				self.E[i,j] = edge.eval(quad.x[i],j)
+
+	def assemble(self,h):
+		topo = self.topo
+		quad = self.quad
+		n = topo.n
+		n2 = n*n
+		np1 = n+1
+		np12 = np1*np1
+
+		for ii in np.arange(self.v.shape[0]):
+			self.v[ii] = 0.0
+
+		for ey in np.arange(topo.ny):
+			for ex in np.arange(topo.nx):
+				inds0 = topo.localToGlobal0(ex,ey)
+				inds2 = topo.localToGlobal2(ex,ey)
+				for ii in np.arange(np12):
+					wt = quad.w[ii/np1]*quad.w[ii%np1]
+
+					ix = ii%np1
+					iy = ii/np1
+					hj = 0.0
+					for jj in np.arange(n2):
+						hj = hj + h[inds2[jj]]*self.E[ix,jj%n]*self.E[iy,jj/n]
+
+					self.v[inds0[ii]] = self.v[inds0[ii]] + wt*hj
+
+		return self.v
 
 # Right hand side matrix for the L2 projection of an analytic function
 # defined at the quadrature points onto the 2-forms
@@ -660,15 +714,22 @@ class UtQPmat:
 		return maps, ii
 
 class WtQUmat:
-	def __init__(self,topo,quad,u):
+	def __init__(self,topo,quad):
+		self.topo = topo
+		self.quad = quad
 		Q = Wii(quad.n).A
-		M1x = M1x_j_Cxy_i(topo.n,quad.n)
-		M1y = M1y_j_Cxy_i(topo.n,quad.n)
+		self.M1x = M1x_j_Cxy_i(topo.n,quad.n)
+		self.M1y = M1y_j_Cxy_i(topo.n,quad.n)
 		W = M2_j_xy_i(topo.n,quad.n).A
 		Wt = W.transpose()
-		WtQ = mult(Wt,Q)
+		self.WtQ = mult(Wt,Q)
 		
-		maps,nnz = self.genMap(topo)
+		self.maps,self.nnz = self.genMap(topo)
+
+	def assemble(self,u):
+		topo = self.topo
+		maps = self.maps
+		nnz = self.nnz
 		rows = np.zeros(nnz,dtype=np.int32)
 		cols = np.zeros(nnz,dtype=np.int32)
 		vals = np.zeros(nnz,dtype=np.float64)
@@ -688,8 +749,8 @@ class WtQUmat:
 				for kk in np.arange(ncl):
 					cj[kk] = u[inds1[kk]]
 
-				U = M1x.assemble(cj)
-				WtQU = mult(WtQ,U)
+				U = self.M1x.assemble(cj)
+				WtQU = mult(self.WtQ,U)
 
 				for jj in np.arange(nrl*ncl):
 					row = inds2[jj/ncl]
@@ -709,8 +770,8 @@ class WtQUmat:
 				for kk in np.arange(ncl):
 					cj[kk] = u[inds1[kk]]
 
-				V = M1y.assemble(cj)
-				WtQV = mult(WtQ,V)
+				V = self.M1y.assemble(cj)
+				WtQV = mult(self.WtQ,V)
 
 				for jj in np.arange(nrl*ncl):
 					row = inds2[jj/ncl]
@@ -725,6 +786,8 @@ class WtQUmat:
 		nr = topo.nx*topo.ny*topo.n*topo.n
 		nc = 2*topo.nx*topo.ny*topo.n*topo.n
 		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+		return self.M
 
 	def genMap(self,topo):
 		np1 = topo.n+1
@@ -761,15 +824,22 @@ class WtQUmat:
 
 # project the potential vorticity gradient velocity product onto the 0 forms
 class PtQUmat:
-	def __init__(self,topo,quad,dq):
+	def __init__(self,topo,quad):
+		self.topo = topo
 		Q = Wii(quad.n).A
-		M1x = M1x_j_Exy_i(topo.n,quad.n)
-		M1y = M1y_j_Exy_i(topo.n,quad.n)
+		self.M1x = M1x_j_Exy_i(topo.n,quad.n)
+		self.M1y = M1y_j_Exy_i(topo.n,quad.n)
 		P = M0_j_xy_i(topo.n,quad.n).A
 		Pt = P.transpose()
-		PtQ = mult(Pt,Q)
+		self.PtQ = mult(Pt,Q)
 		
-		maps,nnz = self.genMap(topo)
+		self.maps,self.nnz = self.genMap(topo)
+
+	def assemble(self,dq):
+		topo = self.topo
+		maps = self.maps
+		nnz = self.nnz
+
 		rows = np.zeros(nnz,dtype=np.int32)
 		cols = np.zeros(nnz,dtype=np.int32)
 		vals = np.zeros(nnz,dtype=np.float64)
@@ -790,8 +860,8 @@ class PtQUmat:
 				for kk in np.arange(ncl):
 					cj[kk] = dq[inds1y[kk]]
 
-				U = M1x.assemble(-1.0*cj)
-				PtQU = mult(PtQ,U)
+				U = self.M1x.assemble(-1.0*cj)
+				PtQU = mult(self.PtQ,U)
 
 				for jj in np.arange(nrl*ncl):
 					row = inds0[jj/ncl]
@@ -812,8 +882,8 @@ class PtQUmat:
 				for kk in np.arange(ncl):
 					cj[kk] = dq[inds1x[kk]]
 
-				V = M1y.assemble(cj)
-				PtQV = mult(PtQ,V)
+				V = self.M1y.assemble(cj)
+				PtQV = mult(self.PtQ,V)
 
 				for jj in np.arange(nrl*ncl):
 					row = inds0[jj/ncl]
@@ -828,6 +898,8 @@ class PtQUmat:
 		nr = topo.nx*topo.ny*topo.n*topo.n
 		nc = 2*topo.nx*topo.ny*topo.n*topo.n
 		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+		return self.M
 
 	def genMap(self,topo):
 		np1 = topo.n+1
@@ -969,7 +1041,7 @@ class InteriorProdAdjMat:
 # 1 form mass matrix with 0 form interpolated to quadrature points
 # (for rotational term in the momentum equation)
 class RotationalMat:
-	def __init__(self,topo,quad,w):
+	def __init__(self,topo,quad):
 		self.topo = topo
 		self.quad = quad
 
@@ -978,11 +1050,19 @@ class RotationalMat:
 		V = M1y_j_xy_i(topo.n,quad.n).A
 		Ut = U.transpose()
 		Vt = V.transpose()
-		UtQ = mult(Ut,Q)
-		VtQ = mult(Vt,Q)
+		self.UtQ = mult(Ut,Q)
+		self.VtQ = mult(Vt,Q)
 
-		maps,nnz = self.genMap(topo)
-		
+		self.M1x = M1x_j_Dxy_i(topo.n,quad.n)
+		self.M1y = M1y_j_Dxy_i(topo.n,quad.n)
+
+		self.maps,self.nnz = self.genMap(topo)
+	
+	def assemble(self,w):
+		topo = self.topo
+		maps = self.maps
+		nnz = self.nnz
+
 		shift = (topo.n*topo.nx)*(topo.n*topo.ny)
 		rows = np.zeros(nnz,dtype=np.int32)
 		cols = np.zeros(nnz,dtype=np.int32)
@@ -996,9 +1076,6 @@ class RotationalMat:
 
 		cj = np.zeros((n2),dtype=np.float64)
 
-		M1x = M1x_j_Dxy_i(topo.n,quad.n)
-		M1y = M1y_j_Dxy_i(topo.n,quad.n)
-
 		for ey in np.arange(topo.ny):
 			for ex in np.arange(topo.nx):
 				inds0 = topo.localToGlobal0(ex,ey)
@@ -1010,9 +1087,8 @@ class RotationalMat:
 
 				# TODO: should u be interpolated onto the quadrature
 				# points from the U^T matrix or the W matrix??
-				#V = M1y.assemble(cj)
-				V = M1y.assemble(-1.0*cj)
-				UtQV = mult(UtQ,V)
+				V = self.M1y.assemble(-1.0*cj)
+				UtQV = mult(self.UtQ,V)
 
 				for jj in np.arange(nrl*ncl):
 					row = inds1x[jj/ncl]
@@ -1034,8 +1110,8 @@ class RotationalMat:
 
 				# TODO: should u be interpolated onto the quadrature
 				# points from the U^T matrix or the W matrix??
-				U = M1x.assemble(cj)
-				VtQU = mult(VtQ,U)
+				U = self.M1x.assemble(cj)
+				VtQU = mult(self.VtQ,U)
 
 				for jj in np.arange(nrl*ncl):
 					row = inds1y[jj/ncl]
@@ -1048,6 +1124,8 @@ class RotationalMat:
 		nr = 2*topo.nx*topo.ny*topo.n*topo.n
 		nc = 2*topo.nx*topo.ny*topo.n*topo.n
 		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+		return self.M
 
 	def genMap(self,topo):
 		np1 = topo.n+1
