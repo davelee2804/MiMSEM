@@ -9,7 +9,7 @@ from BoundaryMat import *
 from Proj import *
 
 class SWEqn:
-	def __init__(self,topo,quad,topo_q,lx,ly,f,g,apvm):
+	def __init__(self,topo,quad,topo_q,lx,ly,f,g,apvm,hb):
 		self.topo = topo
 		self.quad = quad
 		self.topo_q = topo_q # topology for the quadrature points as 0 forms
@@ -17,6 +17,7 @@ class SWEqn:
 		self.apvm = apvm
 		det = 0.5*lx/topo.nx
 		self.detInv = 1.0/det
+		self.hb = hb
 
 		# 1 form matrix inverse
 		M1 = Umat(topo,quad).M
@@ -69,14 +70,12 @@ class SWEqn:
 		return self.q
 
 	def diagnose_F(self,h,u):
-		#M1h = Uhmat(self.topo,self.quad,h).M
 		M1h = self.Uh.assemble(h)
 		M1invM1h = self.M1inv*M1h
 		F = M1invM1h*u
 		return F
 
 	def diagnose_K(self,u):
-		#WtQU = WtQUmat(self.topo,self.quad,u).M
 		WtQU = self.WU.assemble(u)
 		K = self.M2inv*WtQU
 		k = 0.5*K*u
@@ -90,17 +89,15 @@ class SWEqn:
 		# remove the anticipated potential vorticity from q
 		if self.apvm > 0.0:
 			dq = self.D10*q
-			#PtQU = PtQUmat(self.topo,self.quad,dq).M
 			PtQU = self.PU.assemble(dq)
 			udq = self.M0inv*PtQU*ud
 			q = q - self.apvm*udq
 
-		#R = RotationalMat(self.topo,self.quad,q).M
 		R = self.Rq.assemble(q)
 		qCrossF = R*F
 		
 		k = self.diagnose_K(ud)
-		hBar = k + self.g*hd
+		hBar = k + self.g*hd + self.g*self.hb
 		gE = self.D12M2*hBar
 
 		uf = ui - dt*self.M1inv*(qCrossF + gE)
