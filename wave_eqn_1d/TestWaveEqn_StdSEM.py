@@ -29,7 +29,7 @@ def pres_func(x,h):
         else:
             h[ii] = 0.5 + 0.5*np.tanh(20.0*(0.6 - x[ii]))
 
-def plot(h,u,x,topo,topo_q,N,step,ho,uo):
+def plot(h,u,x,topo,topo_q,N,step,ho,uo,hc,uc):
 	ue = np.zeros(topo.n+1,dtype=np.float64)
 	he = np.zeros(topo.n+1,dtype=np.float64)
 	uoe = np.zeros(topo.n+1,dtype=np.float64)
@@ -61,6 +61,9 @@ def plot(h,u,x,topo,topo_q,N,step,ho,uo):
 				uox[kk] = uox[kk] + a*N[ii,jj]*uoe[jj]
 				hx[kk] = hx[kk] + a*N[ii,jj]*he[jj]
 				hox[kk] = hox[kk] + a*N[ii,jj]*hoe[jj]
+
+	uc[step,:] = ux[:]
+	hc[step,:] = hx[:]
 
 	plt.plot(x,uox,'ro')
 	plt.plot(x,hox,'go')
@@ -116,7 +119,11 @@ ho = np.zeros(n*nx,dtype=np.float64)
 uo[:] = ui[:]
 ho[:] = hi[:]
 
-plot(hi,ui,x,topo,topo_q,Njxi,0,ho,uo)
+uc = np.zeros((21,n*nx),dtype=np.float64)
+hc = np.zeros((21,n*nx),dtype=np.float64)
+
+i_dump = 0
+plot(hi,ui,x,topo,topo_q,Njxi,i_dump,ho,uo,hc,uc)
 
 time = lx/np.sqrt(g*H)
 #nsteps = 200
@@ -131,6 +138,21 @@ for step in np.arange(nsteps) + 1:
 	hi[:] = hf[:]
 	ui[:] = uf[:]
 
-	if (step%(nsteps/10)==0):
+	if (step%(nsteps/20)==0):
 		print '\tdumping output for time step %.4d'%step
-		plot(hi,ui,x,topo,topo_q,Njxi,step,ho,uo)
+		i_dump = i_dump + 1
+		plot(hi,ui,x,topo,topo_q,Njxi,i_dump,ho,uo,hc,uc)
+
+tt = time*np.linspace(0.0,1.0,i_dump+1,endpoint=True)
+
+levs = np.linspace(-1.6,+1.6,101,endpoint=True)
+plt.contourf(x,tt,uc,levs)
+plt.colorbar()
+plt.savefig('output_stdsem/wave_std_uc.png')
+plt.clf()
+
+levs = np.linspace(-0.2,+1.2,101,endpoint=True)
+plt.contourf(x,tt,hc,levs)
+plt.colorbar()
+plt.savefig('output_stdsem/wave_std_hc.png')
+plt.clf()
