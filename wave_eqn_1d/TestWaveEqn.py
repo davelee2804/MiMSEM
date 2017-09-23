@@ -13,6 +13,7 @@ from Mats1D import *
 from Assembly import *
 from Proj import *
 from WaveEqn import *
+from WaveEqn_EEC import *
 from WaveEqn_StdSEM import *
 
 # dispersion relation: w = k(gH)**0.5; c_p = (gH)**0.5
@@ -29,7 +30,7 @@ def pres_func(x,h):
 		else:
 			h[ii] = 0.5 + 0.5*np.tanh(20.0*(0.6 - x[ii]))
 
-def plot(h,u,x,topo,topo_q,N,E,step,ho,uo,hc,uc):
+def plot(h,u,x,topo,topo_q,N,E,step,ho,uo,hc,uc,output_dir):
 	ue = np.zeros(topo.n+1,dtype=np.float64)
 	he = np.zeros(topo.n,dtype=np.float64)
 	uoe = np.zeros(topo.n+1,dtype=np.float64)
@@ -75,12 +76,31 @@ def plot(h,u,x,topo,topo_q,N,E,step,ho,uo,hc,uc):
 	plt.plot(x,ux,'r-+')
 	plt.plot(x,hx,'g-+')
 	plt.ylim([-1.6,+1.6])
-	plt.savefig('output_mimsem/wave_mim_%.4d'%step + '.png')
+	plt.savefig(output_dir+'/wave_mim_%.4d'%step + '.png')
 	plt.clf()
 
-nx = 8
-n = 3 # basis order
-m = 3 # quadrature order
+def energy(hi,ui,g,H,topo,quad,N,E,det):
+	en = 0.0
+	for ei in np.arange(topo.nx):
+		inds0 = topo.localToGlobal0(ei)
+		inds1 = topo.localToGlobal1(ei)
+		for qi in np.arange(quad.n+1):
+			hq = 0.0
+			uq = 0.0
+
+			for i in np.arange(topo.n + 1):
+				uq = uq + N[qi,i]*ui[inds0[i]]
+
+			for i in np.arange(topo.n):
+				hq = hq + E[qi,i]*hi[inds1[i]]
+
+			en = en + det*quad.w[qi]*(g*hq*hq + H*uq*uq)
+
+	return en
+
+nx = 4
+n = 6 # basis order
+m = 6 # quadrature order
 np1 = n+1
 mp1 = m+1
 nxn = nx*n
@@ -108,6 +128,8 @@ x = np.zeros(n*nx)
 for i in np.arange(nx):
     x[i*n:(i+1)*n] = i*dx + (quad.x[:n] + 1.0)*0.5*dx
 
+det = 0.5*lx/topo.nx
+
 g = 10.0
 H = 1.6
 k = 2.0*np.pi
@@ -119,7 +141,18 @@ hx = po*np.cos(k*x)
 velx_func(x,ux)
 pres_func(x,hx)
 
+time = lx/np.sqrt(g*H)
+#nsteps = 200
+nsteps = 800
+dt = time/nsteps
+print 'max step: %f'%(lx/(nx)/np.sqrt(g*H))
+print 'time step: %f'%dt
+
+output_dir = 'output_mimsem'
+#output_dir = 'output_mimsem_eec'
+
 we = WaveEqn(topo,quad,topo_q,lx,g,H)
+#we = WaveEqn_EEC(topo,quad,topo_q,lx,g,H,dt)
 
 Mxto0 = Xto0(topo,quad).M
 ui = Mxto0*ux
@@ -131,21 +164,17 @@ ho = np.zeros(n*nx,dtype=np.float64)
 uo[:] = ui[:]
 ho[:] = hi[:]
 
-time = lx/np.sqrt(g*H)
-#nsteps = 200
-nsteps = 800
-dt = time/nsteps
-print 'max step: %f'%(lx/(nx)/np.sqrt(g*H))
-print 'time step: %f'%dt
-
 uc = np.zeros((21,n*nx),dtype=np.float64)
 hc = np.zeros((21,n*nx),dtype=np.float64)
 
 i_dump = 0
-plot(hi,ui,x,topo,topo_q,Njxi,Ejxi,i_dump,ho,uo,hc,uc)
+plot(hi,ui,x,topo,topo_q,Njxi,Ejxi,i_dump,ho,uo,hc,uc,output_dir)
+
+en0 = energy(hi,ui,g,H,topo,quad,Njxi,Ejxi,det)
 
 for step in np.arange(nsteps) + 1:
 	hf,uf = we.solveRK2(hi,ui,dt)
+	#hf,uf = we.solve(hi,ui)
 
 	hi[:] = hf[:]
 	ui[:] = uf[:]
@@ -153,18 +182,21 @@ for step in np.arange(nsteps) + 1:
 	if (step%(nsteps/20)==0):
 		i_dump = i_dump + 1
 		print '\tdumping output for time step %.4d'%step
-		plot(hi,ui,x,topo,topo_q,Njxi,Ejxi,i_dump,ho,uo,hc,uc)
+		plot(hi,ui,x,topo,topo_q,Njxi,Ejxi,i_dump,ho,uo,hc,uc,output_dir)
+
+		en = energy(hi,ui,g,H,topo,quad,Njxi,Ejxi,det)
+		print '\t\t' + str(en0) + '\t' + str(en) + '\t' + str(1.0 - en/en0) 
 
 tt = time*np.linspace(0.0,1.0,i_dump+1,endpoint=True)
 
 levs = np.linspace(-1.6,+1.6,101,endpoint=True)
 plt.contourf(x,tt,uc,levs)
 plt.colorbar()
-plt.savefig('output_mimsem/wave_mim_uc.png')
+plt.savefig(output_dir+'/wave_mim_uc.png')
 plt.clf()
 
 levs = np.linspace(-0.2,+1.2,101,endpoint=True)
 plt.contourf(x,tt,hc,levs)
 plt.colorbar()
-plt.savefig('output_mimsem/wave_mim_hc.png')
+plt.savefig(output_dir+'/wave_mim_hc.png')
 plt.clf()
