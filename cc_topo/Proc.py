@@ -10,10 +10,12 @@ class Side:
 		self.axis = axis
 
 class Proc:
-	def __init__(self,pn,nx,pi):
+	def __init__(self,pn,nx,pi,fi,n_procs):
 		self.pn = pn	# polynomial degree
 		self.nx = nx	# number of elements in each dimension
 		self.pi = pi	# global processor id
+		self.fi = fi	# index of face that owns this processor
+		self.np = n_procs # global number of processors
 
 		self.pn1 = self.pn+1
 		self.pnx = self.nx*self.pn
@@ -36,8 +38,42 @@ class Proc:
 		self.inds1y = np.zeros((self.pn)*(self.pn1),dtype=np.int32)
 		self.inds2 = np.zeros((self.pn)*(self.pn),dtype=np.int32)
 
+	def buildGlobalArrays(self):
+		# number of local nodes/edges/faces
+		self.n0l = (self.nx*self.pn)*(self.nx*self.pn)
+		# account for the two hanging nodes on the cube
+		# note: these two hanging nodes have the last two global indices
+		if self.fi == 0 and self.SE == None:
+			self.n0l = self.n0l + 1
+		if self.fi == 1 and self.NW == None:
+			self.n0l = self.n0l + 1
+		self.n1xl = (self.nx*self.pn)*(self.nx*self.pn)
+		self.n1yl = (self.nx*self.pn)*(self.nx*self.pn)
+		self.n2l = (self.nx*self.pn)*(self.nx*self.pn)
+
+		# number of global nodes/edges/faces
+		self.n0g = (self.nx*self.pn+1)*(self.nx*self.pn+1)
+		self.n1xg = (self.nx*self.pn+1)*(self.nx*self.pn)
+		self.n1yg = (self.nx*self.pn)*(self.nx*self.pn+1)
+		self.n2g = (self.nx*self.pn)*(self.nx*self.pn)
+
+		# global index arrays
+		self.loc0 = np.zeros(self.n0g,dtype=np.int32)
+		self.loc1x = np.zeros(self.n1xg,dtype=np.int32)
+		self.loc1y = np.zeros(self.n1yg,dtype=np.int32)
+		self.loc2 = np.zeros(self.n2g,dtype=np.int32)
+
+		# global offsets
+		self.shift0 = self.pi*self.n0l
+		self.sh1ft1x = self.pi*self.n1xl
+		self.shift1y = self.np*self.n1xl + self.pi*self.n1yl
+		self.shift2 = self.pi*self.n2l
+
+		# global indices of local nodes
+		
+
 	# return the local indices for the nodes of given element
-	def localToGlobal0(self,ex,ey):
+	def elementToLocal0(self,ex,ey):
 		kk = 0
 		for iy in np.arange(self.pn1):
 			for ix in np.arange(self.pn1):
@@ -46,8 +82,8 @@ class Proc:
 
 		return inds0
 
-	# return the local indices for the nodes of given element
-	def localToGlobal1x(self,ex,ey):
+	# return the local indices for the x normal edges of given element
+	def elementToLocal1x(self,ex,ey):
 		kk = 0
 		for iy in np.arange(self.pn):
 			for ix in np.arange(self.pn1):
@@ -56,8 +92,8 @@ class Proc:
 
 		return inds1x
 
-	# return the local indices for the nodes of given element
-	def localToGlobal1y(self,ex,ey):
+	# return the local indices for the y normal edges of given element
+	def elementToLocal1y(self,ex,ey):
 		kk = 0
 		for iy in np.arange(self.pn1):
 			for ix in np.arange(self.pn):
@@ -66,8 +102,8 @@ class Proc:
 
 		return inds1y + self.xshift
 
-	# return the local indices for the nodes of given element
-	def localToGlobal2(self,ex,ey):
+	# return the local indices for the faces of given element
+	def elementToLocal2(self,ex,ey):
 		kk = 0
 		for iy in np.arange(self.pn):
 			for ix in np.arange(self.pn):
@@ -195,7 +231,7 @@ class ParaCube:
 		self.faces[2].Naxis[0][0] = +1; self.faces[2].Naxis[1][1] = +1
 		self.faces[2].Waxis[0][0] = +1; self.faces[2].Waxis[1][1] = +1
 
-		self.faces[3].Saxis[0][0] = +1; self.faces[3].Saxis[1][1] = +1##
+		self.faces[3].Saxis[0][0] = +1; self.faces[3].Saxis[1][1] = +1
 		self.faces[3].Eaxis[0][0] = +1; self.faces[3].Eaxis[1][1] = +1
 		self.faces[3].Naxis[0][1] = -1; self.faces[3].Naxis[1][0] = +1
 		self.faces[3].Waxis[0][1] = +1; self.faces[3].Waxis[1][0] = -1
@@ -217,7 +253,7 @@ class ParaCube:
 		for fi in np.arange(6):
 			face = self.faces[fi]
 			for pj in np.arange(npx*npx):
-				self.procs[pi] = Proc(self.pn,self.nx,pi)
+				self.procs[pi] = Proc(self.pn,self.nx,pi,fi,self.np)
 				face.procs[pj] = self.procs[pi]
 				pi = pi + 1
 
@@ -325,6 +361,10 @@ class ParaCube:
 					proc.WS = Side(sideProcs[pi-1],axis)
 				if pi < npx - 1:
 					proc.NW = Side(sideProcs[pi+1],axis)
+
+		# build the global index maps for the nodes/edges/faces on a given processor
+		for pi in np.arange(self.np):
+			self.procs[pi].buildGlobalArrays()
 
 	def print_procs(self):
 		neighbours = np.zeros(8,dtype=np.int32)
