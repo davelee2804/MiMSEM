@@ -12,7 +12,7 @@ class Side:
 class Proc:
 	def __init__(self,pn,nx,pi,fi,n_procs):
 		self.pn = pn	# polynomial degree
-		self.nx = nx	# number of elements in each dimension
+		self.nx = nx	# number of elements in each dimension (local)
 		self.pi = pi	# global processor id
 		self.fi = fi	# index of face that owns this processor
 		self.np = n_procs # global number of processors
@@ -38,24 +38,36 @@ class Proc:
 		self.inds1y = np.zeros((self.pn)*(self.pn1),dtype=np.int32)
 		self.inds2 = np.zeros((self.pn)*(self.pn),dtype=np.int32)
 
-	def buildGlobalArrays(self):
+		# global index arrays for sides of processor region
+		self.side0 = np.zeros(self.nx*self.pn+1,dtype=np.int32)
+		self.side1 = np.zeros(self.nx*self.pn,dtype=np.int32)
+
+	# define global indices for local nodes/edges/faces
+	def buildLocalArrays(self):
 		# number of local nodes/edges/faces
-		self.n0l = (self.nx*self.pn)*(self.nx*self.pn)
+		self.n0lavg = (self.nx*self.pn)*(self.nx*self.pn)
+		self.n0l = self.n0lavg
 		# account for the two hanging nodes on the cube
 		# note: these two hanging nodes have the last two global indices
 		if self.fi == 0 and self.SE == None:
-			self.n0l = self.n0l + 1
+			self.n0l = self.n0lavg + 1
 		if self.fi == 1 and self.NW == None:
-			self.n0l = self.n0l + 1
+			self.n0l = self.n0lavg + 1
 		self.n1xl = (self.nx*self.pn)*(self.nx*self.pn)
 		self.n1yl = (self.nx*self.pn)*(self.nx*self.pn)
 		self.n2l = (self.nx*self.pn)*(self.nx*self.pn)
 
-		# number of global nodes/edges/faces
+		# number of global nodes/edges/faces (on this processor)
 		self.n0g = (self.nx*self.pn+1)*(self.nx*self.pn+1)
 		self.n1xg = (self.nx*self.pn+1)*(self.nx*self.pn)
 		self.n1yg = (self.nx*self.pn)*(self.nx*self.pn+1)
 		self.n2g = (self.nx*self.pn)*(self.nx*self.pn)
+
+		# global offsets
+		self.shift0 = self.pi*self.n0lavg
+		self.sh1ft1x = self.pi*self.n1xl
+		self.shift1y = self.np*self.n1xl + self.pi*self.n1yl
+		self.shift2 = self.pi*self.n2l
 
 		# global index arrays
 		self.loc0 = np.zeros(self.n0g,dtype=np.int32)
@@ -63,14 +75,105 @@ class Proc:
 		self.loc1y = np.zeros(self.n1yg,dtype=np.int32)
 		self.loc2 = np.zeros(self.n2g,dtype=np.int32)
 
-		# global offsets
-		self.shift0 = self.pi*self.n0l
-		self.sh1ft1x = self.pi*self.n1xl
-		self.shift1y = self.np*self.n1xl + self.pi*self.n1yl
-		self.shift2 = self.pi*self.n2l
-
 		# global indices of local nodes
-		
+		i_node = self.shift0
+		for iy in np.arange(self.nx*self.pn):
+			for ix in np.arange(self.nx*self.pn):
+				self.loc0[iy*(self.nx*self.pn+1) + ix] = i_node
+				i_node = i_node + 1
+
+		# hanging nodes
+		if self.fi == 0 and self.SE == None:
+			self.loc0[self.nx*self.pn] = self.np*self.n0lavg
+		if self.fi == 1 and self.NW == None:
+			self.loc0[(self.nx*self.pn)*(self.nx*self.pn+1)] = self.np*self.n0lavg + 1
+
+		# global indices of local x normal edges
+		i_edge = self.shift1x
+		for iy in np.arange(self.nx*self.pn):
+			for ix in np.arange(self.nx*self.pn):
+				self.loc1x[iy*(self.nx*self.pn+1) + ix] = i_edge
+				i_edge = i_edge + 1
+
+		# global indices of local y normal edges
+		i_edge = self.shift1y
+		for iy in np.arange(self.nx*self.pn):
+			for ix in np.arange(self.nx*self.pn):
+				self.loc1y[iy*(self.nx*self.pn) + ix] = i_edge
+				i_edge = i_edge + 1
+
+		# global indices of local faces
+
+	# define global indices for remote nodes/edges/faces
+	def buildGlobalArrays(self):
+		nxp = self.nx*self.pn
+		nxp1 = self.nx*self.pn + 1
+
+		east = self.EE.proc
+		north = self.NN.proc
+		eAxis = self.EE.axis
+		nAxis = self.NN.axis
+		northEast = self.EN.proc
+		southEast = self.SE.proc
+		northWest = self.NW.proc
+
+		# 1. east and north processor neighbours are on the same face
+		if eAxis[0][0] == +1 and nAxis[1][1] == +1:
+			gInds0 = east.getW0(+1)
+			for iy in np.arange(nxp1):
+				self.loc0[iy*nxp1 + npx] = gInds0[iy]
+
+			gInds0 = north.getS0(+1)
+			for ix in np.arange(nxp1):
+				self.loc0[nxp*nxp1 + ix] = gInds0[ix]
+
+			gInds0 = northEast.getS0(+1):
+			self.loc0[nxp1*nxp1 - 1] = gInds0[0]
+
+		# 2. north proc on same axis and east proc rotated -pi/2
+		if nAxis[1][1] == +1 and eAxis[0][1] == +1:
+			gInds0 = north.getS0(+1)
+			for ix in np.arange(nxp1):
+				self.loc0[nxp*nxp1 + ix] = gInds0[ix]
+
+			gInds0 = east.getS0(-1)
+			for iy in np.arange(nxp1):
+				self.loc0[iy*nxp1 + npx] = gInds0[iy]
+
+			if southEast == None:
+				self.loc0[npx] = self.np*self.n0lavg
+			else:
+				gInds0 = southEast.getS0(+1)
+				self.loc0[npx] = gInds0[0]
+				
+		# 3. east proc on same axis and noth proc rotated +pi/2
+		if eAxis[0][0] == +1 and nAxis[1][0] == +1:
+			gInds0 = east.getW0(+1)
+			for iy in np.arange(nxp1):
+				self.loc0[iy*nxp1 + npx] = gInds0[iy]
+
+			gInds0 = north.getW0(-1)
+			for ix in np.arange(nxp1):
+				self.loc0[nxp*nxp1 + ix] = gInds0[ix]
+
+			if northWest == None:
+				self.loc0[npx*nxp1] = self.np*self.n0lavg + 1
+			else:
+				gInds0 = northWest.getS0(+1)
+				self.loc0[npx*nxp1] = gInds0[0]
+
+		# now do the edges (north and south procs on same face)
+		if eAxis[0][0] == +1 and nAxis[1][1] == +1:
+			gInds1 = east.getW1(+1)
+			for iy in np.arange(nxp):
+				self.loc1x[iy*nxp1 + npx] = gInds0[iy]
+
+			gInds1 = north.getS1(+1)
+			for ix in np.arange(nxp):
+				self.loc1y[nxp*nxp + ix] = gInds0[ix]
+
+		# 
+
 
 	# return the local indices for the nodes of given element
 	def elementToLocal0(self,ex,ey):
@@ -111,6 +214,51 @@ class Proc:
 				kk = kk + 1
 
 		return inds2
+
+	# return the global node indices on the west side of the processor region
+	def getW0(self,orient):
+		nxp1 = self.nx*self.np + 1
+		for iy in np.arange(nxp1):
+			self.side0[iy] = self.loc0[iy*nxp1]
+
+		if orient == -1:
+			self.side0 = side0[::-1]
+
+		return self.side0
+
+	# return the global edge indices on the west side of the processor region
+	def getW1(self,orient):
+		nxp1 = self.nx*self.np+1
+		nyp = self.nx*self.np
+		for iy in np.arange(nyp):
+			self.side1[iy] = self.loc1x[iy*nxp1]
+
+		if orient == -1:
+			self.side1 = side1[::-1]
+
+		return self.side1
+
+	# return the global node indices on the south side of the processor region
+	def getS0(self,orient):
+		nxp1 = self.nx*self.np + 1
+		for ix in np.arange(nxp1):
+			self.side0 = self.loc0[ix]
+
+		if orient == -1:
+			self.side0 = self.side0[::-1]
+
+		return self.side0
+
+	# return the global edge indices on the south side of the processor region
+	def getS1(self,orient):
+		nxp = self.nx*self.np
+		for ix in np.arange(nxp):
+			self.side1 = self.loc1y[ix]
+
+		if orient == -1:
+			self.side1 = self.side1[::-1]
+
+		return self.side1
 
 # face of the cube
 class Face:
@@ -174,7 +322,7 @@ class ParaCube:
 	def __init__(self,n_procs,pn,nx):
 		self.np = n_procs	# total number of processors
 		self.pn = pn		# polynomial degree
-		self.nx = nx		# number of elements across a face
+		self.nx = nx		# number of elements across a face (global)
 
 		npx = int(np.sqrt(n_procs/6))
 		self.npx = npx
@@ -253,7 +401,7 @@ class ParaCube:
 		for fi in np.arange(6):
 			face = self.faces[fi]
 			for pj in np.arange(npx*npx):
-				self.procs[pi] = Proc(self.pn,self.nx,pi,fi,self.np)
+				self.procs[pi] = Proc(self.pn,self.nx/self.npx,pi,fi,self.np)
 				face.procs[pj] = self.procs[pi]
 				pi = pi + 1
 
@@ -363,6 +511,8 @@ class ParaCube:
 					proc.NW = Side(sideProcs[pi+1],axis)
 
 		# build the global index maps for the nodes/edges/faces on a given processor
+		for pi in np.arange(self.np):
+			self.procs[pi].buildLocalArrays()
 		for pi in np.arange(self.np):
 			self.procs[pi].buildGlobalArrays()
 
