@@ -173,13 +173,13 @@ class Proc:
 
 		# now do the edges (north and south procs on same face)
 		if eAxis[0][0] == +1 and nAxis[1][1] == +1:
-			gInds1 = east.getW1(+1)
+			gInds1x = east.getW1(+1)
 			for iy in np.arange(nxp):
-				self.loc1x[iy*nxp1 + nxp] = gInds0[iy]
+				self.loc1x[iy*nxp1 + nxp] = gInds1x[iy]
 
-			gInds1 = north.getS1(+1)
+			gInds1y = north.getS1(+1)
 			for ix in np.arange(nxp):
-				self.loc1y[nxp*nxp + ix] = gInds0[ix]
+				self.loc1y[nxp*nxp + ix] = gInds1y[ix]
 
 		# 
 
@@ -262,7 +262,7 @@ class Proc:
 	def getS1(self,orient):
 		nxp = self.nx*self.pn
 		for ix in np.arange(nxp):
-			self.side1 = self.loc1y[ix]
+			self.side1[ix] = self.loc1y[ix]
 
 		if orient == -1:
 			self.side1 = self.side1[::-1]
