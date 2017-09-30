@@ -65,7 +65,7 @@ class Proc:
 
 		# global offsets
 		self.shift0 = self.pi*self.n0lavg
-		self.sh1ft1x = self.pi*self.n1xl
+		self.shift1x = self.pi*self.n1xl
 		self.shift1y = self.np*self.n1xl + self.pi*self.n1yl
 		self.shift2 = self.pi*self.n2l
 
@@ -113,21 +113,30 @@ class Proc:
 		north = self.NN.proc
 		eAxis = self.EE.axis
 		nAxis = self.NN.axis
-		northEast = self.EN.proc
-		southEast = self.SE.proc
-		northWest = self.NW.proc
+		if self.EN != None:
+			northEast = self.EN.proc
+		else:
+			northEast = None
+		if self.SE != None:
+			southEast = self.SE.proc
+		else:
+			southEast = None
+		if self.NW != None:
+			northWest = self.NW.proc
+		else:
+			northWest = None
 
 		# 1. east and north processor neighbours are on the same face
 		if eAxis[0][0] == +1 and nAxis[1][1] == +1:
 			gInds0 = east.getW0(+1)
 			for iy in np.arange(nxp1):
-				self.loc0[iy*nxp1 + npx] = gInds0[iy]
+				self.loc0[iy*nxp1 + nxp] = gInds0[iy]
 
 			gInds0 = north.getS0(+1)
 			for ix in np.arange(nxp1):
 				self.loc0[nxp*nxp1 + ix] = gInds0[ix]
 
-			gInds0 = northEast.getS0(+1):
+			gInds0 = northEast.getS0(+1)
 			self.loc0[nxp1*nxp1 - 1] = gInds0[0]
 
 		# 2. north proc on same axis and east proc rotated -pi/2
@@ -138,35 +147,35 @@ class Proc:
 
 			gInds0 = east.getS0(-1)
 			for iy in np.arange(nxp1):
-				self.loc0[iy*nxp1 + npx] = gInds0[iy]
+				self.loc0[iy*nxp1 + nxp] = gInds0[iy]
 
 			if southEast == None:
-				self.loc0[npx] = self.np*self.n0lavg
+				self.loc0[nxp] = self.np*self.n0lavg
 			else:
 				gInds0 = southEast.getS0(+1)
-				self.loc0[npx] = gInds0[0]
+				self.loc0[nxp] = gInds0[0]
 				
 		# 3. east proc on same axis and noth proc rotated +pi/2
 		if eAxis[0][0] == +1 and nAxis[1][0] == +1:
 			gInds0 = east.getW0(+1)
 			for iy in np.arange(nxp1):
-				self.loc0[iy*nxp1 + npx] = gInds0[iy]
+				self.loc0[iy*nxp1 + nxp] = gInds0[iy]
 
 			gInds0 = north.getW0(-1)
 			for ix in np.arange(nxp1):
 				self.loc0[nxp*nxp1 + ix] = gInds0[ix]
 
 			if northWest == None:
-				self.loc0[npx*nxp1] = self.np*self.n0lavg + 1
+				self.loc0[nxp*nxp1] = self.np*self.n0lavg + 1
 			else:
 				gInds0 = northWest.getS0(+1)
-				self.loc0[npx*nxp1] = gInds0[0]
+				self.loc0[nxp*nxp1] = gInds0[0]
 
 		# now do the edges (north and south procs on same face)
 		if eAxis[0][0] == +1 and nAxis[1][1] == +1:
 			gInds1 = east.getW1(+1)
 			for iy in np.arange(nxp):
-				self.loc1x[iy*nxp1 + npx] = gInds0[iy]
+				self.loc1x[iy*nxp1 + nxp] = gInds0[iy]
 
 			gInds1 = north.getS1(+1)
 			for ix in np.arange(nxp):
@@ -217,41 +226,41 @@ class Proc:
 
 	# return the global node indices on the west side of the processor region
 	def getW0(self,orient):
-		nxp1 = self.nx*self.np + 1
+		nxp1 = self.nx*self.pn + 1
 		for iy in np.arange(nxp1):
 			self.side0[iy] = self.loc0[iy*nxp1]
 
 		if orient == -1:
-			self.side0 = side0[::-1]
+			self.side0[:] = self.side0[::-1]
 
 		return self.side0
 
 	# return the global edge indices on the west side of the processor region
 	def getW1(self,orient):
-		nxp1 = self.nx*self.np+1
-		nyp = self.nx*self.np
+		nxp1 = self.nx*self.pn+1
+		nyp = self.nx*self.pn
 		for iy in np.arange(nyp):
 			self.side1[iy] = self.loc1x[iy*nxp1]
 
 		if orient == -1:
-			self.side1 = side1[::-1]
+			self.side1 = self.side1[::-1]
 
 		return self.side1
 
 	# return the global node indices on the south side of the processor region
 	def getS0(self,orient):
-		nxp1 = self.nx*self.np + 1
+		nxp1 = self.nx*self.pn + 1
 		for ix in np.arange(nxp1):
-			self.side0 = self.loc0[ix]
+			self.side0[ix] = self.loc0[ix]
 
 		if orient == -1:
-			self.side0 = self.side0[::-1]
+			self.side0[:] = self.side0[::-1]
 
 		return self.side0
 
 	# return the global edge indices on the south side of the processor region
 	def getS1(self,orient):
-		nxp = self.nx*self.np
+		nxp = self.nx*self.pn
 		for ix in np.arange(nxp):
 			self.side1 = self.loc1y[ix]
 
@@ -571,7 +580,13 @@ class ParaCube:
 
 		print str(pi) + ':\t' + str(neighbours)
 
-pc = ParaCube(24,3,4)
+	def print_nodes(self):
+		for pi in np.arange(self.np):
+			proc = self.procs[pi]
+			print str(pi) + ':\t' + str(proc.loc0)
+		
+
+pc = ParaCube(24,2,4)
 
 print 'results for 24 procs'
 print '0:\t[19 17  1  3  2 23 21 -1'
@@ -624,3 +639,4 @@ print '23:\t[21  0  2 -1  4  6 22 20'
 pc.print_neighbours(23)
 
 #pc.print_procs()
+pc.print_nodes()
