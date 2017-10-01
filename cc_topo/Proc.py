@@ -140,7 +140,7 @@ class Proc:
 			self.loc0[nxp1*nxp1 - 1] = gInds0[0]
 
 		# 2. north proc on same axis and east proc rotated -pi/2
-		if nAxis[1][1] == +1 and eAxis[0][1] == +1:
+		elif nAxis[1][1] == +1 and eAxis[0][1] == +1:
 			gInds0 = north.getS0(+1)
 			for ix in np.arange(nxp1):
 				self.loc0[nxp*nxp1 + ix] = gInds0[ix]
@@ -156,7 +156,7 @@ class Proc:
 				self.loc0[nxp] = gInds0[0]
 				
 		# 3. east proc on same axis and noth proc rotated +pi/2
-		if eAxis[0][0] == +1 and nAxis[1][0] == +1:
+		elif eAxis[0][0] == +1 and nAxis[1][0] == +1:
 			gInds0 = east.getW0(+1)
 			for iy in np.arange(nxp1):
 				self.loc0[iy*nxp1 + nxp] = gInds0[iy]
@@ -171,6 +171,9 @@ class Proc:
 				gInds0 = northWest.getS0(+1)
 				self.loc0[nxp*nxp1] = gInds0[0]
 
+		else:
+			print 'adjacency error (2.0)'
+
 		# now do the edges (north and south procs on same face)
 		if eAxis[0][0] == +1 and nAxis[1][1] == +1:
 			gInds1x = east.getW1(+1)
@@ -181,8 +184,28 @@ class Proc:
 			for ix in np.arange(nxp):
 				self.loc1y[nxp*nxp + ix] = gInds1y[ix]
 
-		# 
+		# 2. north proc on same axis and east proc rotated -pi/2
+		elif nAxis[1][1] == +1 and eAxis[0][1] == +1:
+			gInds1y = north.getS1(+1)
+			for ix in np.arange(nxp):
+				self.loc1y[nxp*nxp + ix] = gInds1y[ix]
 
+			gInds1x = east.getS1(-1)
+			for iy in np.arange(nxp):
+				self.loc1x[iy*nxp1 + nxp] = gInds1x[iy]
+
+		# 3. east proc on same axis and noth proc rotated +pi/2
+		elif eAxis[0][0] == +1 and nAxis[1][0] == +1:
+			gInds1x = east.getW1(+1)
+			for iy in np.arange(nxp):
+				self.loc1x[iy*nxp1 + nxp] = gInds1x[iy]
+
+			gInds1y = north.getW1(-1)
+			for ix in np.arange(nxp):
+				self.loc1y[nxp*nxp + ix] = gInds1y[ix]
+
+		else:
+			print 'adjacency error (2.1)'
 
 	# return the local indices for the nodes of given element
 	def elementToLocal0(self,ex,ey):
@@ -584,7 +607,12 @@ class ParaCube:
 		for pi in np.arange(self.np):
 			proc = self.procs[pi]
 			print str(pi) + ':\t' + str(proc.loc0)
-		
+
+	def print_edges(self):
+		for pi in np.arange(self.np):
+			proc = self.procs[pi]
+			print str(pi) + ' (x):\t' + str(proc.loc1x)
+			print str(pi) + ' (y):\t' + str(proc.loc1y)
 
 pc = ParaCube(24,2,4)
 
@@ -640,3 +668,4 @@ pc.print_neighbours(23)
 
 #pc.print_procs()
 pc.print_nodes()
+pc.print_edges()
