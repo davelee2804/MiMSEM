@@ -630,13 +630,21 @@ class ParaCube:
 	def print_nodes(self,pi):
 		proc = self.procs[pi]
 		print str(pi) + ':\t' + str(proc.loc0)
+		np.savetxt('nodes_%.4u'%pi + '.txt', proc.loc0, fmt='%u')
 
 	def print_edges(self,pi,dim):
 		proc = self.procs[pi]
 		if dim == 0:
 			print str(pi) + ' (x):\t' + str(proc.loc1x)
+			np.savetxt('edges_x_%.4u'%pi + '.txt', proc.loc1x, fmt='%u')
 		else:
 			print str(pi) + ' (y):\t' + str(proc.loc1y)
+			np.savetxt('edges_y_%.4u'%pi + '.txt', proc.loc1y, fmt='%u')
+
+	def print_faces(self,pi):
+		proc = self.procs[pi]
+		print str(pi) + ':\t' + str(proc.loc2)
+		np.savetxt('faces_%.4u'%pi + '.txt', proc.loc2, fmt='%u')
 
 pc = ParaCube(24,2,4)
 
@@ -765,4 +773,26 @@ pc.print_edges(3,0)
 print '3:\t[420 421 422 423 428 429 430 431 436 437 438 439 444 445 446 447 452 453 454 455'
 pc.print_edges(3,1)
 print '\n'
+print '4:\t[64 65 66 67 68 72 73 74 75 76 80 81 82 83 84 88 89 90 91 92'
+pc.print_edges(4,0)
+print '4:\t[448 449 450 451 456 457 458 459 464 465 466 467 472 473 474 475 480 481 482 483'
+pc.print_edges(4,1)
+print '5:\t[ 68  69  70  71 128  76  77  78  79 136  84  85  86  87 144  92  93  94  95 152'
+pc.print_edges(5,0)
+print '5:\t[452 453 454 455 460 461 462 463 468 469 470 471 476 477 478 479 484 485 486 487'
+pc.print_edges(5,1)
+print '6:\t[ 96  97  98  99 100 104 105 106 107 108 112 113 114 115 116 120 121 122 123 124'
+pc.print_edges(6,0)
+print '6:\t[480 481 482 483 488 489 490 491 496 497 498 499 504 505 506 507 248 240 232 224'
+pc.print_edges(6,1)
+print '7:\t[100 101 102 103 160 108 109 110 111 168 116 117 118 119 176 124 125 126 127 184'
+pc.print_edges(7,0)
+print '7:\t[484 485 486 487 492 493 494 495 500 501 502 503 508 509 510 511 216 208 200 192'
+pc.print_edges(7,1)
+print '\n'
+print '8:\t[128 129 130 131 132 136 137 138 139 140 144 145 146 147 148 152 153 154 155 156'
+pc.print_edges(8,0)
+print '8:\t[512 513 514 515 520 521 522 523 528 529 530 531 536 537 538 539 544 545 546 547'
+pc.print_edges(8,1)
+
 
