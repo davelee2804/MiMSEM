@@ -79,6 +79,11 @@ class Proc:
 		self.loc1y = np.zeros(self.n1yg,dtype=np.int32)
 		self.loc2 = np.zeros(self.n2g,dtype=np.int32)
 
+		# incidence relations
+		self.edgeToFace = np.zeros((4,self.n2g),dtype=np.int32)
+		self.nodeToEdgeX = np.zeros((2,self.n1xg),dtype=np.int32)
+		self.nodeToEdgeY = np.zeros((2,self.n1yg),dtype=np.int32)
+
 		# global indices of local nodes
 		for iy in np.arange(self.nDofsXProc):
 			for ix in np.arange(self.nDofsXProc):
@@ -96,12 +101,14 @@ class Proc:
 				self.loc1x[iy*(self.nDofsXProc+1) + ix] = self.shift1x + iy*self.nDofsXFace + ix
 
 		# global indices of local y normal edges
-		i_edge = self.shift1y
 		for iy in np.arange(self.nDofsXProc):
 			for ix in np.arange(self.nDofsXProc):
 				self.loc1y[iy*(self.nDofsXProc) + ix] = self.shift1y + iy*self.nDofsXFace + ix
 
 		# global indices of local faces
+		for iy in np.arange(self.nDofsXProc):
+			for ix in np.arange(self.nDofsXProc):
+				self.loc2[iy*(self.nDofsXProc) + ix] = self.shift2 + iy*self.nDofsXFace + ix
 
 	# define global indices for remote nodes/edges/faces
 	def buildGlobalArrays(self):
@@ -203,45 +210,71 @@ class Proc:
 		else:
 			print 'adjacency error (2.1)'
 
+	# node to edge and edge to face incidence relations
+	def buildIncidence(self):
+		# edge to face incidence
+		kk = 0
+		for iy in np.arange(self.nDofsXProc):
+			for ix in np.arange(self.nDofsXProc):
+				self.edgeToFace[0,kk] = self.loc1x[iy*(self.nDofsXProc+1)+ix]
+				self.edgeToFace[1,kk] = self.loc1x[iy*(self.nDofsXProc+1)+ix+1]
+				self.edgeToFace[2,kk] = self.loc1y[iy*(self.nDofsXProc)+ix]
+				self.edgeToFace[3,kk] = self.loc1y[(iy+1)*(self.nDofsXProc)+ix]
+				kk = kk + 1
+
+		# node to edge incidence (x-normal edges)
+		kk = 0
+		for iy in np.arange(self.nDofsXProc):
+			for ix in np.arange(self.nDofsXProc+1):
+				self.nodeToEdgeX[0,kk] = self.loc0[iy*(self.nDofsXProc+1)+ix]
+				self.nodeToEdgeX[1,kk] = self.loc0[(iy+1)*(self.nDofsXProc+1)+ix]
+
+		# node to edge incidence (y-normal edges)
+		kk = 0
+		for iy in np.arange(self.nDofsXProc+1):
+			for ix in np.arange(self.nDofsXProc):
+				self.nodeToEdgeY[0,kk] = self.loc0[iy*(self.nDofsXProc+1)+ix]
+				self.nodeToEdgeY[1,kk] = self.loc0[iy*(self.nDofsXProc+1)+ix+1]
+
 	# return the local indices for the nodes of given element
 	def elementToLocal0(self,ex,ey):
 		kk = 0
 		for iy in np.arange(self.polyDeg+1):
 			for ix in np.arange(self.polyDeg+1):
-				inds0[kk] = (ey*self.polyDeg+iy)*(self.nDofsXProc+1) + ex*self.polyDeg + ix
+				self.inds0[kk] = (ey*self.polyDeg+iy)*(self.nDofsXProc+1) + ex*self.polyDeg + ix
 				kk = kk + 1
 
-		return inds0
+		return self.inds0
 
 	# return the local indices for the x normal edges of given element
 	def elementToLocal1x(self,ex,ey):
 		kk = 0
 		for iy in np.arange(self.polyDeg):
 			for ix in np.arange(self.polyDeg+1):
-				inds1x[kk] = (ey*self.polyDeg+iy)*(self.nDofsXProc+1) + ex*self.polyDeg + ix
+				self.inds1x[kk] = (ey*self.polyDeg+iy)*(self.nDofsXProc+1) + ex*self.polyDeg + ix
 				kk = kk + 1
 
-		return inds1x
+		return self.inds1x
 
 	# return the local indices for the y normal edges of given element
 	def elementToLocal1y(self,ex,ey):
 		kk = 0
 		for iy in np.arange(self.polyDeg+1):
 			for ix in np.arange(self.polyDeg):
-				inds1y[kk] = (ey*self.polyDeg+iy)*(self.nDofsXProc) + ex*self.polyDeg + ix
+				self.inds1y[kk] = (ey*self.polyDeg+iy)*(self.nDofsXProc) + ex*self.polyDeg + ix
 				kk = kk + 1
 
-		return inds1y + self.xShiftLoc
+		return self.inds1y + self.xShiftLoc
 
 	# return the local indices for the faces of given element
 	def elementToLocal2(self,ex,ey):
 		kk = 0
 		for iy in np.arange(self.polyDeg):
 			for ix in np.arange(self.polyDeg):
-				inds2[kk] = (ey*self.polyDeg+iy)*(self.nDofsXProc) + ex*self.polyDeg + ix
+				self.inds2[kk] = (ey*self.polyDeg+iy)*(self.nDofsXProc) + ex*self.polyDeg + ix
 				kk = kk + 1
 
-		return inds2
+		return self.inds2
 
 	# return the global node indices on the west side of the processor region
 	def getW0(self,orient):
