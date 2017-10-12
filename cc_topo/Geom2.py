@@ -217,4 +217,5 @@ for pi in np.arange(n_procs):
 		coords[ii,0] = xg[proc.loc0[ii]]
 		coords[ii,1] = yg[proc.loc0[ii]]
 		coords[ii,2] = zg[proc.loc0[ii]]
-		np.savetxt('geom_%.4u'%pi + '.txt', coords, fmt='%e')
+
+	np.savetxt('geom_%.4u'%pi + '.txt', coords, fmt='%e')

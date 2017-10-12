@@ -1,7 +1,8 @@
 class Geom {
     public:
-        Geom(int _nl, int* inds0);
+        Geom(int _pi);
         ~Geom();
+        int pi;
         int nl;
         double** x;
 }

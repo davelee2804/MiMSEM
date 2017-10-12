@@ -1,12 +1,16 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <fstream>
+#include <iostream>
+
 #include "Topo.h"
 #include "Geom.h"
 
-Geom::Geom(int _n0, int* inds0) {
-    int ii;
-    int ng;
-    double *xg, *yg, *zg;
+Geom::Geom(int _pi) {
+    int ii, jj;
+    double coord;
 
-    n0 = _n0;
+    pi = _pi;
 
     x = new double*[n0];
     for(ii = 0; ii < n0; ii++) {
@@ -14,27 +18,25 @@ Geom::Geom(int _n0, int* inds0) {
     }
 
     // determine the number of global nodes
-    sprintf(filename, "geom.txt");
+    sprintf(filename, "geom_%.4u.txt", pi);
     file.open(filename);
-    ng = 0;
+    nl = 0;
     while (std::getline(file, line))
-        ++ng;
-	file.close();
+        ++nl;
+    file.close();
 
-    xg = new double[ng];
-    yg = new double[ng];
-    zg = new double[ng];
-
-    sprintf(filename, "geom.txt");
+    sprintf(filename, "geom_%.4u.txt", pi);
     file.open(filename);
     ii = 0;
     while (std::getline(file, line)) {
+        std::stringstream ss(line);
+        jj = 0;
+        while (ss >> value) {
+           x[ii,jj] = value;
+           jj++;
+        }
     }
-	file.close();
-
-	delete[] xg;
-	delete[] yg;
-	delete[] zg;
+    file.close();
 }
 
 Geom::~Geom() {

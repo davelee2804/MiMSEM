@@ -96,7 +96,7 @@ void Topo::LoadObjs(char* filename, int* inds) {
     file.open(filename);
     while (std::getline(file, line)) {
         inds0[ii] = atoi(line.c_str());
-		//cout << pi << ":\t" << ii << "\t" << inds0[ii] << endl;
+        //cout << pi << ":\t" << ii << "\t" << inds0[ii] << endl;
         ii++;
     }
 	file.close();
