@@ -117,9 +117,9 @@ LagrangeNode::LagrangeNode(int _n, GaussLobatto* _q) {
     // ...and the transpose
     ljxi_t = new double*[n+1];
     for(ii = 0; ii <= n; ii++) {
-        ljxi[ii] = new double[q.n+1];
+        ljxi_t[ii] = new double[q.n+1];
         for(jj = 0; jj <= q.n; jj++) {
-            ljxi[ii,jj] = eval(q.x[jj], ii);
+            ljxi_t[ii,jj] = eval(q.x[jj], ii);
         }
     }
 }
@@ -224,9 +224,9 @@ LagrangeEdge::LagrangeEdge(int _n, LagrangeNode* _l) {
     // ...and the transpose
     ejxi_t = new double*[n];
     for(ii = 0; ii < n; ii++) {
-        ejxi[ii] = new double[q.n+1];
+        ejxi_t[ii] = new double[q.n+1];
         for(jj = 0; jj <= q.n; jj++) {
-            ejxi[ii,jj] = eval(q.x[jj], ii);
+            ejxi_t[ii,jj] = eval(q.x[jj], ii);
         }
     }
 }
