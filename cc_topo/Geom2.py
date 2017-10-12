@@ -4,6 +4,8 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import pyplot as plt
 
+from Proc2 import *
+
 a = np.sqrt(7.0)
 b = np.sqrt((7.0 - 2.0*a)/21.0)
 c = np.sqrt((7.0 + 2.0*a)/21.0)
@@ -12,7 +14,7 @@ q2 = np.array([-1.0,0.0,+1.0])
 q5 = np.array([-1.0,-c,-b,+b,+c,+1.0])
 
 pn = 2
-ne = 2
+ne = 4
 nx = pn*ne
 X = np.zeros(pn*ne+1,dtype=np.float64)
 dx = 0.5*np.pi/ne
@@ -198,10 +200,21 @@ xg[6*nx*nx+1] = x1[nx*nx]
 yg[6*nx*nx+1] = y1[nx*nx]
 zg[6*nx*nx+1] = z1[nx*nx]
 
-#fig = plt.figure()
-#ax = Axes3D(fig)
-#ax.scatter(xg, yg, zg, c='k')
-#ax.set_xlabel('x')
-#ax.set_ylabel('y')
-#ax.set_zlabel('z')
-#plt.show()
+fig = plt.figure()
+ax = Axes3D(fig)
+ax.scatter(xg, yg, zg, c='k')
+ax.set_xlabel('x')
+ax.set_ylabel('y')
+ax.set_zlabel('z')
+plt.show()
+
+n_procs = 6
+pc = ParaCube(n_procs,pn,ne)
+for pi in np.arange(n_procs):
+	proc = pc.procs[pi]
+	coords = np.zeros((proc.n0g,3),dtype=np.float64)
+	for ii in np.arange(proc.n0g):
+		coords[ii,0] = xg[proc.loc0[ii]]
+		coords[ii,1] = yg[proc.loc0[ii]]
+		coords[ii,2] = zg[proc.loc0[ii]]
+		np.savetxt('geom_%.4u'%pi + '.txt', coords, fmt='%e')
