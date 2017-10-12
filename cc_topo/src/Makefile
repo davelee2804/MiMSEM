@@ -11,14 +11,15 @@ CXX = /home/dave/soft/mpi/openmpi-1.8.3/bin/mpic++
 
 CXXFLAGS = ${MPI_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -g -Wall
 
-OBJS = Topo.o \
+OBJS = Basis.o \
+       Topo.o \
        Geom.o \
        Mimsem.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-Mimsem.o: Mimsem.cpp Geom.o Topo.o
+Mimsem.o: Mimsem.cpp Geom.o Topo.o Basis.o
 	${CXX} -c Mimsem.cpp ${CXXFLAGS}
 
 Geom.o: Geom.cpp Geom.h
@@ -26,3 +27,6 @@ Geom.o: Geom.cpp Geom.h
 
 Topo.o: Topo.cpp Topo.h
 	${CXX} -c Topo.cpp ${CXXFLAGS}
+
+Basis.o: Basis.cpp Basis.h
+	${CXX} -c Basis.cpp ${CXXFLAGS}

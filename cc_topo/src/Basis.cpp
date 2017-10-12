@@ -44,7 +44,6 @@ GaussLobatto::GaussLobatto(int _n) {
         a = 2.0*sqrt(5.0/3.0)/11.0;
         x[0] = -1.0; x[1] = -sqrt(5.0/11.0+a); x[2] = -sqrt(5.0/11.0-a); x[3] = 0.0; x[4] = +sqrt(5.0/11.0-a); x[5] = +sqrt(5.0/11.0+a); x[6] = +1.0;
         w[0] = w[6] = 1.0/21.0; w[1] = w[5] = (124.0-7.0*sqrt(15.0))/350.0; w[2] = w[4] = (124.0+7.0*sqrt(15.0))/350.0; w[3] = 256.0/525.0;
-
 ////////	elif n == 7:
 ////////		phi = np.arccos(np.sqrt(55.0)/30.0)
 ////////		r3 = np.power(320.0*np.sqrt(55.0)/265837.0,1.0/3.0)
@@ -89,79 +88,170 @@ GaussLobatto::~GaussLobatto() {
     delete[] w;
 }
 
-class LagrangeNode:
-	def __init__(self,n):
-		self.n = n
-		self.q = GaussLobatto(n)
-		self.coeffs()
+LagrangeNode::LagrangeNode(int _n, GaussLobatto* _q) {
+    int ii, jj;
 
-	def coeffs(self):
-		self.a = np.ones(self.n+1)
-		for i in np.arange(self.n+1):
-			for j in np.arange(self.n+1):
-				if j == i:
-					continue
-				self.a[i] *= 1.0/(self.q.x[i] - self.q.x[j])
+    n = _n;
+    q = _q;
 
-	def polyMult(self,a1,a2):
-		# number of terms in the input polynomials
-		n1 = a1.shape[0]
-		n2 = a2.shape[0]
-		# order of the input polynomials
-		o1 = n1 - 1
-		o2 = n2 - 1
-		# order of the output polynomial
-		o3 = o1 + o2
-		# number of terms of the output polynomial
-		n3 = o3 + 1
-		a3 = np.zeros(n3)
-		for i in np.arange(n1):
-			for j in np.arange(n2):
-				k = i + j
-				a3[k] += a1[i]*a2[j]
+    a = new double[n+1];
 
-		return a3
+    // evaluate the coefficients
+    for(ii = 0; ii <= n; ii++) {
+        a[ii] = 1.0;
+        for(jj = 0; jj <= n; jj++) {
+            if(jj == ii) continue;
+            a[ii] *= 1.0/(q.x[ii] - q.x[jj]);
+        }
+    }
 
-	def polyMultI(self,i,X):
-		p2 = np.zeros((self.n+1,2))
-		p2[:,0] = 1.0
-		for j in np.arange(self.n+1):
-			p2[j,1] = -X[j]
-		
-		pi = np.array([1.0])
-		for j in np.arange(self.n+1):
-			if j == i:
-				continue
-			pj = p2[j,:]
-			pi = self.polyMult(pi,pj)
+    // evaluate the lagrange basis function at quadrature points matrix
+    ljxi = new double*[q.n+1];
+    for(ii = 0; ii <= q.n; ii++) {
+        ljxi[ii] = new double[n+1];
+        for(jj = 0; jj <= n; jj++) {
+            ljxi[ii,jj] = eval(q.x[ii], jj);
+        }
+    }
 
-		return pi[::-1]
+    // ...and the transpose
+    ljxi_t = new double*[n+1];
+    for(ii = 0; ii <= n; ii++) {
+        ljxi[ii] = new double[q.n+1];
+        for(jj = 0; jj <= q.n; jj++) {
+            ljxi[ii,jj] = eval(q.x[jj], ii);
+        }
+    }
+}
 
-	def eval(self,x,i):
-		p = 1.0
-		for j in np.arange(self.n+1):
-			if j == i:
-				continue
-			p *= x - self.q.x[j]
+LagrangeNode::~LagrangeNode() {
+    int ii;
 
-		return self.a[i]*p
+    delete[] a;
 
-	def evalDeriv(self,x,i):
-		p = self.polyMultI(i,self.q.x)
-		dy = 0.0
-		for j in np.arange(self.n) + 1:
-			dy += j*p[j]*np.power(x,j-1)
+    for(ii = 0; ii <= q.n; ii++) {
+        delete[] ljxi[ii];
+    }
+    delete[] ljxi;
 
-		return dy*self.a[i]
+    for(ii = 0; ii <= n; ii++) {
+        delete[] ljxi_t[ii];
+    }
+    delete[] ljxi_t;
+}
 
-class LagrangeEdge:
-	def __init__(self,n):
-		self.n = n
-		self.nf = LagrangeNode(n)
+double LagrangeNode::eval(double x, int i) {
+    int jj;
+    double p = 1.0;
 
-	def eval(self,x,i):
-		c = 0.0
-		for j in np.arange(i+1):
-			c = c - self.nf.evalDeriv(x,j)
+    for(jj = 0; jj <= n; jj++) {
+        if(jj == i) continue;
+        p *= x - q.x[jj];
+    }
 
-		return c
+    return a[i]*p;
+}
+
+double LagrangeNode::evalDeriv(double x, int i) {
+    int jj;
+    double dy = 0.0;
+    double p[100];
+
+    polyMultI(i, q.x, p);
+    for(jj = 1; jj <= n; jj++) {
+        dy += jj*p[jj]*pow(x, jj-1);
+    }
+
+    return dy*a[i];
+}
+
+void LagrangeNode::polyMult(int n1, double* a1, int n2, double* a2, double* a3) {
+    int ii, jj;
+    int n3 = n1 + n2 - 1;
+
+    for(ii = 0; ii < n3; ii++) a3[ii] = 0.0;
+
+    for(ii = 0; ii < n1; ii++) {
+        for(jj = 0; jj < n2; jj++) {
+            a3[ii+jj] += a1[ii]*a2[jj];
+        }
+    }
+}
+
+void LagrangeNode::polyMultI(int i, double* X, double* pir) {
+    int ii, jj;
+    int np1 = n + 1;
+    double p2[np1,2];
+    double pi[100], pj[2], pk[100];
+
+    for(ii = 0; ii < np1; ii++) {
+        p2[ii,0] = 1.0;
+        p2[ii,1] = -X[ii];
+    }
+
+    pi[0] = 1.0;
+    for(ii = 0; ii < np1; ii++) {
+        if(ii == i) continue;
+
+        pj[0] = p2[ii,0];
+        pj[1] = p2[ii,1];
+
+        polyMult(ii+1, pi, 2, pj, pk);
+
+        for(jj = 0; jj < ii+2; jj++) {
+            pi[jj] = pk[jj];
+        }
+    }
+
+    for(ii = 0; ii < np1+2; ii++) {
+        pir[ii] = pi[n+2-ii];
+    }
+}
+
+LagrangeEdge::LagrangeEdge(int _n, LagrangeNode* _l) {
+    n = _n;
+    l = _l;
+
+    // evaluate the edge basis function at quadrature points matrix
+    ejxi = new double*[q.n+1];
+    for(ii = 0; ii <= q.n; ii++) {
+        ejxi[ii] = new double[n];
+        for(jj = 0; jj < n; jj++) {
+            ejxi[ii,jj] = eval(q.x[ii], jj);
+        }
+    }
+
+    // ...and the transpose
+    ejxi_t = new double*[n];
+    for(ii = 0; ii < n; ii++) {
+        ejxi[ii] = new double[q.n+1];
+        for(jj = 0; jj <= q.n; jj++) {
+            ejxi[ii,jj] = eval(q.x[jj], ii);
+        }
+    }
+}
+
+LagrangeEdge::~LagrangeEdge() {
+    int ii;
+
+    for(ii = 0; ii <= q.n; ii++) {
+        delete[] ejxi[ii];
+    }
+    delete[] ejxi;
+
+    for(ii = 0; ii < n; ii++) {
+        delete[] ejxi_t[ii];
+    }
+    delete[] ejxi_t;
+}
+
+double LagrangeEdge::eval(double x, int i) {
+    int jj;
+    double c = 0.0;
+
+    for(jj = 0; jj <= i; jj++) {
+        c -= l.evalDeriv(x, jj);
+    }
+
+    return c;
+}
