@@ -20,7 +20,7 @@ class LagrangeNode {
         double evalDeriv(double x, int i);
     private:
         void polyMult(int n1, double* a1, int n2, double* a2, double* a3);
-        double polyMultI(int i, double* X, double* pir);
+        void polyMultI(int i, double* X, double* pir);
 };
 
 class LagrangeEdge {
@@ -30,5 +30,6 @@ class LagrangeEdge {
         int n;
         double** ejxi;
         double** ejxi_t;
+        LagrangeNode* l;
         double eval(double x, int i);
 };

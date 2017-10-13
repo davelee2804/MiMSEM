@@ -1,7 +1,10 @@
 #include <math.h>
+#include <stdlib.h>
 #include <iostream>
 
 #include "Basis.h"
+
+using namespace std;
 
 double P7(double x) {
     double a = -35.0*x + 315.0*pow(x,3) - 693.0*pow(x,5) + 429.0*pow(x,7);
@@ -36,7 +39,7 @@ GaussLobatto::GaussLobatto(int _n) {
         w[0] = w[4] = 0.1; w[1] = w[3] = 49.0/90.0; w[2] = 64.0/90.0;
     }
     else if(n == 5) {
-        a = 2.0*np.sqrt(7.0)/21.0;
+        a = 2.0*sqrt(7.0)/21.0;
         x[0] = -1.0; x[1] = -sqrt(1.0/3.0+a); x[2] = -sqrt(1.0/3.0-a); x[3] = +sqrt(1.0/3.0-a); x[4] = +sqrt(1.0/3.0+a); x[5] = +1.0;
         w[0] = w[5] = 1.0/15.0; w[1] = w[4] = (14.0-sqrt(7.0))/30.0; w[2] = w[3] = (14.0+sqrt(7.0))/30.0;
     }
@@ -101,25 +104,25 @@ LagrangeNode::LagrangeNode(int _n, GaussLobatto* _q) {
         a[ii] = 1.0;
         for(jj = 0; jj <= n; jj++) {
             if(jj == ii) continue;
-            a[ii] *= 1.0/(q.x[ii] - q.x[jj]);
+            a[ii] *= 1.0/(q->x[ii] - q->x[jj]);
         }
     }
 
     // evaluate the lagrange basis function at quadrature points matrix
-    ljxi = new double*[q.n+1];
-    for(ii = 0; ii <= q.n; ii++) {
+    ljxi = new double*[q->n+1];
+    for(ii = 0; ii <= q->n; ii++) {
         ljxi[ii] = new double[n+1];
         for(jj = 0; jj <= n; jj++) {
-            ljxi[ii,jj] = eval(q.x[ii], jj);
+            ljxi[ii][jj] = eval(q->x[ii], jj);
         }
     }
 
     // ...and the transpose
     ljxi_t = new double*[n+1];
     for(ii = 0; ii <= n; ii++) {
-        ljxi_t[ii] = new double[q.n+1];
-        for(jj = 0; jj <= q.n; jj++) {
-            ljxi_t[ii,jj] = eval(q.x[jj], ii);
+        ljxi_t[ii] = new double[q->n+1];
+        for(jj = 0; jj <= q->n; jj++) {
+            ljxi_t[ii][jj] = eval(q->x[jj], ii);
         }
     }
 }
@@ -129,7 +132,7 @@ LagrangeNode::~LagrangeNode() {
 
     delete[] a;
 
-    for(ii = 0; ii <= q.n; ii++) {
+    for(ii = 0; ii <= q->n; ii++) {
         delete[] ljxi[ii];
     }
     delete[] ljxi;
@@ -146,7 +149,7 @@ double LagrangeNode::eval(double x, int i) {
 
     for(jj = 0; jj <= n; jj++) {
         if(jj == i) continue;
-        p *= x - q.x[jj];
+        p *= x - q->x[jj];
     }
 
     return a[i]*p;
@@ -157,7 +160,7 @@ double LagrangeNode::evalDeriv(double x, int i) {
     double dy = 0.0;
     double p[100];
 
-    polyMultI(i, q.x, p);
+    polyMultI(i, q->x, p);
     for(jj = 1; jj <= n; jj++) {
         dy += jj*p[jj]*pow(x, jj-1);
     }
@@ -181,20 +184,20 @@ void LagrangeNode::polyMult(int n1, double* a1, int n2, double* a2, double* a3) 
 void LagrangeNode::polyMultI(int i, double* X, double* pir) {
     int ii, jj;
     int np1 = n + 1;
-    double p2[np1,2];
+    double p2[np1][2];
     double pi[100], pj[2], pk[100];
 
     for(ii = 0; ii < np1; ii++) {
-        p2[ii,0] = 1.0;
-        p2[ii,1] = -X[ii];
+        p2[ii][0] = 1.0;
+        p2[ii][1] = -X[ii];
     }
 
     pi[0] = 1.0;
     for(ii = 0; ii < np1; ii++) {
         if(ii == i) continue;
 
-        pj[0] = p2[ii,0];
-        pj[1] = p2[ii,1];
+        pj[0] = p2[ii][0];
+        pj[1] = p2[ii][1];
 
         polyMult(ii+1, pi, 2, pj, pk);
 
@@ -209,24 +212,26 @@ void LagrangeNode::polyMultI(int i, double* X, double* pir) {
 }
 
 LagrangeEdge::LagrangeEdge(int _n, LagrangeNode* _l) {
+    int ii, jj;
+
     n = _n;
     l = _l;
 
     // evaluate the edge basis function at quadrature points matrix
-    ejxi = new double*[q.n+1];
-    for(ii = 0; ii <= q.n; ii++) {
+    ejxi = new double*[l->q->n+1];
+    for(ii = 0; ii <= l->q->n; ii++) {
         ejxi[ii] = new double[n];
         for(jj = 0; jj < n; jj++) {
-            ejxi[ii,jj] = eval(q.x[ii], jj);
+            ejxi[ii][jj] = eval(l->q->x[ii], jj);
         }
     }
 
     // ...and the transpose
     ejxi_t = new double*[n];
     for(ii = 0; ii < n; ii++) {
-        ejxi_t[ii] = new double[q.n+1];
-        for(jj = 0; jj <= q.n; jj++) {
-            ejxi_t[ii,jj] = eval(q.x[jj], ii);
+        ejxi_t[ii] = new double[l->q->n+1];
+        for(jj = 0; jj <= l->q->n; jj++) {
+            ejxi_t[ii][jj] = eval(l->q->x[jj], ii);
         }
     }
 }
@@ -234,7 +239,7 @@ LagrangeEdge::LagrangeEdge(int _n, LagrangeNode* _l) {
 LagrangeEdge::~LagrangeEdge() {
     int ii;
 
-    for(ii = 0; ii <= q.n; ii++) {
+    for(ii = 0; ii <= l->q->n; ii++) {
         delete[] ejxi[ii];
     }
     delete[] ejxi;
@@ -250,7 +255,7 @@ double LagrangeEdge::eval(double x, int i) {
     double c = 0.0;
 
     for(jj = 0; jj <= i; jj++) {
-        c -= l.evalDeriv(x, jj);
+        c -= l->evalDeriv(x, jj);
     }
 
     return c;

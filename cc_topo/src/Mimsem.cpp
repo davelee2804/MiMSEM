@@ -4,7 +4,9 @@
 #include <petsc.h>
 #include <petscvec.h>
 
+#include "Basis.h"
 #include "Topo.h"
+#include "Geom.h"
 
 using namespace std;
 
@@ -12,6 +14,7 @@ int main(int argc, char** argv) {
 	int rank, size;
     static char help[] = "petsc";
     Topo* topo;
+    Geom* geom;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 
@@ -21,8 +24,10 @@ int main(int argc, char** argv) {
     cout << "importing topology for processor: " << rank << " of " << size << endl;
 
     topo = new Topo(rank);
+    geom = new Geom(rank);
 
-    delete topo;
+    //delete topo;
+    delete geom;
 
     PetscFinalize();
 

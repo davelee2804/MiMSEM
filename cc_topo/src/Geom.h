@@ -5,4 +5,4 @@ class Geom {
         int pi;
         int nl;
         double** x;
-}
+};

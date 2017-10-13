@@ -2,20 +2,25 @@
 #include <stdlib.h>
 #include <fstream>
 #include <iostream>
+#include <string>
+#include <sstream>
+
+#include <petscvec.h>
 
 #include "Topo.h"
 #include "Geom.h"
 
+using namespace std;
+using std::string;
+
 Geom::Geom(int _pi) {
     int ii, jj;
-    double coord;
+    ifstream file;
+	char filename[100];
+	string line;
+    double value;
 
     pi = _pi;
-
-    x = new double*[n0];
-    for(ii = 0; ii < n0; ii++) {
-        x[ii] = new double[3];
-    }
 
     // determine the number of global nodes
     sprintf(filename, "geom_%.4u.txt", pi);
@@ -25,22 +30,31 @@ Geom::Geom(int _pi) {
         ++nl;
     file.close();
 
+    x = new double*[nl];
+    for(ii = 0; ii < nl; ii++) {
+        x[ii] = new double[3];
+    }
+
     sprintf(filename, "geom_%.4u.txt", pi);
     file.open(filename);
     ii = 0;
     while (std::getline(file, line)) {
-        std::stringstream ss(line);
+        stringstream ss(line);
         jj = 0;
         while (ss >> value) {
-           x[ii,jj] = value;
+           x[ii][jj] = value;
            jj++;
         }
+        //cout << ii << "\t" << x[ii][0] << "\t" << x[ii][1] << "\t" << x[ii][2] << endl;
+        ii++;
     }
     file.close();
 }
 
 Geom::~Geom() {
-    for(ii = 0; ii < n0; ii++) {
+    int ii;
+
+    for(ii = 0; ii < nl; ii++) {
         delete[] x[ii];
     }
     delete[] x;
