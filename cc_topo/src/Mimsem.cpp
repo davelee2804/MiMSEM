@@ -11,6 +11,9 @@
 
 using namespace std;
 
+#define EL_ORD 2
+#define N_ELS_X_LOC 4
+
 int main(int argc, char** argv) {
 	int rank, size;
     static char help[] = "petsc";
@@ -24,10 +27,10 @@ int main(int argc, char** argv) {
 
     cout << "importing topology for processor: " << rank << " of " << size << endl;
 
-    topo = new Topo(rank);
+    topo = new Topo(rank, EL_ORD, N_ELS_X_LOC);
     geom = new Geom(rank);
 
-    //delete topo;
+    delete topo;
     delete geom;
 
     PetscFinalize();

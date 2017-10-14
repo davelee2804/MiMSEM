@@ -1,8 +1,14 @@
 #include "Basis.h"
 #include "ElMats.h"
 
-void mult(int ni, int nj, int nk, double** A, double** B, double** C) {
+double** mult(int ni, int nj, int nk, double** A, double** B) {
     int ii, jj, kk;
+    double** C;
+
+    C = new double*[ni];
+    for(ii = 0; ii < ni; ii++) {
+        C[ii] = new double[nj];
+    }
 
     for(ii = 0; ii < ni; ii++) {
         for(jj = 0; jj < nj; jj++) {
@@ -12,16 +18,26 @@ void mult(int ni, int nj, int nk, double** A, double** B, double** C) {
             }
         }
     }
+
+    return C;
 }
 
-void tran(int ni, int nj, double**A, double** B) {
+double** tran(int ni, int nj, double**A) {
     int ii, jj;
+    double** B;
+
+    B = new double*[nj];
+    for(jj = 0; jj < nj; jj++) {
+        B[jj] = new double[ni];
+    }
 
     for(ii = 0; ii < ni; ii++) {
         for(jj = 0; jj < nj; jj++) {
             B[jj][ii] = A[ii][jj];
         }
     }
+
+    return B;
 }
 
 // Outer product of 0-form in x and 1-form in y (columns)
@@ -46,6 +62,8 @@ M1x_j_xy_i::M1x_j_xy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 
     for(jj = 0; jj < nj; jj++) {
         for(ii = 0; ii < mi; ii++) {
@@ -88,6 +106,8 @@ M1y_j_xy_i::M1y_j_xy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 
     for(jj = 0; jj < nj; jj++) {
         for(ii = 0; ii < mi; ii++) {
@@ -127,6 +147,8 @@ M1x_j_Cxy_i::M1x_j_Cxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 }
 
 void M1x_j_Cxy_i::assemble(double* c) {
@@ -183,6 +205,8 @@ M1y_j_Cxy_i::M1y_j_Cxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 }
 
 void M1y_j_Cxy_i::assemble(double* c) {
@@ -239,6 +263,8 @@ M1x_j_Exy_i::M1x_j_Exy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 }
 
 M1x_j_Exy_i::~M1x_j_Exy_i() {
@@ -295,6 +321,8 @@ M1y_j_Exy_i::M1y_j_Exy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 }
 
 M1y_j_Exy_i::~M1y_j_Exy_i() {
@@ -351,6 +379,8 @@ M1x_j_Dxy_i::M1x_j_Dxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 }
 
 M1x_j_Dxy_i::~M1x_j_Dxy_i() {
@@ -408,6 +438,8 @@ M1y_j_Dxy_i::M1y_j_Dxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 }
 
 M1y_j_Dxy_i::~M1y_j_Dxy_i() {
@@ -465,6 +497,8 @@ M1x_j_Fxy_i::M1x_j_Fxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 }
 
 M1x_j_Fxy_i::~M1x_j_Fxy_i() {
@@ -519,6 +553,8 @@ M1y_j_Fxy_i::M1y_j_Fxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 }
 
 M1y_j_Fxy_i::~M1y_j_Fxy_i() {
@@ -576,6 +612,8 @@ M2_j_xy_i::M2_j_xy_i(LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 
     for(jj = 0; jj < nj; jj++) {
         for(ii = 0; ii < mi; ii++) {
@@ -615,6 +653,8 @@ M0_j_xy_i::M0_j_xy_i(LagrangeNode* _l) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 
     for(jj = 0; jj < nj; jj++) {
         for(ii = 0; ii < mi; ii++) {
@@ -655,6 +695,8 @@ M0_j_Cxy_i::M0_j_Cxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+    nDofsI = mi;
+    nDofsJ = nj;
 }
 
 M0_j_Cxy_i::~M0_j_Cxy_i() {
@@ -710,6 +752,8 @@ Wii::Wii(GaussLobatto* _q) {
             A[ii][jj] = 0.0;
         }
     }
+    nDofsI = mi;
+    nDofsJ = mi;
 
     for(ii = 0; ii < mi; ii++) {
         A[ii][ii] = q->x[ii%mp1]*q->x[ii/mp1];
