@@ -8,6 +8,7 @@
 #include "ElMats.h"
 #include "Topo.h"
 #include "Geom.h"
+#include "Assembly.h"
 
 using namespace std;
 

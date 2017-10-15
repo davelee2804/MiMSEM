@@ -10,6 +10,9 @@ class Topo {
         int  elOrd;
         int  nElsX;
         int  nDofsX;
+        int  nDofs0G;
+        int  nDofs1G;
+        int  nDofs2G;
         int* loc0;    // global indices of the nodes on this processor
         int* loc1;    // global indices of the edges on this processor
         int* loc1x;   // global indices of the x-normal edges on this processor

@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 
+#include <petsc.h>
 #include <petscvec.h>
 
 #include "Topo.h"
@@ -12,6 +13,7 @@ using std::string;
 
 Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     int ii;
+    int n_procs;
     ifstream file;
 	char filename[100];
 	string line;
@@ -92,6 +94,13 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     inds1x = new int[(elOrd)*(elOrd+1)];
     inds1y = new int[(elOrd+1)*(elOrd)];
     inds2 = new int[(elOrd)*(elOrd)];
+
+    // global number of degrees of freedom
+    MPI_Comm_size(MPI_COMM_WORLD, &n_procs);
+    nDofs0G = n_procs*nDofsX*nDofsX + 2;
+    nDofs1G = 2*n_procs*nDofsX*nDofsX;
+    nDofs2G = n_procs*nDofsX*nDofsX;
+    cout << "n dofs global: " << nDofs0G << "\t" << nDofs1G << "\t" << nDofs2G << endl;
 }
 
 Topo::~Topo() {
@@ -131,7 +140,7 @@ int* Topo::elInds0(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd + 1;  iy++) {
         for(ix = 0; ix < elOrd + 1; ix++) {
-            inds0[kk] = (ey*elOrd + iy)*(nDofsX + 1) + ex*nDofsX + ix;
+            inds0[kk] = loc0[(ey*elOrd + iy)*(nDofsX + 1) + ex*nDofsX + ix];
             kk++;
         }
     }
@@ -145,7 +154,7 @@ int* Topo::elInds1x(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd; iy++) {
         for(ix = 0; ix < elOrd + 1; ix++) {
-            inds1x[kk] = (ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix;
+            inds1x[kk] = loc1x[(ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix];
             kk++;
         }
     }
@@ -159,7 +168,7 @@ int* Topo::elInds1y(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd + 1; iy++) {
         for(ix = 0; ix < elOrd; ix++) {
-            inds1y[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix;
+            inds1y[kk] = loc1y[(ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix];
             kk++;
         }
     }
@@ -173,7 +182,7 @@ int* Topo::elInds2(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd ; iy++) {
         for(ix = 0; ix < elOrd; ix++) {
-            inds2[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix;
+            inds2[kk] = loc2[(ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix];
             kk++;
         }
     }
