@@ -46,3 +46,28 @@ class Uhmat {
         Mat M;
         void assemble(Vec h2);
 };
+
+class Pvec {
+    public:
+        Pvec(Topo* _topo, LagrangeNode* _l);
+        ~Pvec();
+        Topo* topo;
+        LagrangeNode* l;
+        PetscScalar* entries;
+        Vec v;
+        void assemble();
+};
+
+class Phvec {
+    public:
+        Phvec(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        ~Phvec();
+        Topo* topo;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        double* ck;
+        PetscScalar* entries;
+        Vec v;
+        void assemble(Vec h2);
+};
+

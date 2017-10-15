@@ -208,6 +208,8 @@ Pmat::~Pmat() {
 
 // 1 form mass matrix with 2 forms interpolated to quadrature points
 Uhmat::Uhmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
+    int lSize;
+
     topo = _topo;
     l = _l;
     e = _e;
@@ -226,6 +228,14 @@ Uhmat::Uhmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     Uh = new M1x_j_Fxy_i(l, e);
     Vh = new M1y_j_Fxy_i(l, e);
 
+    lSize = topo->n1x + topo->n1y;
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, lSize, lSize, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
+    MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
+
     Free2D(U->nDofsJ, Ut);
     Free2D(V->nDofsJ, Vt);
     delete Q;
@@ -234,19 +244,13 @@ Uhmat::Uhmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void Uhmat::assemble(Vec h2) {
-    int ex, ey, lSize, ii, jj, kk, n2;
+    int ex, ey, ii, jj, kk, n2;
     int *inds_x, *inds_y, *inds2;
     double **UtQU, **VtQV;
     PetscScalar* h2Array;
 
     n2 = topo->elOrd*topo->elOrd;
-    lSize = topo->n1x + topo->n1y;
 
-    MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, lSize, lSize, topo->nDofs1G, topo->nDofs1G);
-    MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 4*Uh->nDofsJ, PETSC_NULL, 2*Uh->nDofsJ, PETSC_NULL);
-    MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
     MatZeroEntries(M);
 
     VecGetArray(h2, &h2Array);
@@ -301,119 +305,119 @@ Uhmat::~Uhmat() {
     MatDestroy(&M);
 }
 
-////form mass matrix
-////s Phmat:
-////def __init__(self,topo,quad,h):
-////	P = M0_j_xy_i(topo.n,quad.n).A
-////	Q = Wii(quad.n).A
-////	QP = mult(Q,P)
-////	M0h = M0_j_Cxy_i(topo.n,quad.n)
+// Assembly of the diagonal 0 form mass matrix as a vector.
+// Assumes inexact integration and a diagonal mass matrix for the 
+// 0 form function space (ie: quadrature and basis functions are 
+// the same order)
+Pvec::Pvec(Topo* _topo, LagrangeNode* _l) {
+    topo = _topo;
+    l = _l;
 
-////	maps,nnz = self.genMap(topo)
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &v);
+    VecSetLocalToGlobalMapping(v, topo->map0);
 
-////	n2 = topo.n*topo.n
-////	np1 = topo.n + 1
-////	np12 = np1*np1
-////	np14 = np12*np12
-////	rows = np.zeros(nnz,dtype=np.int32)
-////	cols = np.zeros(nnz,dtype=np.int32)
-////	vals = np.zeros(nnz,dtype=np.float64)
+    entries = new PetscScalar[(l->n+1)*(l->n+1)];
 
-////	ck = np.zeros(n2,dtype=np.float64)
+    assemble();
+}
 
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds0 = topo.localToGlobal0(ex,ey)
-////			inds2 = topo.localToGlobal2(ex,ey)
-////		
-////			for kk in np.arange(n2):
-////				ck[kk] = h[inds2[kk]]
+void Pvec::assemble() {
+    int ii, ex, ey, np1, np12;
+    int *inds_x;
+    double* weights = l->q->w;
 
-////			Ph = M0h.assemble(ck)
-////			Pht = Ph.transpose()
-////			M0 = mult(Pht,QP)
+    VecZeroEntries(v);
 
-////			for jj in np.arange(np14):
-////				row = inds0[jj/np12]
-////				col = inds0[jj%np12]
-////				ii = maps[row,col]
-////				if ii == -1:
-////					print 'ERROR! assembly'
-////				rows[ii] = row
-////				cols[ii] = col
-////				vals[ii] = vals[ii] + M0[jj/np12,jj%np12]
+    np1 = l->n + 1;
+    np12 = np1*np1;
 
-////	nr = topo.nx*topo.ny*n2
-////	nc = topo.nx*topo.ny*n2
-////	self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            // TODO: incorporate the jacobian transformation for each element
+            for(ii = 0; ii < np12; ii++) {
+                // weight at quadrature point
+                entries[ii] = weights[ii%np1]*weights[ii/np1];
+            }
+            inds_x = topo->elInds0_g(ex, ey);
+            VecSetValues(v, np12, inds_x, entries, ADD_VALUES);
+        }
+    }
+    VecAssemblyBegin(v);
+    VecAssemblyEnd(v);
+}
 
-////def genMap(self,topo):
-////	np1 = topo.n+1
-////	ne = np1*np1
-////	nr = topo.nx*topo.ny*topo.n*topo.n
-////	nc = topo.nx*topo.ny*topo.n*topo.n
-////	maps = -1*np.ones((nr,nc),dtype=np.int32)
-////	ii = 0
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds0 = topo.localToGlobal0(ex,ey)
-////			for jj in np.arange(ne*ne):
-////				row = inds0[jj/ne]
-////				col = inds0[jj%ne]
-////				if maps[row][col] == -1:
-////					maps[row][col] = ii
-////					ii = ii + 1
+Pvec::~Pvec() {
+    delete[] entries;
+    VecDestroy(&v);
+}
 
-////	return maps, ii
+// Assembly of the diagonal 0 form mass matrix as a vector 
+// with 2 form vector interpolated onto quadrature points.
+// Assumes inexact integration and a diagonal mass matrix for the 
+// 0 form function space (ie: quadrature and basis functions are 
+// the same order)
+Phvec::Phvec(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
+    topo = _topo;
+    l = _l;
+    e = _e;
 
-////sumes inexact integration and a diagonal mass matrix for the 
-////form function space (ie: quadrature and basis functions are 
-////e same order)
-////s Phvec:
-////def __init__(self,topo,quad):
-////	self.topo = topo
-////	self.quad = quad
-////	n = topo.n
-////	np1 = n+1
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &v);
+    VecSetLocalToGlobalMapping(v, topo->map0);
 
-////	self.v = np.zeros((topo.nx*topo.ny*topo.n*topo.n),dtype=np.float64)
+    ck = new double[(l->n)*(l->n)];
+    entries = new PetscScalar[(l->n+1)*(l->n+1)];
+}
 
-////	edge = LagrangeEdge(n)
-////	self.E = np.zeros((np1,n),dtype=np.float64)
-////	for j in np.arange(n):
-////		for i in np.arange(np1):
-////			self.E[i,j] = edge.eval(quad.x[i],j)
+void Phvec::assemble(Vec h2) {
+    int ii, kk, ex, ey, np1, np12, n2;
+    int *inds2, *inds_x;
+    double wt, hq;
+    PetscScalar* h2Array;
+    double* weights = l->q->w;
+    double** ejxi = e->ejxi;
 
-////def assemble(self,h):
-////	topo = self.topo
-////	quad = self.quad
-////	n = topo.n
-////	n2 = n*n
-////	np1 = n+1
-////	np12 = np1*np1
+    VecGetArray(h2, &h2Array);
+    VecZeroEntries(v);
 
-////	for ii in np.arange(self.v.shape[0]):
-////		self.v[ii] = 0.0
+    n2 = (l->n)*(l->n);
+    np1 = l->n + 1;
+    np12 = np1*np1;
 
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds0 = topo.localToGlobal0(ex,ey)
-////			inds2 = topo.localToGlobal2(ex,ey)
-////			for ii in np.arange(np12):
-////				wt = quad.w[ii/np1]*quad.w[ii%np1]
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            // TODO: incorporate the jacobian transformation for each element
+            inds2 = topo->elInds2_l(ex, ey);
+            for(kk = 0; kk < n2; kk++) {
+                ck[kk] = h2Array[inds2[kk]];
+            }
 
-////				ix = ii%np1
-////				iy = ii/np1
-////				hj = 0.0
-////				for jj in np.arange(n2):
-////					hj = hj + h[inds2[jj]]*self.E[ix,jj%n]*self.E[iy,jj/n]
+            for(ii = 0; ii < np12; ii++) {
+                // weight at quaadrature point
+                wt = weights[ii%np1]*weights[ii/np1];
 
-////				self.v[inds0[ii]] = self.v[inds0[ii]] + wt*hj
+                // interpolate 2 form at quadrature point
+                hq = 0.0;
+                for(kk = 0; kk < n2; kk++) {
+                    hq += ck[kk]*ejxi[ii][kk];
+                }
 
-////	return self.v
+                entries[ii] = wt*hq;
+            }
 
-////ght hand side matrix for the L2 projection of an analytic function
-////fined at the quadrature points onto the 2-forms
+            inds_x = topo->elInds0_g(ex, ey);
+            VecSetValues(v, np12, inds_x, entries, ADD_VALUES);
+        }
+    }
+    VecAssemblyBegin(v);
+    VecAssemblyEnd(v);
+}
+
+Phvec::~Phvec() {
+    delete[] ck;
+    delete[] entries;
+    VecDestroy(&v);
+}
+
 ////s WtQmat:
 ////def __init__(self,topo,quad):
 ////	topo_q = Topo(topo.nx,topo.ny,quad.n)
