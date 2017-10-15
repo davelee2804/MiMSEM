@@ -75,15 +75,15 @@ void Umat::assemble() {
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    delete Q;
-	delete U;
-    delete V;
     Free2D(U->nDofsJ, Ut);
     Free2D(V->nDofsJ, Vt);
     Free2D(U->nDofsJ, UtQ);
     Free2D(V->nDofsJ, VtQ);
     Free2D(U->nDofsJ, UtQU);
     Free2D(V->nDofsJ, VtQV);
+    delete Q;
+	delete U;
+    delete V;
     delete[] UtQUflat;
     delete[] VtQVflat;
 }
@@ -93,91 +93,121 @@ Umat::~Umat() {
 }
 
 // 2 form mass matrix
-////s Wmat:
-////def __init__(self,topo,quad):
-////	W = M2_j_xy_i(topo.n,quad.n).A
-////	Wt = W.transpose()
-////	Q = Wii(quad.n).A
-////	WtQ = mult(Wt,Q)
-////	self.Me = mult(WtQ,W)
+Wmat::Wmat(Topo* _topo, LagrangeEdge* _e) {
+    topo = _topo;
+    e = _e;
 
-////	n2 = topo.n*topo.n
-////	n4 = n2*n2
-////	nnz = topo.nx*topo.ny*n4
-////	rows = np.zeros(nnz,dtype=np.int32)
-////	cols = np.zeros(nnz,dtype=np.int32)
-////	vals = np.zeros(nnz,dtype=np.float64)
-////	ii = 0
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds2 = topo.localToGlobal2(ex,ey)
-////			for jj in np.arange(n4):
-////				r = jj/n2
-////				c = jj%n2
-////				rows[ii] = inds2[r]
-////				cols[ii] = inds2[c]
-////				vals[ii] = self.Me[r][c]
-////				ii = ii + 1
+    assemble();
+}
 
-////	nr = topo.nx*topo.ny*n2
-////	nc = topo.nx*topo.ny*n2
-////	self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+void Wmat::assemble() {
+    int ii, jj, kk, ex, ey;
+    int* inds;
+    double* WtQWflat;
 
-////form mass matrix
-////s Pmat:
-////def __init__(self,topo,quad):
-////	P = M0_j_xy_i(topo.n,quad.n).A
-////	Pt = P.transpose()
-////	Q = Wii(quad.n).A
-////	PtQ = mult(Pt,Q)
-////	self.Me = mult(PtQ,P)
+    Wii* Q = new Wii(e->l->q);
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+    double** Wt = tran(W->nDofsI, W->nDofsJ, W->A);
+    double** WtQ = mult(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q->A);
+    double** WtQW = mult(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A);
 
-////	maps,nnz = self.genMap(topo)
+    WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    kk = 0;
+    for(ii = 0; ii < W->nDofsJ; ii++) {
+        for(jj = 0; jj < W->nDofsJ; jj++) {
+            WtQWflat[kk] = WtQW[ii][jj];
+            kk++;
+        }
+    }
 
-////	n2 = topo.n*topo.n
-////	np1 = topo.n + 1
-////	np12 = np1*np1
-////	np14 = np12*np12
-////	rows = np.zeros(nnz,dtype=np.int32)
-////	cols = np.zeros(nnz,dtype=np.int32)
-////	vals = np.zeros(nnz,dtype=np.float64)
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds0 = topo.localToGlobal0(ex,ey)
-////			for jj in np.arange(np14):
-////				row = inds0[jj/np12]
-////				col = inds0[jj%np12]
-////				ii = maps[row,col]
-////				if ii == -1:
-////					print 'ERROR! assembly'
-////				rows[ii] = row
-////				cols[ii] = col
-////				vals[ii] = vals[ii] + self.Me[jj/np12,jj%np12]
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2, topo->n2, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+    MatSetLocalToGlobalMapping(M, topo->map2, topo->map2);
+    MatZeroEntries(M);
 
-////	nr = topo.nx*topo.ny*n2
-////	nc = topo.nx*topo.ny*n2
-////	self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds = topo->elInds2(ex, ey);
+            // TODO: incorporate the jacobian transformation for each element
+            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+        }
+    }
 
-////def genMap(self,topo):
-////	np1 = topo.n+1
-////	ne = np1*np1
-////	nr = topo.nx*topo.ny*topo.n*topo.n
-////	nc = topo.nx*topo.ny*topo.n*topo.n
-////	maps = -1*np.ones((nr,nc),dtype=np.int32)
-////	ii = 0
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds0 = topo.localToGlobal0(ex,ey)
-////			for jj in np.arange(ne*ne):
-////				row = inds0[jj/ne]
-////				col = inds0[jj%ne]
-////				if maps[row][col] == -1:
-////					maps[row][col] = ii
-////					ii = ii + 1
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-////	return maps, ii
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete W;
+    delete[] WtQWflat;
+}
 
-////form mass matrix with 2 forms interpolated to quadrature points
+Wmat::~Wmat() {
+    MatDestroy(&M);
+}
+
+// 0 form mass matrix
+Pmat::Pmat(Topo* _topo, LagrangeNode* _l) {
+    topo = _topo;
+    l = _l;
+
+    assemble();
+}
+
+void Pmat::assemble() {
+    int ii, jj, kk, ex, ey;
+    int* inds;
+    double* PtQPflat;
+
+    Wii* Q = new Wii(l->q);
+    M0_j_xy_i* P = new M0_j_xy_i(l);
+    double** Pt = tran(P->nDofsI, P->nDofsJ, P->A);
+    double** PtQ = mult(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Q->A);
+    double** PtQP = mult(P->nDofsJ, P->nDofsJ, Q->nDofsJ, PtQ, P->A);
+
+    PtQPflat = new double[P->nDofsJ*P->nDofsJ];
+    kk = 0;
+    for(ii = 0; ii < P->nDofsJ; ii++) {
+        for(jj = 0; jj < P->nDofsJ; jj++) {
+            PtQPflat[kk] = PtQP[ii][jj];
+            kk++;
+        }
+    }
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n0, topo->n0, topo->nDofs0G, topo->nDofs0G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 2*P->nDofsJ, PETSC_NULL);
+    MatSetLocalToGlobalMapping(M, topo->map0, topo->map0);
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds = topo->elInds0(ex, ey);
+            // TODO: incorporate the jacobian transformation for each element
+            MatSetValues(M, P->nDofsJ, inds, P->nDofsJ, inds, PtQPflat, ADD_VALUES);
+        }
+    }
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(P->nDofsJ, Pt);
+    Free2D(P->nDofsJ, PtQ);
+    Free2D(P->nDofsJ, PtQP);
+    delete P;
+    delete[] PtQPflat;
+}
+
+Pmat::~Pmat() {
+    MatDestroy(&M);
+}
+
+// 2 form mass matrix with 2 forms interpolated to quadrature points
+
 ////s Uhmat:
 ////def __init__(self,topo,quad):
 ////	self.topo = topo
