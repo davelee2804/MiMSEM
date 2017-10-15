@@ -64,8 +64,8 @@ void Umat::assemble() {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds_x = topo->elInds1x(ex, ey);
-            inds_y = topo->elInds1y(ex, ey);
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
             // TODO: incorporate the jacobian transformation for each element
             MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
             MatSetValues(M, V->nDofsJ, inds_y, V->nDofsJ, inds_y, VtQVflat, ADD_VALUES);
@@ -129,7 +129,7 @@ void Wmat::assemble() {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds = topo->elInds2(ex, ey);
+            inds = topo->elInds2_g(ex, ey);
             // TODO: incorporate the jacobian transformation for each element
             MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
         }
@@ -186,7 +186,7 @@ void Pmat::assemble() {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds = topo->elInds0(ex, ey);
+            inds = topo->elInds0_g(ex, ey);
             // TODO: incorporate the jacobian transformation for each element
             MatSetValues(M, P->nDofsJ, inds, P->nDofsJ, inds, PtQPflat, ADD_VALUES);
         }
@@ -206,118 +206,100 @@ Pmat::~Pmat() {
     MatDestroy(&M);
 }
 
-// 2 form mass matrix with 2 forms interpolated to quadrature points
+// 1 form mass matrix with 2 forms interpolated to quadrature points
+Uhmat::Uhmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
+    topo = _topo;
+    l = _l;
+    e = _e;
 
-////s Uhmat:
-////def __init__(self,topo,quad):
-////	self.topo = topo
-////	self.quad = quad
-////	self.maps, self.nnz = self.genMap(topo)
-////	#self.assemble(topo,quad,maps,nnz,h)
+    Wii* Q = new Wii(l->q);
+    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+    M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
+    double** Ut = tran(U->nDofsI, U->nDofsJ, U->A);
+    double** Vt = tran(V->nDofsI, V->nDofsJ, V->A);
+    UtQ = mult(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Q->A);
+    VtQ = mult(V->nDofsJ, Q->nDofsJ, V->nDofsI, Vt, Q->A);
+    UtQUflat = new double[U->nDofsJ*U->nDofsJ];
+    VtQVflat = new double[V->nDofsJ*V->nDofsJ];
+    ck = new double[l->n*l->n];
 
-////	Q = Wii(quad.n).A
-////	U = M1x_j_xy_i(topo.n,quad.n).A
-////	V = M1y_j_xy_i(topo.n,quad.n).A
-////	self.QU = mult(Q,U)
-////	self.QV = mult(Q,V)
-////	
-////	self.M1x = M1x_j_Fxy_i(topo.n,quad.n)
-////	self.M1y = M1y_j_Fxy_i(topo.n,quad.n)
+    Uh = new M1x_j_Fxy_i(l, e);
+    Vh = new M1y_j_Fxy_i(l, e);
 
-////def assemble(self,h):
-////	topo = self.topo
-////	quad = self.quad
-////	maps = self.maps
-////	nnz = self.nnz
-////	n2 = topo.n*topo.n
-////	np1 = topo.n+1
-////	ncl = np1*topo.n        # number of columns in local matrix, u or v (same as number of rows)
-////	shift = (topo.n*topo.nx)*(topo.n*topo.ny)
-////	rows = np.zeros(nnz,dtype=np.int32)
-////	cols = np.zeros(nnz,dtype=np.int32)
-////	vals = np.zeros(nnz,dtype=np.float64)
+    Free2D(U->nDofsJ, Ut);
+    Free2D(V->nDofsJ, Vt);
+    delete Q;
+    delete U;
+    delete V;
+}
 
-////	ck = np.zeros(n2,dtype=np.float64)
+void Uhmat::assemble(Vec h2) {
+    int ex, ey, lSize, ii, jj, kk, n2;
+    int *inds_x, *inds_y, *inds2;
+    double **UtQU, **VtQV;
+    PetscScalar* h2Array;
 
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds1 = topo.localToGlobal1x(ex,ey)
-////			inds2 = topo.localToGlobal2(ex,ey)
+    n2 = topo->elOrd*topo->elOrd;
+    lSize = topo->n1x + topo->n1y;
 
-////			for kk in np.arange(n2):
-////				ck[kk] = h[inds2[kk]]
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, lSize, lSize, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*Uh->nDofsJ, PETSC_NULL, 2*Uh->nDofsJ, PETSC_NULL);
+    MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
+    MatZeroEntries(M);
 
-////			U = self.M1x.assemble(ck)
-////			Ut = U.transpose()
-////			UtQU = mult(Ut,self.QU)
+    VecGetArray(h2, &h2Array);
 
-////			for jj in np.arange(ncl*ncl):
-////				row = inds1[jj/ncl]
-////				col = inds1[jj%ncl]
-////				ii = maps[row][col]
-////				if ii == -1:
-////					print 'ERROR! assembly'
-////				rows[ii] = row
-////				cols[ii] = col
-////				vals[ii] = vals[ii] + UtQU[jj/ncl][jj%ncl]
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            // TODO: incorporate the jacobian transformation for each element
+            inds2 = topo->elInds2_l(ex, ey);
+            for(kk = 0; kk < n2; kk++) {
+                ck[kk] = h2Array[inds2[kk]];
+            }
+            Uh->assemble(ck);
+            Vh->assemble(ck);
+            UtQU = mult(Uh->nDofsJ, Uh->nDofsJ, Uh->nDofsI, UtQ, Uh->A);
+            VtQV = mult(Vh->nDofsJ, Vh->nDofsJ, Vh->nDofsI, VtQ, Vh->A);
 
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds1 = topo.localToGlobal1y(ex,ey)
-////			inds2 = topo.localToGlobal2(ex,ey)
+            kk = 0;
+            for(ii = 0; ii < Uh->nDofsJ; ii++) {
+                for(jj = 0; jj < Uh->nDofsJ; jj++) {
+                    UtQUflat[kk] = UtQU[ii][jj];
+                    VtQVflat[kk] = VtQV[ii][jj];
+                    kk++;
+                }
+            }
 
-////			for kk in np.arange(n2):
-////				ck[kk] = h[inds2[kk]]
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
 
-////			V = self.M1y.assemble(ck)
-////			Vt = V.transpose()
-////			VtQV = mult(Vt,self.QV)
+            MatSetValues(M, Uh->nDofsJ, inds_x, Uh->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            MatSetValues(M, Vh->nDofsJ, inds_y, Vh->nDofsJ, inds_y, VtQVflat, ADD_VALUES);
+        }
+    }
 
-////			for jj in np.arange(ncl*ncl):
-////				row = inds1[jj/ncl]
-////				col = inds1[jj%ncl]
-////				ii = maps[row][col]
-////				if ii == -1:
-////					print 'ERROR! assembly'
-////				rows[ii] = row
-////				cols[ii] = col
-////				vals[ii] = vals[ii] + VtQV[jj/ncl][jj%ncl]
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-////	nr = 2*topo.nx*topo.ny*topo.n*topo.n
-////	nc = 2*topo.nx*topo.ny*topo.n*topo.n
-////	self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+    Free2D(Uh->nDofsJ, UtQU);
+    Free2D(Vh->nDofsJ, VtQV);
+}
 
-////	return self.M
+Uhmat::~Uhmat() {
+    delete[] UtQUflat;
+    delete[] VtQVflat;
+    delete[] ck;
 
-////def genMap(self,topo):
-////	np1 = topo.n+1
-////	ne = np1*topo.n
-////	nr = topo.nx*topo.ny*2*topo.n*topo.n
-////	nc = topo.nx*topo.ny*2*topo.n*topo.n
-////	maps = -1*np.ones((nr,nc),dtype=np.int32)
-////	shift = (topo.n*topo.nx)*(topo.n*topo.ny)
-////	ii = 0
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds1 = topo.localToGlobal1x(ex,ey)
-////			for jj in np.arange(ne*ne):
-////				row = inds1[jj/ne]
-////				col = inds1[jj%ne]
-////				if maps[row][col] == -1:
-////					maps[row][col] = ii
-////					ii = ii + 1
+    Free2D(Uh->nDofsJ, UtQ);
+    Free2D(Vh->nDofsJ, VtQ);
 
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds1 = topo.localToGlobal1y(ex,ey)
-////			for jj in np.arange(ne*ne):
-////				row = inds1[jj/ne]
-////				col = inds1[jj%ne]
-////				if maps[row][col] == -1:
-////					maps[row][col] = ii
-////					ii = ii + 1
+	delete Uh;
+    delete Vh;
 
-////	return maps, ii
+    MatDestroy(&M);
+}
 
 ////form mass matrix
 ////s Phmat:

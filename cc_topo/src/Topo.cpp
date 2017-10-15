@@ -134,7 +134,63 @@ void Topo::loadObjs(char* filename, int* loc) {
 	file.close();
 }
 
-int* Topo::elInds0(int ex, int ey) {
+int* Topo::elInds0_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd + 1;  iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds0[kk] = (ey*elOrd + iy)*(nDofsX + 1) + ex*nDofsX + ix;
+            kk++;
+        }
+    }
+
+    return inds0;
+}
+
+int* Topo::elInds1x_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds1x[kk] = (ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix;
+            kk++;
+        }
+    }
+
+    return inds1x;
+}
+
+int* Topo::elInds1y_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd + 1; iy++) {
+        for(ix = 0; ix < elOrd; ix++) {
+            inds1y[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix;
+            kk++;
+        }
+    }
+
+    return inds1y;
+}
+
+int* Topo::elInds2_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd ; iy++) {
+        for(ix = 0; ix < elOrd; ix++) {
+            inds2[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix;
+            kk++;
+        }
+    }
+
+    return inds2;
+}
+
+int* Topo::elInds0_g(int ex, int ey) {
     int ix, iy, kk;
 
     kk = 0;
@@ -148,7 +204,7 @@ int* Topo::elInds0(int ex, int ey) {
     return inds0;
 }
 
-int* Topo::elInds1x(int ex, int ey) {
+int* Topo::elInds1x_g(int ex, int ey) {
     int ix, iy, kk;
 
     kk = 0;
@@ -162,7 +218,7 @@ int* Topo::elInds1x(int ex, int ey) {
     return inds1x;
 }
 
-int* Topo::elInds1y(int ex, int ey) {
+int* Topo::elInds1y_g(int ex, int ey) {
     int ix, iy, kk;
 
     kk = 0;
@@ -176,7 +232,7 @@ int* Topo::elInds1y(int ex, int ey) {
     return inds1y;
 }
 
-int* Topo::elInds2(int ex, int ey) {
+int* Topo::elInds2_g(int ex, int ey) {
     int ix, iy, kk;
 
     kk = 0;

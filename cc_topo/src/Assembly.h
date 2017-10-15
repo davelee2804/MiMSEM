@@ -28,3 +28,21 @@ class Pmat {
         Mat M;
         void assemble();
 };
+
+class Uhmat {
+    public:
+        Uhmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        ~Uhmat();
+        double* ck;
+        double* UtQUflat;
+        double* VtQVflat;
+        double** UtQ;
+        double** VtQ;
+        M1x_j_Fxy_i* Uh;
+        M1y_j_Fxy_i* Vh;
+        Topo* topo;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(Vec h2);
+};

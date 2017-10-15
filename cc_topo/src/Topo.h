@@ -26,8 +26,12 @@ class Topo {
         ISLocalToGlobalMapping map1;
         ISLocalToGlobalMapping map2;
         void loadObjs(char* filename, int* inds);
-        int* elInds0(int ex, int ey);
-        int* elInds1x(int ex, int ey);
-        int* elInds1y(int ex, int ey);
-        int* elInds2(int ex, int ey);
+        int* elInds0_l(int ex, int ey);
+        int* elInds1x_l(int ex, int ey);
+        int* elInds1y_l(int ex, int ey);
+        int* elInds2_l(int ex, int ey);
+        int* elInds0_g(int ex, int ey);
+        int* elInds1x_g(int ex, int ey);
+        int* elInds1y_g(int ex, int ey);
+        int* elInds2_g(int ex, int ey);
 };
