@@ -160,3 +160,21 @@ class RotMat {
         M1y_j_Dxy_i* Vq;
         void assemble(Vec q0);
 };
+
+class E10mat {
+    public:
+        E10mat(Topo* _topo);
+        ~E10mat();
+        Topo* topo;
+        Mat E10;
+        Mat E01;
+};
+
+class E21mat {
+    public:
+        E21mat(Topo* _topo);
+        ~E21mat();
+        Topo* topo;
+        Mat E21;
+        Mat E12;
+};

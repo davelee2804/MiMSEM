@@ -239,7 +239,6 @@ void Uhmat::assemble(Vec h2) {
     n2 = topo->elOrd*topo->elOrd;
 
     MatZeroEntries(M);
-
     VecGetArray(h2, &h2Array);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -857,4 +856,132 @@ RotMat::~RotMat() {
     delete Uq;
     delete Vq;
     MatDestroy(&M);
+}
+
+// edge to node incidence matrix
+E10mat::E10mat(Topo* _topo) {
+    int ex, ey, lSize, nn, np1, kk, row;
+    int *inds_0, *inds_1x, *inds_1y;
+    int cols[2];
+    double vals[2];
+    Mat E10t;
+
+    topo = _topo;
+
+    nn = topo->l->n;
+    np1 = nn + 1;
+    lSize = topo->n1x + topo->n1y;
+
+    MatCreate(MPI_COMM_WORLD, &E10);
+    MatSetSizes(E10, lSize, topo->n0, topo->nDofs1G, topo->nDofs0G);
+    MatSetType(E10, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(E10, 4, PETSC_NULL, 4, PETSC_NULL);
+    MatSetLocalToGlobalMapping(E10, topo->map1, topo->map0);
+    MatZeroEntries(E10);
+    
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_1x = topo->elInds1x_g(ex, ey);
+            inds_1y = topo->elInds1y_g(ex, ey);
+            inds_0 = topo->elInds0_g(ex, ey);
+
+            // only set the incidence relations for edges that are local to this 
+            // element. east and north edges are set by neighbouring elements.
+            for(ii = 0; ii < nn; ii++) {
+                for(jj = 0; jj < nn; jj++) {
+                    // x-normal edge
+                    kk = ii*np1 + jj;
+                    row = inds_1x[kk];
+                    cols[0] = inds_0[kk];
+                    cols[1] = inds_0[kk+np1];
+                    vals[0] = +1.0;
+                    vals[1] = -1.0;
+                    MatSetValues(E10, 1, &row, 2, cols, vals, INSERT_VALUES);
+
+                    // y-normal edge
+                    kk = ii*nn + jj;
+                    row = inds_1y[kk];
+                    cols[0] = inds_0[kk];
+                    cols[1] = inds_0[kk+1];
+                    vals[0] = -1.0;
+                    vals[1] = +1.0;
+                    MatSetValues(E10, 1, &row, 2, cols, vals, INSERT_VALUES);
+                }
+            }
+        }
+    }
+    MatAssemblyBegin(E10, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(E10, MAT_FINAL_ASSEMBLY);
+
+    // build the -ve of the transpose
+    MatTranspose(E10, MAT_INITIAL_MATRIX, &E10t);
+    MatDuplicate(E10t, MAT_DO_NOT_COPY_VALUES, &E01);
+    MatZeroEntries(E01);
+    MatAXPY(E01, -1.0, E10t, SAME_NONZERO_PATTERN);
+    MatDestroy(&E10t);
+}
+
+E10mat::~E10mat() {
+    MatDestroy(&E10);
+    MatDestroy(&E01);
+}
+
+// face to edge incidence matrix
+E21mat::E21mat(Topo* _topo) {
+    int ex, ey, lSize, nn, np1, kk, row;
+    int *inds_2, *inds_1x, *inds_1y;
+    int cols[4];
+    double vals[4];
+    Mat E21t;
+
+    topo = _topo;
+
+    nn = topo->l->n;
+    np1 = nn + 1;
+    lSize = topo->n1x + topo->n1y;
+
+    MatCreate(MPI_COMM_WORLD, &E21);
+    MatSetSizes(E21, topo->n2, lSize, topo->nDofs2G, topo->nDofs1G);
+    MatSetType(E21, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(E21, 4, PETSC_NULL, 4, PETSC_NULL);
+    MatSetLocalToGlobalMapping(E21, topo->map2, topo->map1);
+    MatZeroEntries(E21);
+    
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_1x = topo->elInds1x_g(ex, ey);
+            inds_1y = topo->elInds1y_g(ex, ey);
+            inds_2 = topo->elInds2_g(ex, ey);
+
+            for(ii = 0; ii < nn; ii++) {
+                for(jj = 0; jj < nn; jj++) {
+                    kk = ii*nn + jj;
+                    row = inds_2[kk];
+                    cols[0] = inds_1x[ii*np1+jj];
+                    cols[1] = inds_1x[ii*np1+jj+1];
+                    cols[2] = inds_1y[ii*nn+jj];
+                    cols[3] = inds_1y[(ii+1)*nn+jj];
+                    vals[0] = -1.0;
+                    vals[1] = +1.0;
+                    vals[2] = -1.0;
+                    vals[3] = +1.0;
+                    MatSetValues(E21, 1, &row, 4, cols, vals, INSERT_VALUES);
+                }
+            }
+        }
+    }
+    MatAssemblyBegin(E21, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(E21, MAT_FINAL_ASSEMBLY);
+
+    // build the -ve of the transpose
+    MatTranspose(E21, MAT_INITIAL_MATRIX, &E21t);
+    MatDuplicate(E21t, MAT_DO_NOT_COPY_VALUES, &E12);
+    MatZeroEntries(E12);
+    MatAXPY(E12, -1.0, E21t, SAME_NONZERO_PATTERN);
+    MatDestroy(&E21t);
+}
+
+E21mat::~E21mat() {
+    MatDestroy(&E21);
+    MatDestroy(&E12);
 }
