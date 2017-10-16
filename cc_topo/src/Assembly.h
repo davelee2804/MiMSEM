@@ -90,3 +90,52 @@ class PtQmat {
         Mat M;
         void assemble();
 };
+
+class UtQmat {
+    public:
+        UtQmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        ~UtQmat();
+        Topo* topo;
+        LagrangeNode* l;
+        LagrangeNode* e;
+        Mat M;
+        void assemble();
+};
+
+class PtQUmat {
+    public:
+        PtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        ~PtQUmat();
+        Topo* topo;
+        LagrangeNode* l;
+        LagrangeNode* e;
+        Mat M;
+        double* ckx;
+        double* cky;
+        double* PtQUflat;
+        double* PtQVflat;
+        double** PtQ;
+        M1x_j_Exy_i* U;
+        M1y_j_Exy_i* V;
+        M0_j_xy_i* P;
+        void assemble(Vec q1);
+};
+
+class WtQUmat {
+    public:
+        WtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        ~WtQUmat();
+        Topo* topo;
+        LagrangeNode* l;
+        LagrangeNode* e;
+        Mat M;
+        double* ckx;
+        double* cky;
+        double* WtQUflat;
+        double* WtQVflat;
+        double** WtQ;
+        M1x_j_Cxy_i* U;
+        M1y_j_Cxy_i* V;
+        M2_j_xy_i* W;
+        void assemble(Vec u1);
+};
