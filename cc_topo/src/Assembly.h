@@ -71,3 +71,22 @@ class Phvec {
         void assemble(Vec h2);
 };
 
+class WtQmat {
+    public:
+        WtQmat(Topo* _topo, LagrangeEdge* _e);
+        ~WtQmat();
+        Topo* topo;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble();
+};
+
+class PtQmat {
+    public:
+        PtQmat(Topo* _topo, LagrangeNode* _l);
+        ~PtQmat();
+        Topo* topo;
+        LagrangeNode* l;
+        Mat M;
+        void assemble();
+};

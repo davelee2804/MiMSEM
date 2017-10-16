@@ -418,61 +418,120 @@ Phvec::~Phvec() {
     VecDestroy(&v);
 }
 
-////s WtQmat:
-////def __init__(self,topo,quad):
-////	topo_q = Topo(topo.nx,topo.ny,quad.n)
-////	# Build the element matrix, assume same for all elements (regular geometry)
-////	W = M2_j_xy_i(topo.n,quad.n).A
-////	Wt = W.transpose()
-////	Q = Wii(quad.n).A
-////	WtQ = mult(Wt,Q)
+// Assumes quadrature points and 0 forms are the same (for now)
+WtQmat::WtQmat(Topo* _topo, LagrangeEdge* _e) {
+    topo = _topo;
+    e = _e;
 
-////	maps, nnz = self.genMap(topo,topo_q)
-////	rows = np.zeros(nnz,dtype=np.int32)
-////	cols = np.zeros(nnz,dtype=np.int32)
-////	vals = np.zeros(nnz,dtype=np.float64)
+    assemble();
+}
 
-////	np1 = topo.n+1
-////	mp1 = quad.n+1
-////	m0 = mp1*mp1
-////	n2 = topo.n*topo.n
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds2 = topo.localToGlobal2(ex,ey)
-////			inds0 = topo_q.localToGlobal0(ex,ey)
-////			for jj in np.arange(m0*n2):
-////				r = inds2[jj/m0]
-////				c = inds0[jj%m0]
-////				ii = maps[r][c]
-////				rows[ii] = r
-////				cols[ii] = c
-////				vals[ii] = vals[ii] + WtQ[jj/m0][jj%m0]
-////	
-////	nr = topo.nx*topo.ny*topo.n*topo.n
-////	nc = topo.nx*topo.ny*topo_q.n*topo_q.n
-////	self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+void WtQmat::assemble() {
+    int ex, ey, ii, jj, kk;
+    int *inds_2, *inds_0;
+    double* WtQflat;
 
-////def genMap(self,topo,topo_q):
-////	np1 = topo.n+1
-////	mp1 = topo_q.n+1
-////	m0 = mp1*mp1
-////	n2 = topo.n*topo.n
-////	nr = topo.nx*topo.ny*topo.n*topo.n       # 2-forms
-////	nc = topo.nx*topo.ny*topo_q.n*topo_q.n   # 0-forms
-////	maps = -1*np.ones((nr,nc),dtype=np.int32)
-////	ii = 0
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds2 = topo.localToGlobal2(ex,ey)
-////			inds0 = topo_q.localToGlobal0(ex,ey)
-////			for jj in np.arange(m0*n2):
-////				r = inds2[jj/m0]
-////				c = inds0[jj%m0]
-////				if maps[r][c] == -1:
-////					maps[r][c] = ii
-////					ii = ii + 1
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+    Wii* Q = new Wii(e->l->q);
+    double** Wt = tran(W->nDofsI, W->nDofsJ, W->A);
+    double** WtQ = mult(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Q->A);
 
-////	return maps, ii
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2, topo->n0, topo->nDofs2G, topo->nDofs0G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+    MatSetLocalToGlobalMapping(M, topo->map2, topo->map0);
+    MatZeroEntries(M);
+
+    WtQflat = new double[W->nDofsJ*Q->nDofsJ];
+    kk = 0;
+    for(ii = 0; ii < W->nDofsJ; ii++) {
+        for(jj = 0; jj < Q->nDofsJ; jj++) {
+            WtQflat[kk] = WtQ[ii][jj];
+            kk++;
+        }
+    }
+
+    // TODO: incorportate jacobian tranformation for each element
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_2 = topo->elInds2_g(ex, ey);
+            inds_0 = topo->elInds0_g(ex, ey);
+
+            MatSetValues(M, W->nDofsJ, inds_2, Q->nDofsJ, inds_0, WtQflat, ADD_VALUES);
+        }
+    }
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    delete[] WtQflat;
+    delete W;
+    delete Q;
+}
+
+WtQmat::~WtQmat() {
+    MatDestroy(&M);
+}
+
+// Assumes quadrature points and 0 forms are the same (for now)
+PtQmat::PtQmat(Topo* _topo, LagrangeNode* _l) {
+    topo = _topo;
+    l = _l;
+
+    assemble();
+}
+
+void PtQmat::assemble() {
+    int ex, ey, ii, jj, kk;
+    int *inds_0;
+    double* PtQflat;
+
+    M0_j_xy_i* P = new M0_j_xy_i(l);
+    Wii* Q = new Wii(l->q);
+    double** Pt = tran(P->nDofsI, P->nDofsJ, P->A);
+    double** PtQ = mult(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Q->A);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n0, topo->n0, topo->nDofs0G, topo->nDofs0G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 2*P->nDofsJ, PETSC_NULL);
+    MatSetLocalToGlobalMapping(M, topo->map0, topo->map0);
+    MatZeroEntries(M);
+
+    PtQflat = new double[P->nDofsJ*Q->nDofsJ];
+    kk = 0;
+    for(ii = 0; ii < P->nDofsJ; ii++) {
+        for(jj = 0; jj < Q->nDofsJ; jj++) {
+            PtQflat[kk] = PtQ[ii][jj];
+            kk++;
+        }
+    }
+
+    // TODO: incorportate jacobian tranformation for each element
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_0 = topo->elInds0_g(ex, ey);
+
+            MatSetValues(M, P->nDofsJ, inds_0, Q->nDofsJ, inds_0, PtQflat, ADD_VALUES);
+        }
+    }
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(P->nDofsJ, Pt);
+    Free2D(P->nDofsJ, PtQ);
+    delete[] PtQflat;
+    delete P;
+    delete Q;
+}
+
+PtQmat::~PtQmat() {
+    MatDestroy(&M);
+}
 
 ////s UtQmat:
 ////def __init__(self,topo,quad):
@@ -560,66 +619,6 @@ Phvec::~Phvec() {
 ////			for jj in np.arange(nrl*ncl):
 ////				row = inds1[jj/ncl]
 ////				col = inds0[jj%ncl]
-////				if maps[row][col] == -1:
-////					maps[row][col] = ii
-////					ii = ii + 1
-
-////	return maps, ii
-
-////s PtQmat:
-////def __init__(self,topo,quad):
-////	topo_q = Topo(topo.nx,topo.ny,quad.n)
-////	maps,nnz = self.genMap(topo,topo_q)
-////	self.assemble(topo,topo_q,maps,nnz)
-
-////def assemble(self,topo,topo_q,maps,nnz):
-////	Q = Wii(topo_q.n).A
-////	P = M0_j_xy_i(topo.n,topo_q.n).A
-////	Pt = P.transpose()
-////	PtQ = mult(Pt,Q)
-
-////	np1 = topo.n+1
-////	mp1 = topo_q.n+1
-////	nrl = np1*np1     # number of rows in local matrix, (0 forms)
-////	ncl = mp1*mp1     # number of columns in local matrix (quad pts)
-////	rows = np.zeros(nnz,dtype=np.int32)
-////	cols = np.zeros(nnz,dtype=np.int32)
-////	vals = np.zeros(nnz,dtype=np.float64)
-
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds0q = topo_q.localToGlobal0(ex,ey)
-////			inds0 = topo.localToGlobal0(ex,ey)
-////			for jj in np.arange(nrl*ncl):
-////				row = inds0[jj/ncl]
-////				col = inds0q[jj%ncl]
-////				ii = maps[row][col]
-////				if ii == -1:
-////					print 'ERROR! assembly'
-////				rows[ii] = row
-////				cols[ii] = col
-////				vals[ii] = vals[ii] + PtQ[jj/ncl][jj%ncl]
-
-////	nr = topo.nx*topo.ny*topo.n*topo.n
-////	nc = topo.nx*topo.ny*topo_q.n*topo_q.n
-////	self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
-
-////def genMap(self,topo,topo_q):
-////	np1 = topo.n+1
-////	mp1 = topo_q.n+1
-////	nrl = np1*np1
-////	ncl = mp1*mp1
-////	nr = topo.nx*topo.ny*topo.n*topo.n
-////	nc = topo.nx*topo.ny*topo_q.n*topo_q.n
-////	maps = -1*np.ones((nr,nc),dtype=np.int32)
-////	ii = 0
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds0q = topo_q.localToGlobal0(ex,ey)
-////			inds0 = topo.localToGlobal0(ex,ey)
-////			for jj in np.arange(nrl*ncl):
-////				row = inds0[jj/ncl]
-////				col = inds0q[jj%ncl]
 ////				if maps[row][col] == -1:
 ////					maps[row][col] = ii
 ////					ii = ii + 1
