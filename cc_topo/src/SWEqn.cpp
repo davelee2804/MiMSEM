@@ -1,0 +1,143 @@
+#include <petsc.h>
+#include <petscvec.h>
+#include <petscmat.h>
+#include <petscpc.h>
+#include <petscksp.h>
+
+#include "Basis.h"
+#include "ElMats.h"
+#include "Topo.h"
+#include "Geom.h"
+#include "Assembly.h"
+#include "SWEqn.h"
+
+SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
+    topo = _topo;
+    geom = _geom;
+
+    grav = 9.8;
+    omega = 7.2921150e-5;
+
+    quad = new GaussLobatto(topo->n);
+    node = new LagrangeNode(topo->n, quad);
+    edge = new LagrangeEdge(topo->n, node);
+
+    // 0 form lumped mass matrix (vector)
+    m0 = new Pvec(topo, node);
+
+    // 1 form mass matrix
+    M1 = new Umat(topo, node, edge);
+
+    // 2 form mass matrix
+    M2 = new Wmat(topo, edge);
+
+    // incidence matrices
+    NtoE = new E10mat(topo);
+    EtoF = new E21mat(topo);
+
+    // adjoint differential operators
+    MatMatMult(NtoE->E01, M1->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E01M1);
+    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
+
+    // rotational operator
+    R = new RotMat(topo, node, edge);
+
+    // mass flux operator
+    F = new Uhmat(topo, node, edge);
+
+    // kinetic energy operator
+    K = new WtQUmat(topo, node, edge);
+
+    // coriolis vector (projected onto 0 forms)
+    coriolis();
+}
+
+// project coriolis term onto 0 forms
+void SWEqn::coriolis() {
+    int ii;
+    Xto0 = new PtQmat(topo, quad);
+    PetscScalar* fVals = new PetscScalar[topo->n0];
+    Vec fx, PtQfx;
+    PetscScalar *aVals, *bVals;
+
+    for(ii = 0; ii < topo->n0; ii++) {
+        fVals[ii] = 2.0*omega*geom->x[ii][2];
+    }
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &fx);
+    VecSetLocalToGlobalMapping(fx, topo->map0);
+    VecSetValues(fx, topo->n0, topo->loc0, fVals, INSERT_VALUES);
+    VecAssemblyBegin(fx);
+    VecAssemblyEnd(fx);
+
+    VecDuplicate(fx, &PtQfx);
+    MatMult(PtQ->M, fx, PtQfx);
+    VecGetArray(m0, &aVals);
+    VecGetArray(PtQfx, &bVals);
+    for(ii = 0; ii < topo->n0; ii++) {
+        fVals[ii] = bVals[ii]/aVals[ii];
+    }
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &f);
+    VecSetLocalToGlobalMapping(f, topo->map0);
+    VecSetValues(f, topo->n0, topo->loc0, fVals, INSERT_VALUES);
+    VecAssemblyBegin(f);
+    VecAssemblyEnd(f);
+
+    delete Xto0;
+    delete[] fVals;
+    VecDestroy(&fx);
+    VecDestroy(&PtQfx);
+}
+
+// derive vorticity
+void SWEqn::diagnose_w(Vec u, Vec *w) {
+    int ii;
+    PetscScalar *duVals, *m0Vals, *wVals;
+    Vec du;
+
+    wVals = new PetscScalar[topo->n0];
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &du);
+    VecSetLocalToGlobalMapping(du, topo->map0);
+    MatMult(E01M1, u1, du);
+    VecAYPX(du, 1.0, f);
+
+    VecGetArray(du, &duVals);
+    VecGetArray(*w, &wVals);
+    VecGetArray(m0, &m0Vals);
+
+    for(ii = 0; ii < topo->n0; ii++) {
+        wVals[ii] = duVals[ii]/m0Vals[ii];
+    }
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, w);
+    VecSetLocalToGlobalMapping(*w, topo->map0);
+    VecSetValues(*w, topo->n0, topo->loc0, wVals, INSERT_VALUES);
+    VecAssemblyBegin(*w);
+    VecAssemblyEnd(*w);
+
+    delete[] wVals;
+    VecDestroy(du);
+}
+
+void SWEqn::diagnose_F(Vec u, Vec h) {
+}
+
+SWEqn::~SWEqn() {
+    MatDestroy(&E01M1);
+    MatDestroy(&E12M2);
+    VecDestroy(&f);
+
+    delete m0;
+    delete M1;
+    delete M2;
+
+    delete NtoE;
+    delete EtoF;
+
+    delete R;
+    delete F;
+    delete K;
+
+    delete quad;
+    delete node;
+    delete edge;
+}
