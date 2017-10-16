@@ -638,7 +638,7 @@ void PtQUmat::assemble(Vec q1) {
             inds_0 = topo->elInds0_g(ex, ey);
 
             MatSetValues(M, P->nDofsJ, inds_0, U->nDofsJ, inds_x, PtQUflat, ADD_VALUES);
-            MatSetValues(M, P->nDofsJ, inds_0, V->nDofsJ, inds_y, PtQUflat, ADD_VALUES);
+            MatSetValues(M, P->nDofsJ, inds_0, V->nDofsJ, inds_y, PtQVflat, ADD_VALUES);
 
             Free2D(P->nDofsJ, PtQU);
             Free2D(P->nDofsJ, PtQV);
@@ -663,7 +663,7 @@ PtQUmat::~PtQUmat() {
 // 
 WtQUmat::WtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     int lSize;
-    double **Pt;
+    double **Wt;
     Wii* Q
 
     topo = _topo;
@@ -736,7 +736,7 @@ void WtQUmat::assemble(Vec u1) {
             inds_2 = topo->elInds0_g(ex, ey);
 
             MatSetValues(M, W->nDofsJ, inds_2, U->nDofsJ, inds_x, WtQUflat, ADD_VALUES);
-            MatSetValues(M, W->nDofsJ, inds_2, V->nDofsJ, inds_y, WtQUflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds_2, V->nDofsJ, inds_y, WtQVflat, ADD_VALUES);
 
             Free2D(W->nDofsJ, WtQU);
             Free2D(W->nDofsJ, WtQV);
@@ -758,119 +758,103 @@ WtQUmat::~WtQUmat() {
     MatDestroy(&M);
 }
 
-////form mass matrix with 0 form interpolated to quadrature points
-////or rotational term in the momentum equation)
-////s RotationalMat:
-////def __init__(self,topo,quad):
-////	self.topo = topo
-////	self.quad = quad
+// 1 form mass matrix with 0 form interpolated to quadrature points
+// (for rotational term in the momentum equation)
+RotMat::RotMat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
+    int lSize;
+    double **Ut, **Vt;
+    Wii* Q
 
-////	Q = Wii(quad.n).A
-////	U = M1x_j_xy_i(topo.n,quad.n).A
-////	V = M1y_j_xy_i(topo.n,quad.n).A
-////	Ut = U.transpose()
-////	Vt = V.transpose()
-////	self.UtQ = mult(Ut,Q)
-////	self.VtQ = mult(Vt,Q)
+    topo = _topo;
+    l = _l;
+    e = _e;
 
-////	self.M1x = M1x_j_Dxy_i(topo.n,quad.n)
-////	self.M1y = M1y_j_Dxy_i(topo.n,quad.n)
+    U = new M1x_j_xy_i(l, e);
+    V = new M1y_j_xy_i(l, e);
+    Ut = tran(U->nDofsI, U->nDofsJ, U->A);
+    Vt = tran(V->nDofsI, V->nDofsJ, V->A);
+    Q = new Wii(l->q);
+    UtQ = mult(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Q->A);
+    VtQ = mult(V->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Q->A);
+    Uq = new M1x_j_Dxy_i(l, e);
+    Vq = new M1y_j_Dxy_i(l, e);
 
-////	self.maps,self.nnz = self.genMap(topo)
-////
-////def assemble(self,w):
-////	topo = self.topo
-////	maps = self.maps
-////	nnz = self.nnz
+    UtQVflat = new double[U->nDofsJ*V->nDofsJ];
+    VtQUflat = new double[V->nDofsJ*U->nDofsJ];
+    ckx = new double[(l->n+1)*(l->n+1)];
+    cky = new double[(l->n+1)*(l->n+1)];
 
-////	shift = (topo.n*topo.nx)*(topo.n*topo.ny)
-////	rows = np.zeros(nnz,dtype=np.int32)
-////	cols = np.zeros(nnz,dtype=np.int32)
-////	vals = np.zeros(nnz,dtype=np.float64)
+    lSize = topo->n1x + topo->n1y;
 
-////	n = topo.n
-////	np1 = topo.n+1
-////	nrl = topo.n*np1
-////	ncl = topo.n*np1
-////	n2 = np1*np1
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, lSize, lSize, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
+    MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
 
-////	cj = np.zeros((n2),dtype=np.float64)
+    Free2D(U->nDofsJ, Ut);
+    Free2D(V->nDofsJ, Vt);
+    delete Q;
+}
 
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds0 = topo.localToGlobal0(ex,ey)
-////			inds1x = topo.localToGlobal1x(ex,ey)
-////			inds1y = topo.localToGlobal1y(ex,ey)
+void RotMat::assemble(Vec q0) {
+    int ex, ey, ii, jj, kk, np12;
+    int *inds_x, *inds_y, *inds_0;
+    double **UtQV, **VtQU;
+    PetscScalar* q0Array;
 
-////			for j in np.arange(n2):
-////				cj[j] = w[inds0[j]]
+    np12 = (l->n+1)*(l->n+1);
 
-////			V = self.M1y.assemble(-1.0*cj)
-////			UtQV = mult(self.UtQ,V)
+    VecGetArray(q0, &q0Array);
+    MatZeroEntries(M);
 
-////			for jj in np.arange(nrl*ncl):
-////				row = inds1x[jj/ncl]
-////				col = inds1y[jj%ncl]
-////				ii = maps[row][col]
-////				rows[ii] = row
-////				cols[ii] = col
-////				vals[ii] = vals[ii] + UtQV[jj/ncl][jj%ncl]
-////	
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds0 = topo.localToGlobal0(ex,ey)
-////			inds1y = topo.localToGlobal1y(ex,ey)
-////			inds1x = topo.localToGlobal1x(ex,ey)
-////			inds2 = topo.localToGlobal2(ex,ey)
+    // TODO: incorportate jacobian tranformation for each element
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_0 = topo->elInds0_l(ex, ey);
+            for(kk = 0; kk < np12; kk++) {
+                ckx[kk] = +1.0*q0Array[inds_0[kk]];
+                cky[kk] = -1.0*q0Array[inds_0[kk]];
+            }
+            Uq->assemble(cky);
+            Vq->assemble(ckx);
+            // TODO: incorporate the jacobian transformation for each element
+            UtQV = mult(U->nDofsJ, Vq->nDofsJ, U->nDofsI, UtQ, Vq->A);
+            VtQU = mult(V->nDofsJ, Uq->nDofsJ, V->nDofsI, VtQ, Uq->A);
 
-////			for j in np.arange(n2):
-////				cj[j] = w[inds0[j]]
+            kk = 0;
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                for(jj = 0; jj < U->nDofsJ; jj++) {
+                    UtQVflat[kk] = UtQV[ii][jj];
+                    VtQUflat[kk] = VtQU[ii][jj];
+                    kk++;
+                }
+            }
 
-////			U = self.M1x.assemble(cj)
-////			VtQU = mult(self.VtQ,U)
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
 
-////			for jj in np.arange(nrl*ncl):
-////				row = inds1y[jj/ncl]
-////				col = inds1x[jj%ncl]
-////				ii = maps[row][col]
-////				rows[ii] = row
-////				cols[ii] = col
-////				vals[ii] = vals[ii] + VtQU[jj/ncl][jj%ncl]
+            MatSetValues(M, U->nDofsJ, inds_x, Vq->nDofsJ, inds_y, UtQVflat, ADD_VALUES);
+            MatSetValues(M, V->nDofsJ, inds_y, Uq->nDofsJ, inds_x, VtQUflat, ADD_VALUES);
 
-////	nr = 2*topo.nx*topo.ny*topo.n*topo.n
-////	nc = 2*topo.nx*topo.ny*topo.n*topo.n
-////	self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+            Free2D(U->nDofsJ, UtQV);
+            Free2D(V->nDofsJ, VtQU);
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+}
 
-////	return self.M
-
-////def genMap(self,topo):
-////	np1 = topo.n+1
-////	ne = np1*topo.n
-////	nr = topo.nx*topo.ny*2*topo.n*topo.n
-////	nc = topo.nx*topo.ny*2*topo.n*topo.n
-////	maps = -1*np.ones((nr,nc),dtype=np.int32)
-////	shift = (topo.n*topo.nx)*(topo.n*topo.ny)
-////	ii = 0
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds1x = topo.localToGlobal1x(ex,ey)
-////			inds1y = topo.localToGlobal1y(ex,ey)
-////			for jj in np.arange(ne*ne):
-////				row = inds1x[jj/ne]
-////				col = inds1y[jj%ne]
-////				if maps[row][col] == -1:
-////					maps[row][col] = ii
-////					ii = ii + 1
-
-////	for ey in np.arange(topo.ny):
-////		for ex in np.arange(topo.nx):
-////			inds1y = topo.localToGlobal1y(ex,ey)
-////			inds1x = topo.localToGlobal1x(ex,ey)
-////			for jj in np.arange(ne*ne):
-////				row = inds1y[jj/ne]
-////				col = inds1x[jj%ne]
-////				if maps[row][col] == -1:
-////					maps[row][col] = ii
-////					ii = ii + 1
-
-////	return maps, ii
+RotMat::~RotMat() {
+    Free2D(U->nDofsJ, UtQ);
+    Free2D(V->nDofsJ, VtQ);
+    delete[] UtQVflat;
+    delete[] VtQUflat;
+    delete[] ckx;
+    delete[] cky;
+    delete U;
+    delete V;
+    delete Uq;
+    delete Vq;
+    MatDestroy(&M);
+}

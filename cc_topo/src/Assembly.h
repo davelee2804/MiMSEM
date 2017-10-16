@@ -139,3 +139,24 @@ class WtQUmat {
         M2_j_xy_i* W;
         void assemble(Vec u1);
 };
+
+class RotMat {
+    public:
+        RotMat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        ~RotMat();
+        Topo* topo;
+        LagrangeNode* l;
+        LagrangeNode* e;
+        Mat M;
+        double* ckx;
+        double* cky;
+        double* UtQVflat;
+        double* VtQUflat;
+        double** UtQ;
+        double** VtQ;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        M1x_j_Dxy_i* Uq;
+        M1y_j_Dxy_i* Vq;
+        void assemble(Vec q0);
+};
