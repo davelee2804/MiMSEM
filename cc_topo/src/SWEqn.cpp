@@ -18,9 +18,9 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     grav = 9.8;
     omega = 7.2921150e-5;
 
-    quad = new GaussLobatto(topo->n);
-    node = new LagrangeNode(topo->n, quad);
-    edge = new LagrangeEdge(topo->n, node);
+    quad = new GaussLobatto(topo->elOrd);
+    node = new LagrangeNode(topo->elOrd, quad);
+    edge = new LagrangeEdge(topo->elOrd, node);
 
     // 0 form lumped mass matrix (vector)
     m0 = new Pvec(topo, node);
@@ -55,7 +55,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 // project coriolis term onto 0 forms
 void SWEqn::coriolis() {
     int ii;
-    Xto0 = new PtQmat(topo, quad);
+    PtQmat* PtQ = new PtQmat(topo, node);
     PetscScalar* fVals = new PetscScalar[topo->n0];
     Vec fx, PtQfx;
     PetscScalar *aVals, *bVals;
@@ -69,9 +69,11 @@ void SWEqn::coriolis() {
     VecAssemblyBegin(fx);
     VecAssemblyEnd(fx);
 
-    VecDuplicate(fx, &PtQfx);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &PtQfx);
+    VecSetLocalToGlobalMapping(PtQfx, topo->map0);
     MatMult(PtQ->M, fx, PtQfx);
-    VecGetArray(m0, &aVals);
+
+    VecGetArray(m0->v, &aVals);
     VecGetArray(PtQfx, &bVals);
     for(ii = 0; ii < topo->n0; ii++) {
         fVals[ii] = bVals[ii]/aVals[ii];
@@ -82,7 +84,7 @@ void SWEqn::coriolis() {
     VecAssemblyBegin(f);
     VecAssemblyEnd(f);
 
-    delete Xto0;
+    delete PtQ;
     delete[] fVals;
     VecDestroy(&fx);
     VecDestroy(&PtQfx);
@@ -98,12 +100,12 @@ void SWEqn::diagnose_w(Vec u, Vec *w) {
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &du);
     VecSetLocalToGlobalMapping(du, topo->map0);
-    MatMult(E01M1, u1, du);
+    MatMult(E01M1, u, du);
     VecAYPX(du, 1.0, f);
 
     VecGetArray(du, &duVals);
     VecGetArray(*w, &wVals);
-    VecGetArray(m0, &m0Vals);
+    VecGetArray(m0->v, &m0Vals);
 
     for(ii = 0; ii < topo->n0; ii++) {
         wVals[ii] = duVals[ii]/m0Vals[ii];
@@ -115,10 +117,30 @@ void SWEqn::diagnose_w(Vec u, Vec *w) {
     VecAssemblyEnd(*w);
 
     delete[] wVals;
-    VecDestroy(du);
+    VecDestroy(&du);
 }
 
-void SWEqn::diagnose_F(Vec u, Vec h) {
+void SWEqn::diagnose_F(Vec u, Vec h, Vec* hu) {
+    Vec Fu;
+    KSP ksp;
+
+    F->assemble(h);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1, topo->nDofs1G, &Fu);
+    VecSetLocalToGlobalMapping(Fu, topo->map1);
+    MatMult(F->M, u, Fu);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1, topo->nDofs1G, hu);
+    VecSetLocalToGlobalMapping(*hu, topo->map1);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp);
+    KSPSetOperators(ksp, M1->M, M1->M);
+    KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp, KSPGMRES);
+    KSPSolve(ksp, Fu, *hu);
+
+    VecDestroy(&Fu);
+    KSPDestroy(&ksp);
 }
 
 SWEqn::~SWEqn() {

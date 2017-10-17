@@ -43,7 +43,7 @@ Umat::Umat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void Umat::assemble() {
-    int ex, ey, lSize;
+    int ex, ey;
     int *inds_x, *inds_y;
 
     Wii* Q = new Wii(l->q);
@@ -58,10 +58,8 @@ void Umat::assemble() {
     double* UtQUflat = Flat2D(U->nDofsJ, U->nDofsJ, UtQU);
     double* VtQVflat = Flat2D(V->nDofsJ, V->nDofsJ, VtQV);
 
-    lSize = topo->n1x + topo->n1y;
-
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, lSize, lSize, topo->nDofs1G, topo->nDofs1G);
+    MatSetSizes(M, topo->n1, topo->n1, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
     MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
@@ -195,8 +193,6 @@ Pmat::~Pmat() {
 
 // 1 form mass matrix with 2 forms interpolated to quadrature points
 Uhmat::Uhmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
-    int lSize;
-
     topo = _topo;
     l = _l;
     e = _e;
@@ -215,10 +211,8 @@ Uhmat::Uhmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     Uh = new M1x_j_Fxy_i(l, e);
     Vh = new M1y_j_Fxy_i(l, e);
 
-    lSize = topo->n1x + topo->n1y;
-
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, lSize, lSize, topo->nDofs1G, topo->nDofs1G);
+    MatSetSizes(M, topo->n1, topo->n1, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
     MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
@@ -469,7 +463,7 @@ void PtQmat::assemble() {
     Wii* Q = new Wii(l->q);
     double** Pt = tran(P->nDofsI, P->nDofsJ, P->A);
     double** PtQ = mult(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Q->A);
-    double* PtQflat = Flat2D(P->nDofsJ, Q->nDofsJ, WtQ);
+    double* PtQflat = Flat2D(P->nDofsJ, Q->nDofsJ, PtQ);
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n0, topo->n0, topo->nDofs0G, topo->nDofs0G);
@@ -510,7 +504,7 @@ UtQmat::UtQmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void UtQmat::assemble() {
-    int ex, ey, lSize;
+    int ex, ey;
     int *inds_x, *inds_y, *inds_q;
 
     Wii* Q = new Wii(l->q);
@@ -523,10 +517,8 @@ void UtQmat::assemble() {
     double* UtQflat = Flat2D(U->nDofsJ, Q->nDofsJ, UtQ);
     double* VtQflat = Flat2D(V->nDofsJ, Q->nDofsJ, VtQ);
 
-    lSize = topo->n1x + topo->n1y;
-
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, lSize, lSize, topo->nDofs1G, topo->nDofs0G);
+    MatSetSizes(M, topo->n1, topo->n0, topo->nDofs1G, topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
     MatSetLocalToGlobalMapping(M, topo->map1, topo->map0);
@@ -563,9 +555,8 @@ UtQmat::~UtQmat() {
 
 // project the potential vorticity gradient velocity product onto the 0 forms
 PtQUmat::PtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
-    int lSize;
     double **Pt;
-    Wii* Q
+    Wii* Q;
 
     topo = _topo;
     l = _l;
@@ -583,10 +574,8 @@ PtQUmat::PtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     ckx = new double[(l->n+1)*(l->n)];
     cky = new double[(l->n)*(l->n+1)];
 
-    lSize = topo->n1x + topo->n1y;
-
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n0, lSize, topo->nDofs0G, topo->nDofs1G);
+    MatSetSizes(M, topo->n0, topo->n1, topo->nDofs0G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
     MatSetLocalToGlobalMapping(M, topo->map0, topo->map1);
@@ -661,9 +650,8 @@ PtQUmat::~PtQUmat() {
 
 // 
 WtQUmat::WtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
-    int lSize;
     double **Wt;
-    Wii* Q
+    Wii* Q;
 
     topo = _topo;
     l = _l;
@@ -671,7 +659,7 @@ WtQUmat::WtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
 
     U = new M1x_j_Cxy_i(l, e);
     V = new M1y_j_Cxy_i(l, e);
-    W = new M2_j_xy_i(l);
+    W = new M2_j_xy_i(e);
     Wt = tran(W->nDofsI, W->nDofsJ, W->A);
     Q = new Wii(l->q);
     WtQ = mult(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Q->A);
@@ -681,10 +669,8 @@ WtQUmat::WtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     ckx = new double[(l->n+1)*(l->n)];
     cky = new double[(l->n)*(l->n+1)];
 
-    lSize = topo->n1x + topo->n1y;
-
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n2, lSize, topo->nDofs2G, topo->nDofs1G);
+    MatSetSizes(M, topo->n2, topo->n1, topo->nDofs2G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
     MatSetLocalToGlobalMapping(M, topo->map2, topo->map1);
@@ -760,9 +746,8 @@ WtQUmat::~WtQUmat() {
 // 1 form mass matrix with 0 form interpolated to quadrature points
 // (for rotational term in the momentum equation)
 RotMat::RotMat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
-    int lSize;
     double **Ut, **Vt;
-    Wii* Q
+    Wii* Q;
 
     topo = _topo;
     l = _l;
@@ -783,10 +768,8 @@ RotMat::RotMat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     ckx = new double[(l->n+1)*(l->n+1)];
     cky = new double[(l->n+1)*(l->n+1)];
 
-    lSize = topo->n1x + topo->n1y;
-
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, lSize, lSize, topo->nDofs1G, topo->nDofs1G);
+    MatSetSizes(M, topo->n1, topo->n1, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
     MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
@@ -822,7 +805,7 @@ void RotMat::assemble(Vec q0) {
             VtQU = mult(V->nDofsJ, Uq->nDofsJ, V->nDofsI, VtQ, Uq->A);
 
             kk = 0;
-            for(ii = 0; ii < W->nDofsJ; ii++) {
+            for(ii = 0; ii < U->nDofsJ; ii++) {
                 for(jj = 0; jj < U->nDofsJ; jj++) {
                     UtQVflat[kk] = UtQV[ii][jj];
                     VtQUflat[kk] = VtQU[ii][jj];
@@ -860,7 +843,7 @@ RotMat::~RotMat() {
 
 // edge to node incidence matrix
 E10mat::E10mat(Topo* _topo) {
-    int ex, ey, lSize, nn, np1, kk, row;
+    int ex, ey, nn, np1, ii, jj, kk, row;
     int *inds_0, *inds_1x, *inds_1y;
     int cols[2];
     double vals[2];
@@ -868,12 +851,11 @@ E10mat::E10mat(Topo* _topo) {
 
     topo = _topo;
 
-    nn = topo->l->n;
+    nn = topo->elOrd;
     np1 = nn + 1;
-    lSize = topo->n1x + topo->n1y;
 
     MatCreate(MPI_COMM_WORLD, &E10);
-    MatSetSizes(E10, lSize, topo->n0, topo->nDofs1G, topo->nDofs0G);
+    MatSetSizes(E10, topo->n1, topo->n0, topo->nDofs1G, topo->nDofs0G);
     MatSetType(E10, MATMPIAIJ);
     MatMPIAIJSetPreallocation(E10, 4, PETSC_NULL, 4, PETSC_NULL);
     MatSetLocalToGlobalMapping(E10, topo->map1, topo->map0);
@@ -928,7 +910,7 @@ E10mat::~E10mat() {
 
 // face to edge incidence matrix
 E21mat::E21mat(Topo* _topo) {
-    int ex, ey, lSize, nn, np1, kk, row;
+    int ex, ey, nn, np1, ii, jj, kk, row;
     int *inds_2, *inds_1x, *inds_1y;
     int cols[4];
     double vals[4];
@@ -936,12 +918,11 @@ E21mat::E21mat(Topo* _topo) {
 
     topo = _topo;
 
-    nn = topo->l->n;
+    nn = topo->elOrd;
     np1 = nn + 1;
-    lSize = topo->n1x + topo->n1y;
 
     MatCreate(MPI_COMM_WORLD, &E21);
-    MatSetSizes(E21, topo->n2, lSize, topo->nDofs2G, topo->nDofs1G);
+    MatSetSizes(E21, topo->n2, topo->n1, topo->nDofs2G, topo->nDofs1G);
     MatSetType(E21, MATMPIAIJ);
     MatMPIAIJSetPreallocation(E21, 4, PETSC_NULL, 4, PETSC_NULL);
     MatSetLocalToGlobalMapping(E21, topo->map2, topo->map1);

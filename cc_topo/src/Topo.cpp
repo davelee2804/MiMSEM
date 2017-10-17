@@ -57,6 +57,8 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
         ++n1y;
 	file.close();
 
+    n1 = n1x + n1y;
+
     cout << "number of edges (y-normal) on processor " << pi << ":\t" << n1y << endl;
 
     loc1y = new int[n1y];

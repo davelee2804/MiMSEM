@@ -4,6 +4,7 @@ class Topo {
         ~Topo();
         int  pi;      // processor index
         int  n0;      // number of local nodes
+        int  n1;      // number of local edges
         int  n1x;     // number of local edges (x-normal)
         int  n1y;     // number of local edges (y-normal)
         int  n2;      // number of faces

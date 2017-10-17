@@ -97,7 +97,7 @@ class UtQmat {
         ~UtQmat();
         Topo* topo;
         LagrangeNode* l;
-        LagrangeNode* e;
+        LagrangeEdge* e;
         Mat M;
         void assemble();
 };
@@ -108,7 +108,7 @@ class PtQUmat {
         ~PtQUmat();
         Topo* topo;
         LagrangeNode* l;
-        LagrangeNode* e;
+        LagrangeEdge* e;
         Mat M;
         double* ckx;
         double* cky;
@@ -127,7 +127,7 @@ class WtQUmat {
         ~WtQUmat();
         Topo* topo;
         LagrangeNode* l;
-        LagrangeNode* e;
+        LagrangeEdge* e;
         Mat M;
         double* ckx;
         double* cky;
@@ -146,7 +146,7 @@ class RotMat {
         ~RotMat();
         Topo* topo;
         LagrangeNode* l;
-        LagrangeNode* e;
+        LagrangeEdge* e;
         Mat M;
         double* ckx;
         double* cky;

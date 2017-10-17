@@ -16,13 +16,17 @@ OBJS = Basis.o \
        Topo.o \
        Geom.o \
        Assembly.o \
+       SWEqn.o \
        Mimsem.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-Mimsem.o: Mimsem.cpp Assembly.o Geom.o Topo.o ElMats.o Basis.o
+Mimsem.o: Mimsem.cpp SWEqn.o Assembly.o Geom.o Topo.o ElMats.o Basis.o
 	${CXX} -c Mimsem.cpp ${CXXFLAGS}
+
+SWEqn.o: SWEqn.cpp SWEqn.h Assembly.o Geom.o Topo.o ElMats.o Basis.o
+	${CXX} -c SWEqn.cpp ${CXXFLAGS}
 
 Assembly.o: Assembly.cpp Assembly.h Geom.o Topo.o ElMats.o Basis.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}
