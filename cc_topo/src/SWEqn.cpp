@@ -78,6 +78,9 @@ void SWEqn::coriolis() {
     for(ii = 0; ii < topo->n0; ii++) {
         fVals[ii] = bVals[ii]/aVals[ii];
     }
+    VecRestoreArray(m0->v, &aVals);
+    VecRestoreArray(PtQfx, &bVals);
+
     VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &f);
     VecSetLocalToGlobalMapping(f, topo->map0);
     VecSetValues(f, topo->n0, topo->loc0, fVals, INSERT_VALUES);
@@ -104,12 +107,14 @@ void SWEqn::diagnose_w(Vec u, Vec *w) {
     VecAYPX(du, 1.0, f);
 
     VecGetArray(du, &duVals);
-    VecGetArray(*w, &wVals);
     VecGetArray(m0->v, &m0Vals);
 
     for(ii = 0; ii < topo->n0; ii++) {
         wVals[ii] = duVals[ii]/m0Vals[ii];
     }
+    VecRestoreArray(du, &duVals);
+    VecRestoreArray(m0->v, &m0Vals);
+
     VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, w);
     VecSetLocalToGlobalMapping(*w, topo->map0);
     VecSetValues(*w, topo->n0, topo->loc0, wVals, INSERT_VALUES);

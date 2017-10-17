@@ -266,6 +266,7 @@ void Uhmat::assemble(Vec h2) {
             Free2D(Vh->nDofsJ, VtQV);
         }
     }
+    VecRestoreArray(h2, &h2Array);
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
@@ -388,6 +389,8 @@ void Phvec::assemble(Vec h2) {
             VecSetValues(v, np12, inds_x, entries, ADD_VALUES);
         }
     }
+    VecRestoreArray(h2, &h2Array);
+
     VecAssemblyBegin(v);
     VecAssemblyEnd(v);
 }
@@ -632,6 +635,8 @@ void PtQUmat::assemble(Vec q1) {
             Free2D(P->nDofsJ, PtQV);
         }
     }
+    VecRestoreArray(q1, &q1Array);
+
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
@@ -727,6 +732,8 @@ void WtQUmat::assemble(Vec u1) {
             Free2D(W->nDofsJ, WtQV);
         }
     }
+    VecRestoreArray(u1, &u1Array);
+
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
@@ -823,6 +830,8 @@ void RotMat::assemble(Vec q0) {
             Free2D(V->nDofsJ, VtQU);
         }
     }
+    VecRestoreArray(q0, &q0Array);
+
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
