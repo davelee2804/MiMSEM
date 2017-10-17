@@ -21,6 +21,7 @@ int main(int argc, char** argv) {
     static char help[] = "petsc";
     Topo* topo;
     Geom* geom;
+    SWEqn* sw;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 
@@ -32,8 +33,11 @@ int main(int argc, char** argv) {
     topo = new Topo(rank, EL_ORD, N_ELS_X_LOC);
     geom = new Geom(rank);
 
+    sw = new SWEqn(topo, geom);
+
     delete topo;
     delete geom;
+    delete sw;
 
     PetscFinalize();
 

@@ -543,6 +543,9 @@ M1y_j_Fxy_i::M1y_j_Fxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
+    l = _l;
+    e = _e;
+
     nn = l->n;
     np1 = nn + 1;
     mp1 = l->q->n + 1;
