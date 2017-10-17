@@ -143,6 +143,81 @@ void SWEqn::diagnose_F(Vec u, Vec h, Vec* hu) {
     KSPDestroy(&ksp);
 }
 
+void SWEqn::solve(Vec u0, Vec h0, double dt) {
+    Vec w0;
+    Vec hu0;
+    Vec uu;
+    Vec hh;
+    Vec dh;
+    Vec Rv;
+    Vec Mu;
+    Vec u1;
+    Vec h1;
+    KSP ksp;
+
+    // first step, momemtum equation
+    diagnose_w(u0, &w0);
+
+    K->assemble(u0);
+    R->assemble(w0);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2, topo->nDofs2G, &uu);
+    VecSetLocalToGlobalMapping(uu, topo->map2);
+    MatMult(K->M, u0, uu);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2, topo->nDofs2G, &hh);
+    VecSetLocalToGlobalMapping(hh, topo->map2);
+    MatMult(M2->M, h0, hh);
+
+    VecAYPX(hh, grav, uu);
+    
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1, topo->nDofs1G, &dh);
+    VecSetLocalToGlobalMapping(dh, topo->map1);
+    MatMult(EtoF->E12, hh, dh);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1, topo->nDofs1G, &Rv);
+    VecSetLocalToGlobalMapping(Rv, topo->map1);
+    MatMult(R->M, u0, Rv);
+
+    VecAYPX(dh, 1.0, Rv);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1, topo->nDofs1G, &Mu);
+    VecSetLocalToGlobalMapping(Mu, topo->map1);
+    MatMult(M1->M, u0, Mu);
+
+    VecAYPX(dh, -dt, Mu);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp);
+    KSPSetOperators(ksp, M1->M, M1->M);
+    KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp, KSPGMRES);
+    KSPSolve(ksp, dh, u1);
+    KSPDestroy(&ksp);
+
+    // first step, mass equation
+    diagnose_F(u0, h0, &hu0);
+    
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2, topo->nDofs2G, &h1);
+    VecSetLocalToGlobalMapping(h1, topo->map2);
+    MatMult(EtoF->E21, hu0, h1);
+    VecAYPX(h1, -dt, h0);
+
+    // second step, momentum equation
+
+    // second step, mass equation
+
+    VecDestroy(&w0);
+    VecDestroy(&hu0);
+    VecDestroy(&uu);
+    VecDestroy(&hh);
+    VecDestroy(&dh);
+    VecDestroy(&Rv);
+    VecDestroy(&Mu);
+    VecDestroy(&u1);
+    VecDestroy(&h1);
+}
+    
+
 SWEqn::~SWEqn() {
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);

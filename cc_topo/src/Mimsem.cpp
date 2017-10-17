@@ -9,6 +9,7 @@
 #include "Topo.h"
 #include "Geom.h"
 #include "Assembly.h"
+#include "SWEqn.h"
 
 using namespace std;
 
