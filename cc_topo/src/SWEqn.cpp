@@ -1,4 +1,5 @@
 #include <petsc.h>
+#include <petscis.h>
 #include <petscvec.h>
 #include <petscmat.h>
 #include <petscpc.h>
@@ -12,6 +13,8 @@
 #include "SWEqn.h"
 
 SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
+    Vec vl, vg;
+
     topo = _topo;
     geom = _geom;
 
@@ -21,6 +24,25 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
+
+    // initialise the vec scatter objects for nodes/edges/faces
+    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
+    VecScatterCreate(vg, topo->is_g_0, vl, topo->is_l_0, &gtol_0);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+
+    VecCreateSeq(MPI_COMM_WORLD, topo->n1, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &vg);
+    VecScatterCreate(vg, topo->is_g_1, vl, topo->is_l_1, &gtol_1);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+
+    VecCreateSeq(MPI_COMM_WORLD, topo->n2, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vg);
+    VecScatterCreate(vg, topo->is_g_2, vl, topo->is_l_2, &gtol_2);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
 
     // 0 form lumped mass matrix (vector)
     m0 = new Pvec(topo, node);
@@ -53,75 +75,61 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 }
 
 // project coriolis term onto 0 forms
+// assumes diagonal 0 form mass matrix
 void SWEqn::coriolis() {
-    int ii;
     PtQmat* PtQ = new PtQmat(topo, node);
-    PetscScalar* fVals = new PetscScalar[topo->n0];
-    Vec fx, PtQfx;
-    PetscScalar *aVals, *bVals;
+    PetscScalar *fArray;
+    Vec fxl, fxg, PtQfxg;
 
+    // initialise the coriolis vector (local and global)
+    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &fl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fg);
+
+    // evaluate the coriolis term at nodes
+    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &fxl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fxg);
+    VecZeroEntries(fxg);
+    VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
-        fVals[ii] = 2.0*omega*geom->x[ii][2];
+        fArray[ii] = 2.0*omega*geom->x[ii][2];
     }
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &fx);
-    VecSetLocalToGlobalMapping(fx, topo->map0);
-    VecSetValues(fx, topo->n0, topo->loc0, fVals, INSERT_VALUES);
-    VecAssemblyBegin(fx);
-    VecAssemblyEnd(fx);
+    VecRestoreArray(fxl, &fArray);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &PtQfx);
-    VecSetLocalToGlobalMapping(PtQfx, topo->map0);
-    MatMult(PtQ->M, fx, PtQfx);
+    // scatter array to global vector
+    VecScatterBegin(gtol_0, fxl, fxg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(gtol_0, fxl, fxg, ADD_VALUES, SCATTER_REVERSE);
 
-    VecGetArray(m0->v, &aVals);
-    VecGetArray(PtQfx, &bVals);
-    for(ii = 0; ii < topo->n0; ii++) {
-        fVals[ii] = bVals[ii]/aVals[ii];
-    }
-    VecRestoreArray(m0->v, &aVals);
-    VecRestoreArray(PtQfx, &bVals);
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &f);
-    VecSetLocalToGlobalMapping(f, topo->map0);
-    VecSetValues(f, topo->n0, topo->loc0, fVals, INSERT_VALUES);
-    VecAssemblyBegin(f);
-    VecAssemblyEnd(f);
+    // project vector onto 0 forms
+    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &PtQfxl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PtQfxg);
+    VecZeroEntries(PtQfxg);
+    MatMult(PtQ->M, fxg, PtQfxg);
+    // diagonal mass matrix as vector
+    VecPointwiseDivide(fg, PtQfxg, m0->vg);
+    
+    // scatter to back to local vector
+    VecScatterBegin(gtol_0, PtQfxg, PtQfxl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(gtol_0, PtQfxg, PtQfxl, INSERT_VALUES, SCATTER_FORWARD);
 
     delete PtQ;
-    delete[] fVals;
-    VecDestroy(&fx);
-    VecDestroy(&PtQfx);
+    VecDestroy(&fxl);
+    VecDestroy(&fxg);
+    VecDestroy(&PtQfxg);
 }
 
-// derive vorticity
+// derive vorticity (global vector) as \omega = curl u + f
+// assumes diagonal 0 form mass matrix
 void SWEqn::diagnose_w(Vec u, Vec *w) {
-    int ii;
-    PetscScalar *duVals, *m0Vals, *wVals;
     Vec du;
 
-    wVals = new PetscScalar[topo->n0];
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &du);
-    VecSetLocalToGlobalMapping(du, topo->map0);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &du);
+    VecZeroEntries(du);
     MatMult(E01M1, u, du);
     VecAYPX(du, 1.0, f);
+    // diagonal mass matrix as vector
+    VecPointwiseDivide(w, du, m0->vg);
 
-    VecGetArray(du, &duVals);
-    VecGetArray(m0->v, &m0Vals);
-
-    for(ii = 0; ii < topo->n0; ii++) {
-        wVals[ii] = duVals[ii]/m0Vals[ii];
-    }
-    VecRestoreArray(du, &duVals);
-    VecRestoreArray(m0->v, &m0Vals);
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, w);
-    VecSetLocalToGlobalMapping(*w, topo->map0);
-    VecSetValues(*w, topo->n0, topo->loc0, wVals, INSERT_VALUES);
-    VecAssemblyBegin(*w);
-    VecAssemblyEnd(*w);
-
-    delete[] wVals;
     VecDestroy(&du);
 }
 
@@ -129,14 +137,16 @@ void SWEqn::diagnose_F(Vec u, Vec h, Vec* hu) {
     Vec Fu;
     KSP ksp;
 
+    // assemble the nonlinear rhs mass matrix
     F->assemble(h);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1, topo->nDofs1G, &Fu);
-    VecSetLocalToGlobalMapping(Fu, topo->map1);
+    // get the rhs vector
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fu);
+    VecZeroEntries(Fu);
     MatMult(F->M, u, Fu);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1, topo->nDofs1G, hu);
-    VecSetLocalToGlobalMapping(*hu, topo->map1);
+    // solve the linear system
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, hu);
 
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M1->M, M1->M);
@@ -226,7 +236,12 @@ void SWEqn::solve(Vec u0, Vec h0, double dt) {
 SWEqn::~SWEqn() {
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);
-    VecDestroy(&f);
+    VecDestroy(&fl);
+    VecDestroy(&fg);
+
+    VecScatterDestroy(&gtol_0);
+    VecScatterDestroy(&gtol_1);
+    VecScatterDestroy(&gtol_2);
 
     delete m0;
     delete M1;

@@ -1,4 +1,5 @@
 #include <petsc.h>
+#include <petscis.h>
 #include <petscvec.h>
 #include <petscmat.h>
 
@@ -85,7 +86,7 @@ void Umat::assemble() {
     Free2D(U->nDofsJ, UtQU);
     Free2D(V->nDofsJ, VtQV);
     delete Q;
-	delete U;
+    delete U;
     delete V;
     delete[] UtQUflat;
     delete[] VtQVflat;
@@ -294,8 +295,11 @@ Pvec::Pvec(Topo* _topo, LagrangeNode* _l) {
     topo = _topo;
     l = _l;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &v);
-    VecSetLocalToGlobalMapping(v, topo->map0);
+    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
+    VecZeroEntries(vg);
+    VecScatterCreate(vg, topo->is_g_0, vl, topo->is_l_0, &gtol);
+    //VecSetLocalToGlobalMapping(v, topo->map0);
 
     entries = new PetscScalar[(l->n+1)*(l->n+1)];
 
@@ -307,11 +311,12 @@ void Pvec::assemble() {
     int *inds_x;
     double* weights = l->q->w;
 
-    VecZeroEntries(v);
+    VecZeroEntries(vl);
 
     np1 = l->n + 1;
     np12 = np1*np1;
 
+    // assemble values into local vector
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // TODO: incorporate the jacobian transformation for each element
@@ -319,17 +324,25 @@ void Pvec::assemble() {
                 // weight at quadrature point
                 entries[ii] = weights[ii%np1]*weights[ii/np1];
             }
-            inds_x = topo->elInds0_g(ex, ey);
-            VecSetValues(v, np12, inds_x, entries, ADD_VALUES);
+            inds_x = topo->elInds0_l(ex, ey);
+            VecSetValuesLocal(vl, np12, inds_x, entries, ADD_VALUES);
         }
     }
-    VecAssemblyBegin(v);
-    VecAssemblyEnd(v);
+
+    // scatter values to global vector
+    VecScatterBegin(gtol, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(gtol, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+
+    // and back to local vector
+    VecScatterBegin(gtol, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(gtol, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
 }
 
 Pvec::~Pvec() {
     delete[] entries;
-    VecDestroy(&v);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+    VecScatterDestroy(&gtol);
 }
 
 // Assembly of the diagonal 0 form mass matrix as a vector 
@@ -342,8 +355,11 @@ Phvec::Phvec(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     l = _l;
     e = _e;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, topo->nDofs0G, &v);
-    VecSetLocalToGlobalMapping(v, topo->map0);
+    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
+    VecZeroEntries(vg);
+    VecScatterCreate(vg, topo->is_g_0, vl, topo->is_l_0, &gtol);
+    //VecSetLocalToGlobalMapping(v, topo->map0);
 
     ck = new double[(l->n)*(l->n)];
     entries = new PetscScalar[(l->n+1)*(l->n+1)];
@@ -385,20 +401,27 @@ void Phvec::assemble(Vec h2) {
                 entries[ii] = wt*hq;
             }
 
-            inds_x = topo->elInds0_g(ex, ey);
-            VecSetValues(v, np12, inds_x, entries, ADD_VALUES);
+            inds_x = topo->elInds0_l(ex, ey);
+            VecSetValuesLocal(vl, np12, inds_x, entries, ADD_VALUES);
         }
     }
     VecRestoreArray(h2, &h2Array);
 
-    VecAssemblyBegin(v);
-    VecAssemblyEnd(v);
+    // scatter values to global vector
+    VecScatterBegin(gtol, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(gtol, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+
+    // and back to local vector
+    VecScatterBegin(gtol, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(gtol, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
 }
 
 Phvec::~Phvec() {
     delete[] ck;
     delete[] entries;
-    VecDestroy(&v);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+    VecScatterDestroy(&gtol);
 }
 
 // Assumes quadrature points and 0 forms are the same (for now)
