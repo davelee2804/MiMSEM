@@ -133,12 +133,12 @@ void SWEqn::diagnose_w(Vec u, Vec *w) {
     VecDestroy(&du);
 }
 
-void SWEqn::diagnose_F(Vec u, Vec h, Vec* hu) {
+void SWEqn::diagnose_F(Vec u, Vec hl, Vec* hu) {
     Vec Fu;
     KSP ksp;
 
-    // assemble the nonlinear rhs mass matrix
-    F->assemble(h);
+    // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
+    F->assemble(hl);
 
     // get the rhs vector
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fu);
@@ -158,46 +158,58 @@ void SWEqn::diagnose_F(Vec u, Vec h, Vec* hu) {
     KSPDestroy(&ksp);
 }
 
-void SWEqn::solve(Vec u0, Vec h0, double dt) {
-    Vec w0;
-    Vec hu0;
-    Vec uu;
-    Vec hh;
-    Vec dh;
-    Vec Rv;
-    Vec Mu;
-    Vec u1;
-    Vec h1;
+void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
+    Vec wi, hui;
+    Vec uu, hh, dh, wv, Mu;
+    Vec u1, h1;
+    Vec wl, ul, hl;
     KSP ksp;
 
-    // first step, momemtum equation
-    diagnose_w(u0, &w0);
+    // diagnose the initial vorticity
+    diagnose_w(ui, &wi);
 
-    K->assemble(u0);
-    R->assemble(w0);
+    // scatter initial vectors to local versions
+    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &wl);
+    VecScatterBegin(gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecCreateSeq(MPI_COMM_WORLD, topo->n1, &ul);
+    VecScatterBegin(gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecCreateSeq(MPI_COMM_WORLD, topo->n2, &hl);
+    VecScatterBegin(gtol_2, hi, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(gtol_2, hi, hl, INSERT_VALUES, SCATTER_FORWARD);
+
+    // first step, momemtum equation
+    K->assemble(ul);
+    R->assemble(wl);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &uu);
     VecZeroEntries(uu);
-    MatMult(K->M, u0, uu);
+    MatMult(K->M, ui, uu);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hh);
     VecZeroEntries(hh);
-    MatMult(M2->M, h0, hh);
+    MatMult(M2->M, hi, hh);
     VecAYPX(hh, grav, uu);
     
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dh);
     VecZeroEntries(dh);
     MatMult(EtoF->E12, hh, dh);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Rv);
-    VecZeroEntries(Rv);
-    MatMult(R->M, u0, Rv);
-    VecAYPX(dh, 1.0, Rv);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &wv);
+    VecZeroEntries(wv);
+    MatMult(R->M, ui, wv);
+    VecAYPX(dh, 1.0, wv);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
     VecZeroEntries(Mu);
-    MatMult(M1->M, u0, Mu);
+    MatMult(M1->M, ui, Mu);
     VecAYPX(dh, -dt, Mu);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u1);
+    VecZeroEntries(u1);
 
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M1->M, M1->M);
@@ -207,26 +219,29 @@ void SWEqn::solve(Vec u0, Vec h0, double dt) {
     KSPDestroy(&ksp);
 
     // first step, mass equation
-    diagnose_F(u0, h0, &hu0);
+    diagnose_F(ui, hl, &hui);
     
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h1);
     VecZeroEntries(h1);
-    MatMult(EtoF->E21, hu0, h1);
-    VecAYPX(h1, -dt, h0);
+    MatMult(EtoF->E21, hui, h1);
+    VecAYPX(h1, -dt, hi);
 
     // second step, momentum equation
 
     // second step, mass equation
 
-    VecDestroy(&w0);
-    VecDestroy(&hu0);
+    VecDestroy(&wi);
+    VecDestroy(&hui);
     VecDestroy(&uu);
     VecDestroy(&hh);
     VecDestroy(&dh);
-    VecDestroy(&Rv);
+    VecDestroy(&wv);
     VecDestroy(&Mu);
     VecDestroy(&u1);
     VecDestroy(&h1);
+    VecDestroy(wl);
+    VecDestroy(ul);
+    VecDestroy(hl);
 }
     
 
