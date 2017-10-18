@@ -159,91 +159,169 @@ void SWEqn::diagnose_F(Vec u, Vec hl, Vec* hu) {
 }
 
 void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
-    Vec wi, hui;
-    Vec uu, hh, dh, wv, Mu;
-    Vec u1, h1;
+    Vec wi, wj, uj, hj;
+    Vec gh, uu, wv, hu;
+    Vec Ui, Hi, Uj, Hj;
+    Vec bu;
     Vec wl, ul, hl;
     KSP ksp;
+
+    // initialize vectors
+    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &wl);
+    VecCreateSeq(MPI_COMM_WORLD, topo->n1, &ul);
+    VecCreateSeq(MPI_COMM_WORLD, topo->n2, &hl);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ui);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Uj);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Hi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Hj);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &wv);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &gh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &uu);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uj);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
+
+    // initialize the linear solver
+    KSPCreate(MPI_COMM_WORLD, &ksp);
+    KSPSetOperators(ksp, M1->M, M1->M);
+    KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp, KSPGMRES);
+
+    /*** first step ***/
 
     // diagnose the initial vorticity
     diagnose_w(ui, &wi);
 
     // scatter initial vectors to local versions
-    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &wl);
     VecScatterBegin(gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecCreateSeq(MPI_COMM_WORLD, topo->n1, &ul);
     VecScatterBegin(gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecCreateSeq(MPI_COMM_WORLD, topo->n2, &hl);
     VecScatterBegin(gtol_2, hi, hl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(gtol_2, hi, hl, INSERT_VALUES, SCATTER_FORWARD);
 
-    // first step, momemtum equation
+    // momemtum equation
     K->assemble(ul);
     R->assemble(wl);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &uu);
     VecZeroEntries(uu);
     MatMult(K->M, ui, uu);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hh);
-    VecZeroEntries(hh);
-    MatMult(M2->M, hi, hh);
-    VecAYPX(hh, grav, uu);
+    VecZeroEntries(gh);
+    MatMult(M2->M, hi, gh);
+    VecAYPX(gh, grav, uu);      // M2.(K + gh)
     
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dh);
-    VecZeroEntries(dh);
-    MatMult(EtoF->E12, hh, dh);
+    VecZeroEntries(Ui);
+    MatMult(EtoF->E12, gh, Ui); // E12.M2.(K + gh)
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &wv);
     VecZeroEntries(wv);
     MatMult(R->M, ui, wv);
-    VecAYPX(dh, 1.0, wv);
+    VecAYPX(Ui, 1.0, wv);       // M1.(w + f)Xu + E12.M2.(K + gh)
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
-    VecZeroEntries(Mu);
-    MatMult(M1->M, ui, Mu);
-    VecAYPX(dh, -dt, Mu);
+    VecZeroEntries(bu);
+    MatMult(M1->M, ui, bu);     // M1.u
+    VecAXPY(bu, -dt, Ui);       // M1.u - dt{ M1.(w + f)Xu + E12.M2.(K + gh) }
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u1);
-    VecZeroEntries(u1);
+    // linear solve for uj
+    VecZeroEntries(uj);
+    KSPSolve(ksp, bu, uj);
 
-    KSPCreate(MPI_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, M1->M, M1->M);
-    KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp, KSPGMRES);
-    KSPSolve(ksp, dh, u1);
-    KSPDestroy(&ksp);
-
-    // first step, mass equation
-    diagnose_F(ui, hl, &hui);
+    // mass equation
+    diagnose_F(ui, hl, &hu);
     
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h1);
-    VecZeroEntries(h1);
-    MatMult(EtoF->E21, hui, h1);
-    VecAYPX(h1, -dt, hi);
+    VecZeroEntries(Hi);
+    MatMult(EtoF->E21, hu, Hi);
 
-    // second step, momentum equation
+    VecZeroEntries(hj);
+    VecAXPY(hj, 1.0, hi);
+    VecAXPY(hj, -dt, Hi);
 
-    // second step, mass equation
+    VecDestroy(hu);
 
-    VecDestroy(&wi);
-    VecDestroy(&hui);
-    VecDestroy(&uu);
-    VecDestroy(&hh);
-    VecDestroy(&dh);
-    VecDestroy(&wv);
-    VecDestroy(&Mu);
-    VecDestroy(&u1);
-    VecDestroy(&h1);
+    /*** second step ***/
+
+    // diagnose the initial vorticity
+    diagnose_w(uj, &wj);
+
+    // scatter initial vectors to local versions
+    VecScatterBegin(gtol_0, wj, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(gtol_0, wj, wl, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecScatterBegin(gtol_1, uj, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(gtol_1, uj, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecScatterBegin(gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+
+    // momentum equation
+    K->assemble(ul);
+    R->assemble(wl);
+
+    VecZeroEntries(uu);
+    MatMult(K->M, uj, uu);
+
+    VecZeroEntries(gh);
+    MatMult(M2->M, hj, gh);
+    VecAYPX(gh, grav, uu);      // M2.(K + gh)
+    
+    VecZeroEntries(Uj);
+    MatMult(EtoF->E12, gh, Uj); // E12.M2.(K + gh)
+
+    VecZeroEntries(wv);
+    MatMult(R->M, uj, wv);
+    VecAYPX(Uj, 1.0, wv);       // M1.(w + f)Xu + E12.M2.(K + gh)
+
+    VecZeroEntries(bu);
+    MatMult(M1->M, uj, bu);     // M1.u
+    VecAXPY(bu, -0.5*dt, Ui);   // M1.u - dt{ M1.(w + f)Xu + E12.M2.(K + gh) }
+    VecAXPY(bu, -0.5*dt, Uj);
+
+    // linear solve for uf
+    VecZeroEntries(uf);
+    KSPSolve(ksp, bu, uf);
+
+    // mass equation
+    diagnose_F(uj, hl, &hu);
+    
+    VecZeroEntries(Hj);
+    MatMult(EtoF->E21, hu, Hj);
+
+    VecZeroEntries(hf);
+    VecAXPY(hf, 1.0, hi);
+    VecAXPY(hf, -0.5*dt, Hi);
+    VecAXPY(hf, -0.5*dt, Hj);
+
+    VecDestroy(hu);
+
+    // clean up
     VecDestroy(wl);
     VecDestroy(ul);
     VecDestroy(hl);
+
+    VecDestroy(&wi);
+    VecDestroy(&wj);
+    VecDestroy(&uj);
+    VecDestroy(&hj);
+
+    VecDestroy(&wv);
+    VecDestroy(&hh);
+    VecDestroy(&gh);
+
+    VecDestroy(&Ui);
+    VecDestroy(&Uj);
+    VecDestroy(&Hi);
+    VecDestroy(&Hj);
+
+    VecDestroy(bu);
+
+    KSPDestroy(&ksp);
 }
-    
 
 SWEqn::~SWEqn() {
     MatDestroy(&E01M1);
