@@ -54,7 +54,8 @@ class Pvec {
         Topo* topo;
         LagrangeNode* l;
         PetscScalar* entries;
-        Vec v;
+        Vec vl;
+        Vec vg;
         void assemble();
 };
 
@@ -67,7 +68,8 @@ class Phvec {
         LagrangeEdge* e;
         double* ck;
         PetscScalar* entries;
-        Vec v;
+        Vec vl;
+        Vec vg;
         void assemble(Vec h2);
 };
 

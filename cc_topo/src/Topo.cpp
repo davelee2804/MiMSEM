@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include <petsc.h>
+#include <petscis.h>
 #include <petscvec.h>
 
 #include "Topo.h"
@@ -12,11 +13,11 @@ using namespace std;
 using std::string;
 
 Topo::Topo(int _pi, int _elOrd, int _nElsX) {
-    int ii;
-    int n_procs;
+    int ii, n_procs;
+    int nLoc[4];
     ifstream file;
-	char filename[100];
-	string line;
+    char filename[100];
+    string line;
 
     pi = _pi;
     elOrd = _elOrd;
@@ -29,7 +30,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     n0 = 0;
     while (std::getline(file, line))
         ++n0;
-	file.close();
+    file.close();
 
     cout << "number of nodes on processor " << pi << ":\t" << n0 << endl;
 
@@ -42,7 +43,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     n1x = 0;
     while (std::getline(file, line))
         ++n1x;
-	file.close();
+    file.close();
 
     cout << "number of edges (x-normal) on processor " << pi << ":\t" << n1x << endl;
 
@@ -55,7 +56,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     n1y = 0;
     while (std::getline(file, line))
         ++n1y;
-	file.close();
+    file.close();
 
     n1 = n1x + n1y;
 
@@ -67,10 +68,17 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     // add x-normal and y-normal edges into single set of indices
     loc1 = new int[n1x+n1y];
     for(ii = 0; ii < n1x; ii++) {
-       loc1[ii] = loc1x[ii];
+        loc1[ii] = loc1x[ii];
     }
     for(ii = 0; ii < n1y; ii++) {
-       loc1[ii+n1x] = loc1y[ii];
+        loc1[ii+n1x] = loc1y[ii];
+    }
+    loc1t = new int[n1y+n1x];
+    for(ii = 0; ii < n1y; ii++) {
+        loc1t[ii] = loc1y[ii];
+    }
+    for(ii = 0; ii < n1y; ii++) {
+        loc1t[ii+n1y] = loc1x[ii];
     }
 
     // loading the faces for this processor
@@ -79,7 +87,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     n2 = 0;
     while (std::getline(file, line))
         ++n2;
-	file.close();
+    file.close();
 
     cout << "number of faces on processor " << pi << ":\t" << n2 << endl;
 
@@ -103,11 +111,41 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     nDofs1G = 2*n_procs*nDofsX*nDofsX;
     nDofs2G = n_procs*nDofsX*nDofsX;
     cout << "n dofs global: " << nDofs0G << "\t" << nDofs1G << "\t" << nDofs2G << endl;
+
+    // create the global index sets
+    ISCreateGeneral(MPI_COMM_WORLD, n0, inds0, PETSC_COPY_VALUES, &is_g_0);
+    ISCreateGeneral(MPI_COMM_WORLD, n1x, inds1x, PETSC_COPY_VALUES, &is_g_1x);
+    ISCreateGeneral(MPI_COMM_WORLD, n1y, inds1y, PETSC_COPY_VALUES, &is_g_1y);
+    ISCreateGeneral(MPI_COMM_WORLD, n1, inds1, PETSC_COPY_VALUES, &is_g_1);
+    ISCreateGeneral(MPI_COMM_WORLD, n1t, inds1t, PETSC_COPY_VALUES, &is_g_1t);
+    ISCreateGeneral(MPI_COMM_WORLD, n2, inds2, PETSC_COPY_VALUES, &is_g_2);
+
+    // create the local index sets
+    ISCreateStride(MPI_COMM_WORLD, n0, 0, 1, &is_l_0);
+    ISCreateStride(MPI_COMM_WORLD, n1x, 0, 1, &is_l_1x);
+    ISCreateStride(MPI_COMM_WORLD, n1y, 0, 1, &is_l_1y);
+    ISCreateStride(MPI_COMM_WORLD, n1, 0, 1, &is_l_1);
+    ISCreateStride(MPI_COMM_WORLD, n1t, 0, 1, &is_l_1t);
+    ISCreateStride(MPI_COMM_WORLD, n2, 0, 1, &is_l_2);
+
+    // local the local sizes
+    sprintf(filename, "local_sizes_%.4u.txt", pi);
+    file.open(filename);
+    while (std::getline(file, line))
+        nLoc[ii] = atoi(line.c_str());
+    file.close();
+
+    n0l = nLoc[0];
+    n1xl = nLoc[1];
+    n1yl = nLoc[2];
+    n2l = nLoc[3];
+    n1l = n1xl + n1yl;
 }
 
 Topo::~Topo() {
     delete[] loc0;
     delete[] loc1;
+    delete[] loc1t;
     delete[] loc1x;
     delete[] loc1y;
     delete[] loc2;
@@ -120,6 +158,20 @@ Topo::~Topo() {
     ISLocalToGlobalMappingDestroy(&map0);
     ISLocalToGlobalMappingDestroy(&map1);
     ISLocalToGlobalMappingDestroy(&map2);
+
+    ISDestroy(&is_g_0);
+    ISDestroy(&is_g_1x);
+    ISDestroy(&is_g_1y);
+    ISDestroy(&is_g_1);
+    ISDestroy(&is_g_1t);
+    ISDestroy(&is_g_2);
+
+    ISDestroy(&is_l_0);
+    ISDestroy(&is_l_1x);
+    ISDestroy(&is_l_1y);
+    ISDestroy(&is_l_1);
+    ISDestroy(&is_l_1t);
+    ISDestroy(&is_l_2);
 }
 
 void Topo::loadObjs(char* filename, int* loc) {

@@ -316,6 +316,14 @@ class Proc:
 
 		return self.side1
 
+	def writeLocalSizes(self):
+		a = np.zeros(4,dtype=np.int32)
+		a[0] = self.n0l
+		a[1] = self.n1xl
+		a[2] = self.n1yl
+		a[3] = self.n2l
+		np.savetxt('local_sizes_%.4u'%self.procID + '.txt', a, fmt='%u')
+
 # face of the cube
 class Face:
 	def __init__(self,fi,npx):
@@ -646,8 +654,17 @@ class ParaCube:
 		print str(pi) + ':\t' + str(proc.loc2)
 		np.savetxt('faces_%.4u'%pi + '.txt', proc.loc2, fmt='%u')
 
-pc = ParaCube(24,2,4)
+n_procs = 6
+pc = ParaCube(n_procs,2,4)
 
+for pi in np.arange(n_procs):
+	pc.print_nodes(pi)
+	pc.print_edges(pi,0)
+	pc.print_edges(pi,1)
+	pc.print_faces(pi)
+	pc.procs[pi].writeLocalSizes()
+
+'''
 print 'results for 24 procs'
 print '0:\t[19 17  1  3  2 23 21 -1'
 pc.print_neighbours(0)
@@ -841,5 +858,5 @@ pc.print_edges(19,0)
 print '19:\t[676 677 678 679 684 685 686 687 692 693 694 695 700 701 702 703 708 709 710 711'
 pc.print_edges(19,1)
 print '\n'
-
+'''
 
