@@ -124,18 +124,19 @@ void SWEqn::diagnose_w(Vec u, Vec *w) {
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &du);
+
     VecZeroEntries(du);
     MatMult(E01M1, u, du);
-    VecAYPX(du, 1.0, f);
     // diagonal mass matrix as vector
     VecPointwiseDivide(w, du, m0->vg);
+    // add the (0 form) coriolis vector
+    VecAYPX(m0->vg, 1.0, f);
 
     VecDestroy(&du);
 }
 
-void SWEqn::diagnose_F(Vec u, Vec hl, Vec* hu) {
+void SWEqn::diagnose_F(Vec u, Vec hl, KSP, ksp, Vec* hu) {
     Vec Fu;
-    KSP ksp;
 
     // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
     F->assemble(hl);
@@ -147,15 +148,8 @@ void SWEqn::diagnose_F(Vec u, Vec hl, Vec* hu) {
 
     // solve the linear system
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, hu);
-
-    KSPCreate(MPI_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, M1->M, M1->M);
-    KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp, KSPGMRES);
     KSPSolve(ksp, Fu, *hu);
-
     VecDestroy(&Fu);
-    KSPDestroy(&ksp);
 }
 
 void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
@@ -233,7 +227,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
     KSPSolve(ksp, bu, uj);
 
     // mass equation
-    diagnose_F(ui, hl, &hu);
+    diagnose_F(ui, hl, ksp, &hu);
     
     VecZeroEntries(Hi);
     MatMult(EtoF->E21, hu, Hi);
@@ -246,10 +240,10 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
 
     /*** second step ***/
 
-    // diagnose the initial vorticity
+    // diagnose the half step vorticity
     diagnose_w(uj, &wj);
 
-    // scatter initial vectors to local versions
+    // scatter half step vectors to local versions
     VecScatterBegin(gtol_0, wj, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(gtol_0, wj, wl, INSERT_VALUES, SCATTER_FORWARD);
 
@@ -287,7 +281,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
     KSPSolve(ksp, bu, uf);
 
     // mass equation
-    diagnose_F(uj, hl, &hu);
+    diagnose_F(uj, hl, ksp, &hu);
     
     VecZeroEntries(Hj);
     MatMult(EtoF->E21, hu, Hj);
