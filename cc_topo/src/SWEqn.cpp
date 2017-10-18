@@ -176,30 +176,27 @@ void SWEqn::solve(Vec u0, Vec h0, double dt) {
     K->assemble(u0);
     R->assemble(w0);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2, topo->nDofs2G, &uu);
-    VecSetLocalToGlobalMapping(uu, topo->map2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &uu);
+    VecZeroEntries(uu);
     MatMult(K->M, u0, uu);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2, topo->nDofs2G, &hh);
-    VecSetLocalToGlobalMapping(hh, topo->map2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hh);
+    VecZeroEntries(hh);
     MatMult(M2->M, h0, hh);
-
     VecAYPX(hh, grav, uu);
     
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1, topo->nDofs1G, &dh);
-    VecSetLocalToGlobalMapping(dh, topo->map1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dh);
+    VecZeroEntries(dh);
     MatMult(EtoF->E12, hh, dh);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1, topo->nDofs1G, &Rv);
-    VecSetLocalToGlobalMapping(Rv, topo->map1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Rv);
+    VecZeroEntries(Rv);
     MatMult(R->M, u0, Rv);
-
     VecAYPX(dh, 1.0, Rv);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1, topo->nDofs1G, &Mu);
-    VecSetLocalToGlobalMapping(Mu, topo->map1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
+    VecZeroEntries(Mu);
     MatMult(M1->M, u0, Mu);
-
     VecAYPX(dh, -dt, Mu);
 
     KSPCreate(MPI_COMM_WORLD, &ksp);
@@ -212,8 +209,8 @@ void SWEqn::solve(Vec u0, Vec h0, double dt) {
     // first step, mass equation
     diagnose_F(u0, h0, &hu0);
     
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2, topo->nDofs2G, &h1);
-    VecSetLocalToGlobalMapping(h1, topo->map2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h1);
+    VecZeroEntries(h1);
     MatMult(EtoF->E21, hu0, h1);
     VecAYPX(h1, -dt, h0);
 

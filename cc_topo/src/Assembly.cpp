@@ -723,11 +723,10 @@ void WtQUmat::assemble(Vec u1) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds_x = topo->elInds1x_l(ex, ey);
             inds_y = topo->elInds1y_l(ex, ey);
-            // TODO: check the sign of these pv gradient terms after the E10 
-            // incidence matrix has been implemented
+            // note that we are assembling K = (u.u)/2 onto 2 forms
             for(kk = 0; kk < n2; kk++) {
-                ckx[kk] = u1Array[inds_x[kk]];
-                cky[kk] = u1Array[inds_y[kk]];
+                ckx[kk] = 0.5*u1Array[inds_x[kk]];
+                cky[kk] = 0.5*u1Array[inds_y[kk]];
             }
             U->assemble(cky);
             V->assemble(ckx);
