@@ -32,7 +32,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
         ++n0;
     file.close();
 
-    cout << "number of nodes on processor " << pi << ":\t" << n0 << endl;
+    //cout << "number of nodes on processor " << pi << ":\t" << n0 << endl;
 
     loc0 = new int[n0];
     loadObjs(filename, loc0);
@@ -45,7 +45,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
         ++n1x;
     file.close();
 
-    cout << "number of edges (x-normal) on processor " << pi << ":\t" << n1x << endl;
+    //cout << "number of edges (x-normal) on processor " << pi << ":\t" << n1x << endl;
 
     loc1x = new int[n1x];
     loadObjs(filename, loc1x);
@@ -60,7 +60,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
 
     n1 = n1x + n1y;
 
-    cout << "number of edges (y-normal) on processor " << pi << ":\t" << n1y << endl;
+    //cout << "number of edges (y-normal) on processor " << pi << ":\t" << n1y << endl;
 
     loc1y = new int[n1y];
     loadObjs(filename, loc1y);
@@ -82,7 +82,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
         ++n2;
     file.close();
 
-    cout << "number of faces on processor " << pi << ":\t" << n2 << endl;
+    //cout << "number of faces on processor " << pi << ":\t" << n2 << endl;
 
     loc2 = new int[n2];
     loadObjs(filename, loc2);
@@ -103,7 +103,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     nDofs0G = n_procs*nDofsX*nDofsX + 2;
     nDofs1G = 2*n_procs*nDofsX*nDofsX;
     nDofs2G = n_procs*nDofsX*nDofsX;
-    cout << "n dofs global: " << nDofs0G << "\t" << nDofs1G << "\t" << nDofs2G << endl;
+    //cout << "n dofs global: " << nDofs0G << "\t" << nDofs1G << "\t" << nDofs2G << endl;
 
     // create the global index sets
     ISCreateGeneral(MPI_COMM_WORLD, n0, loc0, PETSC_COPY_VALUES, &is_g_0);
@@ -118,8 +118,11 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     // local the local sizes
     sprintf(filename, "local_sizes_%.4u.txt", pi);
     file.open(filename);
-    while (std::getline(file, line))
+    ii = 0;
+    while (std::getline(file, line)) {
         nLoc[ii] = atoi(line.c_str());
+        ii++;
+    }
     file.close();
 
     n0l = nLoc[0];
@@ -127,6 +130,8 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     n1yl = nLoc[2];
     n2l = nLoc[3];
     n1l = n1xl + n1yl;
+
+    cout << "local sizes on " << pi << ":\t" << n0l << "\t" << n1l << "\t" << n2l << endl;
 }
 
 Topo::~Topo() {
@@ -228,9 +233,9 @@ int* Topo::elInds0_g(int ex, int ey) {
     int ix, iy, kk;
 
     kk = 0;
-    for(iy = 0; iy < elOrd + 1;  iy++) {
+    for(iy = 0; iy < elOrd + 1; iy++) {
         for(ix = 0; ix < elOrd + 1; ix++) {
-            inds0[kk] = loc0[(ey*elOrd + iy)*(nDofsX + 1) + ex*nDofsX + ix];
+            inds0[kk] = loc0[(ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix];
             kk++;
         }
     }

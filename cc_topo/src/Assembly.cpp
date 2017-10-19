@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include <petsc.h>
 #include <petscis.h>
 #include <petscvec.h>
@@ -8,6 +10,8 @@
 #include "Geom.h"
 #include "ElMats.h"
 #include "Assembly.h"
+
+using namespace std;
 
 void Free2D(int ni, double** A) {
     int ii;
@@ -60,10 +64,10 @@ void Umat::assemble() {
     double* VtQVflat = Flat2D(V->nDofsJ, V->nDofsJ, VtQV);
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n1, topo->n1, topo->nDofs1G, topo->nDofs1G);
+    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-    MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
+    //MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -116,10 +120,10 @@ void Wmat::assemble() {
     double* WtQWflat = Flat2D(W->nDofsJ, W->nDofsJ, WtQW);
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n2, topo->n2, topo->nDofs2G, topo->nDofs2G);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
-    MatSetLocalToGlobalMapping(M, topo->map2, topo->map2);
+    //MatSetLocalToGlobalMapping(M, topo->map2, topo->map2);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -164,10 +168,10 @@ void Pmat::assemble() {
     double* PtQPflat = Flat2D(P->nDofsJ, P->nDofsJ, PtQP);
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n0, topo->n0, topo->nDofs0G, topo->nDofs0G);
+    MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 2*P->nDofsJ, PETSC_NULL);
-    MatSetLocalToGlobalMapping(M, topo->map0, topo->map0);
+    //MatSetLocalToGlobalMapping(M, topo->map0, topo->map0);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -213,10 +217,10 @@ Uhmat::Uhmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     Vh = new M1y_j_Fxy_i(l, e);
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n1, topo->n1, topo->nDofs1G, topo->nDofs1G);
+    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-    MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
+    //MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
 
     Free2D(U->nDofsJ, Ut);
     Free2D(V->nDofsJ, Vt);
@@ -325,7 +329,7 @@ void Pvec::assemble() {
                 entries[ii] = weights[ii%np1]*weights[ii/np1];
             }
             inds_x = topo->elInds0_l(ex, ey);
-            VecSetValuesLocal(vl, np12, inds_x, entries, ADD_VALUES);
+            VecSetValues(vl, np12, inds_x, entries, ADD_VALUES);
         }
     }
 
@@ -402,7 +406,7 @@ void Phvec::assemble(Vec h2) {
             }
 
             inds_x = topo->elInds0_l(ex, ey);
-            VecSetValuesLocal(vl, np12, inds_x, entries, ADD_VALUES);
+            VecSetValues(vl, np12, inds_x, entries, ADD_VALUES);
         }
     }
     VecRestoreArray(h2, &h2Array);
@@ -443,10 +447,10 @@ void WtQmat::assemble() {
     double* WtQflat = Flat2D(W->nDofsJ, Q->nDofsJ, WtQ);
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n2, topo->n0, topo->nDofs2G, topo->nDofs0G);
+    MatSetSizes(M, topo->n2l, topo->n0l, topo->nDofs2G, topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
-    MatSetLocalToGlobalMapping(M, topo->map2, topo->map0);
+    //MatSetLocalToGlobalMapping(M, topo->map2, topo->map0);
     MatZeroEntries(M);
 
     // TODO: incorportate jacobian tranformation for each element
@@ -492,17 +496,16 @@ void PtQmat::assemble() {
     double* PtQflat = Flat2D(P->nDofsJ, Q->nDofsJ, PtQ);
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n0, topo->n0, topo->nDofs0G, topo->nDofs0G);
+    MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 2*P->nDofsJ, PETSC_NULL);
-    MatSetLocalToGlobalMapping(M, topo->map0, topo->map0);
+    //MatSetLocalToGlobalMapping(M, topo->map0, topo->map0);
     MatZeroEntries(M);
 
     // TODO: incorportate jacobian tranformation for each element
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds_0 = topo->elInds0_g(ex, ey);
-
             MatSetValues(M, P->nDofsJ, inds_0, Q->nDofsJ, inds_0, PtQflat, ADD_VALUES);
         }
     }
@@ -544,10 +547,10 @@ void UtQmat::assemble() {
     double* VtQflat = Flat2D(V->nDofsJ, Q->nDofsJ, VtQ);
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n1, topo->n0, topo->nDofs1G, topo->nDofs0G);
+    MatSetSizes(M, topo->n1l, topo->n0l, topo->nDofs1G, topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-    MatSetLocalToGlobalMapping(M, topo->map1, topo->map0);
+    //MatSetLocalToGlobalMapping(M, topo->map1, topo->map0);
     MatZeroEntries(M);
 
     // TODO: incorportate jacobian tranformation for each element
@@ -601,10 +604,10 @@ PtQUmat::PtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     cky = new double[(l->n)*(l->n+1)];
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n0, topo->n1, topo->nDofs0G, topo->nDofs1G);
+    MatSetSizes(M, topo->n0l, topo->n1l, topo->nDofs0G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-    MatSetLocalToGlobalMapping(M, topo->map0, topo->map1);
+    //MatSetLocalToGlobalMapping(M, topo->map0, topo->map1);
 
     Free2D(P->nDofsJ, Pt);
     delete Q;
@@ -698,10 +701,10 @@ WtQUmat::WtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     cky = new double[(l->n)*(l->n+1)];
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n2, topo->n1, topo->nDofs2G, topo->nDofs1G);
+    MatSetSizes(M, topo->n2l, topo->n1l, topo->nDofs2G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-    MatSetLocalToGlobalMapping(M, topo->map2, topo->map1);
+    //MatSetLocalToGlobalMapping(M, topo->map2, topo->map1);
 
     Free2D(W->nDofsJ, Wt);
     delete Q;
@@ -798,10 +801,10 @@ RotMat::RotMat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     cky = new double[(l->n+1)*(l->n+1)];
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n1, topo->n1, topo->nDofs1G, topo->nDofs1G);
+    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-    MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
+    //MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
 
     Free2D(U->nDofsJ, Ut);
     Free2D(V->nDofsJ, Vt);
@@ -886,10 +889,10 @@ E10mat::E10mat(Topo* _topo) {
     np1 = nn + 1;
 
     MatCreate(MPI_COMM_WORLD, &E10);
-    MatSetSizes(E10, topo->n1, topo->n0, topo->nDofs1G, topo->nDofs0G);
+    MatSetSizes(E10, topo->n1l, topo->n0l, topo->nDofs1G, topo->nDofs0G);
     MatSetType(E10, MATMPIAIJ);
     MatMPIAIJSetPreallocation(E10, 4, PETSC_NULL, 4, PETSC_NULL);
-    MatSetLocalToGlobalMapping(E10, topo->map1, topo->map0);
+    //MatSetLocalToGlobalMapping(E10, topo->map1, topo->map0);
     MatZeroEntries(E10);
     
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -953,10 +956,10 @@ E21mat::E21mat(Topo* _topo) {
     np1 = nn + 1;
 
     MatCreate(MPI_COMM_WORLD, &E21);
-    MatSetSizes(E21, topo->n2, topo->n1, topo->nDofs2G, topo->nDofs1G);
+    MatSetSizes(E21, topo->n2l, topo->n1l, topo->nDofs2G, topo->nDofs1G);
     MatSetType(E21, MATMPIAIJ);
     MatMPIAIJSetPreallocation(E21, 4, PETSC_NULL, 4, PETSC_NULL);
-    MatSetLocalToGlobalMapping(E21, topo->map2, topo->map1);
+    //MatSetLocalToGlobalMapping(E21, topo->map2, topo->map1);
     MatZeroEntries(E21);
     
     for(ey = 0; ey < topo->nElsX; ey++) {

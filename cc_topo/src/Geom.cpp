@@ -30,6 +30,10 @@ Geom::Geom(int _pi) {
         ++nl;
     file.close();
 
+    if (!nl) {
+        cout << "ERROR! geometry file reading: " << nl << endl;
+    }
+
     x = new double*[nl];
     for(ii = 0; ii < nl; ii++) {
         x[ii] = new double[3];

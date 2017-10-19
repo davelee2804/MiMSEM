@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include <petsc.h>
 #include <petscis.h>
 #include <petscvec.h>
@@ -11,6 +13,8 @@
 #include "Geom.h"
 #include "Assembly.h"
 #include "SWEqn.h"
+
+using namespace std;
 
 SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     Vec vl, vg;
@@ -338,7 +342,7 @@ SWEqn::~SWEqn() {
     delete F;
     delete K;
 
-    delete quad;
-    delete node;
     delete edge;
+    delete node;
+    delete quad;
 }
