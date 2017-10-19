@@ -26,6 +26,6 @@ class SWEqn {
         VecScatter gtol_2;
         void coriolis();
         void diagnose_w(Vec u, Vec* w);
-        void diagnose_F(Vec u, Vec h, Vec* hu);
+        void diagnose_F(Vec u, Vec h, KSP ksp, Vec* hu);
         void solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt);
 };

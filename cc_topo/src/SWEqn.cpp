@@ -26,19 +26,19 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     edge = new LagrangeEdge(topo->elOrd, node);
 
     // initialise the vec scatter objects for nodes/edges/faces
-    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
     VecScatterCreate(vg, topo->is_g_0, vl, topo->is_l_0, &gtol_0);
     VecDestroy(&vl);
     VecDestroy(&vg);
 
-    VecCreateSeq(MPI_COMM_WORLD, topo->n1, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1, PETSC_DETERMINE, &vl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &vg);
     VecScatterCreate(vg, topo->is_g_1, vl, topo->is_l_1, &gtol_1);
     VecDestroy(&vl);
     VecDestroy(&vg);
 
-    VecCreateSeq(MPI_COMM_WORLD, topo->n2, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2, PETSC_DETERMINE, &vl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vg);
     VecScatterCreate(vg, topo->is_g_2, vl, topo->is_l_2, &gtol_2);
     VecDestroy(&vl);
@@ -77,16 +77,17 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 // project coriolis term onto 0 forms
 // assumes diagonal 0 form mass matrix
 void SWEqn::coriolis() {
+    int ii;
     PtQmat* PtQ = new PtQmat(topo, node);
     PetscScalar *fArray;
     Vec fxl, fxg, PtQfxg;
 
     // initialise the coriolis vector (local and global)
-    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &fl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &fl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fg);
 
     // evaluate the coriolis term at nodes
-    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &fxl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &fxl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fxg);
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
@@ -100,7 +101,6 @@ void SWEqn::coriolis() {
     VecScatterEnd(gtol_0, fxl, fxg, ADD_VALUES, SCATTER_REVERSE);
 
     // project vector onto 0 forms
-    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &PtQfxl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PtQfxg);
     VecZeroEntries(PtQfxg);
     MatMult(PtQ->M, fxg, PtQfxg);
@@ -108,8 +108,8 @@ void SWEqn::coriolis() {
     VecPointwiseDivide(fg, PtQfxg, m0->vg);
     
     // scatter to back to local vector
-    VecScatterBegin(gtol_0, PtQfxg, PtQfxl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(gtol_0, PtQfxg, PtQfxl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
 
     delete PtQ;
     VecDestroy(&fxl);
@@ -128,14 +128,14 @@ void SWEqn::diagnose_w(Vec u, Vec *w) {
     VecZeroEntries(du);
     MatMult(E01M1, u, du);
     // diagonal mass matrix as vector
-    VecPointwiseDivide(w, du, m0->vg);
+    VecPointwiseDivide(*w, du, m0->vg);
     // add the (0 form) coriolis vector
-    VecAYPX(m0->vg, 1.0, f);
+    VecAYPX(m0->vg, 1.0, fg);
 
     VecDestroy(&du);
 }
 
-void SWEqn::diagnose_F(Vec u, Vec hl, KSP, ksp, Vec* hu) {
+void SWEqn::diagnose_F(Vec u, Vec hl, KSP ksp, Vec* hu) {
     Vec Fu;
 
     // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
@@ -161,9 +161,9 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
     KSP ksp;
 
     // initialize vectors
-    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &wl);
-    VecCreateSeq(MPI_COMM_WORLD, topo->n1, &ul);
-    VecCreateSeq(MPI_COMM_WORLD, topo->n2, &hl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &wl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1, PETSC_DETERMINE, &ul);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2, PETSC_DETERMINE, &hl);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ui);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Uj);
@@ -236,7 +236,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
     VecAXPY(hj, 1.0, hi);
     VecAXPY(hj, -dt, Hi);
 
-    VecDestroy(hu);
+    VecDestroy(&hu);
 
     /*** second step ***/
 
@@ -291,12 +291,12 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
     VecAXPY(hf, -0.5*dt, Hi);
     VecAXPY(hf, -0.5*dt, Hj);
 
-    VecDestroy(hu);
+    VecDestroy(&hu);
 
     // clean up
-    VecDestroy(wl);
-    VecDestroy(ul);
-    VecDestroy(hl);
+    VecDestroy(&wl);
+    VecDestroy(&ul);
+    VecDestroy(&hl);
 
     VecDestroy(&wi);
     VecDestroy(&wj);
@@ -304,7 +304,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
     VecDestroy(&hj);
 
     VecDestroy(&wv);
-    VecDestroy(&hh);
+    VecDestroy(&uu);
     VecDestroy(&gh);
 
     VecDestroy(&Ui);
@@ -312,7 +312,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
     VecDestroy(&Hi);
     VecDestroy(&Hj);
 
-    VecDestroy(bu);
+    VecDestroy(&bu);
 
     KSPDestroy(&ksp);
 }

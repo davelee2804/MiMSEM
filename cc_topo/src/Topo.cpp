@@ -73,13 +73,6 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     for(ii = 0; ii < n1y; ii++) {
         loc1[ii+n1x] = loc1y[ii];
     }
-    loc1t = new int[n1y+n1x];
-    for(ii = 0; ii < n1y; ii++) {
-        loc1t[ii] = loc1y[ii];
-    }
-    for(ii = 0; ii < n1y; ii++) {
-        loc1t[ii+n1y] = loc1x[ii];
-    }
 
     // loading the faces for this processor
     sprintf(filename, "faces_%.4u.txt", pi);
@@ -113,19 +106,13 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     cout << "n dofs global: " << nDofs0G << "\t" << nDofs1G << "\t" << nDofs2G << endl;
 
     // create the global index sets
-    ISCreateGeneral(MPI_COMM_WORLD, n0, inds0, PETSC_COPY_VALUES, &is_g_0);
-    ISCreateGeneral(MPI_COMM_WORLD, n1x, inds1x, PETSC_COPY_VALUES, &is_g_1x);
-    ISCreateGeneral(MPI_COMM_WORLD, n1y, inds1y, PETSC_COPY_VALUES, &is_g_1y);
-    ISCreateGeneral(MPI_COMM_WORLD, n1, inds1, PETSC_COPY_VALUES, &is_g_1);
-    ISCreateGeneral(MPI_COMM_WORLD, n1t, inds1t, PETSC_COPY_VALUES, &is_g_1t);
-    ISCreateGeneral(MPI_COMM_WORLD, n2, inds2, PETSC_COPY_VALUES, &is_g_2);
+    ISCreateGeneral(MPI_COMM_WORLD, n0, loc0, PETSC_COPY_VALUES, &is_g_0);
+    ISCreateGeneral(MPI_COMM_WORLD, n1, loc1, PETSC_COPY_VALUES, &is_g_1);
+    ISCreateGeneral(MPI_COMM_WORLD, n2, loc2, PETSC_COPY_VALUES, &is_g_2);
 
     // create the local index sets
     ISCreateStride(MPI_COMM_WORLD, n0, 0, 1, &is_l_0);
-    ISCreateStride(MPI_COMM_WORLD, n1x, 0, 1, &is_l_1x);
-    ISCreateStride(MPI_COMM_WORLD, n1y, 0, 1, &is_l_1y);
     ISCreateStride(MPI_COMM_WORLD, n1, 0, 1, &is_l_1);
-    ISCreateStride(MPI_COMM_WORLD, n1t, 0, 1, &is_l_1t);
     ISCreateStride(MPI_COMM_WORLD, n2, 0, 1, &is_l_2);
 
     // local the local sizes
@@ -145,7 +132,6 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
 Topo::~Topo() {
     delete[] loc0;
     delete[] loc1;
-    delete[] loc1t;
     delete[] loc1x;
     delete[] loc1y;
     delete[] loc2;
@@ -160,17 +146,11 @@ Topo::~Topo() {
     ISLocalToGlobalMappingDestroy(&map2);
 
     ISDestroy(&is_g_0);
-    ISDestroy(&is_g_1x);
-    ISDestroy(&is_g_1y);
     ISDestroy(&is_g_1);
-    ISDestroy(&is_g_1t);
     ISDestroy(&is_g_2);
 
     ISDestroy(&is_l_0);
-    ISDestroy(&is_l_1x);
-    ISDestroy(&is_l_1y);
     ISDestroy(&is_l_1);
-    ISDestroy(&is_l_1t);
     ISDestroy(&is_l_2);
 }
 

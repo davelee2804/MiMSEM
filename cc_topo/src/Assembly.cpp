@@ -295,7 +295,7 @@ Pvec::Pvec(Topo* _topo, LagrangeNode* _l) {
     topo = _topo;
     l = _l;
 
-    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
     VecZeroEntries(vg);
     VecScatterCreate(vg, topo->is_g_0, vl, topo->is_l_0, &gtol);
@@ -355,7 +355,7 @@ Phvec::Phvec(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
     l = _l;
     e = _e;
 
-    VecCreateSeq(MPI_COMM_WORLD, topo->n0, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
     VecZeroEntries(vg);
     VecScatterCreate(vg, topo->is_g_0, vl, topo->is_l_0, &gtol);
@@ -374,7 +374,7 @@ void Phvec::assemble(Vec h2) {
     double** ejxi = e->ejxi;
 
     VecGetArray(h2, &h2Array);
-    VecZeroEntries(v);
+    VecZeroEntries(vl);
 
     n2 = (l->n)*(l->n);
     np1 = l->n + 1;
