@@ -39,8 +39,9 @@ double* Flat2D(int ni, int nj, double** A) {
 
 // mass matrix for the 1 form vector (x-normal degrees of
 // freedom first then y-normal degrees of freedom)
-Umat::Umat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
+Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     topo = _topo;
+    geom = _geom;
     l = _l;
     e = _e;
 
@@ -101,8 +102,9 @@ Umat::~Umat() {
 }
 
 // 2 form mass matrix
-Wmat::Wmat(Topo* _topo, LagrangeEdge* _e) {
+Wmat::Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     topo = _topo;
+    geom = _geom;
     e = _e;
 
     assemble();
@@ -149,8 +151,9 @@ Wmat::~Wmat() {
 }
 
 // 0 form mass matrix
-Pmat::Pmat(Topo* _topo, LagrangeNode* _l) {
+Pmat::Pmat(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
     topo = _topo;
+    geom = _geom;
     l = _l;
 
     assemble();
@@ -197,8 +200,9 @@ Pmat::~Pmat() {
 }
 
 // 1 form mass matrix with 2 forms interpolated to quadrature points
-Uhmat::Uhmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
+Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     topo = _topo;
+    geom = _geom;
     l = _l;
     e = _e;
 
@@ -295,8 +299,9 @@ Uhmat::~Uhmat() {
 // Assumes inexact integration and a diagonal mass matrix for the 
 // 0 form function space (ie: quadrature and basis functions are 
 // the same order)
-Pvec::Pvec(Topo* _topo, LagrangeNode* _l) {
+Pvec::Pvec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
     topo = _topo;
+    geom = _geom;
     l = _l;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vl);
@@ -354,8 +359,9 @@ Pvec::~Pvec() {
 // Assumes inexact integration and a diagonal mass matrix for the 
 // 0 form function space (ie: quadrature and basis functions are 
 // the same order)
-Phvec::Phvec(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
+Phvec::Phvec(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     topo = _topo;
+    geom = _geom;
     l = _l;
     e = _e;
 
@@ -429,8 +435,9 @@ Phvec::~Phvec() {
 }
 
 // Assumes quadrature points and 0 forms are the same (for now)
-WtQmat::WtQmat(Topo* _topo, LagrangeEdge* _e) {
+WtQmat::WtQmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     topo = _topo;
+    geom = _geom;
     e = _e;
 
     assemble();
@@ -478,8 +485,9 @@ WtQmat::~WtQmat() {
 }
 
 // Assumes quadrature points and 0 forms are the same (for now)
-PtQmat::PtQmat(Topo* _topo, LagrangeNode* _l) {
+PtQmat::PtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
     topo = _topo;
+    geom = _geom;
     l = _l;
 
     assemble();
@@ -524,8 +532,9 @@ PtQmat::~PtQmat() {
 }
 
 //
-UtQmat::UtQmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
+UtQmat::UtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     topo = _topo;
+    geom = _geom;
     l = _l;
     e = _e;
 
@@ -583,11 +592,12 @@ UtQmat::~UtQmat() {
 }
 
 // project the potential vorticity gradient velocity product onto the 0 forms
-PtQUmat::PtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
+PtQUmat::PtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     double **Pt;
     Wii* Q;
 
     topo = _topo;
+    geom = _geom;
     l = _l;
     e = _e;
 
@@ -680,11 +690,12 @@ PtQUmat::~PtQUmat() {
 }
 
 // 
-WtQUmat::WtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
+WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     double **Wt;
     Wii* Q;
 
     topo = _topo;
+    geom = _geom;
     l = _l;
     e = _e;
 
@@ -777,11 +788,12 @@ WtQUmat::~WtQUmat() {
 
 // 1 form mass matrix with 0 form interpolated to quadrature points
 // (for rotational term in the momentum equation)
-RotMat::RotMat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e) {
+RotMat::RotMat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     double **Ut, **Vt;
     Wii* Q;
 
     topo = _topo;
+    geom = _geom;
     l = _l;
     e = _e;
 

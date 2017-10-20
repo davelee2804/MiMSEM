@@ -1,8 +1,9 @@
 class Umat {
     public:
-        Umat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
         ~Umat();
         Topo* topo;
+        Geom* geom;
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
@@ -11,9 +12,10 @@ class Umat {
 
 class Wmat {
     public:
-        Wmat(Topo* _topo, LagrangeEdge* _e);
+        Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
         ~Wmat();
         Topo* topo;
+        Geom* geom;
         LagrangeEdge* e;
         Mat M;
         void assemble();
@@ -21,9 +23,10 @@ class Wmat {
 
 class Pmat {
     public:
-        Pmat(Topo* _topo, LagrangeNode* _l);
+        Pmat(Topo* _topo, Geom* _geom, LagrangeNode* _l);
         ~Pmat();
         Topo* topo;
+        Geom* geom;
         LagrangeNode* l;
         Mat M;
         void assemble();
@@ -31,7 +34,7 @@ class Pmat {
 
 class Uhmat {
     public:
-        Uhmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
         ~Uhmat();
         double* ck;
         double* UtQUflat;
@@ -41,6 +44,7 @@ class Uhmat {
         M1x_j_Fxy_i* Uh;
         M1y_j_Fxy_i* Vh;
         Topo* topo;
+        Geom* geom;
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
@@ -49,9 +53,10 @@ class Uhmat {
 
 class Pvec {
     public:
-        Pvec(Topo* _topo, LagrangeNode* _l);
+        Pvec(Topo* _topo, Geom* _geom, LagrangeNode* _l);
         ~Pvec();
         Topo* topo;
+        Geom* geom;
         LagrangeNode* l;
         PetscScalar* entries;
         Vec vl;
@@ -62,9 +67,10 @@ class Pvec {
 
 class Phvec {
     public:
-        Phvec(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        Phvec(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
         ~Phvec();
         Topo* topo;
+        Geom* geom;
         LagrangeNode* l;
         LagrangeEdge* e;
         double* ck;
@@ -77,9 +83,10 @@ class Phvec {
 
 class WtQmat {
     public:
-        WtQmat(Topo* _topo, LagrangeEdge* _e);
+        WtQmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
         ~WtQmat();
         Topo* topo;
+        Geom* geom;
         LagrangeEdge* e;
         Mat M;
         void assemble();
@@ -87,9 +94,10 @@ class WtQmat {
 
 class PtQmat {
     public:
-        PtQmat(Topo* _topo, LagrangeNode* _l);
+        PtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l);
         ~PtQmat();
         Topo* topo;
+        Geom* geom;
         LagrangeNode* l;
         Mat M;
         void assemble();
@@ -97,9 +105,10 @@ class PtQmat {
 
 class UtQmat {
     public:
-        UtQmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        UtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
         ~UtQmat();
         Topo* topo;
+        Geom* geom;
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
@@ -108,9 +117,10 @@ class UtQmat {
 
 class PtQUmat {
     public:
-        PtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        PtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
         ~PtQUmat();
         Topo* topo;
+        Geom* geom;
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
@@ -127,9 +137,10 @@ class PtQUmat {
 
 class WtQUmat {
     public:
-        WtQUmat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
         ~WtQUmat();
         Topo* topo;
+        Geom* geom;
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
@@ -146,9 +157,10 @@ class WtQUmat {
 
 class RotMat {
     public:
-        RotMat(Topo* _topo, LagrangeNode* _l, LagrangeEdge* _e);
+        RotMat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
         ~RotMat();
         Topo* topo;
+        Geom* geom;
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
