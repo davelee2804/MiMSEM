@@ -748,7 +748,7 @@ void WtQUmat::assemble(Vec u1) {
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
-            inds_2 = topo->elInds0_g(ex, ey);
+            inds_2 = topo->elInds2_g(ex, ey);
 
             MatSetValues(M, W->nDofsJ, inds_2, U->nDofsJ, inds_x, WtQUflat, ADD_VALUES);
             MatSetValues(M, W->nDofsJ, inds_2, V->nDofsJ, inds_y, WtQVflat, ADD_VALUES);

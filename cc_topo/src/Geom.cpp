@@ -16,8 +16,8 @@ using std::string;
 Geom::Geom(int _pi) {
     int ii, jj;
     ifstream file;
-	char filename[100];
-	string line;
+    char filename[100];
+    string line;
     double value;
 
     pi = _pi;
