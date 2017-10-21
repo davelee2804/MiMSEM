@@ -10,5 +10,5 @@ class Geom {
         LagrangeNode* node;
         LagrangeEdge* edge;
         void jacobian(int ex, int ey, int qx, int qy, double** J);
-        double jacDet(int ex, int ey, int qx, int qy);
+        double jacDet(int ex, int ey, int qx, int qy, double** J);
 };

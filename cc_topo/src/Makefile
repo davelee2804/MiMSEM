@@ -31,7 +31,7 @@ SWEqn.o: SWEqn.cpp SWEqn.h Assembly.o Geom.o Topo.o ElMats.o Basis.o
 Assembly.o: Assembly.cpp Assembly.h Geom.o Topo.o ElMats.o Basis.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}
 
-Geom.o: Geom.cpp Geom.h Topo.o
+Geom.o: Geom.cpp Geom.h Topo.o Basis.o
 	${CXX} -c Geom.cpp ${CXXFLAGS}
 
 Topo.o: Topo.cpp Topo.h

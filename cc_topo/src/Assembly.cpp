@@ -125,7 +125,6 @@ void Wmat::assemble() {
     MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
-    //MatSetLocalToGlobalMapping(M, topo->map2, topo->map2);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -143,6 +142,7 @@ void Wmat::assemble() {
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
     delete W;
+    delete Q;
     delete[] WtQWflat;
 }
 

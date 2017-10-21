@@ -49,13 +49,13 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     VecDestroy(&vg);
 
     // 0 form lumped mass matrix (vector)
-    m0 = new Pvec(topo, node);
+    m0 = new Pvec(topo, geom, node);
 
     // 1 form mass matrix
-    M1 = new Umat(topo, node, edge);
+    M1 = new Umat(topo, geom, node, edge);
 
     // 2 form mass matrix
-    M2 = new Wmat(topo, edge);
+    M2 = new Wmat(topo, geom, edge);
 
     // incidence matrices
     NtoE = new E10mat(topo);
@@ -66,13 +66,13 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
 
     // rotational operator
-    R = new RotMat(topo, node, edge);
+    R = new RotMat(topo, geom, node, edge);
 
     // mass flux operator
-    F = new Uhmat(topo, node, edge);
+    F = new Uhmat(topo, geom, node, edge);
 
     // kinetic energy operator
-    K = new WtQUmat(topo, node, edge);
+    K = new WtQUmat(topo, geom, node, edge);
 
     // coriolis vector (projected onto 0 forms)
     coriolis();
@@ -82,7 +82,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 // assumes diagonal 0 form mass matrix
 void SWEqn::coriolis() {
     int ii;
-    PtQmat* PtQ = new PtQmat(topo, node);
+    PtQmat* PtQ = new PtQmat(topo, geom, node);
     PetscScalar *fArray;
     Vec fxl, fxg, PtQfxg;
 

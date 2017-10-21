@@ -8,6 +8,7 @@
 
 #include <petscvec.h>
 
+#include "Basis.h"
 #include "Topo.h"
 #include "Geom.h"
 
@@ -105,9 +106,7 @@ void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
     }
 }
 
-double Geom::jacDet(int ex, int ey, int px, int py) {
-    double J[2][2];
-
+double Geom::jacDet(int ex, int ey, int px, int py, double** J) {
     jacobian(ex, ey, px, py, J);
 
     return (J[0][0]*J[1][1] - J[0][1]*J[1][0]);

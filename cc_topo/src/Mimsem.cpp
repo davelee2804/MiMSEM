@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
     cout << "importing topology for processor: " << rank << " of " << size << endl;
 
     topo = new Topo(rank, EL_ORD, N_ELS_X_LOC);
-    geom = new Geom(rank);
+    geom = new Geom(rank, topo);
 
     sw = new SWEqn(topo, geom);
 
