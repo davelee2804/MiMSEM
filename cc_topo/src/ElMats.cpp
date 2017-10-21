@@ -1,4 +1,10 @@
+#include <petsc.h>
+#include <petscis.h>
+#include <petscvec.h>
+
 #include "Basis.h"
+#include "Topo.h"
+#include "Geom.h"
 #include "ElMats.h"
 
 double** mult(int ni, int nj, int nk, double** A, double** B) {
@@ -57,17 +63,17 @@ double** tran(int ni, int nj, double**A) {
 // evaluated at the Gauss Lobatto quadrature points (rows)
 // n: basis function order
 // m: quadrature point order
-M1x_j_xy_i::M1x_j_xy_i(LagrangeNode* _l, LagrangeEdge* _e) {
+M1x_j_xy_i::M1x_j_xy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii, jj;
     int mi, nj, nn, np1, mp1;
     double li, ei;
 
-    l = _l;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
@@ -80,15 +86,15 @@ M1x_j_xy_i::M1x_j_xy_i(LagrangeNode* _l, LagrangeEdge* _e) {
 
     for(jj = 0; jj < nj; jj++) {
         for(ii = 0; ii < mi; ii++) {
-            li = l->ljxi[ii%mp1][jj%np1];
-            ei = e->ejxi[ii/mp1][jj/np1];
+            li = node->ljxi[ii%mp1][jj%np1];
+            ei = edge->ejxi[ii/mp1][jj/np1];
             A[ii][jj] = li*ei;
         }
     }
 }
 
 M1x_j_xy_i::~M1x_j_xy_i() {
-    int mp1 = l->q->n + 1;
+    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -101,17 +107,17 @@ M1x_j_xy_i::~M1x_j_xy_i() {
 // evaluated at the Gauss Lobatto quadrature points (rows)
 // n: basis function order
 // m: quadrature point order
-M1y_j_xy_i::M1y_j_xy_i(LagrangeNode* _l, LagrangeEdge* _e) {
+M1y_j_xy_i::M1y_j_xy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii, jj;
     int mi, nj, nn, np1, mp1;
     double li, ei;
 
-    l = _l;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
@@ -124,15 +130,15 @@ M1y_j_xy_i::M1y_j_xy_i(LagrangeNode* _l, LagrangeEdge* _e) {
 
     for(jj = 0; jj < nj; jj++) {
         for(ii = 0; ii < mi; ii++) {
-            li = l->ljxi[ii/mp1][jj/nn];
-            ei = e->ejxi[ii%mp1][jj%nn];
+            li = node->ljxi[ii/mp1][jj/nn];
+            ei = edge->ejxi[ii%mp1][jj%nn];
             A[ii][jj] = ei*li;
         }
     }
 }
 
 M1y_j_xy_i::~M1y_j_xy_i() {
-    int mp1 = l->q->n + 1;
+    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -143,16 +149,16 @@ M1y_j_xy_i::~M1y_j_xy_i() {
 
 // As above but with 1 forms interpolated to quadrature points
 // (normal) velocity interpolated to quadrature points
-M1x_j_Cxy_i::M1x_j_Cxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
+M1x_j_Cxy_i::M1x_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
-    l = _l;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
@@ -169,28 +175,28 @@ void M1x_j_Cxy_i::assemble(double* c) {
     int mi, nj, nn, np1, mp1;
     double li, ei, ck;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
     for(ii = 0; ii < mi; ii++) {
         ck = 0.0;
         for(kk = 0; kk < nj; kk++) {
-            ck += c[kk]*l->ljxi[ii%mp1][kk%np1]*e->ejxi[ii/mp1][kk/np1];
+            ck += c[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
         }
 
         for(jj = 0; jj < nj; jj++) {
-            li = l->ljxi[ii%mp1][jj%np1];
-            ei = e->ejxi[ii/mp1][jj/np1];
+            li = node->ljxi[ii%mp1][jj%np1];
+            ei = edge->ejxi[ii/mp1][jj/np1];
             A[ii][jj] = ck*li*ei;
         }
     }
 }
 
 M1x_j_Cxy_i::~M1x_j_Cxy_i() {
-    int mp1 = l->q->n + 1;
+    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -201,16 +207,16 @@ M1x_j_Cxy_i::~M1x_j_Cxy_i() {
 
 // As above but with 1 forms interpolated to quadrature points
 // (normal) velocity interpolated to quadrature points
-M1y_j_Cxy_i::M1y_j_Cxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
+M1y_j_Cxy_i::M1y_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
-    l = _l;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
@@ -227,28 +233,28 @@ void M1y_j_Cxy_i::assemble(double* c) {
     int mi, nj, nn, np1, mp1;
     double li, ei, ck;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
     for(ii = 0; ii < mi; ii++) {
         ck = 0.0;
         for(kk = 0; kk < nj; kk++) {
-            ck += c[kk]*e->ejxi[ii%mp1][kk%nn]*l->ljxi[ii/mp1][kk/nn];
+            ck += c[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
         }
 
         for(jj = 0; jj < nj; jj++) {
-            ei = e->ejxi[ii%mp1][jj%nn];
-            li = l->ljxi[ii/mp1][jj/nn];
+            ei = edge->ejxi[ii%mp1][jj%nn];
+            li = node->ljxi[ii/mp1][jj/nn];
             A[ii][jj] = ck*ei*li;
         }
     }
 }
 
 M1y_j_Cxy_i::~M1y_j_Cxy_i() {
-    int mp1 = l->q->n + 1;
+    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -259,16 +265,16 @@ M1y_j_Cxy_i::~M1y_j_Cxy_i() {
 
 // As above but with 1 forms cross product interpolated to quadrature points
 // (tangent) velocity interpolated to quadrature points
-M1x_j_Exy_i::M1x_j_Exy_i(LagrangeNode* _l, LagrangeEdge* _e) {
+M1x_j_Exy_i::M1x_j_Exy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
-    l = _l;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
@@ -281,7 +287,7 @@ M1x_j_Exy_i::M1x_j_Exy_i(LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 M1x_j_Exy_i::~M1x_j_Exy_i() {
-    int mp1 = l->q->n + 1;
+    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -295,21 +301,21 @@ void M1x_j_Exy_i::assemble(double* c) {
     int mi, nj, nn, np1, mp1;
     double li, ei, ck;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
     for(ii = 0; ii < mi; ii++) {
         ck = 0.0;
         for(kk = 0; kk < nj; kk++) {
-            ck += c[kk]*e->ejxi[ii%mp1][kk%nn]*l->ljxi[ii/mp1][kk/nn];
+            ck += c[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
         }
 
         for(jj = 0; jj < nj; jj++) {
-            li = l->ljxi[ii%mp1][jj%np1];
-            ei = e->ejxi[ii/mp1][jj/np1];
+            li = node->ljxi[ii%mp1][jj%np1];
+            ei = edge->ejxi[ii/mp1][jj/np1];
             A[ii][jj] = ck*li*ei;
         }
     }
@@ -317,16 +323,16 @@ void M1x_j_Exy_i::assemble(double* c) {
 
 // As above but with 1 forms (cross product) interpolated to quadrature points
 // (tangent) velocity interpolated to quadrature points
-M1y_j_Exy_i::M1y_j_Exy_i(LagrangeNode* _l, LagrangeEdge* _e) {
+M1y_j_Exy_i::M1y_j_Exy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
-    l = _l;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
@@ -339,7 +345,7 @@ M1y_j_Exy_i::M1y_j_Exy_i(LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 M1y_j_Exy_i::~M1y_j_Exy_i() {
-    int mp1 = l->q->n + 1;
+    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -353,21 +359,21 @@ void M1y_j_Exy_i::assemble(double* c) {
     int mi, nj, nn, np1, mp1;
     double li, ei, ck;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
     for(ii = 0; ii < mi; ii++) {
         ck = 0.0;
         for(kk= 0; kk < nj; kk++) {
-            ck += c[kk]*l->ljxi[ii%mp1][kk%np1]*e->ejxi[ii/mp1][kk/np1];
+            ck += c[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
         }
 
         for(jj = 0; jj < nj; jj++) {
-            ei = e->ejxi[ii%mp1][jj%nn];
-            li = l->ljxi[ii/mp1][jj/nn];
+            ei = edge->ejxi[ii%mp1][jj%nn];
+            li = node->ljxi[ii/mp1][jj/nn];
             A[ii][jj] = ck*ei*li;
         }
     }
@@ -375,16 +381,16 @@ void M1y_j_Exy_i::assemble(double* c) {
 
 // As above but with 0 forms interpolated to quadrature points
 // potential vorticity interpolated to quadrature points
-M1x_j_Dxy_i::M1x_j_Dxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
+M1x_j_Dxy_i::M1x_j_Dxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
-    l = _l;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
@@ -397,7 +403,7 @@ M1x_j_Dxy_i::M1x_j_Dxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 M1x_j_Dxy_i::~M1x_j_Dxy_i() {
-    int mp1 = l->q->n + 1;
+    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -411,9 +417,9 @@ void M1x_j_Dxy_i::assemble(double* c) {
     int mi, nj, nn, np1, mp1, n2;
     double li, ei, ck;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
     n2 = np1*np1;
@@ -421,12 +427,12 @@ void M1x_j_Dxy_i::assemble(double* c) {
     for(ii = 0; ii < mi; ii++) {
         ck = 0.0;
         for(kk = 0; kk < n2; kk++) {
-            ck += c[kk]*l->ljxi[ii%mp1][kk%np1]*l->ljxi[ii/mp1][kk/np1];
+            ck += c[kk]*node->ljxi[ii%mp1][kk%np1]*node->ljxi[ii/mp1][kk/np1];
         }
 
         for(jj = 0; jj < nj; jj++) {
-            li = l->ljxi[ii%mp1][jj%np1];
-            ei = e->ejxi[ii/mp1][jj/np1];
+            li = node->ljxi[ii%mp1][jj%np1];
+            ei = edge->ejxi[ii/mp1][jj/np1];
             A[ii][jj] = ck*li*ei;
         }
     }
@@ -434,16 +440,16 @@ void M1x_j_Dxy_i::assemble(double* c) {
 
 // As above but with 0 forms interpolated to quadrature points
 // potential vorticity interpolated to quadrature points
-M1y_j_Dxy_i::M1y_j_Dxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
+M1y_j_Dxy_i::M1y_j_Dxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
-    l = _l;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
@@ -456,7 +462,7 @@ M1y_j_Dxy_i::M1y_j_Dxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 M1y_j_Dxy_i::~M1y_j_Dxy_i() {
-    int mp1 = l->q->n + 1;
+    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -470,9 +476,9 @@ void M1y_j_Dxy_i::assemble(double* c) {
     int mi, nj, nn, np1, mp1, n2;
     double li, ei, ck;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
     n2 = np1*np1;
@@ -480,12 +486,12 @@ void M1y_j_Dxy_i::assemble(double* c) {
     for(ii = 0; ii < mi; ii++) {
         ck = 0.0;
         for(kk = 0; kk < n2; kk++) {
-            ck += c[kk]*l->ljxi[ii%mp1][kk%np1]*l->ljxi[ii/mp1][kk/np1];
+            ck += c[kk]*node->ljxi[ii%mp1][kk%np1]*node->ljxi[ii/mp1][kk/np1];
         }
 
         for(jj = 0; jj < nj; jj++) {
-            ei = e->ejxi[ii%mp1][jj%nn];
-            li = l->ljxi[ii/mp1][jj/nn];
+            ei = edge->ejxi[ii%mp1][jj%nn];
+            li = node->ljxi[ii/mp1][jj/nn];
 			A[ii][jj] = ck*ei*li;
         }
     }
@@ -493,16 +499,16 @@ void M1y_j_Dxy_i::assemble(double* c) {
 
 // thickness interpolated to quadrature points
 // for diagnosis of hu
-M1x_j_Fxy_i::M1x_j_Fxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
+M1x_j_Fxy_i::M1x_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
-    l = _l;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
@@ -515,7 +521,7 @@ M1x_j_Fxy_i::M1x_j_Fxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 M1x_j_Fxy_i::~M1x_j_Fxy_i() {
-    int mp1 = l->q->n + 1;
+    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -529,9 +535,9 @@ void M1x_j_Fxy_i::assemble(double* c) {
     int mi, nj, nn, np1, mp1, n2;
     double li, ei, ck;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
     n2 = nn*nn;
@@ -539,12 +545,12 @@ void M1x_j_Fxy_i::assemble(double* c) {
     for(ii = 0; ii < mi; ii++) {
         ck = 0.0;
         for(kk = 0; kk < n2; kk++) {
-            ck += c[kk]*e->ejxi[ii%mp1][kk%nn]*e->ejxi[ii/mp1][kk/nn];
+            ck += c[kk]*edge->ejxi[ii%mp1][kk%nn]*edge->ejxi[ii/mp1][kk/nn];
         }
 
         for(jj = 0; jj < nj; jj++) {
-            li = l->ljxi[ii%mp1][jj%np1];
-            ei = e->ejxi[ii/mp1][jj/np1];
+            li = node->ljxi[ii%mp1][jj%np1];
+            ei = edge->ejxi[ii/mp1][jj/np1];
             A[ii][jj] = ck*ei*li;
         }
     }
@@ -552,16 +558,16 @@ void M1x_j_Fxy_i::assemble(double* c) {
 
 // thickness interpolated to quadrature points
 // for diagnosis of hv
-M1y_j_Fxy_i::M1y_j_Fxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
+M1y_j_Fxy_i::M1y_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
-    l = _l;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
 
@@ -574,7 +580,7 @@ M1y_j_Fxy_i::M1y_j_Fxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 M1y_j_Fxy_i::~M1y_j_Fxy_i() {
-    int mp1 = l->q->n + 1;
+    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -588,9 +594,9 @@ void M1y_j_Fxy_i::assemble(double* c) {
     int mi, nj, nn, np1, mp1, n2;
     double li, ei, ck;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*nn;
     n2 = nn*nn;
@@ -598,12 +604,12 @@ void M1y_j_Fxy_i::assemble(double* c) {
     for(ii = 0; ii < mi; ii++) {
         ck = 0.0;
         for(kk = 0; kk < n2; kk++) {
-            ck += c[kk]*e->ejxi[ii%mp1][kk%nn]*e->ejxi[ii/mp1][kk/nn];
+            ck += c[kk]*edge->ejxi[ii%mp1][kk%nn]*edge->ejxi[ii/mp1][kk/nn];
         }
 
         for(jj = 0; jj < nj; jj++) {
-            ei = e->ejxi[ii%mp1][jj%nn];
-            li = l->ljxi[ii/mp1][jj/nn];
+            ei = edge->ejxi[ii%mp1][jj%nn];
+            li = node->ljxi[ii/mp1][jj/nn];
             A[ii][jj] = ck*ei*li;
         }
     }
@@ -613,15 +619,15 @@ void M1y_j_Fxy_i::assemble(double* c) {
 // evaluated at the Gauss Lobatto quadrature points
 // n: basis function order
 // m: quadrature point order
-M2_j_xy_i::M2_j_xy_i(LagrangeEdge* _e) {
+M2_j_xy_i::M2_j_xy_i(LagrangeEdge* _edge) {
     int ii, jj, nn, mp1, mi, nj;
     double ei, ej;
 
-    e = _e;
+    edge = _edge;
 
-    mp1 = e->l->q->n + 1;
+    mp1 = edge->l->q->n + 1;
     mi = mp1*mp1;
-    nn = e->l->n;
+    nn = edge->l->n;
     nj = nn*nn;
 
     A = new double*[mi];
@@ -633,8 +639,8 @@ M2_j_xy_i::M2_j_xy_i(LagrangeEdge* _e) {
 
     for(jj = 0; jj < nj; jj++) {
         for(ii = 0; ii < mi; ii++) {
-            ei = e->ejxi[ii%mp1][jj%nn];
-            ej = e->ejxi[ii/mp1][jj/nn];
+            ei = edge->ejxi[ii%mp1][jj%nn];
+            ej = edge->ejxi[ii/mp1][jj/nn];
             A[ii][jj] = ei*ej;
         }        
     }
@@ -643,7 +649,7 @@ M2_j_xy_i::M2_j_xy_i(LagrangeEdge* _e) {
 M2_j_xy_i::~M2_j_xy_i() {
     int ii, mp1, mi;
 
-    mp1 = e->l->q->n + 1;
+    mp1 = edge->l->q->n + 1;
     mi = mp1*mp1;
 
     for(ii = 0; ii < mi; ii++) {
@@ -654,14 +660,14 @@ M2_j_xy_i::~M2_j_xy_i() {
 
 // 0 form basis function terms (j) evaluated at the
 // quadrature points (i)
-M0_j_xy_i::M0_j_xy_i(LagrangeNode* _l) {
+M0_j_xy_i::M0_j_xy_i(LagrangeNode* _node) {
     int ii, jj, np1, mp1, mi, nj;
     double li, lj;
 
-    l = _l;
+    node = _node;
 
-    mp1 = l->q->n + 1;
-    np1 = l->n + 1;
+    mp1 = node->q->n + 1;
+    np1 = node->n + 1;
     mi = mp1*mp1;
     nj = np1*np1;
 
@@ -674,8 +680,8 @@ M0_j_xy_i::M0_j_xy_i(LagrangeNode* _l) {
 
     for(jj = 0; jj < nj; jj++) {
         for(ii = 0; ii < mi; ii++) {
-            li = l->ljxi[ii%mp1][jj%np1];
-            lj = l->ljxi[ii/mp1][jj/np1];
+            li = node->ljxi[ii%mp1][jj%np1];
+            lj = node->ljxi[ii/mp1][jj/np1];
             A[ii][jj] = li*lj;
         }
     }
@@ -684,7 +690,7 @@ M0_j_xy_i::M0_j_xy_i(LagrangeNode* _l) {
 M0_j_xy_i::~M0_j_xy_i() {
     int ii, mp1, mi;
 
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
 
     for(ii = 0; ii < mi; ii++) {
@@ -695,15 +701,15 @@ M0_j_xy_i::~M0_j_xy_i() {
 
 // left hand side of the potential vorticty equation
 // assembles the nonlinear term hq
-M0_j_Cxy_i::M0_j_Cxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
+M0_j_Cxy_i::M0_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii, nn, np1, mp1, mi, nj;
 
-    l = _l;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*np1;
 
@@ -718,7 +724,7 @@ M0_j_Cxy_i::M0_j_Cxy_i(LagrangeNode* _l, LagrangeEdge* _e) {
 M0_j_Cxy_i::~M0_j_Cxy_i() {
     int ii, mp1, mi;
 
-    mp1 = e->l->q->n + 1;
+    mp1 = edge->l->q->n + 1;
     mi = mp1*mp1;
 
     for(ii = 0; ii < mi; ii++) {
@@ -731,9 +737,9 @@ void M0_j_Cxy_i::assemble(double* c) {
     int ii, jj, kk, nn, n2, np1, mp1, mi, nj;
     double ck, li, lj;
 
-    nn = l->n;
+    nn = node->n;
     np1 = nn + 1;
-    mp1 = l->q->n + 1;
+    mp1 = node->q->n + 1;
     mi = mp1*mp1;
     nj = np1*np1;
     n2 = nn*nn;
@@ -741,24 +747,24 @@ void M0_j_Cxy_i::assemble(double* c) {
     for(ii = 0; ii < mi; ii++) {
         ck = 0.0;
         for(kk = 0; kk < n2; kk++) {
-            ck += c[kk]*e->ejxi[ii%mp1][kk%nn]*e->ejxi[ii/mp1][kk/nn];
+            ck += c[kk]*edge->ejxi[ii%mp1][kk%nn]*edge->ejxi[ii/mp1][kk/nn];
         }
 
         for(jj = 0; jj < nj; jj++) {
-            li = l->ljxi[ii%mp1][jj%np1];
-            lj = l->ljxi[ii/mp1][jj/np1];
+            li = node->ljxi[ii%mp1][jj%np1];
+            lj = node->ljxi[ii/mp1][jj/np1];
             A[ii][jj] = ck*li*lj;
         }
     }
 }
 
 // Quadrature weights diagonal matrix
-Wii::Wii(GaussLobatto* _q) {
+Wii::Wii(GaussLobatto* _quad) {
     int ii, jj, mp1, mi;
 
-    q = _q;
+    quad = _quad;
 
-    mp1 = q->n + 1;
+    mp1 = quad->n + 1;
     mi = mp1*mp1;
 
     A = new double*[mi];
@@ -772,14 +778,14 @@ Wii::Wii(GaussLobatto* _q) {
     nDofsJ = mi;
 
     for(ii = 0; ii < mi; ii++) {
-        A[ii][ii] = q->x[ii%mp1]*q->x[ii/mp1];
+        A[ii][ii] = quad->x[ii%mp1]*quad->x[ii/mp1];
     }
 }
 
 Wii::~Wii() {
     int ii, mp1, mi;
 
-    mp1 = q->n + 1;
+    mp1 = quad->n + 1;
     mi = mp1*mp1;
 
     for(ii = 0; ii < mi; ii++) {
