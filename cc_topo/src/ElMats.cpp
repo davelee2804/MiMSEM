@@ -22,6 +22,19 @@ double** mult(int ni, int nj, int nk, double** A, double** B) {
     return C;
 }
 
+void mult_in(int ni, int nj, int nk, double** A, double** B, double** C) {
+    int ii, jj, kk;
+
+    for(ii = 0; ii < ni; ii++) {
+        for(jj = 0; jj < nj; jj++) {
+            C[ii][jj] = 0.0;
+            for(kk = 0; kk < nk; kk++) {
+                C[ii][jj] += A[ii][kk]*B[kk][jj];
+            }
+        }
+    }
+}
+
 double** tran(int ni, int nj, double**A) {
     int ii, jj;
     double** B;

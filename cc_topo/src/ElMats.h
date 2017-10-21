@@ -1,4 +1,5 @@
 double** mult(int ni, int nj, int nk, double** A, double** B);
+void mult_in(int ni, int nj, int nk, double** A, double** B, double** C);
 double** tran(int ni, int nj, double**A);
 
 class M1x_j_xy_i {

@@ -37,6 +37,21 @@ double* Flat2D(int ni, int nj, double** A) {
     return Aflat;
 }
 
+double** Alloc2D(int ni, int nj) {
+    int ii, jj;
+    double** A;
+
+    A = new double*[ni];
+    for(ii = 0; ii < ni; ii++) {
+        A[ii] = new double[nj];
+        for(jj = 0; jj < nj; jj++) {
+            A[ii][jj] = 0.0;
+        }
+    }
+
+    return A;
+}
+
 // mass matrix for the 1 form vector (x-normal degrees of
 // freedom first then y-normal degrees of freedom)
 Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
