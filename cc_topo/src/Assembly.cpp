@@ -253,8 +253,6 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
     Ut = Tran(U->nDofsI, U->nDofsJ, U->A);
     Vt = Tran(V->nDofsI, V->nDofsJ, V->A);
-    //UtQ = Mult(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Q->A);
-    //VtQ = Mult(V->nDofsJ, Q->nDofsJ, V->nDofsI, Vt, Q->A);
     UtQ = Alloc2D(U->nDofsJ, Q->nDofsJ);
     VtQ = Alloc2D(V->nDofsJ, Q->nDofsJ);
     UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
@@ -761,8 +759,8 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     U = new M1x_j_Cxy_i(l, e);
     V = new M1y_j_Cxy_i(l, e);
     W = new M2_j_xy_i(e);
-    Wt = Tran(W->nDofsI, W->nDofsJ, W->A);
     Q = new Wii(l->q, geom);
+    Wt = Tran(W->nDofsI, W->nDofsJ, W->A);
     //WtQ = Mult(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Q->A);
     WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     WtQU = Alloc2D(W->nDofsJ, U->nDofsJ);
@@ -820,9 +818,6 @@ void WtQUmat::assemble(Vec u1) {
 
             MatSetValues(M, W->nDofsJ, inds_2, U->nDofsJ, inds_x, WtQUflat, ADD_VALUES);
             MatSetValues(M, W->nDofsJ, inds_2, V->nDofsJ, inds_y, WtQVflat, ADD_VALUES);
-
-            Free2D(W->nDofsJ, WtQU);
-            Free2D(W->nDofsJ, WtQV);
         }
     }
     VecRestoreArray(u1, &u1Array);
