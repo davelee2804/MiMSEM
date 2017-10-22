@@ -7,9 +7,9 @@
 #include <petscvec.h>
 
 #include "Basis.h"
-#include "ElMats.h"
 #include "Topo.h"
 #include "Geom.h"
+#include "ElMats.h"
 #include "Assembly.h"
 #include "SWEqn.h"
 
