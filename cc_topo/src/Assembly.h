@@ -39,8 +39,13 @@ class Uhmat {
         double* ck;
         double* UtQUflat;
         double* VtQVflat;
+        double** Ut;
+        double** Vt;
         double** UtQ;
         double** VtQ;
+        double** UtQU;
+        double** VtQV;
+        Wii* Q;
         M1x_j_Fxy_i* Uh;
         M1y_j_Fxy_i* Vh;
         Topo* topo;
@@ -58,6 +63,7 @@ class Pvec {
         Topo* topo;
         Geom* geom;
         LagrangeNode* l;
+        Wii* Q;
         PetscScalar* entries;
         Vec vl;
         Vec vg;
@@ -148,10 +154,14 @@ class WtQUmat {
         double* cky;
         double* WtQUflat;
         double* WtQVflat;
+        double** Wt;
         double** WtQ;
+        double** WtQU;
+        double** WtQV;
         M1x_j_Cxy_i* U;
         M1y_j_Cxy_i* V;
         M2_j_xy_i* W;
+        Wii* Q;
         void assemble(Vec u1);
 };
 
@@ -168,12 +178,17 @@ class RotMat {
         double* cky;
         double* UtQVflat;
         double* VtQUflat;
+        double** Ut;
+        double** Vt;
         double** UtQ;
         double** VtQ;
+        double** UtQV;
+        double** VtQU;
         M1x_j_xy_i* U;
         M1y_j_xy_i* V;
         M1x_j_Dxy_i* Uq;
         M1y_j_Dxy_i* Vq;
+        Wii* Q;
         void assemble(Vec q0);
 };
 

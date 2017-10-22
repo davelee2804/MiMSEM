@@ -1,6 +1,6 @@
-double** mult(int ni, int nj, int nk, double** A, double** B);
-void mult_in(int ni, int nj, int nk, double** A, double** B, double** C);
-double** tran(int ni, int nj, double**A);
+double** Mult(int ni, int nj, int nk, double** A, double** B);
+void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C);
+double** Tran(int ni, int nj, double**A);
 
 class M1x_j_xy_i {
     public:
@@ -154,10 +154,13 @@ class M0_j_Cxy_i {
 
 class Wii {
     public:
-        Wii(GaussLobatto* _quad);
+        Wii(GaussLobatto* _quad, Geom* _geom);
         ~Wii();
         int nDofsI;
         int nDofsJ;
+        double** J;
         double** A;
         GaussLobatto* quad;
+        Geom* geom;
+        void assemble(int ex, int ey);
 };

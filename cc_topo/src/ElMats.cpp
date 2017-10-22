@@ -7,7 +7,7 @@
 #include "Geom.h"
 #include "ElMats.h"
 
-double** mult(int ni, int nj, int nk, double** A, double** B) {
+double** Mult(int ni, int nj, int nk, double** A, double** B) {
     int ii, jj, kk;
     double** C;
 
@@ -28,7 +28,7 @@ double** mult(int ni, int nj, int nk, double** A, double** B) {
     return C;
 }
 
-void mult_in(int ni, int nj, int nk, double** A, double** B, double** C) {
+void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
     int ii, jj, kk;
 
     for(ii = 0; ii < ni; ii++) {
@@ -41,7 +41,7 @@ void mult_in(int ni, int nj, int nk, double** A, double** B, double** C) {
     }
 }
 
-double** tran(int ni, int nj, double**A) {
+double** Tran(int ni, int nj, double**A) {
     int ii, jj;
     double** B;
 
@@ -759,13 +759,18 @@ void M0_j_Cxy_i::assemble(double* c) {
 }
 
 // Quadrature weights diagonal matrix
-Wii::Wii(GaussLobatto* _quad) {
+Wii::Wii(GaussLobatto* _quad, Geom* _geom) {
     int ii, jj, mp1, mi;
 
     quad = _quad;
+    geom = _geom;
 
     mp1 = quad->n + 1;
     mi = mp1*mp1;
+
+    J = new double*[2];
+    J[1] = new double[2];
+    J[2] = new double[2];
 
     A = new double*[mi];
     for(ii = 0; ii < mi; ii++) {
@@ -776,9 +781,18 @@ Wii::Wii(GaussLobatto* _quad) {
     }
     nDofsI = mi;
     nDofsJ = mi;
+}
+
+void Wii::assemble(int ex, int ey) {
+    int ii, mp1, mi;
+    double jac;
+
+    mp1 = quad->n + 1;
+    mi = mp1*mp1;
 
     for(ii = 0; ii < mi; ii++) {
-        A[ii][ii] = quad->x[ii%mp1]*quad->x[ii/mp1];
+        jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+        A[ii][ii] = jac*quad->x[ii%mp1]*quad->x[ii/mp1];
     }
 }
 
@@ -792,4 +806,8 @@ Wii::~Wii() {
         delete[] A[ii];
     }
     delete[] A;
+
+    delete[] J[1];
+    delete[] J[2];
+    delete[] J;
 }
