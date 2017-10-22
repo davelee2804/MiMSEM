@@ -179,7 +179,7 @@ int* Topo::elInds0_l(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd + 1;  iy++) {
         for(ix = 0; ix < elOrd + 1; ix++) {
-            inds0[kk] = (ey*elOrd + iy)*(nDofsX + 1) + ex*nDofsX + ix;
+            inds0[kk] = (ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix;
             kk++;
         }
     }

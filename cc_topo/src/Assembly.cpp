@@ -761,7 +761,6 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     W = new M2_j_xy_i(e);
     Q = new Wii(l->q, geom);
     Wt = Tran(W->nDofsI, W->nDofsJ, W->A);
-    //WtQ = Mult(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Q->A);
     WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     WtQU = Alloc2D(W->nDofsJ, U->nDofsJ);
     WtQV = Alloc2D(W->nDofsJ, V->nDofsJ);
@@ -774,8 +773,6 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatSetSizes(M, topo->n2l, topo->n1l, topo->nDofs2G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-    //MatSetLocalToGlobalMapping(M, topo->map2, topo->map1);
-
 }
 
 void WtQUmat::assemble(Vec u1) {
@@ -912,9 +909,6 @@ void RotMat::assemble(Vec q0) {
 
             MatSetValues(M, U->nDofsJ, inds_x, Vq->nDofsJ, inds_y, UtQVflat, ADD_VALUES);
             MatSetValues(M, V->nDofsJ, inds_y, Uq->nDofsJ, inds_x, VtQUflat, ADD_VALUES);
-
-            Free2D(U->nDofsJ, UtQV);
-            Free2D(V->nDofsJ, VtQU);
         }
     }
     VecRestoreArray(q0, &q0Array);

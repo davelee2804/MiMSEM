@@ -769,8 +769,8 @@ Wii::Wii(GaussLobatto* _quad, Geom* _geom) {
     mi = mp1*mp1;
 
     J = new double*[2];
+    J[0] = new double[2];
     J[1] = new double[2];
-    J[2] = new double[2];
 
     A = new double*[mi];
     for(ii = 0; ii < mi; ii++) {
@@ -791,8 +791,9 @@ void Wii::assemble(int ex, int ey) {
     mi = mp1*mp1;
 
     for(ii = 0; ii < mi; ii++) {
-        jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
-        A[ii][ii] = jac*quad->x[ii%mp1]*quad->x[ii/mp1];
+        //jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+        //A[ii][ii] = jac*quad->x[ii%mp1]*quad->x[ii/mp1];
+        A[ii][ii] = 1.0*quad->x[ii%mp1]*quad->x[ii/mp1];
     }
 }
 
@@ -807,7 +808,7 @@ Wii::~Wii() {
     }
     delete[] A;
 
+    delete[] J[0];
     delete[] J[1];
-    delete[] J[2];
     delete[] J;
 }
