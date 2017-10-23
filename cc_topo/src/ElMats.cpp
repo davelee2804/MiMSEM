@@ -811,3 +811,134 @@ Wii::~Wii() {
     delete[] J[1];
     delete[] J;
 }
+
+// jacobian determinant inverse at quadrature point element matrix
+// for integrating 2 forms
+JacM2::JacM2(GaussLobatto* _quad, Geom* _geom) {
+    int ii, jj, mp1, mi;
+
+    quad = _quad;
+    geom = _geom;
+
+    mp1 = quad->n + 1;
+    mi = mp1*mp1;
+
+    A = new double*[mi];
+    for(ii = 0; ii < mi; ii++) {
+        A[ii] = new double[mi];
+        for(jj = 0; jj < mi; jj++) {
+            A[ii][jj] = 0.0;
+        }
+    }
+
+    J = new double*[2];
+    J[0] = new double[2];
+    J[1] = new double[2];
+
+    nDofsI = mi;
+    nDofsJ = mi;
+}
+
+void JacM2::assemble(int ex, int ey) {
+    int ii, mp1, mi;
+    double jac;
+
+    mp1 = quad->n + 1;
+    mi = mp1*mp1;
+
+    for(ii = 0; ii < mi; ii++) {
+        jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+        A[ii][ii] = quad->w[ii%mp1]*quad->w[ii/mp1]/jac;
+    }
+}
+
+JacM2::~JacM2() {
+    int ii, mp1, mi;
+
+    mp1 = quad->n + 1;
+    mi = mp1*mp1;
+
+    for(ii = 0; ii < mi; ii++) {
+        delete[] A[ii];
+    }
+    delete[] A;
+
+    delete[] J[0];
+    delete[] J[1];
+    delete[] J;
+}
+
+// jacobian determinant inverse at quadrature point element matrix
+// for integrating 1 forms (piola transform)
+JacM1::JacM1(GaussLobatto* _quad, Geom* _geom) {
+    int ii, jj, mp1, mi;
+
+    quad = _quad;
+    geom = _geom;
+
+    mp1 = quad->n + 1;
+    mi = mp1*mp1;
+
+    Aaa = new double*[mi];
+    Aab = new double*[mi];
+    Aba = new double*[mi];
+    Abb = new double*[mi];
+    for(ii = 0; ii < mi; ii++) {
+        Aaa[ii] = new double[mi];
+        Aab[ii] = new double[mi];
+        Aba[ii] = new double[mi];
+        Abb[ii] = new double[mi];
+        for(jj = 0; jj < mi; jj++) {
+            Aaa[ii][jj] = 0.0;
+            Aab[ii][jj] = 0.0;
+            Aba[ii][jj] = 0.0;
+            Abb[ii][jj] = 0.0;
+        }
+    }
+
+    J = new double*[2];
+    J[0] = new double[2];
+    J[1] = new double[2];
+
+    nDofsI = mi;
+    nDofsJ = mi;
+}
+
+void JacM1::assemble(int ex, int ey) {
+    int ii, mp1, mi;
+    double jac, jacInv;
+
+    mp1 = quad->n + 1;
+    mi = mp1*mp1;
+
+    for(ii = 0; ii < mi; ii++) {
+        jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+        jacInv = 1.0/jac;
+        Aaa[ii][ii] = J[0][0]*jacInv*quad->w[ii%mp1]*quad->w[ii/mp1];
+        Aab[ii][ii] = J[0][1]*jacInv*quad->w[ii%mp1]*quad->w[ii/mp1];
+        Aba[ii][ii] = J[1][0]*jacInv*quad->w[ii%mp1]*quad->w[ii/mp1];
+        Abb[ii][ii] = J[1][1]*jacInv*quad->w[ii%mp1]*quad->w[ii/mp1];
+    }
+}
+
+JacM1::~JacM1() {
+    int ii, mp1, mi;
+
+    mp1 = quad->n + 1;
+    mi = mp1*mp1;
+
+    for(ii = 0; ii < mi; ii++) {
+        delete[] Aaa[ii];
+        delete[] Aab[ii];
+        delete[] Aba[ii];
+        delete[] Abb[ii];
+    }
+    delete[] Aaa;
+    delete[] Aab;
+    delete[] Aba;
+    delete[] Abb;
+
+    delete[] J[0];
+    delete[] J[1];
+    delete[] J;
+}

@@ -164,3 +164,32 @@ class Wii {
         Geom* geom;
         void assemble(int ex, int ey);
 };
+
+class JacM2 {
+    public:
+        JacM2(GaussLobatto* _quad, Geom* _geom);
+        ~JacM2();
+        int nDofsI;
+        int nDofsJ;
+        double** J;
+        double** A;
+        GaussLobatto* quad;
+        Geom* geom;
+        void assemble(int ex, int ey);
+};
+
+class JacM1 {
+    public:
+        JacM1(GaussLobatto* _quad, Geom* _geom);
+        ~JacM1();
+        int nDofsI;
+        int nDofsJ;
+        double** J;
+        double** Aaa;
+        double** Aab;
+        double** Aba;
+        double** Abb;
+        GaussLobatto* quad;
+        Geom* geom;
+        void assemble(int ex, int ey);
+};
