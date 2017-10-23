@@ -188,8 +188,10 @@ class RotMat {
         double* cky;
         double* UtQVflat;
         double* VtQUflat;
-        double** Ut;
-        double** Vt;
+        double** JU;
+        double** JV;
+        double** JUt;
+        double** JVt;
         double** UtQ;
         double** VtQ;
         double** UtQV;
@@ -198,6 +200,7 @@ class RotMat {
         M1y_j_xy_i* V;
         M1x_j_Dxy_i* Uq;
         M1y_j_Dxy_i* Vq;
+        JacM1* J;
         Wii* Q;
         void assemble(Vec q0);
 };
