@@ -248,7 +248,7 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     l = _l;
     e = _e;
 
-    Wii* Q = new Wii(l->q, geom);
+    Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
     Ut = Tran(U->nDofsI, U->nDofsJ, U->A);
