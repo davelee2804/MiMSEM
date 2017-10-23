@@ -273,10 +273,16 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     e = _e;
 
     Q = new Wii(l->q, geom);
-    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
-    M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
-    Ut = Tran(U->nDofsI, U->nDofsJ, U->A);
-    Vt = Tran(V->nDofsI, V->nDofsJ, V->A);
+    J = new JacM1(l->q, geom);
+    U = new M1x_j_xy_i(l, e);
+    V = new M1y_j_xy_i(l, e);
+    Uh = new M1x_j_Fxy_i(l, e);
+    Vh = new M1y_j_Fxy_i(l, e);
+
+    JU = Alloc2D(J->nDofsI, U->nDofsJ);
+    JV = Alloc2D(J->nDofsI, V->nDofsJ);
+    JUt = Alloc2D(U->nDofsJ, J->nDofsI);
+    JVt = Alloc2D(V->nDofsJ, J->nDofsI);
     UtQ = Alloc2D(U->nDofsJ, Q->nDofsJ);
     VtQ = Alloc2D(V->nDofsJ, Q->nDofsJ);
     UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
@@ -285,16 +291,10 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     VtQVflat = new double[V->nDofsJ*V->nDofsJ];
     ck = new double[l->n*l->n];
 
-    Uh = new M1x_j_Fxy_i(l, e);
-    Vh = new M1y_j_Fxy_i(l, e);
-
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-
-    delete U;
-    delete V;
 }
 
 void Uhmat::assemble(Vec h2) {
@@ -311,6 +311,7 @@ void Uhmat::assemble(Vec h2) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // incorporate the jacobian transformation for each element
             Q->assemble(ex, ey);
+            J->assemble(ex, ey);
 
             inds2 = topo->elInds2_l(ex, ey);
             for(kk = 0; kk < n2; kk++) {
@@ -319,10 +320,19 @@ void Uhmat::assemble(Vec h2) {
             Uh->assemble(ck);
             Vh->assemble(ck);
 
-            Mult_IP(Uh->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Q->A, UtQ);
-            Mult_IP(Vh->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Q->A, VtQ);
-            Mult_IP(Uh->nDofsJ, Uh->nDofsJ, Q->nDofsJ, UtQ, Uh->A, UtQU);
-            Mult_IP(Vh->nDofsJ, Vh->nDofsJ, Q->nDofsJ, VtQ, Vh->A, VtQV);
+            MultVec_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aaa, U->A, J->Aab, V->A, JU);
+            MultVec_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aab, U->A, J->Abb, V->A, JV);
+            Tran_IP(J->nDofsI, U->nDofsJ, JU, JUt);
+            Tran_IP(J->nDofsI, V->nDofsJ, JV, JVt);
+
+            // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
+            MultVec_IP(J->nDofsI, Uh->nDofsJ, Uh->nDofsI, J->Aaa, Uh->A, J->Aab, Vh->A, JU);
+            MultVec_IP(J->nDofsI, Uh->nDofsJ, Uh->nDofsI, J->Aab, Uh->A, J->Abb, Vh->A, JV);
+
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, JUt, Q->A, UtQ);
+            Mult_IP(V->nDofsJ, Q->nDofsJ, Q->nDofsI, JVt, Q->A, VtQ);
+            Mult_IP(U->nDofsJ, Uh->nDofsJ, Q->nDofsJ, UtQ, JU, UtQU);
+            Mult_IP(V->nDofsJ, Vh->nDofsJ, Q->nDofsJ, VtQ, JV, VtQV);
 
             Flat2D_IP(Uh->nDofsJ, Uh->nDofsJ, UtQU, UtQUflat);
             Flat2D_IP(Vh->nDofsJ, Vh->nDofsJ, VtQV, VtQVflat);
@@ -345,16 +355,21 @@ Uhmat::~Uhmat() {
     delete[] VtQVflat;
     delete[] ck;
 
-    Free2D(Uh->nDofsJ, Ut);
-    Free2D(Vh->nDofsJ, Vt);
+    Free2D(J->nDofsI, JU);
+    Free2D(J->nDofsI, JV);
+    Free2D(Uh->nDofsJ, JUt);
+    Free2D(Vh->nDofsJ, JVt);
     Free2D(Uh->nDofsJ, UtQ);
     Free2D(Vh->nDofsJ, VtQ);
     Free2D(Uh->nDofsJ, UtQU);
     Free2D(Vh->nDofsJ, VtQV);
 
-	delete Uh;
+    delete U;
+    delete V;
+    delete Uh;
     delete Vh;
     delete Q;
+    delete J;
 
     MatDestroy(&M);
 }
