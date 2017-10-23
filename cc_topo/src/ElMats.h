@@ -1,6 +1,7 @@
 double** Mult(int ni, int nj, int nk, double** A, double** B);
 void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C);
-double** Tran(int ni, int nj, double**A);
+double** Tran(int ni, int nj, double** A);
+void Tran_IP(int ni, int nj, double** A, double** B);
 
 class M1x_j_xy_i {
     public:

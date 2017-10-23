@@ -41,7 +41,7 @@ void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
     }
 }
 
-double** Tran(int ni, int nj, double**A) {
+double** Tran(int ni, int nj, double** A) {
     int ii, jj;
     double** B;
 
@@ -57,6 +57,16 @@ double** Tran(int ni, int nj, double**A) {
     }
 
     return B;
+}
+
+void Tran_IP(int ni, int nj, double** A, double** B) {
+    int ii, jj;
+
+    for(ii = 0; ii < ni; ii++) {
+        for(jj = 0; jj < nj; jj++) {
+            B[jj][ii] = A[ii][jj];
+        }
+    }
 }
 
 // Outer product of 0-form in x and 1-form in y (columns)
