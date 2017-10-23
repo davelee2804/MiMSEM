@@ -79,7 +79,7 @@ Geom::~Geom() {
 // functions. derivatives are evaluated from the lagrange polynomial derivatives within each element
 void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
     int ii, jj, mp1;
-    int* inds_0 = topo->elInds0_g(ex, ey);
+    int* inds_0 = topo->elInds0_l(ex, ey);
     double theta, phi, a, b, la, lb, dla, dlb;
 
     mp1 = quad->n + 1;
