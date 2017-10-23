@@ -617,8 +617,11 @@ void UtQmat::assemble() {
     Wii* Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
-    double** Ut = Tran(U->nDofsI, U->nDofsJ, U->A);
-    double** Vt = Tran(V->nDofsI, V->nDofsJ, V->A);
+    JacM1* J = new JacM1(l->q, geom);
+    double** JU = Alloc2D(J->nDofsI, U->nDofsJ);
+    double** JV = Alloc2D(J->nDofsI, V->nDofsJ);
+    double** JUt = Alloc2D(U->nDofsJ, J->nDofsI);
+    double** JVt = Alloc2D(V->nDofsJ, J->nDofsI);
     double** UtQ = Alloc2D(U->nDofsJ, Q->nDofsJ);
     double** VtQ = Alloc2D(V->nDofsJ, Q->nDofsJ);
     double* UtQflat = new double[U->nDofsJ*Q->nDofsJ];
@@ -628,16 +631,22 @@ void UtQmat::assemble() {
     MatSetSizes(M, topo->n1l, topo->n0l, topo->nDofs1G, topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-    //MatSetLocalToGlobalMapping(M, topo->map1, topo->map0);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
+            J->assemble(ex, ey);
 
-            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Q->A, UtQ);
-            Mult_IP(V->nDofsJ, Q->nDofsJ, V->nDofsI, Vt, Q->A, VtQ);
+            MultVec_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aaa, U->A, J->Aab, V->A, JU);
+            MultVec_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aab, U->A, J->Abb, V->A, JV);
+
+            Tran_IP(J->nDofsI, U->nDofsJ, JU, JUt);
+            Tran_IP(J->nDofsI, U->nDofsJ, JU, JUt);
+
+            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, JUt, Q->A, UtQ);
+            Mult_IP(V->nDofsJ, Q->nDofsJ, V->nDofsI, JVt, Q->A, VtQ);
 
             Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
             Flat2D_IP(V->nDofsJ, Q->nDofsJ, VtQ, VtQflat);
@@ -653,8 +662,10 @@ void UtQmat::assemble() {
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(U->nDofsJ, Ut);
-    Free2D(V->nDofsJ, Vt);
+    Free2D(J->nDofsI, JU);
+    Free2D(J->nDofsI, JV);
+    Free2D(U->nDofsJ, JUt);
+    Free2D(V->nDofsJ, JVt);
     Free2D(U->nDofsJ, UtQ);
     Free2D(V->nDofsJ, VtQ);
     delete[] UtQflat;
@@ -662,6 +673,7 @@ void UtQmat::assemble() {
     delete Q;
     delete U;
     delete V;
+    delete J;
 }
 
 UtQmat::~UtQmat() {
