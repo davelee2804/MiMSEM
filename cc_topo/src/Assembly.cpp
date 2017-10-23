@@ -348,11 +348,12 @@ Pvec::Pvec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
     VecZeroEntries(vg);
     VecScatterCreate(vg, topo->is_g_0, vl, topo->is_l_0, &gtol);
-    //VecSetLocalToGlobalMapping(v, topo->map0);
 
     entries = new PetscScalar[(l->n+1)*(l->n+1)];
 
     Q = new Wii(l->q, geom);
+
+    assemble();
 }
 
 void Pvec::assemble() {
@@ -868,7 +869,6 @@ RotMat::RotMat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-    //MatSetLocalToGlobalMapping(M, topo->map1, topo->map1);
 }
 
 void RotMat::assemble(Vec q0) {

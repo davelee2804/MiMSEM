@@ -492,7 +492,7 @@ void M1y_j_Dxy_i::assemble(double* c) {
         for(jj = 0; jj < nj; jj++) {
             ei = edge->ejxi[ii%mp1][jj%nn];
             li = node->ljxi[ii/mp1][jj/nn];
-			A[ii][jj] = ck*ei*li;
+            A[ii][jj] = ck*ei*li;
         }
     }
 }
@@ -791,9 +791,8 @@ void Wii::assemble(int ex, int ey) {
     mi = mp1*mp1;
 
     for(ii = 0; ii < mi; ii++) {
-        //jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
-        //A[ii][ii] = jac*quad->x[ii%mp1]*quad->x[ii/mp1];
-        A[ii][ii] = 1.0*quad->x[ii%mp1]*quad->x[ii/mp1];
+        jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+        A[ii][ii] = jac*quad->w[ii%mp1]*quad->w[ii/mp1];
     }
 }
 

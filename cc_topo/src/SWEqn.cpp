@@ -134,7 +134,7 @@ void SWEqn::diagnose_w(Vec u, Vec *w) {
     // diagonal mass matrix as vector
     VecPointwiseDivide(*w, du, m0->vg);
     // add the (0 form) coriolis vector
-    VecAYPX(m0->vg, 1.0, fg);
+    VecAYPX(*w, 1.0, fg);
 
     VecDestroy(&du);
 }
