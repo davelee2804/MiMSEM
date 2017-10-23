@@ -154,7 +154,10 @@ class WtQUmat {
         double* cky;
         double* WtQUflat;
         double* WtQVflat;
-        double** Wt;
+        double** JU;
+        double** JV;
+        double** JW;
+        double** JWt;
         double** WtQ;
         double** WtQU;
         double** WtQV;
@@ -162,6 +165,8 @@ class WtQUmat {
         M1y_j_Cxy_i* V;
         M2_j_xy_i* W;
         Wii* Q;
+        JacM1* J1;
+        JacM2* J2;
         void assemble(Vec u1);
 };
 
