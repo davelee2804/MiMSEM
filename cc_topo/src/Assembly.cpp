@@ -500,7 +500,9 @@ void WtQmat::assemble() {
 
     M2_j_xy_i* W = new M2_j_xy_i(e);
     Wii* Q = new Wii(e->l->q, geom);
-    double** Wt = Tran(W->nDofsI, W->nDofsJ, W->A);
+    JacM2* J = new JacM2(e->l->q, geom);
+    double** JW = Alloc2D(J->nDofsI, W->nDofsJ);
+    double** JWt = Alloc2D(W->nDofsJ, J->nDofsI);
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
 
@@ -508,15 +510,18 @@ void WtQmat::assemble() {
     MatSetSizes(M, topo->n2l, topo->n0l, topo->nDofs2G, topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
-    //MatSetLocalToGlobalMapping(M, topo->map2, topo->map0);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
+            J->assemble(ex, ey);
 
-            Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Q->A, WtQ);
+            Mult_IP(J->nDofsI, W->nDofsJ, W->nDofsJ, J->A, W->A, JW);
+            Tran_IP(J->nDofsI, W->nDofsJ, JW, JWt);
+
+            Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, JWt, Q->A, WtQ);
             Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
 
             inds_2 = topo->elInds2_g(ex, ey);
@@ -529,11 +534,13 @@ void WtQmat::assemble() {
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(W->nDofsJ, Wt);
+    Free2D(J->nDofsI, JW);
+    Free2D(W->nDofsJ, JWt);
     Free2D(W->nDofsJ, WtQ);
     delete[] WtQflat;
     delete W;
     delete Q;
+    delete J;
 }
 
 WtQmat::~WtQmat() {
