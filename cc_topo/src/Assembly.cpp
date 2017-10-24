@@ -626,7 +626,7 @@ PtQmat::~PtQmat() {
     MatDestroy(&M);
 }
 
-//
+// columns are 2x the number of quadrature points to account for vector quantities
 UtQmat::UtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     topo = _topo;
     geom = _geom;
@@ -637,8 +637,8 @@ UtQmat::UtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void UtQmat::assemble() {
-    int ex, ey;
-    int *inds_x, *inds_y, *inds_q;
+    int ex, ey, ii, mp12;
+    int *inds_x, *inds_y, *inds_qx, *inds_qy;
 
     Wii* Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
@@ -653,8 +653,11 @@ void UtQmat::assemble() {
     double* UtQflat = new double[U->nDofsJ*Q->nDofsJ];
     double* VtQflat = new double[V->nDofsJ*Q->nDofsJ];
 
+    mp12 = (l->q->n + 1)*(l->q->n + 1);
+    inds_qy = new int[mp12];
+
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n1l, topo->n0l, topo->nDofs1G, topo->nDofs0G);
+    MatSetSizes(M, topo->n1l, 2*topo->n0l, topo->nDofs1G, 2*topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
@@ -679,10 +682,15 @@ void UtQmat::assemble() {
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
-            inds_q = topo->elInds0_g(ex, ey);
+            inds_qx = topo->elInds0_g(ex, ey);
+            // derive degrees of freedom for y-component of vector at quadrature points
+            // by shifting x-components
+            for(ii = 0; ii < mp12; ii++) {
+                inds_qy[ii] = inds_qx[ii] + topo->nDofs0G;
+            }
 
-            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_q, UtQflat, ADD_VALUES);
-            MatSetValues(M, V->nDofsJ, inds_y, Q->nDofsJ, inds_q, VtQflat, ADD_VALUES);
+            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_qx, UtQflat, ADD_VALUES);
+            MatSetValues(M, V->nDofsJ, inds_y, Q->nDofsJ, inds_qy, VtQflat, ADD_VALUES);
         }
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
@@ -696,6 +704,7 @@ void UtQmat::assemble() {
     Free2D(V->nDofsJ, VtQ);
     delete[] UtQflat;
     delete[] VtQflat;
+    delete[] inds_qy;
     delete Q;
     delete U;
     delete V;
