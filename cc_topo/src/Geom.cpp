@@ -171,8 +171,8 @@ void Geom::Write1(Vec u, char* fieldname, int tstep) {
                 }
                 jac = jacDet(ex, ey, ii%mp1, ii/mp1, J);
 
-                uArray[inds0[ii]] = (J[0][0]*valx + J[0][1])/jac;
-                vArray[inds0[ii]] = (J[1][0]*valx + J[1][1])/jac;
+                uArray[inds0[ii]] = (J[0][0]*valx + J[0][1]*valy)/jac;
+                vArray[inds0[ii]] = (J[1][0]*valx + J[1][1]*valy)/jac;
             }
         }
     }

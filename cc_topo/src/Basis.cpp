@@ -157,20 +157,6 @@ double LagrangeNode::eval(double x, int i) {
     return a[i]*p;
 }
 
-/*
-double LagrangeNode::evalDeriv(double x, int i) {
-    int jj;
-    double dy = 0.0;
-    double p[100];
-
-    polyMultI(i, q->x, p);
-    for(jj = 1; jj <= n; jj++) {
-        dy += jj*p[jj]*pow(x, jj-1);
-    }
-
-    return dy*a[i];
-}
-*/
 double LagrangeNode::evalDeriv(double x, int ii) {
     int jj, kk;
     double aa, bb;
@@ -192,49 +178,6 @@ double LagrangeNode::evalDeriv(double x, int ii) {
     }
 
     return bb;
-}
-
-void LagrangeNode::polyMult(int n1, double* a1, int n2, double* a2, double* a3) {
-    int ii, jj;
-    int n3 = n1 + n2 - 1;
-
-    for(ii = 0; ii < n3; ii++) a3[ii] = 0.0;
-
-    for(ii = 0; ii < n1; ii++) {
-        for(jj = 0; jj < n2; jj++) {
-            a3[ii+jj] += a1[ii]*a2[jj];
-        }
-    }
-}
-
-void LagrangeNode::polyMultI(int i, double* X, double* pir) {
-    int ii, jj;
-    int np1 = n + 1;
-    double p2[np1][2];
-    double pi[100], pj[2], pk[100];
-
-    for(ii = 0; ii < np1; ii++) {
-        p2[ii][0] = 1.0;
-        p2[ii][1] = -X[ii];
-    }
-
-    pi[0] = 1.0;
-    for(ii = 0; ii < np1; ii++) {
-        if(ii == i) continue;
-
-        pj[0] = p2[ii][0];
-        pj[1] = p2[ii][1];
-
-        polyMult(ii+1, pi, 2, pj, pk);
-
-        for(jj = 0; jj < ii+2; jj++) {
-            pi[jj] = pk[jj];
-        }
-    }
-
-    for(ii = 0; ii < np1+2; ii++) {
-        pir[ii] = pi[n+2-ii];
-    }
 }
 
 void LagrangeNode::test() {
