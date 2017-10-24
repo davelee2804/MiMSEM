@@ -173,12 +173,13 @@ M1y_j_xy_i::~M1y_j_xy_i() {
 
 // As above but with 1 forms interpolated to quadrature points
 // (normal) velocity interpolated to quadrature points
-M1x_j_Cxy_i::M1x_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
+M1x_j_Cxy_i::M1x_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge, Geom* _geom) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
     node = _node;
     edge = _edge;
+    geom = _geom;
 
     nn = node->n;
     np1 = nn + 1;
@@ -190,14 +191,19 @@ M1x_j_Cxy_i::M1x_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+
+    J = new double*[2];
+    J[0] = new double[2];
+    J[1] = new double[2];
+
     nDofsI = mi;
     nDofsJ = nj;
 }
 
-void M1x_j_Cxy_i::assemble(double* c) {
+void M1x_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
     int ii, jj, kk;
     int mi, nj, nn, np1, mp1;
-    double li, ei, ck;
+    double li, ei, ckx, cky, jac, jacInv;
 
     nn = node->n;
     np1 = nn + 1;
@@ -206,15 +212,21 @@ void M1x_j_Cxy_i::assemble(double* c) {
     nj = np1*nn;
 
     for(ii = 0; ii < mi; ii++) {
-        ck = 0.0;
+        ckx = 0.0;
+        cky = 0.0;
         for(kk = 0; kk < nj; kk++) {
-            ck += c[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
+            ckx += c[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
+            cky += c[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
+            //ck += c[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
         }
+        jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+        jacInv = (J[0][0]*ckx + J[0][1]*cky)/jac;
 
         for(jj = 0; jj < nj; jj++) {
             li = node->ljxi[ii%mp1][jj%np1];
             ei = edge->ejxi[ii/mp1][jj/np1];
-            A[ii][jj] = ck*li*ei;
+            A[ii][jj] = jacInv*li*ei;
+            //A[ii][jj] = ck*li*ei;
         }
     }
 }
@@ -227,16 +239,21 @@ M1x_j_Cxy_i::~M1x_j_Cxy_i() {
         delete[] A[ii];
     }
     delete[] A;
+
+    delete[] J[0];
+    delete[] J[1];
+    delete[] J;
 }
 
 // As above but with 1 forms interpolated to quadrature points
 // (normal) velocity interpolated to quadrature points
-M1y_j_Cxy_i::M1y_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
+M1y_j_Cxy_i::M1y_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge, Geom* _geom) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
     node = _node;
     edge = _edge;
+    geom = _geom;
 
     nn = node->n;
     np1 = nn + 1;
@@ -248,14 +265,19 @@ M1y_j_Cxy_i::M1y_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+
+    J = new double*[2];
+    J[0] = new double[2];
+    J[1] = new double[2];
+
     nDofsI = mi;
     nDofsJ = nj;
 }
 
-void M1y_j_Cxy_i::assemble(double* c) {
+void M1y_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
     int ii, jj, kk;
     int mi, nj, nn, np1, mp1;
-    double li, ei, ck;
+    double li, ei, ckx, cky, jac, jacInv;
 
     nn = node->n;
     np1 = nn + 1;
@@ -264,15 +286,21 @@ void M1y_j_Cxy_i::assemble(double* c) {
     nj = np1*nn;
 
     for(ii = 0; ii < mi; ii++) {
-        ck = 0.0;
+        ckx = 0.0;
+        cky = 0.0;
         for(kk = 0; kk < nj; kk++) {
-            ck += c[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
+            ckx += c[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
+            cky += c[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
+            //ck += c[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
         }
+        jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+        jacInv = (J[1][0]*ckx + J[1][1]*cky)/jac;
 
         for(jj = 0; jj < nj; jj++) {
             ei = edge->ejxi[ii%mp1][jj%nn];
             li = node->ljxi[ii/mp1][jj/nn];
-            A[ii][jj] = ck*ei*li;
+            A[ii][jj] = jacInv*ei*li;
+            //A[ii][jj] = ck*ei*li;
         }
     }
 }
@@ -285,6 +313,10 @@ M1y_j_Cxy_i::~M1y_j_Cxy_i() {
         delete[] A[ii];
     }
     delete[] A;
+
+    delete[] J[0];
+    delete[] J[1];
+    delete[] J;
 }
 
 // As above but with 1 forms cross product interpolated to quadrature points
@@ -521,14 +553,14 @@ void M1y_j_Dxy_i::assemble(double* c) {
     }
 }
 
-// thickness interpolated to quadrature points
-// for diagnosis of hu
-M1x_j_Fxy_i::M1x_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
+// thickness interpolated to quadrature points for diagnosis of hu
+M1x_j_Fxy_i::M1x_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge, Geom* _geom) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
     node = _node;
     edge = _edge;
+    geom = _geom;
 
     nn = node->n;
     np1 = nn + 1;
@@ -540,6 +572,11 @@ M1x_j_Fxy_i::M1x_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+
+    J = new double*[2];
+    J[0] = new double[2];
+    J[1] = new double[2];
+
     nDofsI = mi;
     nDofsJ = nj;
 }
@@ -552,12 +589,16 @@ M1x_j_Fxy_i::~M1x_j_Fxy_i() {
         delete[] A[ii];
     }
     delete[] A;
+
+    delete[] J[0];
+    delete[] J[1];
+    delete[] J;
 }
 
-void M1x_j_Fxy_i::assemble(double* c) {
+void M1x_j_Fxy_i::assemble(int ex, int ey, double* c) {
     int ii, jj, kk;
     int mi, nj, nn, np1, mp1, n2;
-    double li, ei, ck;
+    double li, ei, ck, jac, jacInv;
 
     nn = node->n;
     np1 = nn + 1;
@@ -571,23 +612,27 @@ void M1x_j_Fxy_i::assemble(double* c) {
         for(kk = 0; kk < n2; kk++) {
             ck += c[kk]*edge->ejxi[ii%mp1][kk%nn]*edge->ejxi[ii/mp1][kk/nn];
         }
+        jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+        jacInv = 1.0/jac;
 
         for(jj = 0; jj < nj; jj++) {
             li = node->ljxi[ii%mp1][jj%np1];
             ei = edge->ejxi[ii/mp1][jj/np1];
-            A[ii][jj] = ck*ei*li;
+            //A[ii][jj] = ck*ei*li;
+            A[ii][jj] = jacInv*ck*ei*li;
         }
     }
 }
 
 // thickness interpolated to quadrature points
 // for diagnosis of hv
-M1y_j_Fxy_i::M1y_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
+M1y_j_Fxy_i::M1y_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge, Geom* _geom) {
     int ii;
     int mi, nj, nn, np1, mp1;
 
     node = _node;
     edge = _edge;
+    geom = _geom;
 
     nn = node->n;
     np1 = nn + 1;
@@ -599,6 +644,11 @@ M1y_j_Fxy_i::M1y_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     for(ii = 0; ii < mi; ii++) {
         A[ii] = new double[nj];
     }
+
+    J = new double*[2];
+    J[0] = new double[2];
+    J[1] = new double[2];
+
     nDofsI = mi;
     nDofsJ = nj;
 }
@@ -611,12 +661,16 @@ M1y_j_Fxy_i::~M1y_j_Fxy_i() {
         delete[] A[ii];
     }
     delete[] A;
+
+    delete[] J[0];
+    delete[] J[1];
+    delete[] J;
 }
 
-void M1y_j_Fxy_i::assemble(double* c) {
+void M1y_j_Fxy_i::assemble(int ex, int ey, double* c) {
     int ii, jj, kk;
     int mi, nj, nn, np1, mp1, n2;
-    double li, ei, ck;
+    double li, ei, ck, jac, jacInv;
 
     nn = node->n;
     np1 = nn + 1;
@@ -630,11 +684,14 @@ void M1y_j_Fxy_i::assemble(double* c) {
         for(kk = 0; kk < n2; kk++) {
             ck += c[kk]*edge->ejxi[ii%mp1][kk%nn]*edge->ejxi[ii/mp1][kk/nn];
         }
+        jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+        jacInv = 1.0/jac;
 
         for(jj = 0; jj < nj; jj++) {
             ei = edge->ejxi[ii%mp1][jj%nn];
             li = node->ljxi[ii/mp1][jj/nn];
-            A[ii][jj] = ck*ei*li;
+            //A[ii][jj] = ck*ei*li;
+            A[ii][jj] = jacInv*ck*ei*li;
         }
     }
 }

@@ -276,8 +276,8 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     J = new JacM1(l->q, geom);
     U = new M1x_j_xy_i(l, e);
     V = new M1y_j_xy_i(l, e);
-    Uh = new M1x_j_Fxy_i(l, e);
-    Vh = new M1y_j_Fxy_i(l, e);
+    Uh = new M1x_j_Fxy_i(l, e, geom);
+    Vh = new M1y_j_Fxy_i(l, e, geom);
 
     JU = Alloc2D(J->nDofsI, U->nDofsJ);
     JV = Alloc2D(J->nDofsI, V->nDofsJ);
@@ -317,8 +317,8 @@ void Uhmat::assemble(Vec h2) {
             for(kk = 0; kk < n2; kk++) {
                 ck[kk] = h2Array[inds2[kk]];
             }
-            Uh->assemble(ck);
-            Vh->assemble(ck);
+            Uh->assemble(ex, ey, ck);
+            Vh->assemble(ex, ey, ck);
 
             MultVec_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aaa, U->A, J->Aab, V->A, JU);
             MultVec_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aba, U->A, J->Abb, V->A, JV);
@@ -815,8 +815,8 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     l = _l;
     e = _e;
 
-    U = new M1x_j_Cxy_i(l, e);
-    V = new M1y_j_Cxy_i(l, e);
+    U = new M1x_j_Cxy_i(l, e, geom);
+    V = new M1y_j_Cxy_i(l, e, geom);
     W = new M2_j_xy_i(e);
     Q = new Wii(l->q, geom);
     J1 = new JacM1(l->q, geom);
@@ -864,8 +864,10 @@ void WtQUmat::assemble(Vec u1) {
                 ckx[kk] = 0.5*u1Array[inds_x[kk]];
                 cky[kk] = 0.5*u1Array[inds_y[kk]];
             }
-            U->assemble(cky);
-            V->assemble(ckx);
+            //U->assemble(cky);
+            //V->assemble(ckx);
+            U->assemble(ex, ey, ckx, cky);
+            V->assemble(ex, ey, ckx, cky);
 
             // incorporate the jacobian transformation for basis functions
             Mult_IP(J2->nDofsI, W->nDofsJ, W->nDofsI, J2->A, W->A, JW);

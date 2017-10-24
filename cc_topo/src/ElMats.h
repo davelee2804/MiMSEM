@@ -28,26 +28,30 @@ class M1y_j_xy_i {
 
 class M1x_j_Cxy_i {
     public:
-        M1x_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge);
+        M1x_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge, Geom* _geom);
         ~M1x_j_Cxy_i();
         int nDofsI;
         int nDofsJ;
         double** A;
+        double** J;
+        Geom* geom;
         LagrangeNode* node;
         LagrangeEdge* edge;
-        void assemble(double* c);
+        void assemble(int ex, int ey, double* cx, double* cy);
 };
 
 class M1y_j_Cxy_i {
     public:
-        M1y_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge);
+        M1y_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge, Geom* _geom);
         ~M1y_j_Cxy_i();
         int nDofsI;
         int nDofsJ;
         double** A;
+        double** J;
+        Geom* geom;
         LagrangeNode* node;
         LagrangeEdge* edge;
-        void assemble(double* c);
+        void assemble(int ex, int ey, double* cx, double* cy);
 };
 
 class M1x_j_Exy_i {
@@ -100,26 +104,30 @@ class M1y_j_Dxy_i {
 
 class M1x_j_Fxy_i {
     public:
-        M1x_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge);
+        M1x_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge, Geom* _geom);
         ~M1x_j_Fxy_i();
         int nDofsI;
         int nDofsJ;
         double** A;
+        double** J;
+        Geom* geom;
         LagrangeNode* node;
         LagrangeEdge* edge;
-        void assemble(double* c);
+        void assemble(int ex, int ey, double* c);
 };
 
 class M1y_j_Fxy_i {
     public:
-        M1y_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge);
+        M1y_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge, Geom* _geom);
         ~M1y_j_Fxy_i();
         int nDofsI;
         int nDofsJ;
         double** A;
+        double** J;
+        Geom* geom;
         LagrangeNode* node;
         LagrangeEdge* edge;
-        void assemble(double* c);
+        void assemble(int ex, int ey, double* c);
 };
 
 class M2_j_xy_i {
