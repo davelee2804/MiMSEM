@@ -78,17 +78,18 @@ Geom::~Geom() {
 // isoparametric jacobian, with the global coordinate approximated as an expansion over the test 
 // functions. derivatives are evaluated from the lagrange polynomial derivatives within each element
 void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
-    int ii, jj, mp1;
+    int ii, jj, mp1, mp12;
     int* inds_0 = topo->elInds0_l(ex, ey);
     double theta, phi, a, b, la, lb, dla, dlb;
 
     mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
     a = quad->x[px];
     b = quad->x[py];
 
     J[0][0] = J[0][1] = J[1][0] = J[1][1] = 0.0;
 
-    for(ii = 0; ii < mp1; ii++) {
+    for(ii = 0; ii < mp12; ii++) {
         jj = inds_0[ii];
 
         theta = atan2(x[jj][1],x[jj][0]);
