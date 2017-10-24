@@ -1,3 +1,6 @@
+#include <iostream>
+#include <cmath>
+
 #include <petsc.h>
 #include <petscis.h>
 #include <petscvec.h>
@@ -6,6 +9,8 @@
 #include "Topo.h"
 #include "Geom.h"
 #include "ElMats.h"
+
+using namespace std;
 
 double** Mult(int ni, int nj, int nk, double** A, double** B) {
     int ii, jj, kk;
@@ -215,9 +220,9 @@ void M1x_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
         ckx = 0.0;
         cky = 0.0;
         for(kk = 0; kk < nj; kk++) {
-            ckx += c[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
-            cky += c[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
-            //ck += c[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
+            ckx += cx[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
+            cky += cy[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
+            //ckx += cx[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
         }
         jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
         jacInv = (J[0][0]*ckx + J[0][1]*cky)/jac;
@@ -226,7 +231,7 @@ void M1x_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
             li = node->ljxi[ii%mp1][jj%np1];
             ei = edge->ejxi[ii/mp1][jj/np1];
             A[ii][jj] = jacInv*li*ei;
-            //A[ii][jj] = ck*li*ei;
+            //A[ii][jj] = ckx*li*ei;
         }
     }
 }
@@ -289,9 +294,9 @@ void M1y_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
         ckx = 0.0;
         cky = 0.0;
         for(kk = 0; kk < nj; kk++) {
-            ckx += c[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
-            cky += c[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
-            //ck += c[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
+            ckx += cx[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
+            cky += cy[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
+            //cky += cy[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
         }
         jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
         jacInv = (J[1][0]*ckx + J[1][1]*cky)/jac;
@@ -300,7 +305,7 @@ void M1y_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
             ei = edge->ejxi[ii%mp1][jj%nn];
             li = node->ljxi[ii/mp1][jj/nn];
             A[ii][jj] = jacInv*ei*li;
-            //A[ii][jj] = ck*ei*li;
+            //A[ii][jj] = cky*ei*li;
         }
     }
 }
@@ -618,14 +623,13 @@ void M1x_j_Fxy_i::assemble(int ex, int ey, double* c) {
         for(jj = 0; jj < nj; jj++) {
             li = node->ljxi[ii%mp1][jj%np1];
             ei = edge->ejxi[ii/mp1][jj/np1];
-            //A[ii][jj] = ck*ei*li;
             A[ii][jj] = jacInv*ck*ei*li;
+            //A[ii][jj] = ck*ei*li;
         }
     }
 }
 
-// thickness interpolated to quadrature points
-// for diagnosis of hv
+// thickness interpolated to quadrature points for diagnosis of hv
 M1y_j_Fxy_i::M1y_j_Fxy_i(LagrangeNode* _node, LagrangeEdge* _edge, Geom* _geom) {
     int ii;
     int mi, nj, nn, np1, mp1;
@@ -690,8 +694,8 @@ void M1y_j_Fxy_i::assemble(int ex, int ey, double* c) {
         for(jj = 0; jj < nj; jj++) {
             ei = edge->ejxi[ii%mp1][jj%nn];
             li = node->ljxi[ii/mp1][jj/nn];
-            //A[ii][jj] = ck*ei*li;
             A[ii][jj] = jacInv*ck*ei*li;
+            //A[ii][jj] = ck*ei*li;
         }
     }
 }
@@ -929,7 +933,7 @@ void JacM2::assemble(int ex, int ey) {
 
     for(ii = 0; ii < mi; ii++) {
         jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
-        A[ii][ii] = quad->w[ii%mp1]*quad->w[ii/mp1]/jac;
+        A[ii][ii] = 1.0/jac;
     }
 }
 
@@ -995,10 +999,10 @@ void JacM1::assemble(int ex, int ey) {
     for(ii = 0; ii < mi; ii++) {
         jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
         jacInv = 1.0/jac;
-        Aaa[ii][ii] = J[0][0]*jacInv*quad->w[ii%mp1]*quad->w[ii/mp1];
-        Aab[ii][ii] = J[0][1]*jacInv*quad->w[ii%mp1]*quad->w[ii/mp1];
-        Aba[ii][ii] = J[1][0]*jacInv*quad->w[ii%mp1]*quad->w[ii/mp1];
-        Abb[ii][ii] = J[1][1]*jacInv*quad->w[ii%mp1]*quad->w[ii/mp1];
+        Aaa[ii][ii] = J[0][0]*jacInv;
+        Aab[ii][ii] = J[0][1]*jacInv;
+        Aba[ii][ii] = J[1][0]*jacInv;
+        Abb[ii][ii] = J[1][1]*jacInv;
     }
 }
 

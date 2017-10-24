@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <iostream>
 
+#include <mpi.h>
+
 #include "Basis.h"
 
 using namespace std;
@@ -155,6 +157,7 @@ double LagrangeNode::eval(double x, int i) {
     return a[i]*p;
 }
 
+/*
 double LagrangeNode::evalDeriv(double x, int i) {
     int jj;
     double dy = 0.0;
@@ -166,6 +169,29 @@ double LagrangeNode::evalDeriv(double x, int i) {
     }
 
     return dy*a[i];
+}
+*/
+double LagrangeNode::evalDeriv(double x, int ii) {
+    int jj, kk;
+    double aa, bb;
+
+    bb = 0.0;
+
+    for(jj = 0; jj <= n; jj++) {
+        if(jj == ii) continue;
+
+        aa = 1.0;
+        for(kk = 0; kk <= n; kk++) {
+            if(kk == ii) continue;
+            if(kk == jj) continue;
+
+            aa *= (x - q->x[kk])/(q->x[ii] - q->x[kk]);
+        }
+
+        bb += aa/(q->x[ii] - q->x[jj]);
+    }
+
+    return bb;
 }
 
 void LagrangeNode::polyMult(int n1, double* a1, int n2, double* a2, double* a3) {
@@ -208,6 +234,29 @@ void LagrangeNode::polyMultI(int i, double* X, double* pir) {
 
     for(ii = 0; ii < np1+2; ii++) {
         pir[ii] = pi[n+2-ii];
+    }
+}
+
+void LagrangeNode::test() {
+    int ii, jj, rank;
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    if(!rank) {
+        for(ii = 0; ii <= n; ii++) {
+            for(jj = 0; jj <= n; jj++) {
+                cout << eval(q->x[ii],jj) << "\t";
+            }
+            cout << endl;
+        }
+        cout << endl;
+
+        for(ii = 0; ii <= n; ii++) {
+            for(jj = 0; jj <= n; jj++) {
+                cout << evalDeriv(q->x[ii],jj) << "\t";
+            }
+            cout << endl;
+        }
     }
 }
 
