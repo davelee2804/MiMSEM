@@ -37,6 +37,9 @@ class Topo {
         IS is_g_1;
         IS is_l_2;
         IS is_g_2;
+        VecScatter gtol_0;
+        VecScatter gtol_1;
+        VecScatter gtol_2;
         void loadObjs(char* filename, int* inds);
         int* elInds0_l(int ex, int ey);
         int* elInds1x_l(int ex, int ey);

@@ -13,6 +13,8 @@ using namespace std;
 using std::string;
 
 Topo::Topo(int _pi, int _elOrd, int _nElsX) {
+    Vec vl, vg;
+
     int ii, n_procs;
     int nLoc[4];
     ifstream file;
@@ -132,6 +134,25 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     n1l = n1xl + n1yl;
 
     cout << "local sizes on " << pi << ":\t" << n0l << "\t" << n1l << "\t" << n2l << endl;
+
+    // initialise the vec scatter objects for nodes/edges/faces
+    VecCreateMPI(MPI_COMM_WORLD, n0, PETSC_DETERMINE, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, n0l, nDofs0G, &vg);
+    VecScatterCreate(vg, is_g_0, vl, is_l_0, &gtol_0);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+
+    VecCreateMPI(MPI_COMM_WORLD, n1, PETSC_DETERMINE, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, n1l, nDofs1G, &vg);
+    VecScatterCreate(vg, is_g_1, vl, is_l_1, &gtol_1);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+
+    VecCreateMPI(MPI_COMM_WORLD, n2, PETSC_DETERMINE, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, n2l, nDofs2G, &vg);
+    VecScatterCreate(vg, is_g_2, vl, is_l_2, &gtol_2);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
 }
 
 Topo::~Topo() {
@@ -157,6 +178,10 @@ Topo::~Topo() {
     ISDestroy(&is_l_0);
     ISDestroy(&is_l_1);
     ISDestroy(&is_l_2);
+
+    VecScatterDestroy(&gtol_0);
+    VecScatterDestroy(&gtol_1);
+    VecScatterDestroy(&gtol_2);
 }
 
 void Topo::loadObjs(char* filename, int* loc) {
