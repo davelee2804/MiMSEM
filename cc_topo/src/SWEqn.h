@@ -1,3 +1,5 @@
+typedef double (ICfunc) (double* xi);
+
 class SWEqn {
     public:
         SWEqn(Topo* _topo, Geom* _geom);
@@ -25,4 +27,7 @@ class SWEqn {
         void diagnose_w(Vec u, Vec* w);
         void diagnose_F(Vec u, Vec h, KSP ksp, Vec* hu);
         void solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt);
+        void init0(Vec q, ICfunc* func);
+        void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
+        void init2(Vec h, ICfunc* func);
 };
