@@ -21,9 +21,6 @@ class SWEqn {
         Vec fg;            // coriolis vector (global)
         Mat E01M1;
         Mat E12M2;
-        VecScatter gtol_0;
-        VecScatter gtol_1;
-        VecScatter gtol_2;
         void coriolis();
         void diagnose_w(Vec u, Vec* w);
         void diagnose_F(Vec u, Vec h, KSP ksp, Vec* hu);

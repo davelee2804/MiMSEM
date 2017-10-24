@@ -386,7 +386,6 @@ Pvec::Pvec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
     VecZeroEntries(vg);
-    VecScatterCreate(vg, topo->is_g_0, vl, topo->is_l_0, &gtol);
 
     entries = new PetscScalar[(l->n+1)*(l->n+1)];
 
@@ -419,19 +418,18 @@ void Pvec::assemble() {
     }
 
     // scatter values to global vector
-    VecScatterBegin(gtol, vl, vg, ADD_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(gtol, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(topo->gtol_0, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, vl, vg, ADD_VALUES, SCATTER_REVERSE);
 
     // and back to local vector
-    VecScatterBegin(gtol, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(gtol, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_0, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
 }
 
 Pvec::~Pvec() {
     delete[] entries;
     VecDestroy(&vl);
     VecDestroy(&vg);
-    VecScatterDestroy(&gtol);
     delete Q;
 }
 
@@ -449,7 +447,6 @@ Phvec::Phvec(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
     VecZeroEntries(vg);
-    VecScatterCreate(vg, topo->is_g_0, vl, topo->is_l_0, &gtol);
     //VecSetLocalToGlobalMapping(v, topo->map0);
 
     ck = new double[(l->n)*(l->n)];
@@ -499,12 +496,12 @@ void Phvec::assemble(Vec h2) {
     VecRestoreArray(h2, &h2Array);
 
     // scatter values to global vector
-    VecScatterBegin(gtol, vl, vg, ADD_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(gtol, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(topo->gtol_0, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, vl, vg, ADD_VALUES, SCATTER_REVERSE);
 
     // and back to local vector
-    VecScatterBegin(gtol, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(gtol, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_0, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
 }
 
 Phvec::~Phvec() {
@@ -512,7 +509,6 @@ Phvec::~Phvec() {
     delete[] entries;
     VecDestroy(&vl);
     VecDestroy(&vg);
-    VecScatterDestroy(&gtol);
 }
 
 // Assumes quadrature points and 0 forms are the same (for now)

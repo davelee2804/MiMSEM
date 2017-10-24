@@ -17,8 +17,6 @@
 using namespace std;
 
 SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
-    Vec vl, vg;
-
     topo = _topo;
     geom = _geom;
 
@@ -28,25 +26,6 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
-
-    // initialise the vec scatter objects for nodes/edges/faces
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
-    VecScatterCreate(vg, topo->is_g_0, vl, topo->is_l_0, &gtol_0);
-    VecDestroy(&vl);
-    VecDestroy(&vg);
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1, PETSC_DETERMINE, &vl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &vg);
-    VecScatterCreate(vg, topo->is_g_1, vl, topo->is_l_1, &gtol_1);
-    VecDestroy(&vl);
-    VecDestroy(&vg);
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2, PETSC_DETERMINE, &vl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vg);
-    VecScatterCreate(vg, topo->is_g_2, vl, topo->is_l_2, &gtol_2);
-    VecDestroy(&vl);
-    VecDestroy(&vg);
 
     // 0 form lumped mass matrix (vector)
     m0 = new Pvec(topo, geom, node);
@@ -101,8 +80,8 @@ void SWEqn::coriolis() {
     VecRestoreArray(fxl, &fArray);
 
     // scatter array to global vector
-    VecScatterBegin(gtol_0, fxl, fxg, ADD_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(gtol_0, fxl, fxg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(topo->gtol_0, fxl, fxg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, fxl, fxg, ADD_VALUES, SCATTER_REVERSE);
 
     // project vector onto 0 forms
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PtQfxg);
@@ -112,8 +91,8 @@ void SWEqn::coriolis() {
     VecPointwiseDivide(fg, PtQfxg, m0->vg);
     
     // scatter to back to local vector
-    VecScatterBegin(gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
 
     delete PtQ;
     VecDestroy(&fxl);
@@ -195,14 +174,14 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
     diagnose_w(ui, &wi);
 
     // scatter initial vectors to local versions
-    VecScatterBegin(gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecScatterBegin(gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecScatterBegin(gtol_2, hi, hl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(gtol_2, hi, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, hi, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, hi, hl, INSERT_VALUES, SCATTER_FORWARD);
 
     // momemtum equation
     K->assemble(ul);
@@ -248,14 +227,14 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
     diagnose_w(uj, &wj);
 
     // scatter half step vectors to local versions
-    VecScatterBegin(gtol_0, wj, wl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(gtol_0, wj, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_0, wj, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, wj, wl, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecScatterBegin(gtol_1, uj, ul, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(gtol_1, uj, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_1, uj, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_1, uj, ul, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecScatterBegin(gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
 
     // momentum equation
     K->assemble(ul);
@@ -326,10 +305,6 @@ SWEqn::~SWEqn() {
     MatDestroy(&E12M2);
     VecDestroy(&fl);
     VecDestroy(&fg);
-
-    VecScatterDestroy(&gtol_0);
-    VecScatterDestroy(&gtol_1);
-    VecScatterDestroy(&gtol_2);
 
     delete m0;
     delete M1;

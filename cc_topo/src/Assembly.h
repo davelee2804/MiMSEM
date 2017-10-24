@@ -72,7 +72,6 @@ class Pvec {
         PetscScalar* entries;
         Vec vl;
         Vec vg;
-        VecScatter gtol;
         void assemble();
 };
 
@@ -88,7 +87,6 @@ class Phvec {
         PetscScalar* entries;
         Vec vl;
         Vec vg;
-        VecScatter gtol;
         void assemble(Vec h2);
 };
 
