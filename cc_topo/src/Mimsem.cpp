@@ -16,22 +16,22 @@
 using namespace std;
 
 #define EL_ORD 2
-#define N_ELS_X_LOC 4
+#define N_ELS_X_LOC 2
 
-void init(SWEqn* sw, Vec h) {
+void init(Geom* geom, Vec h) {
     int ii;
     Vec hl;
     PetscScalar* hArray;
 
     // TODO: galerkin projection
-    VecCreateMPI(MPI_COMM_WORLD, sw->topo->n2, PETSC_DETERMINE, &hl);
+    VecCreateMPI(MPI_COMM_WORLD, geom->topo->n2, PETSC_DETERMINE, &hl);
     VecGetArray(hl, &hArray);
-    for(ii = 0; ii < sw->topo->n2; ii++) {
-        hArray[ii] = 0.01*pow(sw->geom->x[ii][2],2.0);
+    for(ii = 0; ii < geom->topo->n2; ii++) {
+        hArray[ii] = 0.01*pow(geom->x[ii][2],2.0);
     }
     VecRestoreArray(hl, &hArray);
-    VecScatterBegin(sw->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(sw->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(geom->topo->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(geom->topo->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
 
     VecDestroy(&hl);
 }
@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hf);
 
-    init(sw, hi);
+    init(geom, hi);
 
     sw->solve(ui, hi, uf, hf, 0.1);
 
