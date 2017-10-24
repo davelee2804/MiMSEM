@@ -5,6 +5,7 @@ class Geom {
         int pi;
         int nl;
         double** x;
+        double** s;
         Topo* topo;
         GaussLobatto* quad;
         LagrangeNode* node;
