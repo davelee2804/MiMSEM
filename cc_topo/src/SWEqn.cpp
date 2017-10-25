@@ -280,13 +280,13 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
 
     // write fields
     if(save) {
+        step++;
         sprintf(fieldname, "vorticity");
-        geom->write0(wj, fieldname, step);
+        geom->write0(wi, fieldname, step);
         sprintf(fieldname, "velocity");
         geom->write1(uf, fieldname, step);
         sprintf(fieldname, "pressure");
         geom->write2(hf, fieldname, step);
-        step++;
     }
 
     // clean up
