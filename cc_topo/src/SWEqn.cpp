@@ -15,6 +15,7 @@
 #include "SWEqn.h"
 
 using namespace std;
+int step = 0;
 
 SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     topo = _topo;
@@ -135,7 +136,7 @@ void SWEqn::diagnose_F(Vec u, Vec hl, KSP ksp, Vec* hu) {
     VecDestroy(&Fu);
 }
 
-void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
+void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     Vec wi, wj, uj, hj;
     Vec gh, uu, wv, hu;
     Vec Ui, Hi, Uj, Hj;
@@ -276,6 +277,14 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt) {
 
     VecDestroy(&hu);
 
+    // write fields
+    if(save) {
+        geom->write0(wj, "vort", step);
+        geom->write1(uf, "velo", step);
+        geom->write2(hf, "pres", step);
+        step++;
+    }
+
     // clean up
     VecDestroy(&wl);
     VecDestroy(&ul);
@@ -328,11 +337,9 @@ void SWEqn::init0(Vec q, ICfunc* func) {
 void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     int ex, ey, ii, mp1, mp12;
     int *inds0;
-    double valx, valy;
     PetscScalar *bArray;
     KSP ksp;
     Vec bl, bg, UQb;
-    // TODO: modify this assembly term to be able to incorporate vectors at quadrature points
     UtQmat* UQ = new UtQmat(topo, geom, node, edge);
 
     mp1 = quad->n + 1;
@@ -348,8 +355,8 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
-                valx = func_x(geom->x[inds0[ii]]);
-                valy = func_y(geom->x[inds0[ii]]);
+                bArray[inds0[ii]] = func_x(geom->x[inds0[ii]]);
+                bArray[inds0[ii]+topo->n0] = func_y(geom->x[inds0[ii]]);
             }
         }
     }

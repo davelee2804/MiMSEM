@@ -26,7 +26,7 @@ class SWEqn {
         void coriolis();
         void diagnose_w(Vec u, Vec* w);
         void diagnose_F(Vec u, Vec h, KSP ksp, Vec* hu);
-        void solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt);
+        void solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
         void init0(Vec q, ICfunc* func);
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
         void init2(Vec h, ICfunc* func);

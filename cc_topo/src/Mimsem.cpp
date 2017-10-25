@@ -18,12 +18,23 @@ using namespace std;
 #define EL_ORD 2
 #define N_ELS_X_LOC 2
 
+double h_init(double* x) {
+    return 1.0 + 0.1*tanh(x[2]);
+}
+
+double u_init(double* x) {
+    return sech(x[2])*sech(x[2]);
+}
+
+double v_init(double* x) {
+    return 0.0;
+}
+/*
 void init(Geom* geom, Vec h) {
     int ii;
     Vec hl;
     PetscScalar* hArray;
 
-    // TODO: galerkin projection
     VecCreateMPI(MPI_COMM_WORLD, geom->topo->n2, PETSC_DETERMINE, &hl);
     VecGetArray(hl, &hArray);
     for(ii = 0; ii < geom->topo->n2; ii++) {
@@ -35,9 +46,10 @@ void init(Geom* geom, Vec h) {
 
     VecDestroy(&hl);
 }
+*/
 
 int main(int argc, char** argv) {
-	int rank, size;
+	int rank, size, step;
     static char help[] = "petsc";
     Topo* topo;
     Geom* geom;
@@ -61,9 +73,14 @@ int main(int argc, char** argv) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hf);
 
-    init(geom, hi);
+    sw->init1(ui, u_init, v_init);
+    sw->init2(hi, h_init);
 
-    sw->solve(ui, hi, uf, hf, 0.1);
+    for(step = 1; step < 10; step++) {
+        sw->solve(ui, hi, uf, hf, 0.1, true);
+        VecCopy(ui,uf);
+        VecCopy(hi,hf);
+    }
 
     delete topo;
     delete geom;

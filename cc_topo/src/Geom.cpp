@@ -117,7 +117,7 @@ double Geom::jacDet(int ex, int ey, int px, int py, double** J) {
     return (J[0][0]*J[1][1] - J[0][1]*J[1][0]);
 }
 
-void Geom::Write0(Vec q, char* fieldname, int tstep) {
+void Geom::write0(Vec q, char* fieldname, int tstep) {
     char filename[100];
     PetscViewer viewer;
 
@@ -129,7 +129,7 @@ void Geom::Write0(Vec q, char* fieldname, int tstep) {
     PetscViewerDestroy(&viewer);
 }
 
-void Geom::Write1(Vec u, char* fieldname, int tstep) {
+void Geom::write1(Vec u, char* fieldname, int tstep) {
     int ex, ey, ii, jj, mp1, mp12, nn, np1, n2;
     int *inds0, *inds1x, *inds1y;
     char filename[100];
@@ -205,7 +205,7 @@ void Geom::Write1(Vec u, char* fieldname, int tstep) {
 }
 
 // interpolate 2 form field to quadrature points
-void Geom::Write2(Vec h, char* fieldname, int tstep) {
+void Geom::write2(Vec h, char* fieldname, int tstep) {
     int ex, ey, ii, jj, mp1, mp12, nn, n2;
     int *inds0, *inds2;
     char filename[100];
