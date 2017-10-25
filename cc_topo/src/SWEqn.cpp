@@ -21,8 +21,8 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     topo = _topo;
     geom = _geom;
 
-    grav = 9.8;
-    omega = 7.2921150e-5;
+    grav = 9.80616;
+    omega = 7.292e-5;
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
