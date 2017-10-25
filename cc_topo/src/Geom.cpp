@@ -211,8 +211,8 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     char filename[100];
     double jac, val;
     double** J;
-    Vec hl, hg;
-    PetscScalar* hArray;
+    Vec hl, hxl, hxg;
+    PetscScalar *hxArray, *hArray;
     PetscViewer viewer;
 
     nn = topo->elOrd;
@@ -223,10 +223,16 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     J[0] = new double[2];
     J[1] = new double[2];
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &hl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &hg);
-    VecZeroEntries(hg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2, PETSC_DETERMINE, &hl);
+    VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &hxl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &hxg);
+    VecZeroEntries(hxg);
+
     VecGetArray(hl, &hArray);
+    VecGetArray(hxl, &hxArray);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -242,21 +248,24 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
                 }
                 jac = jacDet(ex, ey, ii%mp1, ii/mp1, J);
 
-                hArray[inds0[ii]] = val/jac;
+                hxArray[inds0[ii]] = val/jac;
             }
         }
     }
     VecRestoreArray(hl, &hArray);
-    VecScatterBegin(topo->gtol_0, hl, hg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, hl, hg, INSERT_VALUES, SCATTER_REVERSE);
+    VecRestoreArray(hxl, &hxArray);
+
+    VecScatterBegin(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
 
     sprintf(filename, "%s_%.4u.h5", fieldname, tstep);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
-    VecView(hg, viewer);
+    VecView(hxg, viewer);
 
     PetscViewerDestroy(&viewer);
+    VecDestroy(&hxg);
+    VecDestroy(&hxl);
     VecDestroy(&hl);
-    VecDestroy(&hg);
 
     delete[] J[0];
     delete[] J[1];
