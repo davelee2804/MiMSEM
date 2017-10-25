@@ -655,7 +655,7 @@ class ParaCube:
 		np.savetxt('faces_%.4u'%pi + '.txt', proc.loc2, fmt='%u')
 
 n_procs = 6
-pc = ParaCube(n_procs,2,4)
+pc = ParaCube(n_procs,3,8)
 
 for pi in np.arange(n_procs):
 	pc.print_nodes(pi)

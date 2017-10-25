@@ -11,16 +11,19 @@ b = np.sqrt((7.0 - 2.0*a)/21.0)
 c = np.sqrt((7.0 + 2.0*a)/21.0)
 
 q2 = np.array([-1.0,0.0,+1.0])
+q3 = np.array([-1.0,-np.sqrt(0.2),+np.sqrt(0.2),+1.0])
 q5 = np.array([-1.0,-c,-b,+b,+c,+1.0])
 
-pn = 2
-ne = 4
+pn = 3
+ne = 8
 nx = pn*ne
 X = np.zeros(pn*ne+1,dtype=np.float64)
 dx = 0.5*np.pi/ne
 for el in np.arange(ne):
 	if pn == 2:
 		X[el*pn:(el+1)*pn] = dx*0.5*(q2[:pn]+1.0) + el*dx - 0.25*np.pi
+	if pn == 3:
+		X[el*pn:(el+1)*pn] = dx*0.5*(q3[:pn]+1.0) + el*dx - 0.25*np.pi
 	elif pn == 5:
 		X[el*pn:(el+1)*pn] = dx*0.5*(q5[:pn]+1.0) + el*dx - 0.25*np.pi
 
@@ -218,4 +221,4 @@ for pi in np.arange(n_procs):
 		coords[ii,1] = yg[proc.loc0[ii]]
 		coords[ii,2] = zg[proc.loc0[ii]]
 
-	np.savetxt('geom_%.4u'%pi + '.txt', coords, fmt='%e')
+	np.savetxt('geom_%.4u'%pi + '.txt', coords, fmt='%.18e')
