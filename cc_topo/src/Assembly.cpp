@@ -589,16 +589,13 @@ void PtQmat::assemble() {
     M0_j_xy_i* P = new M0_j_xy_i(l);
     Wii* Q = new Wii(l->q, geom);
     double** Pt = Tran(P->nDofsI, P->nDofsJ, P->A);
-    //double** PtQ = Mult(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Q->A);
-    //double* PtQflat = Flat2D(P->nDofsJ, Q->nDofsJ, PtQ);
     double** PtQ = Alloc2D(P->nDofsJ, Q->nDofsJ);
     double* PtQflat = new double[P->nDofsJ*Q->nDofsJ];
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 2*P->nDofsJ, PETSC_NULL);
-    //MatSetLocalToGlobalMapping(M, topo->map0, topo->map0);
+    MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 4*P->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {

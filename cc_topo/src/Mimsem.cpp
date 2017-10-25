@@ -15,8 +15,8 @@
 
 using namespace std;
 
-#define EL_ORD 2
-#define N_ELS_X_LOC 2
+#define EL_ORD 3
+#define N_ELS_X_LOC 8
 
 double h_init(double* x) {
     return 1.0 + 0.1*tanh(x[2]);
@@ -49,7 +49,7 @@ void init(Geom* geom, Vec h) {
 */
 
 int main(int argc, char** argv) {
-	int rank, size, step;
+    int rank, size, step;
     static char help[] = "petsc";
     Topo* topo;
     Geom* geom;
@@ -76,8 +76,9 @@ int main(int argc, char** argv) {
     sw->init1(ui, u_init, v_init);
     sw->init2(hi, h_init);
 
-    for(step = 1; step < 10; step++) {
-        sw->solve(ui, hi, uf, hf, 0.1, true);
+    for(step = 1; step <= 10; step++) {
+        cout << "doing step: " << step << endl;
+        sw->solve(ui, hi, uf, hf, 0.001, true);
         VecCopy(ui,uf);
         VecCopy(hi,hf);
     }

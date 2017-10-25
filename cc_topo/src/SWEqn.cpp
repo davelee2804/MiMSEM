@@ -137,6 +137,7 @@ void SWEqn::diagnose_F(Vec u, Vec hl, KSP ksp, Vec* hu) {
 }
 
 void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
+    char fieldname[20];
     Vec wi, wj, uj, hj;
     Vec gh, uu, wv, hu;
     Vec Ui, Hi, Uj, Hj;
@@ -279,9 +280,12 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
 
     // write fields
     if(save) {
-        geom->write0(wj, "vort", step);
-        geom->write1(uf, "velo", step);
-        geom->write2(hf, "pres", step);
+        sprintf(fieldname, "vorticity");
+        geom->write0(wj, fieldname, step);
+        sprintf(fieldname, "velocity");
+        geom->write1(uf, fieldname, step);
+        sprintf(fieldname, "pressure");
+        geom->write2(hf, fieldname, step);
         step++;
     }
 
@@ -337,17 +341,20 @@ void SWEqn::init0(Vec q, ICfunc* func) {
 void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     int ex, ey, ii, mp1, mp12;
     int *inds0;
+    int *loc02;
+    UtQmat* UQ = new UtQmat(topo, geom, node, edge);
     PetscScalar *bArray;
     KSP ksp;
     Vec bl, bg, UQb;
-    UtQmat* UQ = new UtQmat(topo, geom, node, edge);
+    IS isl, isg;
+    VecScatter scat;
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
     VecCreateMPI(MPI_COMM_WORLD, 2*topo->n0, PETSC_DETERMINE, &bl);
     VecCreateMPI(MPI_COMM_WORLD, 2*topo->n0l, 2*topo->nDofs0G, &bg);
-    VecCreateMPI(MPI_COMM_WORLD, 2*topo->n0l, 2*topo->nDofs0G, &UQb);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &UQb);
     VecZeroEntries(bg);
 
     VecGetArray(bl, &bArray);
@@ -361,8 +368,22 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
         }
     }
     VecRestoreArray(bl, &bArray);
-    VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+    // create a new vec scatter object to handle vector quantity on nodes
+    loc02 = new int[2*topo->n0];
+    for(ii = 0; ii < topo->n0; ii++) {
+        loc02[ii] = topo->loc0[ii];
+        loc02[ii+topo->n0] = topo->loc0[ii] + topo->nDofs0G;
+    }
+    ISCreateStride(MPI_COMM_WORLD, 2*topo->n0, 0, 1, &isl);
+    ISCreateGeneral(MPI_COMM_WORLD, 2*topo->n0, loc02, PETSC_COPY_VALUES, &isg);
+    VecScatterCreate(bg, isg, bl, isl, &scat);
+    VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterDestroy(&scat);
+    ISDestroy(&isl);
+    ISDestroy(&isg);
+    delete[] loc02;
 
     MatMult(UQ->M, bg, UQb);
 
@@ -392,7 +413,7 @@ void SWEqn::init2(Vec h, ICfunc* func) {
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &bl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &WQb);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
     VecZeroEntries(bg);
 
     VecGetArray(bl, &bArray);
@@ -411,7 +432,7 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     MatMult(WQ->M, bg, WQb);
 
     KSPCreate(MPI_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, M1->M, M1->M);
+    KSPSetOperators(ksp, M2->M, M2->M);
     KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
     KSPSolve(ksp, WQb, h);
