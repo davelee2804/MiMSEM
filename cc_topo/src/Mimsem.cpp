@@ -23,7 +23,7 @@ double h_init(double* x) {
 }
 
 double u_init(double* x) {
-    return sech(x[2])*sech(x[2]);
+    return 1.0/(cosh(x[2])*cosh(x[2]));
 }
 
 double v_init(double* x) {
