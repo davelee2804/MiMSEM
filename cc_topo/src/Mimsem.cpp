@@ -49,6 +49,7 @@ double h_init(double* x) {
     double h0 = 1000.0;
     double hHat = 120.0;
     double h = h0;
+    double grav = 9.80616;
     double omega = 7.292e-5;
     double u, f;
     double alpha = 1.0/3.0;
@@ -63,7 +64,7 @@ double h_init(double* x) {
         x2[2] = asin(phiPrime);
         u = u_init(x2);
         f = 2.0*omega*sin(phiPrime);
-        h -= 1.0*u*(f + tan(phiPrime)*u)*dphi;
+        h -= 1.0*u*(f + tan(phiPrime)*u)*dphi/grav;
     }
 
     h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
@@ -75,6 +76,7 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int rank, size, step;
     static char help[] = "petsc";
+    double dt = 0.1*(2.0*M_PI/(4.0*12))/(80.0/6371220.0);
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
@@ -104,7 +106,7 @@ int main(int argc, char** argv) {
         if(!rank) {
             cout << "doing step: " << step << endl;
         }
-        sw->solve(ui, hi, uf, hf, 0.001, true);
+        sw->solve(ui, hi, uf, hf, dt, true);
         VecCopy(ui,uf);
         VecCopy(hi,hf);
     }
