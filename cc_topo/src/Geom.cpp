@@ -123,9 +123,7 @@ void Geom::write0(Vec q, char* fieldname, int tstep) {
 
     sprintf(filename, "%s_%.4u.h5", fieldname, tstep);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
-
     VecView(q, viewer);
-
     PetscViewerDestroy(&viewer);
 }
 
@@ -135,9 +133,9 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     char filename[100];
     double valx, valy, jac;
     double** J;
-    Vec ul, vl, ug;
+    Vec ul, uxg, uxl, vxl;
     PetscViewer viewer;
-    PetscScalar *uArray, *vArray;
+    PetscScalar *uArray, *uxArray, *vxArray;
 
     nn = topo->elOrd;
     np1 = topo->elOrd + 1;
@@ -148,12 +146,17 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     J[0] = new double[2];
     J[1] = new double[2];
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &ul);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &ug);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1, PETSC_DETERMINE, &ul);
+    VecScatterBegin(topo->gtol_1, u, ul, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_1, u, ul, SCATTER_FORWARD);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &uxl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vxl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &uxg);
 
     VecGetArray(ul, &uArray);
-    VecGetArray(vl, &vArray);
+    VecGetArray(uxl, &uxArray);
+    VecGetArray(vxl, &vxArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds0 = topo->elInds0_l(ex, ey);
@@ -167,37 +170,39 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
                 // loop over trial functions
                 for(jj = 0; jj < n2; jj++) {
                     valx += uArray[inds1x[jj]]*node->ljxi[ii%mp1][jj%np1]*edge->ejxi[ii/mp1][jj/np1];
-                    valy += vArray[inds1y[jj]]*edge->ejxi[ii%mp1][jj%nn]*node->ljxi[ii/mp1][jj/nn];
+                    valy += uArray[inds1y[jj]]*edge->ejxi[ii%mp1][jj%nn]*node->ljxi[ii/mp1][jj/nn];
                 }
                 jac = jacDet(ex, ey, ii%mp1, ii/mp1, J);
 
-                uArray[inds0[ii]] = (J[0][0]*valx + J[0][1]*valy)/jac;
-                vArray[inds0[ii]] = (J[1][0]*valx + J[1][1]*valy)/jac;
+                uxArray[inds0[ii]] = (J[0][0]*valx + J[0][1]*valy)/jac;
+                vxArray[inds0[ii]] = (J[1][0]*valx + J[1][1]*valy)/jac;
             }
         }
     }
+    VecRestoreArray(uxl, &uxArray);
+    VecRestoreArray(vxl, &vxArray);
     VecRestoreArray(ul, &uArray);
-    VecRestoreArray(vl, &vArray);
 
     // scatter and write the zonal components
     sprintf(filename, "%s_%.4u_x.h5", fieldname, tstep);
-    VecScatterBegin(topo->gtol_0, ul, ug, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, ul, ug, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(topo->gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
-    VecView(ug, viewer);
+    VecView(uxg, viewer);
     PetscViewerDestroy(&viewer);
 
     // scatter and write the meridional components
     sprintf(filename, "%s_%.4u_y.h5", fieldname, tstep);
-    VecScatterBegin(topo->gtol_0, vl, ug, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, vl, ug, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(topo->gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
-    VecView(ug, viewer);
+    VecView(uxg, viewer);
     PetscViewerDestroy(&viewer);
 
     VecDestroy(&ul);
-    VecDestroy(&vl);
-    VecDestroy(&ug);
+    VecDestroy(&uxl);
+    VecDestroy(&vxl);
+    VecDestroy(&uxg);
 
     delete[] J[0];
     delete[] J[1];

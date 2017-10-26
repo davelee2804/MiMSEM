@@ -336,6 +336,41 @@ SWEqn::~SWEqn() {
 }
 
 void SWEqn::init0(Vec q, ICfunc* func) {
+    int ex, ey, ii, mp1, mp12;
+    int* inds0;
+    PtQmat* PQ = new PtQmat(topo, geom, node);
+    PetscScalar *bArray;
+    Vec bl, bg, PQb;
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PQb);
+    VecZeroEntries(bg);
+
+    VecGetArray(bl, &bArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                bArray[inds0[ii]] = func(geom->x[inds0[ii]]);
+            }
+        }
+    }
+    VecRestoreArray(bl, &bArray);
+    // TODO check that insert_values does indeed stomp on those added by a different processor
+    VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+    MatMult(PQ->M, bg, PQb);
+    VecPointwiseDivide(q, PQb, m0->vg);
+
+    VecDestroy(bl);
+    VecDestroy(bg);
+    VecDestroy(PQb);
+    delete PQ;
 }
 
 void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
