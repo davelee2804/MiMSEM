@@ -211,16 +211,16 @@ def init_geom(pn, ne, make_image):
         return xg, yg, zg
 
 pn = 3
-ne = 12
+ne = 8
 xg, yg, zg = init_geom(pn, ne, True)
 
-fig = plt.figure()
-ax = Axes3D(fig)
-ax.scatter(xg, yg, zg, c='k')
-ax.set_xlabel('x')
-ax.set_ylabel('y')
-ax.set_zlabel('z')
-plt.show()
+#fig = plt.figure()
+#ax = Axes3D(fig)
+#ax.scatter(xg, yg, zg, c='k')
+#ax.set_xlabel('x')
+#ax.set_ylabel('y')
+#ax.set_zlabel('z')
+#plt.show()
 
 n_procs = 6
 pc = ParaCube(n_procs,pn,ne)

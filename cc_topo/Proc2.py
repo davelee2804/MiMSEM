@@ -633,25 +633,25 @@ class ParaCube:
 		else:
 			neighbours[7] = proc.WS.proc.procID
 
-		print str(pi) + ':\t' + str(neighbours)
+		#print str(pi) + ':\t' + str(neighbours)
 
 	def print_nodes(self,pi):
 		proc = self.procs[pi]
-		print str(pi) + ':\t' + str(proc.loc0)
+		#print str(pi) + ':\t' + str(proc.loc0)
 		np.savetxt('nodes_%.4u'%pi + '.txt', proc.loc0, fmt='%u')
 
 	def print_edges(self,pi,dim):
 		proc = self.procs[pi]
 		if dim == 0:
-			print str(pi) + ' (x):\t' + str(proc.loc1x)
+			#print str(pi) + ' (x):\t' + str(proc.loc1x)
 			np.savetxt('edges_x_%.4u'%pi + '.txt', proc.loc1x, fmt='%u')
 		else:
-			print str(pi) + ' (y):\t' + str(proc.loc1y)
+			#print str(pi) + ' (y):\t' + str(proc.loc1y)
 			np.savetxt('edges_y_%.4u'%pi + '.txt', proc.loc1y, fmt='%u')
 
 	def print_faces(self,pi):
 		proc = self.procs[pi]
-		print str(pi) + ':\t' + str(proc.loc2)
+		#print str(pi) + ':\t' + str(proc.loc2)
 		np.savetxt('faces_%.4u'%pi + '.txt', proc.loc2, fmt='%u')
 
 n_procs = 6
