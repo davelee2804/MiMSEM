@@ -4,12 +4,14 @@ PETSC_LIB=-L${PETSC_DIR}/${PETSC_ARCH}/lib
 
 MPI_INCLUDE=-I${MPI_DIR}/include
 
+HDF5_INCLUDE=-I${HDF5_DIR}/include
+
 include ${PETSC_DIR}/conf/variables
 include ${PETSC_DIR}/conf/rules
 
 CXX = /home/dave/soft/mpi/openmpi-1.8.3/bin/mpic++
 
-CXXFLAGS = ${MPI_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -g -Wall
+CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -g -Wall
 
 OBJS = Basis.o \
        Topo.o \

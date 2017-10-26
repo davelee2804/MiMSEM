@@ -16,7 +16,7 @@
 using namespace std;
 
 #define EL_ORD 3
-#define N_ELS_X_LOC 12
+#define N_ELS_X_LOC 8
 
 // initial condition given by:
 //     Galewsky, Scott and Polvani (2004) Tellus, 56A 429-440
@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
     sw->init1(ui, u_init, v_init);
     sw->init2(hi, h_init);
 
-    for(step = 1; step <= 10; step++) {
+    for(step = 1; step <= 4; step++) {
         if(!rank) {
             cout << "doing step: " << step << endl;
         }

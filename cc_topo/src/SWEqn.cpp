@@ -367,9 +367,9 @@ void SWEqn::init0(Vec q, ICfunc* func) {
     MatMult(PQ->M, bg, PQb);
     VecPointwiseDivide(q, PQb, m0->vg);
 
-    VecDestroy(bl);
-    VecDestroy(bg);
-    VecDestroy(PQb);
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&PQb);
     delete PQ;
 }
 

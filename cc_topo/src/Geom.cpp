@@ -147,8 +147,9 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     J[1] = new double[2];
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1, PETSC_DETERMINE, &ul);
-    VecScatterBegin(topo->gtol_1, u, ul, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_1, u, ul, SCATTER_FORWARD);
+    VecZeroEntries(ul);
+    VecScatterBegin(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &uxl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vxl);
