@@ -22,9 +22,14 @@ Geom::Geom(int _pi, Topo* _topo) {
     char filename[100];
     string line;
     double value;
+    int fi, size;
 
     pi = _pi;
     topo = _topo;
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    fi = (6*pi)/size;
+    cout << "rank: " << pi << "\tface: " << fi << "\tsize: " << size << endl;
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -65,6 +70,30 @@ Geom::Geom(int _pi, Topo* _topo) {
         ii++;
     }
     file.close();
+
+    R = new double*[3];
+    R[0] = new double[3];
+    R[1] = new double[3];
+    R[2] = new double[3];
+    for(ii = 0; ii < 3; ii++) {
+        for(jj = 0; jj < 3; jj++) {
+            R[ii][jj] = 0.0;
+        }
+    }
+
+    if(fi == 0) {
+         R[0][0] = +1.0; R[1][1] = +1.0; R[2][2] = +1.0;
+    } else if(fi == 1) {
+         R[0][2] = -1.0; R[1][1] = +1.0; R[2][0] = +1.0;
+    } else if(fi == 2) {
+         R[0][2] = -1.0; R[1][0] = +1.0; R[2][1] = -1.0;
+    } else if(fi == 3) {
+         R[0][0] = -1.0; R[1][2] = -1.0; R[2][1] = -1.0;
+    } else if(fi == 4) {
+         R[0][1] = +1.0; R[1][2] = -1.0; R[2][0] = -1.0;
+    } else if(fi == 5) {
+         R[0][1] = +1.0; R[1][0] = -1.0; R[2][2] = +1.0;
+    }
 }
 
 Geom::~Geom() {
@@ -80,11 +109,17 @@ Geom::~Geom() {
     delete edge;
     delete node;
     delete quad;
+
+    delete[] R[0];
+    delete[] R[1];
+    delete[] R[2];
+    delete[] R;
 }
 
 // isoparametric jacobian, with the global coordinate approximated as an expansion over the test 
 // functions. derivatives are evaluated from the lagrange polynomial derivatives within each element
 void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
+/*
     int ii, jj, mp1, mp12;
     int* inds_0 = topo->elInds0_l(ex, ey);
     double a, b, la, lb, dla, dlb;
@@ -104,11 +139,85 @@ void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
         dla = node->evalDeriv(a, ii%mp1);
         dlb = node->evalDeriv(b, ii/mp1);
 
-        J[0][0] += dla*lb*s[jj][0];
-        J[0][1] += la*dlb*s[jj][0];
+        J[0][0] += dla*lb*s[jj][0]*cos(s[jj][1]);
+        J[0][1] += la*dlb*s[jj][0]*cos(s[jj][1]);
         J[1][0] += dla*lb*s[jj][1];
         J[1][1] += la*dlb*s[jj][1];
     }
+*/
+    int ii, jj, kk, mp1 = quad->n + 1;
+    int* inds_0 = topo->elInds0_l(ex, ey);
+    double* c1 = x[inds_0[0]];
+    double* c2 = x[inds_0[mp1-1]];
+    double* c3 = x[inds_0[(mp1-1)*(mp1)]];
+    double* c4 = x[inds_0[mp1*mp1-1]];
+    double* ss = s[inds_0[py*mp1+px]];
+    double x1, x2, rTildeMagInv;
+    double rTilde[3];
+    double A[2][3], B[3][3], C[3][4], D[4][2], AB[2][3], ABC[2][4];
+
+    x1 = quad->x[px];
+    x2 = quad->x[py];
+    rTilde[0] = 0.25*((1.0-x1)*(1.0-x2)*c1[0] + (1.0+x1)*(1.0-x2)*c2[0] + (1.0-x1)*(1.0+x2)*c3[0] + (1.0+x1)*(1.0+x2)*c4[0]);
+    rTilde[1] = 0.25*((1.0-x1)*(1.0-x2)*c1[1] + (1.0+x1)*(1.0-x2)*c2[1] + (1.0-x1)*(1.0+x2)*c3[1] + (1.0+x1)*(1.0+x2)*c4[1]);
+    rTilde[2] = 0.25*((1.0-x1)*(1.0-x2)*c1[2] + (1.0+x1)*(1.0-x2)*c2[2] + (1.0-x1)*(1.0+x2)*c3[2] + (1.0+x1)*(1.0+x2)*c4[2]);
+    rTildeMagInv = 1.0/sqrt(rTilde[0]*rTilde[0] + rTilde[1]*rTilde[1] + rTilde[2]*rTilde[2]);
+
+    A[0][0] = -sin(ss[0]); A[0][1] = +cos(ss[0]); A[0][2] = 0.0;
+    A[1][0] =         0.0; A[1][1] =         0.0; A[1][2] = 1.0;
+
+    B[0][0] = sin(ss[0])*sin(ss[0])*cos(ss[1])*cos(ss[1]) + sin(ss[1])*sin(ss[1]);
+    B[0][1] = -0.5*sin(2.0*ss[0])*cos(ss[1])*cos(ss[1]);
+    B[0][2] = -0.5*cos(ss[0])*sin(2.0*ss[1]);
+
+    B[1][0] = -0.5*sin(2.0*ss[0])*cos(ss[1])*cos(ss[1]);
+    B[1][1] = cos(ss[0])*cos(ss[0])*cos(ss[1])*cos(ss[1]) + sin(ss[1])*sin(ss[1]);
+    B[1][2] = -0.5*sin(ss[0])*sin(2.0*ss[1]);
+
+    B[2][0] = -cos(ss[0])*sin(ss[1]);
+    B[2][1] = -sin(ss[0])*sin(ss[1]);
+    B[2][2] = cos(ss[1]);
+
+    C[0][0] = c1[0]; C[0][1] = c2[0]; C[0][2] = c3[0]; C[0][3] = c4[0];
+    C[1][0] = c1[1]; C[1][1] = c2[1]; C[1][2] = c3[1]; C[1][3] = c4[1];
+    C[2][0] = c1[2]; C[2][1] = c2[2]; C[2][2] = c3[2]; C[2][3] = c4[2];
+
+    D[0][0] = -1.0 + x2; D[0][1] = -1.0 + x1;
+    D[1][0] = +1.0 - x2; D[1][1] = -1.0 - x1;
+    D[2][0] = +1.0 + x2; D[2][1] = +1.0 + x1;
+    D[3][0] = -1.0 - x2; D[3][1] = +1.0 - x1;
+
+    for(ii = 0; ii < 2; ii++) {
+        for(jj = 0; jj < 3; jj++) {
+            AB[ii][jj] = 0.0;
+            for(kk = 0; kk < 3; kk++) {
+                AB[ii][jj] += A[ii][kk]*B[kk][jj];
+            }
+        }
+    }
+
+    for(ii = 0; ii < 2; ii++) {
+        for(jj = 0; jj < 4; jj++) {
+            ABC[ii][jj] = 0.0;
+            for(kk = 0; kk < 3; kk++) {
+                ABC[ii][jj] += AB[ii][kk]*C[kk][jj];
+            }
+        }
+    }
+
+    for(ii = 0; ii < 2; ii++) {
+        for(jj = 0; jj < 2; jj++) {
+            J[ii][jj] = 0.0;
+            for(kk = 0; kk < 4; kk++) {
+                J[ii][jj] += ABC[ii][kk]*D[kk][jj];
+            }
+        }
+    }
+
+    J[0][0] = 0.25*rTildeMagInv*J[0][0];
+    J[0][1] = 0.25*rTildeMagInv*J[0][1];
+    J[1][0] = 0.25*rTildeMagInv*J[1][0];
+    J[1][1] = 0.25*rTildeMagInv*J[1][1];
 }
 
 double Geom::jacDet(int ex, int ey, int px, int py, double** J) {
@@ -118,13 +227,62 @@ double Geom::jacDet(int ex, int ey, int px, int py, double** J) {
 }
 
 void Geom::write0(Vec q, char* fieldname, int tstep) {
+    int ex, ey, ii, jj, mp1, mp12;
+    int* inds0;
     char filename[100];
+    double jac;
+    double** Jm;
+    PetscScalar *qArray, *qxArray;
+    Vec ql, qxl, qxg;
     PetscViewer viewer;
 
-    sprintf(filename, "%s_%.4u.h5", fieldname, tstep);
-    PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
-    VecView(q, viewer);
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+    Jm = new double*[2];
+    Jm[0] = new double[2];
+    Jm[1] = new double[2];
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &ql);
+    VecZeroEntries(ql);
+    VecScatterBegin(topo->gtol_0, q, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, q, ql, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &qxl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &qxg);
+
+    VecGetArray(ql, &qArray);
+    VecGetArray(qxl, &qxArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                jj = inds0[ii];
+                //jac = jacDet(ex, ey, ii%mp1, ii/mp1, Jm);
+                //qxArray[jj] = jac*qArray[jj];
+                qxArray[jj] = qArray[jj];
+            }
+        }
+    }
+    VecRestoreArray(ql, &qArray);
+    VecRestoreArray(qxl, &qxArray);
+
+    VecScatterBegin(topo->gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
+
+    //sprintf(filename, "%s_%.4u.h5", fieldname, tstep);
+    //PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
+    sprintf(filename, "%s_%.4u.dat", fieldname, tstep);
+    PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
+    VecView(qxg, viewer);
     PetscViewerDestroy(&viewer);
+
+    VecDestroy(&ql);
+    VecDestroy(&qxl);
+    VecDestroy(&qxg);
+
+    delete[] Jm[0];
+    delete[] Jm[1];
+    delete[] Jm;
 }
 
 void Geom::write1(Vec u, char* fieldname, int tstep) {
@@ -132,7 +290,7 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     int *inds0, *inds1x, *inds1y;
     char filename[100];
     double valx, valy, jac;
-    double** J;
+    double** Jm;
     Vec ul, uxg, uxl, vxl;
     PetscViewer viewer;
     PetscScalar *uArray, *uxArray, *vxArray;
@@ -140,11 +298,11 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     nn = topo->elOrd;
     np1 = topo->elOrd + 1;
     n2 = nn*np1;
-    mp1 = topo->elOrd + 1;
+    mp1 = quad->n + 1;
     mp12 = mp1*mp1;
-    J = new double*[2];
-    J[0] = new double[2];
-    J[1] = new double[2];
+    Jm = new double*[2];
+    Jm[0] = new double[2];
+    Jm[1] = new double[2];
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1, PETSC_DETERMINE, &ul);
     VecZeroEntries(ul);
@@ -173,10 +331,10 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
                     valx += uArray[inds1x[jj]]*node->ljxi[ii%mp1][jj%np1]*edge->ejxi[ii/mp1][jj/np1];
                     valy += uArray[inds1y[jj]]*edge->ejxi[ii%mp1][jj%nn]*node->ljxi[ii/mp1][jj/nn];
                 }
-                jac = jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                jac = jacDet(ex, ey, ii%mp1, ii/mp1, Jm);
 
-                uxArray[inds0[ii]] = (J[0][0]*valx + J[0][1]*valy)/jac;
-                vxArray[inds0[ii]] = (J[1][0]*valx + J[1][1]*valy)/jac;
+                uxArray[inds0[ii]] = (Jm[0][0]*valx + Jm[0][1]*valy)/jac;
+                vxArray[inds0[ii]] = (Jm[1][0]*valx + Jm[1][1]*valy)/jac;
             }
         }
     }
@@ -205,9 +363,9 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     VecDestroy(&vxl);
     VecDestroy(&uxg);
 
-    delete[] J[0];
-    delete[] J[1];
-    delete[] J;
+    delete[] Jm[0];
+    delete[] Jm[1];
+    delete[] Jm;
 }
 
 // interpolate 2 form field to quadrature points
@@ -216,18 +374,18 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     int *inds0, *inds2;
     char filename[100];
     double jac, val;
-    double** J;
+    double** Jm;
     Vec hl, hxl, hxg;
     PetscScalar *hxArray, *hArray;
     PetscViewer viewer;
 
     nn = topo->elOrd;
     n2 = nn*nn;
-    mp1 = topo->elOrd + 1;
+    mp1 = quad->n + 1;
     mp12 = mp1*mp1;
-    J = new double*[2];
-    J[0] = new double[2];
-    J[1] = new double[2];
+    Jm = new double*[2];
+    Jm[0] = new double[2];
+    Jm[1] = new double[2];
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2, PETSC_DETERMINE, &hl);
     VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
@@ -252,7 +410,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
                 for(jj = 0; jj < n2; jj++) {
                     val += hArray[inds2[jj]]*edge->ejxi[ii%mp1][jj%nn]*edge->ejxi[ii/mp1][jj/nn];
                 }
-                jac = jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                jac = jacDet(ex, ey, ii%mp1, ii/mp1, Jm);
 
                 hxArray[inds0[ii]] = val/jac;
             }
@@ -273,7 +431,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     VecDestroy(&hxl);
     VecDestroy(&hl);
 
-    delete[] J[0];
-    delete[] J[1];
-    delete[] J;
+    delete[] Jm[0];
+    delete[] Jm[1];
+    delete[] Jm;
 }
