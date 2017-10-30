@@ -10,7 +10,6 @@ class Geom {
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
-        double** R;
         void jacobian(int ex, int ey, int qx, int qy, double** J);
         double jacDet(int ex, int ey, int qx, int qy, double** J);
         void write0(Vec q, char* fieldname, int tstep);

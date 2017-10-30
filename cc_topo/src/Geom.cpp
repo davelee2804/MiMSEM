@@ -22,14 +22,9 @@ Geom::Geom(int _pi, Topo* _topo) {
     char filename[100];
     string line;
     double value;
-    int fi, size;
 
     pi = _pi;
     topo = _topo;
-
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    fi = (6*pi)/size;
-    cout << "rank: " << pi << "\tface: " << fi << "\tsize: " << size << endl;
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -70,30 +65,6 @@ Geom::Geom(int _pi, Topo* _topo) {
         ii++;
     }
     file.close();
-
-    R = new double*[3];
-    R[0] = new double[3];
-    R[1] = new double[3];
-    R[2] = new double[3];
-    for(ii = 0; ii < 3; ii++) {
-        for(jj = 0; jj < 3; jj++) {
-            R[ii][jj] = 0.0;
-        }
-    }
-
-    if(fi == 0) {
-         R[0][0] = +1.0; R[1][1] = +1.0; R[2][2] = +1.0;
-    } else if(fi == 1) {
-         R[0][2] = -1.0; R[1][1] = +1.0; R[2][0] = +1.0;
-    } else if(fi == 2) {
-         R[0][2] = -1.0; R[1][0] = +1.0; R[2][1] = -1.0;
-    } else if(fi == 3) {
-         R[0][0] = -1.0; R[1][2] = -1.0; R[2][1] = -1.0;
-    } else if(fi == 4) {
-         R[0][1] = +1.0; R[1][2] = -1.0; R[2][0] = -1.0;
-    } else if(fi == 5) {
-         R[0][1] = +1.0; R[1][0] = -1.0; R[2][2] = +1.0;
-    }
 }
 
 Geom::~Geom() {
@@ -109,11 +80,6 @@ Geom::~Geom() {
     delete edge;
     delete node;
     delete quad;
-
-    delete[] R[0];
-    delete[] R[1];
-    delete[] R[2];
-    delete[] R;
 }
 
 // isoparametric jacobian, with the global coordinate approximated as an expansion over the test 
@@ -231,23 +197,19 @@ void Geom::write0(Vec q, char* fieldname, int tstep) {
     int* inds0;
     char filename[100];
     double jac;
-    double** Jm;
     PetscScalar *qArray, *qxArray;
     Vec ql, qxl, qxg;
     PetscViewer viewer;
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
-    Jm = new double*[2];
-    Jm[0] = new double[2];
-    Jm[1] = new double[2];
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &ql);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
     VecZeroEntries(ql);
     VecScatterBegin(topo->gtol_0, q, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_0, q, ql, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &qxl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &qxl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &qxg);
 
     VecGetArray(ql, &qArray);
@@ -257,8 +219,6 @@ void Geom::write0(Vec q, char* fieldname, int tstep) {
             inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 jj = inds0[ii];
-                //jac = jacDet(ex, ey, ii%mp1, ii/mp1, Jm);
-                //qxArray[jj] = jac*qArray[jj];
                 qxArray[jj] = qArray[jj];
             }
         }
@@ -279,10 +239,6 @@ void Geom::write0(Vec q, char* fieldname, int tstep) {
     VecDestroy(&ql);
     VecDestroy(&qxl);
     VecDestroy(&qxg);
-
-    delete[] Jm[0];
-    delete[] Jm[1];
-    delete[] Jm;
 }
 
 void Geom::write1(Vec u, char* fieldname, int tstep) {
@@ -304,13 +260,13 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     Jm[0] = new double[2];
     Jm[1] = new double[2];
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1, PETSC_DETERMINE, &ul);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
     VecZeroEntries(ul);
     VecScatterBegin(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &uxl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vxl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &uxl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &vxl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &uxg);
 
     VecGetArray(ul, &uArray);
@@ -387,11 +343,11 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     Jm[0] = new double[2];
     Jm[1] = new double[2];
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2, PETSC_DETERMINE, &hl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
     VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &hxl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &hxl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &hxg);
     VecZeroEntries(hxg);
 

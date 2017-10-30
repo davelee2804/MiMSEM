@@ -383,7 +383,7 @@ Pvec::Pvec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
     geom = _geom;
     l = _l;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &vl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
     VecZeroEntries(vg);
 
@@ -444,10 +444,9 @@ Phvec::Phvec(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     l = _l;
     e = _e;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &vl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &vl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
     VecZeroEntries(vg);
-    //VecSetLocalToGlobalMapping(v, topo->map0);
 
     ck = new double[(l->n)*(l->n)];
     entries = new PetscScalar[(l->n+1)*(l->n+1)];

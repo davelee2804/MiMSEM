@@ -113,9 +113,9 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     ISCreateGeneral(MPI_COMM_WORLD, n2, loc2, PETSC_COPY_VALUES, &is_g_2);
 
     // create the local index sets
-    ISCreateStride(MPI_COMM_WORLD, n0, 0, 1, &is_l_0);
-    ISCreateStride(MPI_COMM_WORLD, n1, 0, 1, &is_l_1);
-    ISCreateStride(MPI_COMM_WORLD, n2, 0, 1, &is_l_2);
+    ISCreateStride(MPI_COMM_SELF, n0, 0, 1, &is_l_0);
+    ISCreateStride(MPI_COMM_SELF, n1, 0, 1, &is_l_1);
+    ISCreateStride(MPI_COMM_SELF, n2, 0, 1, &is_l_2);
 
     // local the local sizes
     sprintf(filename, "local_sizes_%.4u.txt", pi);
@@ -136,19 +136,19 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     cout << "local sizes on " << pi << ":\t" << n0l << "\t" << n1l << "\t" << n2l << endl;
 
     // initialise the vec scatter objects for nodes/edges/faces
-    VecCreateMPI(MPI_COMM_WORLD, n0, PETSC_DETERMINE, &vl);
+    VecCreateSeq(MPI_COMM_SELF, n0, &vl);
     VecCreateMPI(MPI_COMM_WORLD, n0l, nDofs0G, &vg);
     VecScatterCreate(vg, is_g_0, vl, is_l_0, &gtol_0);
     VecDestroy(&vl);
     VecDestroy(&vg);
 
-    VecCreateMPI(MPI_COMM_WORLD, n1, PETSC_DETERMINE, &vl);
+    VecCreateSeq(MPI_COMM_SELF, n1, &vl);
     VecCreateMPI(MPI_COMM_WORLD, n1l, nDofs1G, &vg);
     VecScatterCreate(vg, is_g_1, vl, is_l_1, &gtol_1);
     VecDestroy(&vl);
     VecDestroy(&vg);
 
-    VecCreateMPI(MPI_COMM_WORLD, n2, PETSC_DETERMINE, &vl);
+    VecCreateSeq(MPI_COMM_SELF, n2, &vl);
     VecCreateMPI(MPI_COMM_WORLD, n2l, nDofs2G, &vg);
     VecScatterCreate(vg, is_g_2, vl, is_l_2, &gtol_2);
     VecDestroy(&vl);
@@ -187,7 +187,9 @@ Topo::~Topo() {
 void Topo::loadObjs(char* filename, int* loc) {
     int ii = 0;
     ifstream file;
-	string line;
+    string line;
+
+    cout << pi << ":\tloading file: " << filename << endl;
 
     file.open(filename);
     while (std::getline(file, line)) {

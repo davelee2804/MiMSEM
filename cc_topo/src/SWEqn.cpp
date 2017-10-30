@@ -67,11 +67,11 @@ void SWEqn::coriolis() {
     Vec fxl, fxg, PtQfxg;
 
     // initialise the coriolis vector (local and global)
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &fl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fg);
 
     // evaluate the coriolis term at nodes
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &fxl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fxl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fxg);
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
@@ -146,9 +146,9 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     KSP ksp;
 
     // initialize vectors
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &wl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1, PETSC_DETERMINE, &ul);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2, PETSC_DETERMINE, &hl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ui);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Uj);
@@ -281,8 +281,8 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     // write fields
     if(save) {
         step++;
-        sprintf(fieldname, "vorticity");
-        geom->write0(wi, fieldname, step);
+        //sprintf(fieldname, "vorticity");
+        //geom->write0(wi, fieldname, step);
         sprintf(fieldname, "velocity");
         geom->write1(uf, fieldname, step);
         sprintf(fieldname, "pressure");
@@ -345,7 +345,7 @@ void SWEqn::init0(Vec q, ICfunc* func) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &bl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PQb);
     VecZeroEntries(bg);
@@ -360,7 +360,6 @@ void SWEqn::init0(Vec q, ICfunc* func) {
         }
     }
     VecRestoreArray(bl, &bArray);
-    // TODO check that insert_values does indeed stomp on those added by a different processor
     VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
@@ -387,7 +386,7 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    VecCreateMPI(MPI_COMM_WORLD, 2*topo->n0, PETSC_DETERMINE, &bl);
+    VecCreateSeq(MPI_COMM_SELF, 2*topo->n0, &bl);
     VecCreateMPI(MPI_COMM_WORLD, 2*topo->n0l, 2*topo->nDofs0G, &bg);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &UQb);
     VecZeroEntries(bg);
@@ -446,7 +445,7 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0, PETSC_DETERMINE, &bl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
     VecZeroEntries(bg);
