@@ -3,7 +3,7 @@ void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C);
 void MultVec_IP(int ni, int nj, int nk, double** A1, double** B1, double** A2, double** B2, double** C);
 double** Tran(int ni, int nj, double** A);
 void Tran_IP(int ni, int nj, double** A, double** B);
-void Inv(double** A, double** B, int n);
+int Inv(double** A, double** B, int n);
 
 class M1x_j_xy_i {
     public:

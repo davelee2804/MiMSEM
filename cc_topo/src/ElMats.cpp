@@ -89,7 +89,8 @@ void Tran_IP(int ni, int nj, double** A, double** B) {
 }
 
 #define SWAP(a,b) {temp=(a);(a)=(b);(b)=temp;}
-void Inv( double** A, double** Ainv, int n ) {
+int Inv( double** A, double** Ainv, int n ) {
+    int error = 0;
     int *indxc, *indxr, *ipiv;
     int i, j, k, l, irow = 0, icol = 0, ll;
     double big, dum, pivinv, temp;
@@ -110,19 +111,22 @@ void Inv( double** A, double** Ainv, int n ) {
                             icol = k;
                         }
                     }
-                    else if( ipiv[k] > 1 ) { cerr << "Matrix inverse error! - singular matrix (1)\n"; }
+                    else if( ipiv[k] > 1 ) { error = 1; }
                 }
             }
         }
         ++(ipiv[icol]);
         if( irow != icol ) {
             for( l = 0; l < n; l++ ) {
-                SWAP( Ainv[irow][l], Ainv[icol][l] );
+                //SWAP( Ainv[irow][l], Ainv[icol][l] );
+                temp = Ainv[irow][l];
+                Ainv[irow][l] = Ainv[icol][l];
+                Ainv[icol][l] = temp;
             }
         }
         indxr[i] = irow;
         indxc[i] = icol;
-        if( fabs(Ainv[icol][icol]) < 1.0e-12 ) { cerr << "Matrix inverse error! - singular matrix (2)\n"; }
+        if( fabs(Ainv[icol][icol]) < 1.0e-12 ) { error = 2; }
         pivinv = 1.0/Ainv[icol][icol];
         Ainv[icol][icol] = 1.0;
         for( l = 0; l < n; l++ ) { Ainv[icol][l] *= pivinv; }
@@ -138,11 +142,16 @@ void Inv( double** A, double** Ainv, int n ) {
     for( l = n-1; l >= 0; l-- ) {
         if( indxr[l] != indxc[l] ) {
             for( k = 0; k < n; k++ ) {
-                SWAP( Ainv[k][indxr[l]], Ainv[k][indxc[l]] );
+                //SWAP( Ainv[k][indxr[l]], Ainv[k][indxc[l]] );
+                temp = Ainv[k][indxr[l]];
+                Ainv[k][indxr[l]] = Ainv[k][indxc[l]];
+                Ainv[k][indxc[l]] = temp;
             }
         }
     }
     delete[] indxc; delete[] indxr; delete[] ipiv;
+
+    return error;
 }
 
 // Outer product of 0-form in x and 1-form in y (columns)
