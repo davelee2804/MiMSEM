@@ -434,6 +434,7 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     VecDestroy(&UQb);
 }
 
+/*
 void SWEqn::init2(Vec h, ICfunc* func) {
     int ex, ey, ii, mp1, mp12;
     int *inds0;
@@ -451,6 +452,7 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     VecZeroEntries(bg);
 
     VecGetArray(bl, &bArray);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds0 = topo->elInds0_l(ex, ey);
@@ -476,4 +478,75 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     VecDestroy(&bl);
     VecDestroy(&bg);
     VecDestroy(&WQb);
+}
+*/
+
+void SWEqn::init2(Vec h, ICfunc* func) {
+    int ex, ey, ii, jj, mp1, mp12, nn, n2, err, rank;
+    int *inds0, *inds2;
+    PetscScalar* hArray;
+    Vec hl;
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    Wii* Q = new Wii(edge->l->q, geom);
+    JacM2* J = new JacM2(edge->l->q, geom);
+    double** JW = Alloc2D(J->nDofsI, W->nDofsJ);
+    double** JWt = Alloc2D(W->nDofsJ, J->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WinvW = Alloc2D(W->nDofsJ, Q->nDofsJ);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+    nn = topo->elOrd;
+    n2 = nn*nn;
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
+    VecGetArray(hl, &hArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = topo->elInds0_l(ex, ey);
+            inds2 = topo->elInds2_l(ex, ey);
+
+            Q->assemble(ex, ey);
+            J->assemble(ex, ey);
+
+            Mult_IP(J->nDofsI, W->nDofsJ, W->nDofsJ, J->A, W->A, JW);
+            Tran_IP(J->nDofsI, W->nDofsJ, JW, JWt);
+            Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, JWt, Q->A, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, JW, WtQW);
+
+            err = Inv(WtQW,WtQWinv,W->nDofsJ);
+            if( err > 0 ) {
+                cout << rank << ": mat inv error (" << err << "): " << ex << "\t" << ey << endl;
+            } 
+
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsJ, WtQWinv, WtQ, WinvW);
+
+            for(jj = 0; jj < n2; jj++) {
+                hArray[inds2[jj]] = 0.0;
+                for(ii = 0; ii < mp12; ii++) {
+                    hArray[inds2[jj]] += WinvW[jj][ii]*func(geom->x[inds0[ii]]);
+                }
+            }
+        }
+    }
+    VecRestoreArray(hl, &hArray);
+
+    VecScatterBegin(topo->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
+
+    Free2D(J->nDofsI, JW);
+    Free2D(W->nDofsJ, JWt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQWinv);
+    Free2D(W->nDofsJ, WinvW);
+    delete W;
+    delete Q;
+    delete J;
+    VecDestroy(&hl);
 }
