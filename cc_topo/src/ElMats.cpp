@@ -88,17 +88,15 @@ void Tran_IP(int ni, int nj, double** A, double** B) {
     }
 }
 
-#define I(p,q,N) \
-        p*N + q
 #define SWAP(a,b) {temp=(a);(a)=(b);(b)=temp;}
-void Inv( double* A, double* Ainv, int n ) {
+void Inv( double** A, double** Ainv, int n ) {
     int *indxc, *indxr, *ipiv;
     int i, j, k, l, irow = 0, icol = 0, ll;
     double big, dum, pivinv, temp;
 
     indxc = new int[n]; indxr = new int[n]; ipiv  = new int[n];
 
-    for( i = 0; i < n*n; i++ ) { Ainv[i] = A[i]; }
+    for( i = 0; i < n*n; i++ ) { Ainv[i/n][i%n] = A[i/n][i%n]; }
     for( j = 0; j< n; j++ ) { ipiv[j] = 0; }
     for( i = 0; i < n; i++ ) {
         big = 0.0;
@@ -106,8 +104,8 @@ void Inv( double* A, double* Ainv, int n ) {
             if( ipiv[j] != 1 ) {
                 for( k = 0; k < n; k++ ) {
                     if( ipiv[k] == 0 ) {
-                        if( fabs(Ainv[I(j,k,n)]) >= big ) {
-                            big = fabs(Ainv[I(j,k,n)]);
+                        if( fabs(Ainv[j][k]) >= big ) {
+                            big = fabs(Ainv[j][k]);
                             irow = j;
                             icol = k;
                         }
@@ -119,20 +117,20 @@ void Inv( double* A, double* Ainv, int n ) {
         ++(ipiv[icol]);
         if( irow != icol ) {
             for( l = 0; l < n; l++ ) {
-                SWAP( Ainv[I(irow,l,n)], Ainv[I(icol,l,n)] );
+                SWAP( Ainv[irow][l], Ainv[icol][l] );
             }
         }
         indxr[i] = irow;
         indxc[i] = icol;
-        if( fabs(Ainv[I(icol,icol,n)]) < 1.0e-12 ) { cerr << "Matrix inverse error! - singular matrix (2)\n"; }
-        pivinv = 1.0/Ainv[I(icol,icol,n)];
-        Ainv[I(icol,icol,n)] = 1.0;
-        for( l = 0; l < n; l++ ) { Ainv[I(icol,l,n)] *= pivinv; }
+        if( fabs(Ainv[icol][icol]) < 1.0e-12 ) { cerr << "Matrix inverse error! - singular matrix (2)\n"; }
+        pivinv = 1.0/Ainv[icol][icol];
+        Ainv[icol][icol] = 1.0;
+        for( l = 0; l < n; l++ ) { Ainv[icol][l] *= pivinv; }
         for( ll = 0; ll < n; ll++ ) {
             if( ll != icol ) {
-                dum = Ainv[I(ll,icol,n)];
-                Ainv[I(ll,icol,n)] = 0.0;
-                for( l = 0; l < n; l++ ) { Ainv[I(ll,l,n)] -= Ainv[I(icol,l,n)]*dum; }
+                dum = Ainv[ll][icol];
+                Ainv[ll][icol] = 0.0;
+                for( l = 0; l < n; l++ ) { Ainv[ll][l] -= Ainv[icol][l]*dum; }
             }
         }
     }
@@ -140,7 +138,7 @@ void Inv( double* A, double* Ainv, int n ) {
     for( l = n-1; l >= 0; l-- ) {
         if( indxr[l] != indxc[l] ) {
             for( k = 0; k < n; k++ ) {
-                SWAP( Ainv[I(k,indxr[l],n)], Ainv[I(k,indxc[l],n)] );
+                SWAP( Ainv[k][indxr[l]], Ainv[k][indxc[l]] );
             }
         }
     }
