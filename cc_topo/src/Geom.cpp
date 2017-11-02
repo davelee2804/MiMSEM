@@ -117,8 +117,8 @@ void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
     int* inds_0 = topo->elInds0_l(ex, ey);
     double* c1 = x[inds_0[0]];
     double* c2 = x[inds_0[mp1-1]];
-    double* c3 = x[inds_0[(mp1-1)*(mp1)]];
-    double* c4 = x[inds_0[mp1*mp1-1]];
+    double* c3 = x[inds_0[mp1*mp1-1]];
+    double* c4 = x[inds_0[(mp1-1)*(mp1)]];
     double* ss = s[inds_0[py*mp1+px]];
     double x1, x2, rTildeMagInv;
     double rTilde[3];
@@ -126,25 +126,25 @@ void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
 
     x1 = quad->x[px];
     x2 = quad->x[py];
-    rTilde[0] = 0.25*((1.0-x1)*(1.0-x2)*c1[0] + (1.0+x1)*(1.0-x2)*c2[0] + (1.0-x1)*(1.0+x2)*c3[0] + (1.0+x1)*(1.0+x2)*c4[0]);
-    rTilde[1] = 0.25*((1.0-x1)*(1.0-x2)*c1[1] + (1.0+x1)*(1.0-x2)*c2[1] + (1.0-x1)*(1.0+x2)*c3[1] + (1.0+x1)*(1.0+x2)*c4[1]);
-    rTilde[2] = 0.25*((1.0-x1)*(1.0-x2)*c1[2] + (1.0+x1)*(1.0-x2)*c2[2] + (1.0-x1)*(1.0+x2)*c3[2] + (1.0+x1)*(1.0+x2)*c4[2]);
+    rTilde[0] = 0.25*((1.0-x1)*(1.0-x2)*c1[0] + (1.0+x1)*(1.0-x2)*c2[0] + (1.0+x1)*(1.0+x2)*c3[0] + (1.0-x1)*(1.0+x2)*c4[0]);
+    rTilde[1] = 0.25*((1.0-x1)*(1.0-x2)*c1[1] + (1.0+x1)*(1.0-x2)*c2[1] + (1.0+x1)*(1.0+x2)*c3[1] + (1.0-x1)*(1.0+x2)*c4[1]);
+    rTilde[2] = 0.25*((1.0-x1)*(1.0-x2)*c1[2] + (1.0+x1)*(1.0-x2)*c2[2] + (1.0+x1)*(1.0+x2)*c3[2] + (1.0-x1)*(1.0+x2)*c4[2]);
     rTildeMagInv = 1.0/sqrt(rTilde[0]*rTilde[0] + rTilde[1]*rTilde[1] + rTilde[2]*rTilde[2]);
 
     A[0][0] = -sin(ss[0]); A[0][1] = +cos(ss[0]); A[0][2] = 0.0;
     A[1][0] =         0.0; A[1][1] =         0.0; A[1][2] = 1.0;
 
-    B[0][0] = sin(ss[0])*sin(ss[0])*cos(ss[1])*cos(ss[1]) + sin(ss[1])*sin(ss[1]);
+    B[0][0] = +sin(ss[0])*sin(ss[0])*cos(ss[1])*cos(ss[1]) + sin(ss[1])*sin(ss[1]);
     B[0][1] = -0.5*sin(2.0*ss[0])*cos(ss[1])*cos(ss[1]);
     B[0][2] = -0.5*cos(ss[0])*sin(2.0*ss[1]);
 
     B[1][0] = -0.5*sin(2.0*ss[0])*cos(ss[1])*cos(ss[1]);
-    B[1][1] = cos(ss[0])*cos(ss[0])*cos(ss[1])*cos(ss[1]) + sin(ss[1])*sin(ss[1]);
+    B[1][1] = +cos(ss[0])*cos(ss[0])*cos(ss[1])*cos(ss[1]) + sin(ss[1])*sin(ss[1]);
     B[1][2] = -0.5*sin(ss[0])*sin(2.0*ss[1]);
 
     B[2][0] = -cos(ss[0])*sin(ss[1]);
     B[2][1] = -sin(ss[0])*sin(ss[1]);
-    B[2][2] = cos(ss[1]);
+    B[2][2] = +cos(ss[1]);
 
     C[0][0] = c1[0]; C[0][1] = c2[0]; C[0][2] = c3[0]; C[0][3] = c4[0];
     C[1][0] = c1[1]; C[1][1] = c2[1]; C[1][2] = c3[1]; C[1][3] = c4[1];
@@ -182,10 +182,10 @@ void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
         }
     }
 
-    J[0][0] = 0.25*rTildeMagInv*J[0][0];
-    J[0][1] = 0.25*rTildeMagInv*J[0][1];
-    J[1][0] = 0.25*rTildeMagInv*J[1][0];
-    J[1][1] = 0.25*rTildeMagInv*J[1][1];
+    J[0][0] *= 0.25*rTildeMagInv;
+    J[0][1] *= 0.25*rTildeMagInv;
+    J[1][0] *= 0.25*rTildeMagInv;
+    J[1][1] *= 0.25*rTildeMagInv;
 }
 
 double Geom::jacDet(int ex, int ey, int px, int py, double** J) {
