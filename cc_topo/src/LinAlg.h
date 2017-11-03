@@ -8,3 +8,4 @@ void MultVec_IP(int ni, int nj, int nk, double** A1, double** B1, double** A2, d
 double** Tran(int ni, int nj, double** A);
 void Tran_IP(int ni, int nj, double** A, double** B);
 int Inv( double** A, double** Ainv, int n );
+void Inverse( double** A, double** Ainv, int n );

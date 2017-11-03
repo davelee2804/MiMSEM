@@ -435,7 +435,6 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     VecDestroy(&UQb);
 }
 
-/*
 void SWEqn::init2(Vec h, ICfunc* func) {
     int ex, ey, ii, mp1, mp12;
     int *inds0;
@@ -472,6 +471,7 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     KSPSetOperators(ksp, M2->M, M2->M);
     KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
+    KSPSetFromOptions(ksp);
     KSPSolve(ksp, WQb, h);
 
     delete WQ;
@@ -480,8 +480,8 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     VecDestroy(&bg);
     VecDestroy(&WQb);
 }
-*/
 
+/*
 void SWEqn::init2(Vec h, ICfunc* func) {
     int ex, ey, ii, jj, mp1, mp12, nn, n2, err, rank;
     int *inds0, *inds2;
@@ -520,10 +520,11 @@ void SWEqn::init2(Vec h, ICfunc* func) {
             Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, JWt, Q->A, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, JW, WtQW);
 
-            err = Inv(WtQW,WtQWinv,W->nDofsJ);
-            if( err > 0 ) {
-                cout << rank << ": mat inv error (" << err << "): " << ex << "\t" << ey << endl;
-            } 
+            //err = Inv(WtQW,WtQWinv,W->nDofsJ);
+            //if( err > 0 ) {
+            //    cout << rank << ": mat inv error (" << err << "): " << ex << "\t" << ey << endl;
+            //} 
+            Inverse(WtQW,WtQWinv,W->nDofsJ);
 
             Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsJ, WtQWinv, WtQ, WinvW);
 
@@ -551,3 +552,4 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     delete J;
     VecDestroy(&hl);
 }
+*/
