@@ -6,6 +6,7 @@
 #include <petsc.h>
 #include <petscvec.h>
 
+#include "LinAlg.h"
 #include "Basis.h"
 #include "Topo.h"
 #include "Geom.h"
@@ -16,7 +17,7 @@
 using namespace std;
 
 #define EL_ORD 3
-#define N_ELS_X_LOC 8
+#define N_ELS_X_LOC 4
 
 // initial condition given by:
 //     Galewsky, Scott and Polvani (2004) Tellus, 56A 429-440
@@ -33,7 +34,6 @@ double u_init(double* x) {
     else {
         return (umax/en)*exp(1.0/((phi - phi0)*(phi - phi1)));
     }
-    //return 1.0/(cosh(x[2])*cosh(x[2]));
 }
 
 double v_init(double* x) {
@@ -58,23 +58,23 @@ double h_init(double* x) {
     double x2[3];
     int sgn = (phi > 0) ? +1 : -1;
 
-    x2[0] = x[0]; x2[1] = x[1];
+    x2[0] = x[0];
+    x2[1] = x[1];
     for(ii = 0; ii < ni; ii++) {
         phiPrime += sgn*dphi;
         x2[2] = asin(phiPrime);
         u = u_init(x2);
         f = 2.0*omega*sin(phiPrime);
-        h -= 1.0*u*(f + tan(phiPrime)*u)*dphi/grav;
+        h -= 1.0*u*(f + tan(phiPrime)*u/1.0)*dphi/grav;
     }
 
     h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
 
     return h;
-    //return 1.0 + 0.1*tanh(x[2]);
 }
 
 int main(int argc, char** argv) {
-    int rank, size, step;
+    int size, rank, step;
     static char help[] = "petsc";
     double dt = 0.1*(2.0*M_PI/(4.0*12))/(80.0/6371220.0);
     Topo* topo;
@@ -91,7 +91,6 @@ int main(int argc, char** argv) {
 
     topo = new Topo(rank, EL_ORD, N_ELS_X_LOC);
     geom = new Geom(rank, topo);
-
     sw = new SWEqn(topo, geom);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);

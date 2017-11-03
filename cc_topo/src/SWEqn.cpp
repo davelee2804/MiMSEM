@@ -7,6 +7,7 @@
 #include <petscpc.h>
 #include <petscksp.h>
 
+#include "LinAlg.h"
 #include "Basis.h"
 #include "Topo.h"
 #include "Geom.h"
