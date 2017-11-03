@@ -415,24 +415,26 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     VecScatterCreate(bg, isg, bl, isl, &scat);
     VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterDestroy(&scat);
-    ISDestroy(&isl);
-    ISDestroy(&isg);
-    delete[] loc02;
 
     MatMult(UQ->M, bg, UQb);
 
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M1->M, M1->M);
-    KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
+    KSPSetOptionsPrefix(ksp,"init1_");
+    KSPSetFromOptions(ksp);
     KSPSolve(ksp, UQb, u);
 
-    delete UQ;
-    KSPDestroy(&ksp);
     VecDestroy(&bl);
     VecDestroy(&bg);
     VecDestroy(&UQb);
+    KSPDestroy(&ksp);
+    ISDestroy(&isl);
+    ISDestroy(&isg);
+    VecScatterDestroy(&scat);
+    delete UQ;
+    delete[] loc02;
 }
 
 void SWEqn::init2(Vec h, ICfunc* func) {
@@ -469,8 +471,9 @@ void SWEqn::init2(Vec h, ICfunc* func) {
 
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M2->M, M2->M);
-    KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
+    KSPSetOptionsPrefix(ksp,"init2_");
     KSPSetFromOptions(ksp);
     KSPSolve(ksp, WQb, h);
 

@@ -310,6 +310,7 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     sprintf(filename, "%s_%.4u_x.dat", fieldname, tstep);
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
+    VecZeroEntries(uxg);
     VecScatterBegin(topo->gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(topo->gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
     VecView(uxg, viewer);
@@ -323,6 +324,7 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     sprintf(filename, "%s_%.4u_y.dat", fieldname, tstep);
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
+    VecZeroEntries(uxg);
     VecScatterBegin(topo->gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(topo->gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
     VecView(uxg, viewer);

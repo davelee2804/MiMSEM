@@ -618,7 +618,7 @@ void UtQmat::assemble() {
             MultVec_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aba, U->A, J->Abb, V->A, JV);
 
             Tran_IP(J->nDofsI, U->nDofsJ, JU, JUt);
-            Tran_IP(J->nDofsI, U->nDofsJ, JU, JUt);
+            Tran_IP(J->nDofsI, V->nDofsJ, JV, JVt);
 
             Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, JUt, Q->A, UtQ);
             Mult_IP(V->nDofsJ, Q->nDofsJ, V->nDofsI, JVt, Q->A, VtQ);
