@@ -1,6 +1,3 @@
-double** Alloc2D(int ni, int nj);
-void Free2D(int ni, double** A);
-
 class Umat {
     public:
         Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);

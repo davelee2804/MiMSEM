@@ -5,6 +5,7 @@
 #include <petscvec.h>
 #include <petscmat.h>
 
+#include "LinAlg.h"
 #include "Basis.h"
 #include "Topo.h"
 #include "Geom.h"
@@ -12,57 +13,6 @@
 #include "Assembly.h"
 
 using namespace std;
-
-void Free2D(int ni, double** A) {
-    int ii;
-
-    for(ii = 0; ii < ni; ii++) {
-        delete[] A[ii];
-    }
-    delete[] A;
-}
-
-double* Flat2D(int ni, int nj, double** A) {
-    int ii, jj, kk;
-    double* Aflat = new double[ni*nj];
-
-    kk = 0;
-    for(ii = 0; ii < ni; ii++) {
-        for(jj = 0; jj < nj; jj++) {
-            Aflat[kk] = A[ii][jj];
-            kk++;
-        }
-    }
-
-    return Aflat;
-}
-
-void Flat2D_IP(int ni, int nj, double** A, double* Aflat) {
-    int ii, jj, kk;
-
-    kk = 0;
-    for(ii = 0; ii < ni; ii++) {
-        for(jj = 0; jj < nj; jj++) {
-            Aflat[kk] = A[ii][jj];
-            kk++;
-        }
-    }
-}
-
-double** Alloc2D(int ni, int nj) {
-    int ii, jj;
-    double** A;
-
-    A = new double*[ni];
-    for(ii = 0; ii < ni; ii++) {
-        A[ii] = new double[nj];
-        for(jj = 0; jj < nj; jj++) {
-            A[ii][jj] = 0.0;
-        }
-    }
-
-    return A;
-}
 
 // mass matrix for the 1 form vector (x-normal degrees of
 // freedom first then y-normal degrees of freedom)
