@@ -91,7 +91,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
 
     // create the local to global index mappings
     ISLocalToGlobalMappingCreate(PETSC_COMM_SELF, 1, n0, loc0, PETSC_COPY_VALUES, &map0);
-    ISLocalToGlobalMappingCreate(PETSC_COMM_SELF, 1, n1x+n1y, loc1, PETSC_COPY_VALUES, &map1);
+    ISLocalToGlobalMappingCreate(PETSC_COMM_SELF, 1, n1, loc1, PETSC_COPY_VALUES, &map1);
     ISLocalToGlobalMappingCreate(PETSC_COMM_SELF, 1, n2, loc2, PETSC_COPY_VALUES, &map2);
 
     // allocate the element indices arrays
@@ -234,7 +234,8 @@ int* Topo::elInds1y_l(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd + 1; iy++) {
         for(ix = 0; ix < elOrd; ix++) {
-            inds1y[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix;
+            //inds1y[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix;
+            inds1y[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix + n1x;
             kk++;
         }
     }
