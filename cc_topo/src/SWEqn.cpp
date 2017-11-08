@@ -375,11 +375,11 @@ void SWEqn::init0(Vec q, ICfunc* func) {
 
 void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     int ex, ey, ii, mp1, mp12;
-    int *inds0;
-    int *loc02;
+    int *inds0, *loc02;
     UtQmat* UQ = new UtQmat(topo, geom, node, edge);
     PetscScalar *bArray;
     KSP ksp;
+    PC pc;
     Vec bl, bg, UQb;
     IS isl, isg;
     VecScatter scat;
@@ -420,7 +420,9 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
 
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M1->M, M1->M);
-    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPGetPC(ksp,&pc);
+    PCSetType(pc, PCMG);
+    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 10000);
     KSPSetType(ksp, KSPGMRES);
     KSPSetOptionsPrefix(ksp,"init1_");
     KSPSetFromOptions(ksp);
