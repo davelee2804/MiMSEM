@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import sys
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import pyplot as plt
@@ -181,7 +182,6 @@ def init_geom(pn, ne, make_image):
 		ax.set_ylabel('y')
 		ax.set_zlabel('z')
 		plt.show()
-		plt.clf()
 
 	xg = np.zeros(6*nx*nx+2,dtype=np.float64)
 	yg = np.zeros(6*nx*nx+2,dtype=np.float64)
@@ -252,30 +252,5 @@ def init_geom(pn, ne, make_image):
 		ax.set_ylabel('y')
 		ax.set_zlabel('z')
 		plt.show()
-		plt.clf()
 
         return xg, yg, zg
-
-pn = 3
-ne = 8
-xg, yg, zg = init_geom(pn, ne, True)
-
-#fig = plt.figure()
-#ax = Axes3D(fig)
-#ax.scatter(xg, yg, zg, c='k')
-#ax.set_xlabel('x')
-#ax.set_ylabel('y')
-#ax.set_zlabel('z')
-#plt.show()
-
-n_procs = 6
-pc = ParaCube(n_procs,pn,ne)
-for pi in np.arange(n_procs):
-	proc = pc.procs[pi]
-	coords = np.zeros((proc.n0g,3),dtype=np.float64)
-	for ii in np.arange(proc.n0g):
-		coords[ii,0] = xg[proc.loc0[ii]]
-		coords[ii,1] = yg[proc.loc0[ii]]
-		coords[ii,2] = zg[proc.loc0[ii]]
-
-	np.savetxt('geom_%.4u'%pi + '.txt', coords, fmt='%.18e')
