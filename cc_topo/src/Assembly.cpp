@@ -778,14 +778,16 @@ void UtQmat::assemble() {
             Tran_IP(J->nDofsI, U->nDofsJ, JU, JUt);
             Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, JUt, Q->A, UtQ);
             Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
-            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_qy, UtQflat, ADD_VALUES);
+            //MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_qy, UtQflat, ADD_VALUES);
+            MatSetValues(M, U->nDofsJ, inds_y, Q->nDofsJ, inds_qx, UtQflat, ADD_VALUES);
           
             //
             Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aba, U->A, JU);
             Tran_IP(J->nDofsI, U->nDofsJ, JU, JUt);
             Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, JUt, Q->A, UtQ);
             Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
-            MatSetValues(M, U->nDofsJ, inds_y, Q->nDofsJ, inds_qx, UtQflat, ADD_VALUES);
+            //MatSetValues(M, U->nDofsJ, inds_y, Q->nDofsJ, inds_qx, UtQflat, ADD_VALUES);
+            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_qy, UtQflat, ADD_VALUES);
           
             //
             Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Abb, V->A, JU);
