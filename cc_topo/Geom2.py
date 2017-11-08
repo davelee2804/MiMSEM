@@ -92,6 +92,9 @@ def init_geom(pn, ne, make_image):
 
 	if make_image:
 		ax.scatter(x1[:nx*nx], y1[:nx*nx], z1[:nx*nx], c='r')
+                #jj=[str(a) for a in np.linspace(0.0,1.0,nx*nx)]
+		#ax.scatter(x1[:nx*nx], y1[:nx*nx], z1[:nx*nx], c=jj)
+		#plot the second hanging node
 		ax.scatter(x1[nx*nx], y1[nx*nx], z1[nx*nx], c='r', marker='s')
 
 	# rotate east +pi/2
@@ -178,6 +181,7 @@ def init_geom(pn, ne, make_image):
 		ax.set_ylabel('y')
 		ax.set_zlabel('z')
 		plt.show()
+		plt.clf()
 
 	xg = np.zeros(6*nx*nx+2,dtype=np.float64)
 	yg = np.zeros(6*nx*nx+2,dtype=np.float64)
@@ -207,6 +211,48 @@ def init_geom(pn, ne, make_image):
 	xg[6*nx*nx+1] = x1[nx*nx]
 	yg[6*nx*nx+1] = y1[nx*nx]
 	zg[6*nx*nx+1] = z1[nx*nx]
+
+	Rx = np.zeros((3,3),dtype=np.float64)
+	Rx[0][0] = 1.0
+	Rx[1][1] = +np.cos(0.25*np.pi)
+	Rx[1][2] = -np.sin(0.25*np.pi)
+	Rx[2][1] = +np.sin(0.25*np.pi)
+	Rx[2][2] = +np.cos(0.25*np.pi)
+	Ry = np.zeros((3,3),dtype=np.float64)
+	Ry[0][0] = -np.sin(0.25*np.pi)
+	Ry[0][2] = +np.cos(0.25*np.pi)
+	Ry[1][1] = 1.0
+	Ry[2][0] = +np.cos(0.25*np.pi)
+	Ry[2][2] = +np.sin(0.25*np.pi)
+	Rxy = np.matmul(Ry,Rx)
+
+        for ii in np.arange(6*nx*nx+2):
+		xk = np.array([xg[ii],yg[ii],zg[ii]],dtype=np.float64)
+		xj = np.zeros((3),dtype=np.float64)
+		for jj in np.arange(3):
+			for kk in np.arange(3):
+				xj[jj] = xj[jj] + Rxy[jj][kk]*xk[kk]
+
+		xg[ii] = xj[0]
+		yg[ii] = xj[1]
+		zg[ii] = xj[2]
+
+	if make_image:
+		fig = plt.figure()
+		ax = Axes3D(fig)
+		ax.scatter(xg[0*nx*nx:1*nx*nx],yg[0*nx*nx:1*nx*nx],zg[0*nx*nx:1*nx*nx],c='g')
+		ax.scatter(xg[1*nx*nx:2*nx*nx],yg[1*nx*nx:2*nx*nx],zg[1*nx*nx:2*nx*nx],c='r')
+		ax.scatter(xg[2*nx*nx:3*nx*nx],yg[2*nx*nx:3*nx*nx],zg[2*nx*nx:3*nx*nx],c='b')
+		ax.scatter(xg[3*nx*nx:4*nx*nx],yg[3*nx*nx:4*nx*nx],zg[3*nx*nx:4*nx*nx],c='c')
+		ax.scatter(xg[4*nx*nx:5*nx*nx],yg[4*nx*nx:5*nx*nx],zg[4*nx*nx:5*nx*nx],c='m')
+		ax.scatter(xg[5*nx*nx:6*nx*nx],yg[5*nx*nx:6*nx*nx],zg[5*nx*nx:6*nx*nx],c='y')
+		ax.scatter(xg[6*nx*nx+0],yg[6*nx*nx+0],zg[6*nx*nx+0],c='g')
+		ax.scatter(xg[6*nx*nx+1],yg[6*nx*nx+1],zg[6*nx*nx+1],c='r')
+		ax.set_xlabel('x')
+		ax.set_ylabel('y')
+		ax.set_zlabel('z')
+		plt.show()
+		plt.clf()
 
         return xg, yg, zg
 
