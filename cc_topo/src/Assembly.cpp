@@ -14,6 +14,8 @@
 
 using namespace std;
 
+#define VIEW_MAT
+
 // mass matrix for the 1 form vector (x-normal degrees of
 // freedom first then y-normal degrees of freedom)
 Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
@@ -189,6 +191,9 @@ void Umat::assemble() {
     double** VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
     double** VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
     double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
+#ifdef VIEW_MAT
+    PetscViewer viewer;
+#endif
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
@@ -236,6 +241,13 @@ void Umat::assemble() {
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+#ifdef VIEW_MAT
+    PetscViewerASCIIOpen(PETSC_COMM_WORLD, "mat.dat", &viewer);
+    MatView(M, viewer);
+    PetscViewerDestroy(&viewer);
+    MatView(M, PETSC_VIEWER_DRAW_WORLD);
+#endif
 
     Free2D(J->nDofsI, JxU);
     Free2D(J->nDofsI, JxV);
