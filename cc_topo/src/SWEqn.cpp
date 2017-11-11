@@ -421,8 +421,9 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M1->M, M1->M);
     KSPGetPC(ksp,&pc);
-    PCSetType(pc, PCMG);
-    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 10000);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, 2, NULL);
+    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
     KSPSetOptionsPrefix(ksp,"init1_");
     KSPSetFromOptions(ksp);
