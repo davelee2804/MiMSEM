@@ -4,9 +4,9 @@ import sys
 import numpy as np
 from Proc2 import *
 
-n_procs = 6
 pn = 3
 ne = int(sys.argv[1])
+n_procs = int(sys.argv[2])
 pc = ParaCube(n_procs,pn,ne)
 
 for pi in np.arange(n_procs):

@@ -20,7 +20,7 @@ xg, yg, zg = init_geom(pn, ne, False)
 #ax.set_zlabel('z')
 #plt.show()
 
-n_procs = 6
+n_procs = int(sys.argv[2])
 pc = ParaCube(n_procs,pn,ne)
 for pi in np.arange(n_procs):
 	proc = pc.procs[pi]
