@@ -808,8 +808,10 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     JW = Alloc2D(J2->nDofsI, W->nDofsJ);
     JWt = Alloc2D(W->nDofsJ, J2->nDofsI);
     WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    JU = Alloc2D(J1->nDofsI, U->nDofsJ);
-    JV = Alloc2D(J1->nDofsI, V->nDofsJ);
+    JxU = Alloc2D(J1->nDofsI, U->nDofsJ);
+    JxV = Alloc2D(J1->nDofsI, V->nDofsJ);
+    JyU = Alloc2D(J1->nDofsI, U->nDofsJ);
+    JyV = Alloc2D(J1->nDofsI, V->nDofsJ);
     WtQU = Alloc2D(W->nDofsJ, U->nDofsJ);
     WtQV = Alloc2D(W->nDofsJ, V->nDofsJ);
     WtQUflat = new double[W->nDofsJ*U->nDofsJ];
@@ -858,12 +860,14 @@ void WtQUmat::assemble(Vec u1) {
             Tran_IP(J2->nDofsI, W->nDofsJ, JW, JWt);
 
             // Piola transform for H(div) elements
-            MultVec_IP(J1->nDofsI, U->nDofsJ, U->nDofsI, J1->Aaa, U->A, J1->Aab, V->A, JU);
-            MultVec_IP(J1->nDofsI, U->nDofsJ, U->nDofsI, J1->Aba, U->A, J1->Abb, V->A, JV);
+            Mult_IP(J1->nDofsI, U->nDofsJ, U->nDofsI, J1->Aaa, U->A, JxU);
+            Mult_IP(J1->nDofsI, U->nDofsJ, U->nDofsI, J1->Aab, V->A, JxV);
+            Mult_IP(J1->nDofsI, U->nDofsJ, U->nDofsI, J1->Aba, U->A, JyU);
+            Mult_IP(J1->nDofsI, U->nDofsJ, U->nDofsI, J1->Abb, V->A, JyV);
 
             Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, JWt, Q->A, WtQ);
-            Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQ, JU, WtQU);
-            Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQ, JV, WtQV);
+            Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQ, JxU, WtQU);
+            Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQ, JyV, WtQV);
 
             Flat2D_IP(W->nDofsJ, U->nDofsJ, WtQU, WtQUflat);
             Flat2D_IP(W->nDofsJ, V->nDofsJ, WtQV, WtQVflat);
@@ -888,8 +892,10 @@ WtQUmat::~WtQUmat() {
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, JWt);
     Free2D(J2->nDofsI, JW);
-    Free2D(J1->nDofsI, JU);
-    Free2D(J1->nDofsI, JV);
+    Free2D(J1->nDofsI, JxU);
+    Free2D(J1->nDofsI, JxV);
+    Free2D(J1->nDofsI, JyU);
+    Free2D(J1->nDofsI, JyV);
     delete[] WtQUflat;
     delete[] WtQVflat;
     delete[] ckx;
@@ -917,17 +923,20 @@ RotMat::RotMat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     V = new M1y_j_xy_i(l, e);
     Uq = new M1x_j_Dxy_i(l, e);
     Vq = new M1y_j_Dxy_i(l, e);
-    JU = Alloc2D(J->nDofsI, U->nDofsJ);
-    JV = Alloc2D(J->nDofsI, V->nDofsJ);
-    JUt = Alloc2D(U->nDofsJ, J->nDofsI);
-    JVt = Alloc2D(V->nDofsJ, J->nDofsI);
+    JxU = Alloc2D(J->nDofsI, U->nDofsJ);
+    JxV = Alloc2D(J->nDofsI, V->nDofsJ);
+    JyU = Alloc2D(J->nDofsI, U->nDofsJ);
+    JyV = Alloc2D(J->nDofsI, V->nDofsJ);
+    JxUt = Alloc2D(U->nDofsJ, J->nDofsI);
+    JyVt = Alloc2D(V->nDofsJ, J->nDofsI);
     UtQ = Alloc2D(U->nDofsJ, Q->nDofsJ);
     VtQ = Alloc2D(V->nDofsJ, Q->nDofsJ);
+    UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
     UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
     VtQU = Alloc2D(V->nDofsJ, V->nDofsJ);
+    VtQV = Alloc2D(V->nDofsJ, V->nDofsJ);
 
-    UtQVflat = new double[U->nDofsJ*V->nDofsJ];
-    VtQUflat = new double[V->nDofsJ*U->nDofsJ];
+    UtQUflat = new double[U->nDofsJ*V->nDofsJ];
     ckx = new double[(l->n+1)*(l->n+1)];
     cky = new double[(l->n+1)*(l->n+1)];
 
@@ -949,6 +958,9 @@ void RotMat::assemble(Vec q0) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
             J->assemble(ex, ey);
@@ -961,30 +973,39 @@ void RotMat::assemble(Vec q0) {
             Uq->assemble(cky);
             Vq->assemble(ckx);
 
-            // incorporate vector preserving (piola) transforms for trial and test functions
-            MultVec_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aaa, U->A, J->Aab, V->A, JU);
-            MultVec_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aba, U->A, J->Abb, V->A, JV);
-            Tran_IP(J->nDofsI, U->nDofsJ, JU, JUt);
-            Tran_IP(J->nDofsI, V->nDofsJ, JV, JVt);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aaa, U->A, JxU);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Abb, V->A, JyV);
+
+            Tran_IP(J->nDofsI, U->nDofsJ, JxU, JxUt);
+            Tran_IP(J->nDofsI, V->nDofsJ, JyV, JyVt);
+
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, JxUt, Q->A, UtQ);
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, JyVt, Q->A, VtQ);
 
             // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
-            MultVec_IP(J->nDofsI, Uq->nDofsJ, Uq->nDofsI, J->Aaa, Uq->A, J->Aab, Vq->A, JU);
-            MultVec_IP(J->nDofsI, Uq->nDofsJ, Uq->nDofsI, J->Aba, Uq->A, J->Abb, Vq->A, JV);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aaa, Uq->A, JxU);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aab, Vq->A, JxV);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aba, Uq->A, JyU);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Abb, Vq->A, JyV);
 
-            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, JUt, Q->A, UtQ);
-            Mult_IP(V->nDofsJ, Q->nDofsJ, Q->nDofsI, JVt, Q->A, VtQ);
+            // take cross product by multiplying the x projection of the row vector with
+            // the y component of the column vector and vice versa
+            Mult_IP(U->nDofsJ, U->nDofsJ, U->nDofsI, UtQ, JyU, UtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, U->nDofsI, UtQ, JyV, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, V->nDofsI, VtQ, JxU, VtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, V->nDofsI, VtQ, JxV, VtQV);
 
-            Mult_IP(U->nDofsJ, Vq->nDofsJ, U->nDofsI, UtQ, JV, UtQV);
-            Mult_IP(V->nDofsJ, Uq->nDofsJ, V->nDofsI, VtQ, JU, VtQU);
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, V->nDofsJ, UtQV, UtQVflat);
-            Flat2D_IP(V->nDofsJ, U->nDofsJ, VtQU, VtQUflat);
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
 
-            inds_x = topo->elInds1x_g(ex, ey);
-            inds_y = topo->elInds1y_g(ex, ey);
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
 
-            MatSetValues(M, U->nDofsJ, inds_x, Vq->nDofsJ, inds_y, UtQVflat, ADD_VALUES);
-            MatSetValues(M, V->nDofsJ, inds_y, Uq->nDofsJ, inds_x, VtQUflat, ADD_VALUES);
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
         }
     }
     VecRestoreArray(q0, &q0Array);
@@ -994,16 +1015,19 @@ void RotMat::assemble(Vec q0) {
 }
 
 RotMat::~RotMat() {
-    Free2D(J->nDofsI, JU);
-    Free2D(J->nDofsI, JV);
-    Free2D(U->nDofsJ, JUt);
-    Free2D(V->nDofsJ, JVt);
+    Free2D(J->nDofsI, JxU);
+    Free2D(J->nDofsI, JxV);
+    Free2D(J->nDofsI, JyU);
+    Free2D(J->nDofsI, JyV);
+    Free2D(U->nDofsJ, JxUt);
+    Free2D(V->nDofsJ, JyVt);
     Free2D(U->nDofsJ, UtQ);
     Free2D(V->nDofsJ, VtQ);
+    Free2D(U->nDofsJ, UtQU);
     Free2D(U->nDofsJ, UtQV);
     Free2D(V->nDofsJ, VtQU);
-    delete[] UtQVflat;
-    delete[] VtQUflat;
+    Free2D(V->nDofsJ, VtQV);
+    delete[] UtQUflat;
     delete[] ckx;
     delete[] cky;
     delete Q;

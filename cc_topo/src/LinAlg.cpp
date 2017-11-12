@@ -93,21 +93,6 @@ void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
     }
 }
 
-// Sum of two matrix products into a new matrix (supplied)
-// For application of the Piola transform for H(div) elements
-void MultVec_IP(int ni, int nj, int nk, double** A1, double** B1, double** A2, double** B2, double** C) {
-    int ii, jj, kk;
-
-    for(ii = 0; ii < ni; ii++) {
-        for(jj = 0; jj < nj; jj++) {
-            C[ii][jj] = 0.0;
-            for(kk = 0; kk < nk; kk++) {
-                C[ii][jj] += A1[ii][kk]*B1[kk][jj] + A2[ii][kk]*B2[kk][jj];
-            }
-        }
-    }
-}
-
 // Matrix transpose into a new matrix
 double** Tran(int ni, int nj, double** A) {
     int ii, jj;
