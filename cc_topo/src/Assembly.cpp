@@ -216,7 +216,6 @@ void Pmat::assemble() {
     MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 2*P->nDofsJ, PETSC_NULL);
-    //MatSetLocalToGlobalMapping(M, topo->map0, topo->map0);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -255,16 +254,19 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     Uh = new M1x_j_Fxy_i(l, e, geom);
     Vh = new M1y_j_Fxy_i(l, e, geom);
 
-    JU = Alloc2D(J->nDofsI, U->nDofsJ);
-    JV = Alloc2D(J->nDofsI, V->nDofsJ);
-    JUt = Alloc2D(U->nDofsJ, J->nDofsI);
-    JVt = Alloc2D(V->nDofsJ, J->nDofsI);
+    JxU = Alloc2D(J->nDofsI, U->nDofsJ);
+    JxV = Alloc2D(J->nDofsI, U->nDofsJ);
+    JyU = Alloc2D(J->nDofsI, V->nDofsJ);
+    JyV = Alloc2D(J->nDofsI, V->nDofsJ);
+    JxUt = Alloc2D(U->nDofsJ, J->nDofsI);
+    JyVt = Alloc2D(V->nDofsJ, J->nDofsI);
     UtQ = Alloc2D(U->nDofsJ, Q->nDofsJ);
     VtQ = Alloc2D(V->nDofsJ, Q->nDofsJ);
     UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    VtQU = Alloc2D(V->nDofsJ, V->nDofsJ);
     VtQV = Alloc2D(V->nDofsJ, V->nDofsJ);
     UtQUflat = new double[U->nDofsJ*U->nDofsJ];
-    VtQVflat = new double[V->nDofsJ*V->nDofsJ];
     ck = new double[l->n*l->n];
 
     MatCreate(MPI_COMM_WORLD, &M);
@@ -285,6 +287,9 @@ void Uhmat::assemble(Vec h2) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
             // incorporate the jacobian transformation for each element
             Q->assemble(ex, ey);
             J->assemble(ex, ey);
@@ -296,28 +301,37 @@ void Uhmat::assemble(Vec h2) {
             Uh->assemble(ex, ey, ck);
             Vh->assemble(ex, ey, ck);
 
-            MultVec_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aaa, U->A, J->Aab, V->A, JU);
-            MultVec_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aba, U->A, J->Abb, V->A, JV);
-            Tran_IP(J->nDofsI, U->nDofsJ, JU, JUt);
-            Tran_IP(J->nDofsI, V->nDofsJ, JV, JVt);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aaa, U->A, JxU);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Abb, V->A, JyV);
+
+            Tran_IP(J->nDofsI, U->nDofsJ, JxU, JxUt);
+            Tran_IP(J->nDofsI, V->nDofsJ, JyV, JyVt);
+
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, JxUt, Q->A, UtQ);
+            Mult_IP(V->nDofsJ, Q->nDofsJ, Q->nDofsI, JyVt, Q->A, VtQ);
 
             // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
-            MultVec_IP(J->nDofsI, Uh->nDofsJ, Uh->nDofsI, J->Aaa, Uh->A, J->Aab, Vh->A, JU);
-            MultVec_IP(J->nDofsI, Uh->nDofsJ, Uh->nDofsI, J->Aba, Uh->A, J->Abb, Vh->A, JV);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aaa, Uh->A, JxU);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aab, Vh->A, JxV);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aba, Uh->A, JyU);
+            Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Abb, Vh->A, JyV);
 
-            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, JUt, Q->A, UtQ);
-            Mult_IP(V->nDofsJ, Q->nDofsJ, Q->nDofsI, JVt, Q->A, VtQ);
-            Mult_IP(U->nDofsJ, Uh->nDofsJ, Q->nDofsJ, UtQ, JU, UtQU);
-            Mult_IP(V->nDofsJ, Vh->nDofsJ, Q->nDofsJ, VtQ, JV, VtQV);
+            Mult_IP(U->nDofsJ, Uh->nDofsJ, Q->nDofsJ, UtQ, JxU, UtQU);
+            Mult_IP(U->nDofsJ, Uh->nDofsJ, Q->nDofsJ, UtQ, JxV, UtQV);
+            Mult_IP(U->nDofsJ, Uh->nDofsJ, Q->nDofsJ, VtQ, JyU, VtQU);
+            Mult_IP(U->nDofsJ, Uh->nDofsJ, Q->nDofsJ, VtQ, JyV, VtQV);
 
-            Flat2D_IP(Uh->nDofsJ, Uh->nDofsJ, UtQU, UtQUflat);
-            Flat2D_IP(Vh->nDofsJ, Vh->nDofsJ, VtQV, VtQVflat);
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
 
-            inds_x = topo->elInds1x_g(ex, ey);
-            inds_y = topo->elInds1y_g(ex, ey);
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
 
-            MatSetValues(M, Uh->nDofsJ, inds_x, Uh->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
-            MatSetValues(M, Vh->nDofsJ, inds_y, Vh->nDofsJ, inds_y, VtQVflat, ADD_VALUES);
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
         }
     }
     VecRestoreArray(h2, &h2Array);
@@ -328,16 +342,19 @@ void Uhmat::assemble(Vec h2) {
 
 Uhmat::~Uhmat() {
     delete[] UtQUflat;
-    delete[] VtQVflat;
     delete[] ck;
 
-    Free2D(J->nDofsI, JU);
-    Free2D(J->nDofsI, JV);
-    Free2D(Uh->nDofsJ, JUt);
-    Free2D(Vh->nDofsJ, JVt);
+    Free2D(J->nDofsI, JxU);
+    Free2D(J->nDofsI, JxV);
+    Free2D(J->nDofsI, JyU);
+    Free2D(J->nDofsI, JyV);
+    Free2D(Uh->nDofsJ, JxUt);
+    Free2D(Vh->nDofsJ, JyVt);
     Free2D(Uh->nDofsJ, UtQ);
     Free2D(Vh->nDofsJ, VtQ);
     Free2D(Uh->nDofsJ, UtQU);
+    Free2D(Uh->nDofsJ, UtQV);
+    Free2D(Vh->nDofsJ, VtQU);
     Free2D(Vh->nDofsJ, VtQV);
 
     delete U;
@@ -704,7 +721,6 @@ PtQUmat::PtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatSetSizes(M, topo->n0l, topo->n1l, topo->nDofs0G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-    //MatSetLocalToGlobalMapping(M, topo->map0, topo->map1);
 
     Free2D(P->nDofsJ, Pt);
     delete Q;
@@ -1016,7 +1032,6 @@ E10mat::E10mat(Topo* _topo) {
     MatSetSizes(E10, topo->n1l, topo->n0l, topo->nDofs1G, topo->nDofs0G);
     MatSetType(E10, MATMPIAIJ);
     MatMPIAIJSetPreallocation(E10, 4, PETSC_NULL, 4, PETSC_NULL);
-    //MatSetLocalToGlobalMapping(E10, topo->map1, topo->map0);
     MatZeroEntries(E10);
     
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -1083,7 +1098,6 @@ E21mat::E21mat(Topo* _topo) {
     MatSetSizes(E21, topo->n2l, topo->n1l, topo->nDofs2G, topo->nDofs1G);
     MatSetType(E21, MATMPIAIJ);
     MatMPIAIJSetPreallocation(E21, 4, PETSC_NULL, 4, PETSC_NULL);
-    //MatSetLocalToGlobalMapping(E21, topo->map2, topo->map1);
     MatZeroEntries(E21);
     
     for(ey = 0; ey < topo->nElsX; ey++) {

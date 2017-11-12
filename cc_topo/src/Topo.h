@@ -28,9 +28,6 @@ class Topo {
         int* inds1x;  // element indices for x-normal edges on this processor
         int* inds1y;  // element indices for y-normal edges on this processor
         int* inds2;   // element indices for faces on this processor
-        ISLocalToGlobalMapping map0;
-        ISLocalToGlobalMapping map1;
-        ISLocalToGlobalMapping map2;
         IS is_l_0;
         IS is_g_0;
         IS is_l_1;

@@ -89,11 +89,6 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     loc2 = new int[n2];
     loadObjs(filename, loc2);
 
-    // create the local to global index mappings
-    ISLocalToGlobalMappingCreate(PETSC_COMM_SELF, 1, n0, loc0, PETSC_COPY_VALUES, &map0);
-    ISLocalToGlobalMappingCreate(PETSC_COMM_SELF, 1, n1, loc1, PETSC_COPY_VALUES, &map1);
-    ISLocalToGlobalMappingCreate(PETSC_COMM_SELF, 1, n2, loc2, PETSC_COPY_VALUES, &map2);
-
     // allocate the element indices arrays
     inds0 = new int[(elOrd+1)*(elOrd+1)];
     inds1x = new int[(elOrd)*(elOrd+1)];
@@ -166,10 +161,6 @@ Topo::~Topo() {
     delete[] inds1x;
     delete[] inds1y;
     delete[] inds2;
-
-    ISLocalToGlobalMappingDestroy(&map0);
-    ISLocalToGlobalMappingDestroy(&map1);
-    ISLocalToGlobalMappingDestroy(&map2);
 
     ISDestroy(&is_g_0);
     ISDestroy(&is_g_1);
