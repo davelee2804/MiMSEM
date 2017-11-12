@@ -133,7 +133,7 @@ M1x_j_Cxy_i::M1x_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge, Geom* _geom) 
 void M1x_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
     int ii, jj, kk;
     int mi, nj, nn, np1, mp1;
-    double li, ei, ckx, cky, jac, jacInv;
+    double li, ei, ckx, cky, jac, uz, um, fac;
 
     nn = node->n;
     np1 = nn + 1;
@@ -147,16 +147,16 @@ void M1x_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
         for(kk = 0; kk < nj; kk++) {
             ckx += cx[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
             cky += cy[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
-            //ckx += cx[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
         }
         jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
-        jacInv = (J[0][0]*ckx + J[0][1]*cky)/jac;
+        uz = (J[0][0]*ckx + J[0][1]*cky)/jac;
+        um = (J[1][0]*ckx + J[1][1]*cky)/jac;
+        fac = 0.5*(uz*J[0][0] + um*J[1][0]);
 
         for(jj = 0; jj < nj; jj++) {
             li = node->ljxi[ii%mp1][jj%np1];
             ei = edge->ejxi[ii/mp1][jj/np1];
-            A[ii][jj] = jacInv*li*ei;
-            //A[ii][jj] = ckx*li*ei;
+            A[ii][jj] = fac*li*ei;
         }
     }
 }
@@ -207,7 +207,7 @@ M1y_j_Cxy_i::M1y_j_Cxy_i(LagrangeNode* _node, LagrangeEdge* _edge, Geom* _geom) 
 void M1y_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
     int ii, jj, kk;
     int mi, nj, nn, np1, mp1;
-    double li, ei, ckx, cky, jac, jacInv;
+    double li, ei, ckx, cky, jac, uz, um, fac;
 
     nn = node->n;
     np1 = nn + 1;
@@ -221,16 +221,16 @@ void M1y_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
         for(kk = 0; kk < nj; kk++) {
             ckx += cx[kk]*node->ljxi[ii%mp1][kk%np1]*edge->ejxi[ii/mp1][kk/np1];
             cky += cy[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
-            //cky += cy[kk]*edge->ejxi[ii%mp1][kk%nn]*node->ljxi[ii/mp1][kk/nn];
         }
         jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
-        jacInv = (J[1][0]*ckx + J[1][1]*cky)/jac;
+        uz = (J[0][0]*ckx + J[0][1]*cky)/jac;
+        um = (J[1][0]*ckx + J[1][1]*cky)/jac;
+        fac = 0.5*(uz*J[0][1] + um*J[1][1]);
 
         for(jj = 0; jj < nj; jj++) {
             ei = edge->ejxi[ii%mp1][jj%nn];
             li = node->ljxi[ii/mp1][jj/nn];
-            A[ii][jj] = jacInv*ei*li;
-            //A[ii][jj] = cky*ei*li;
+            A[ii][jj] = fac*ei*li;
         }
     }
 }

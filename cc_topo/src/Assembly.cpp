@@ -803,15 +803,10 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     V = new M1y_j_Cxy_i(l, e, geom);
     W = new M2_j_xy_i(e);
     Q = new Wii(l->q, geom);
-    J1 = new JacM1(l->q, geom);
     J2 = new JacM2(l->q, geom);
     JW = Alloc2D(J2->nDofsI, W->nDofsJ);
     JWt = Alloc2D(W->nDofsJ, J2->nDofsI);
     WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    JxU = Alloc2D(J1->nDofsI, U->nDofsJ);
-    JxV = Alloc2D(J1->nDofsI, V->nDofsJ);
-    JyU = Alloc2D(J1->nDofsI, U->nDofsJ);
-    JyV = Alloc2D(J1->nDofsI, V->nDofsJ);
     WtQU = Alloc2D(W->nDofsJ, U->nDofsJ);
     WtQV = Alloc2D(W->nDofsJ, V->nDofsJ);
     WtQUflat = new double[W->nDofsJ*U->nDofsJ];
@@ -842,7 +837,6 @@ void WtQUmat::assemble(Vec u1) {
 
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
-            J1->assemble(ex, ey);
             J2->assemble(ex, ey);
 
             // note that we are assembling K = (u.u)/2 onto 2 forms
@@ -859,15 +853,9 @@ void WtQUmat::assemble(Vec u1) {
             Mult_IP(J2->nDofsI, W->nDofsJ, W->nDofsI, J2->A, W->A, JW);
             Tran_IP(J2->nDofsI, W->nDofsJ, JW, JWt);
 
-            // Piola transform for H(div) elements
-            Mult_IP(J1->nDofsI, U->nDofsJ, U->nDofsI, J1->Aaa, U->A, JxU);
-            Mult_IP(J1->nDofsI, U->nDofsJ, U->nDofsI, J1->Aab, V->A, JxV);
-            Mult_IP(J1->nDofsI, U->nDofsJ, U->nDofsI, J1->Aba, U->A, JyU);
-            Mult_IP(J1->nDofsI, U->nDofsJ, U->nDofsI, J1->Abb, V->A, JyV);
-
             Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, JWt, Q->A, WtQ);
-            Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQ, JxU, WtQU);
-            Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQ, JyV, WtQV);
+            Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQ, U->A, WtQU);
+            Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQ, V->A, WtQV);
 
             Flat2D_IP(W->nDofsJ, U->nDofsJ, WtQU, WtQUflat);
             Flat2D_IP(W->nDofsJ, V->nDofsJ, WtQV, WtQVflat);
@@ -892,10 +880,6 @@ WtQUmat::~WtQUmat() {
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, JWt);
     Free2D(J2->nDofsI, JW);
-    Free2D(J1->nDofsI, JxU);
-    Free2D(J1->nDofsI, JxV);
-    Free2D(J1->nDofsI, JyU);
-    Free2D(J1->nDofsI, JyV);
     delete[] WtQUflat;
     delete[] WtQVflat;
     delete[] ckx;
@@ -904,7 +888,6 @@ WtQUmat::~WtQUmat() {
     delete V;
     delete W;
     delete Q;
-    delete J1;
     delete J2;
     MatDestroy(&M);
 }
