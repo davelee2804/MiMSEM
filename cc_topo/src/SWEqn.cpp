@@ -138,6 +138,7 @@ void SWEqn::diagnose_F(Vec u, Vec hl, KSP ksp, Vec* hu) {
 }
 
 void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
+    int rank;
     char fieldname[20];
     Vec wi, wj, uj, hj;
     Vec gh, uu, wv, hu;
@@ -145,6 +146,9 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     Vec bu;
     Vec wl, ul, hl;
     KSP ksp;
+    PC pc;
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     // initialize vectors
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
@@ -170,8 +174,14 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     KSPSetOperators(ksp, M1->M, M1->M);
     KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
+    KSPGetPC(ksp,&pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, 2, NULL);
+    KSPSetOptionsPrefix(ksp,"sw_");
+    KSPSetFromOptions(ksp);
 
     /*** first step ***/
+    if(!rank) cout << "half step..." << endl;
 
     // diagnose the initial vorticity
     diagnose_w(ui, &wi);
@@ -187,6 +197,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecScatterEnd(topo->gtol_2, hi, hl, INSERT_VALUES, SCATTER_FORWARD);
 
     // momemtum equation
+    if(!rank) cout << "\tmomentum eqn" << endl;
     K->assemble(ul);
     R->assemble(wl);
 
@@ -213,6 +224,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     KSPSolve(ksp, bu, uj);
 
     // mass equation
+    if(!rank) cout << "\tcontinuity eqn" << endl;
     diagnose_F(ui, hl, ksp, &hu);
     
     VecZeroEntries(Hi);
@@ -225,6 +237,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecDestroy(&hu);
 
     /*** second step ***/
+    if(!rank) cout << "full step..." << endl;
 
     // diagnose the half step vorticity
     diagnose_w(uj, &wj);
@@ -240,6 +253,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecScatterEnd(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
 
     // momentum equation
+    if(!rank) cout << "\tmomentum eqn" << endl;
     K->assemble(ul);
     R->assemble(wl);
 
@@ -267,6 +281,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     KSPSolve(ksp, bu, uf);
 
     // mass equation
+    if(!rank) cout << "\tcontinuity eqn" << endl;
     diagnose_F(uj, hl, ksp, &hu);
     
     VecZeroEntries(Hj);
@@ -278,6 +293,8 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecAXPY(hf, -0.5*dt, Hj);
 
     VecDestroy(&hu);
+
+    if(!rank) cout << "...done." << endl;
 
     // write fields
     if(save) {

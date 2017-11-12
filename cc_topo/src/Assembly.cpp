@@ -14,7 +14,7 @@
 
 using namespace std;
 
-#define VIEW_MAT
+//#define VIEW_MAT
 
 // mass matrix for the 1 form vector (x-normal degrees of
 // freedom first then y-normal degrees of freedom)
