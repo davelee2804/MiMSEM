@@ -176,7 +176,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     KSPSetType(ksp, KSPGMRES);
     KSPGetPC(ksp,&pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2, NULL);
+    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
     KSPSetOptionsPrefix(ksp,"sw_");
     KSPSetFromOptions(ksp);
 
@@ -439,7 +439,7 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     KSPSetOperators(ksp, M1->M, M1->M);
     KSPGetPC(ksp,&pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2, NULL);
+    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
     KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
     KSPSetOptionsPrefix(ksp,"init1_");

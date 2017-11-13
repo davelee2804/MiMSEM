@@ -844,8 +844,6 @@ void WtQUmat::assemble(Vec u1) {
                 ckx[kk] = 0.5*u1Array[inds_x[kk]];
                 cky[kk] = 0.5*u1Array[inds_y[kk]];
             }
-            //U->assemble(cky);
-            //V->assemble(ckx);
             U->assemble(ex, ey, ckx, cky);
             V->assemble(ex, ey, ckx, cky);
 
