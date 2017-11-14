@@ -72,8 +72,7 @@ class Proc:
 		self.shift0 = self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc
 		#self.shift1x = self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc
 		#self.shift1y = 6*self.nDofsXFace*self.nDofsXFace + self.shift1x
-		self.shift1x = 2*(self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc)
-		self.shift1y = 2*(self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc)
+		self.shift1 = 2*(self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc)
 		self.shift2 = self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc
 
 		# global index arrays
@@ -102,13 +101,13 @@ class Proc:
 		for iy in np.arange(self.nDofsXProc):
 			for ix in np.arange(self.nDofsXProc):
 				#self.loc1x[iy*(self.nDofsXProc+1) + ix] = self.shift1x + iy*self.nDofsXFace + ix
-				self.loc1x[iy*(self.nDofsXProc+1) + ix] = self.shift1x + 2*(iy*self.nDofsXFace + ix)
+				self.loc1x[iy*(self.nDofsXProc+1) + ix] = self.shift1 + 2*(iy*self.nDofsXFace + ix)
 
 		# global indices of local y normal edges
 		for iy in np.arange(self.nDofsXProc):
 			for ix in np.arange(self.nDofsXProc):
 				#self.loc1y[iy*(self.nDofsXProc) + ix] = self.shift1y + iy*self.nDofsXFace + ix
-				self.loc1y[iy*(self.nDofsXProc) + ix] = self.shift1y + 2*(iy*self.nDofsXFace + ix) + 1
+				self.loc1y[iy*(self.nDofsXProc) + ix] = self.shift1 + 2*(iy*self.nDofsXFace + ix) + 1
 
 		# global indices of local faces
 		for iy in np.arange(self.nDofsXProc):

@@ -8,9 +8,10 @@ from matplotlib import pyplot as plt
 from Proc2 import *
 from Geom2 import *
 
-pn = 3
-ne = int(sys.argv[1])
-xg, yg, zg = init_geom(pn, ne, False)
+pn = int(sys.argv[1])
+ne = int(sys.argv[2])
+n_procs = int(sys.argv[3])
+xg, yg, zg = init_geom(pn, ne, True)
 
 #fig = plt.figure()
 #ax = Axes3D(fig)
@@ -20,7 +21,6 @@ xg, yg, zg = init_geom(pn, ne, False)
 #ax.set_zlabel('z')
 #plt.show()
 
-n_procs = int(sys.argv[2])
 pc = ParaCube(n_procs,pn,ne)
 for pi in np.arange(n_procs):
 	proc = pc.procs[pi]

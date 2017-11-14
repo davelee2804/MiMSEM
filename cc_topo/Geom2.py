@@ -213,17 +213,18 @@ def init_geom(pn, ne, make_image):
 	zg[6*nx*nx+1] = z1[nx*nx]
 
 	Rx = np.zeros((3,3),dtype=np.float64)
+	theta = 0.25*np.pi
 	Rx[0][0] = 1.0
-	Rx[1][1] = +np.cos(0.25*np.pi)
-	Rx[1][2] = -np.sin(0.25*np.pi)
-	Rx[2][1] = +np.sin(0.25*np.pi)
-	Rx[2][2] = +np.cos(0.25*np.pi)
+	Rx[1][1] = +np.cos(theta)
+	Rx[1][2] = -np.sin(theta)
+	Rx[2][1] = +np.sin(theta)
+	Rx[2][2] = +np.cos(theta)
 	Ry = np.zeros((3,3),dtype=np.float64)
-	Ry[0][0] = -np.sin(0.25*np.pi)
-	Ry[0][2] = +np.cos(0.25*np.pi)
+	Ry[0][0] = -np.sin(theta)
+	Ry[0][2] = +np.cos(theta)
 	Ry[1][1] = 1.0
-	Ry[2][0] = +np.cos(0.25*np.pi)
-	Ry[2][2] = +np.sin(0.25*np.pi)
+	Ry[2][0] = +np.cos(theta)
+	Ry[2][2] = +np.sin(theta)
 	Rxy = np.matmul(Ry,Rx)
 
         for ii in np.arange(6*nx*nx+2):
@@ -246,8 +247,8 @@ def init_geom(pn, ne, make_image):
 		ax.scatter(xg[3*nx*nx:4*nx*nx],yg[3*nx*nx:4*nx*nx],zg[3*nx*nx:4*nx*nx],c='c')
 		ax.scatter(xg[4*nx*nx:5*nx*nx],yg[4*nx*nx:5*nx*nx],zg[4*nx*nx:5*nx*nx],c='m')
 		ax.scatter(xg[5*nx*nx:6*nx*nx],yg[5*nx*nx:6*nx*nx],zg[5*nx*nx:6*nx*nx],c='y')
-		ax.scatter(xg[6*nx*nx+0],yg[6*nx*nx+0],zg[6*nx*nx+0],c='g')
-		ax.scatter(xg[6*nx*nx+1],yg[6*nx*nx+1],zg[6*nx*nx+1],c='r')
+		ax.scatter(xg[6*nx*nx+0],yg[6*nx*nx+0],zg[6*nx*nx+0],c='g',marker='s')
+		ax.scatter(xg[6*nx*nx+1],yg[6*nx*nx+1],zg[6*nx*nx+1],c='r',marker='s')
 		ax.set_xlabel('x')
 		ax.set_ylabel('y')
 		ax.set_zlabel('z')
