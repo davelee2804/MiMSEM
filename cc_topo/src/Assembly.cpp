@@ -643,7 +643,7 @@ void UtQmat::assemble() {
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n1l, 2*topo->n0l, topo->nDofs1G, 2*topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 4*U->nDofsJ, PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -658,18 +658,25 @@ void UtQmat::assemble() {
             // derive degrees of freedom for y-component of vector at quadrature points
             // by shifting x-components
             // TODO: use vertex major indexing??
-            for(ii = 0; ii < mp12; ii++) {
-                inds_qy[ii] = inds_qx[ii] + topo->nDofs0G;
-            }
+            //for(ii = 0; ii < mp12; ii++) {
+            //    inds_qy[ii] = inds_qx[ii] + topo->nDofs0G;
+            //}
 
             //
+            for(ii = 0; ii < mp12; ii++) {
+                inds_qy[ii] = 2*inds_qx[ii]+0;
+            }
             Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Aaa, U->A, JU);
             Tran_IP(J->nDofsI, U->nDofsJ, JU, JUt);
             Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, JUt, Q->A, UtQ);
             Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
-            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_qx, UtQflat, ADD_VALUES);
+            //MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_qx, UtQflat, ADD_VALUES);
+            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_qy, UtQflat, ADD_VALUES);
           
             //
+            for(ii = 0; ii < mp12; ii++) {
+                inds_qy[ii] = 2*inds_qx[ii]+1;
+            }
             Mult_IP(J->nDofsI, U->nDofsJ, U->nDofsI, J->Abb, V->A, JU);
             Tran_IP(J->nDofsI, U->nDofsJ, JU, JUt);
             Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, JUt, Q->A, UtQ);

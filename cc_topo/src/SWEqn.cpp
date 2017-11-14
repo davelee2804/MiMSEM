@@ -414,8 +414,10 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
-                bArray[inds0[ii]] = func_x(geom->x[inds0[ii]]);
-                bArray[inds0[ii]+topo->n0] = func_y(geom->x[inds0[ii]]);
+                //bArray[inds0[ii]] = func_x(geom->x[inds0[ii]]);
+                //bArray[inds0[ii]+topo->n0] = func_y(geom->x[inds0[ii]]);
+                bArray[2*inds0[ii]+0] = func_x(geom->x[inds0[ii]]);
+                bArray[2*inds0[ii]+1] = func_y(geom->x[inds0[ii]]);
             }
         }
     }
@@ -424,8 +426,10 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     // create a new vec scatter object to handle vector quantity on nodes
     loc02 = new int[2*topo->n0];
     for(ii = 0; ii < topo->n0; ii++) {
-        loc02[ii] = topo->loc0[ii];
-        loc02[ii+topo->n0] = topo->loc0[ii] + topo->nDofs0G;
+        //loc02[ii] = topo->loc0[ii];
+        //loc02[ii+topo->n0] = topo->loc0[ii] + topo->nDofs0G;
+        loc02[2*ii+0] = 2*topo->loc0[ii]+0;
+        loc02[2*ii+1] = 2*topo->loc0[ii]+1;
     }
     ISCreateStride(MPI_COMM_WORLD, 2*topo->n0, 0, 1, &isl);
     ISCreateGeneral(MPI_COMM_WORLD, 2*topo->n0, loc02, PETSC_COPY_VALUES, &isg);
