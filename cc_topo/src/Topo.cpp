@@ -94,10 +94,14 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     loadObjs(filename, loc2);
 
     // allocate the element indices arrays
-    inds0 = new int[(elOrd+1)*(elOrd+1)];
-    inds1x = new int[(elOrd)*(elOrd+1)];
-    inds1y = new int[(elOrd+1)*(elOrd)];
-    inds2 = new int[(elOrd)*(elOrd)];
+    inds0_l  = new int[(elOrd+1)*(elOrd+1)];
+    inds1x_l = new int[(elOrd)*(elOrd+1)];
+    inds1y_l = new int[(elOrd+1)*(elOrd)];
+    inds2_l  = new int[(elOrd)*(elOrd)];
+    inds0_g  = new int[(elOrd+1)*(elOrd+1)];
+    inds1x_g = new int[(elOrd)*(elOrd+1)];
+    inds1y_g = new int[(elOrd+1)*(elOrd)];
+    inds2_g  = new int[(elOrd)*(elOrd)];
 
     // global number of degrees of freedom
     MPI_Comm_size(MPI_COMM_WORLD, &n_procs);
@@ -116,7 +120,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     ISCreateStride(MPI_COMM_SELF, n1, 0, 1, &is_l_1);
     ISCreateStride(MPI_COMM_SELF, n2, 0, 1, &is_l_2);
 
-    // local the local sizes
+    // load the local sizes
     sprintf(filename, "local_sizes_%.4u.txt", pi);
     file.open(filename);
     ii = 0;
@@ -161,10 +165,14 @@ Topo::~Topo() {
     delete[] loc1y;
     delete[] loc2;
 
-    delete[] inds0;
-    delete[] inds1x;
-    delete[] inds1y;
-    delete[] inds2;
+    delete[] inds0_l;
+    delete[] inds1x_l;
+    delete[] inds1y_l;
+    delete[] inds2_l;
+    delete[] inds0_g;
+    delete[] inds1x_g;
+    delete[] inds1y_g;
+    delete[] inds2_g;
 
     ISDestroy(&is_g_0);
     ISDestroy(&is_g_1);
@@ -201,12 +209,12 @@ int* Topo::elInds0_l(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd + 1;  iy++) {
         for(ix = 0; ix < elOrd + 1; ix++) {
-            inds0[kk] = (ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix;
+            inds0_l[kk] = (ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix;
             kk++;
         }
     }
 
-    return inds0;
+    return inds0_l;
 }
 
 int* Topo::elInds1x_l(int ex, int ey) {
@@ -216,12 +224,12 @@ int* Topo::elInds1x_l(int ex, int ey) {
     for(iy = 0; iy < elOrd; iy++) {
         for(ix = 0; ix < elOrd + 1; ix++) {
             //inds1x[kk] = (ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix;
-            inds1x[kk] = 2*((ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix) + 0;
+            inds1x_l[kk] = 2*((ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix) + 0;
             kk++;
         }
     }
 
-    return inds1x;
+    return inds1x_l;
 }
 
 int* Topo::elInds1y_l(int ex, int ey) {
@@ -231,12 +239,12 @@ int* Topo::elInds1y_l(int ex, int ey) {
     for(iy = 0; iy < elOrd + 1; iy++) {
         for(ix = 0; ix < elOrd; ix++) {
             //inds1y[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix + n1x;
-            inds1y[kk] = 2*((ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix) + 1;
+            inds1y_l[kk] = 2*((ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix) + 1;
             kk++;
         }
     }
 
-    return inds1y;
+    return inds1y_l;
 }
 
 int* Topo::elInds2_l(int ex, int ey) {
@@ -245,12 +253,12 @@ int* Topo::elInds2_l(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd ; iy++) {
         for(ix = 0; ix < elOrd; ix++) {
-            inds2[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix;
+            inds2_l[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix;
             kk++;
         }
     }
 
-    return inds2;
+    return inds2_l;
 }
 
 int* Topo::elInds0_g(int ex, int ey) {
@@ -259,12 +267,12 @@ int* Topo::elInds0_g(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd + 1; iy++) {
         for(ix = 0; ix < elOrd + 1; ix++) {
-            inds0[kk] = loc0[(ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix];
+            inds0_g[kk] = loc0[(ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix];
             kk++;
         }
     }
 
-    return inds0;
+    return inds0_g;
 }
 
 int* Topo::elInds1x_g(int ex, int ey) {
@@ -273,12 +281,12 @@ int* Topo::elInds1x_g(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd; iy++) {
         for(ix = 0; ix < elOrd + 1; ix++) {
-            inds1x[kk] = loc1x[(ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix];
+            inds1x_g[kk] = loc1x[(ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix];
             kk++;
         }
     }
 
-    return inds1x;
+    return inds1x_g;
 }
 
 int* Topo::elInds1y_g(int ex, int ey) {
@@ -287,12 +295,12 @@ int* Topo::elInds1y_g(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd + 1; iy++) {
         for(ix = 0; ix < elOrd; ix++) {
-            inds1y[kk] = loc1y[(ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix];
+            inds1y_g[kk] = loc1y[(ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix];
             kk++;
         }
     }
 
-    return inds1y;
+    return inds1y_g;
 }
 
 int* Topo::elInds2_g(int ex, int ey) {
@@ -301,10 +309,10 @@ int* Topo::elInds2_g(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd ; iy++) {
         for(ix = 0; ix < elOrd; ix++) {
-            inds2[kk] = loc2[(ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix];
+            inds2_g[kk] = loc2[(ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix];
             kk++;
         }
     }
 
-    return inds2;
+    return inds2_g;
 }

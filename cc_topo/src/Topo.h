@@ -19,15 +19,19 @@ class Topo {
         int  nDofs0G;
         int  nDofs1G;
         int  nDofs2G;
-        int* loc0;    // global indices of the nodes on this processor
-        int* loc1;    // global indices of the edges on this processor
-        int* loc1x;   // global indices of the x-normal edges on this processor
-        int* loc1y;   // global indices of the y-normal edges on this processor
-        int* loc2;    // global indices of the faces on this processor
-        int* inds0;   // element indices for nodes on this processor
-        int* inds1x;  // element indices for x-normal edges on this processor
-        int* inds1y;  // element indices for y-normal edges on this processor
-        int* inds2;   // element indices for faces on this processor
+        int* loc0;      // global indices of the nodes on this processor
+        int* loc1;      // global indices of the edges on this processor
+        int* loc1x;     // global indices of the x-normal edges on this processor
+        int* loc1y;     // global indices of the y-normal edges on this processor
+        int* loc2;      // global indices of the faces on this processor
+        int* inds0_l;   // element indices for nodes on this processor
+        int* inds1x_l;  // element indices for x-normal edges on this processor
+        int* inds1y_l;  // element indices for y-normal edges on this processor
+        int* inds2_l;   // element indices for faces on this processor
+        int* inds0_g;   // element indices for nodes on this processor
+        int* inds1x_g;  // element indices for x-normal edges on this processor
+        int* inds1y_g;  // element indices for y-normal edges on this processor
+        int* inds2_g;   // element indices for faces on this processor
         IS is_l_0;
         IS is_g_0;
         IS is_l_1;
