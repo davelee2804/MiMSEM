@@ -3,5 +3,9 @@ class Test {
         Test(SWEqn* _sw);
         ~Test();
         SWEqn* sw;
-        void ke(ICfunc* fu, ICfunc* fv);
+        void vorticity(ICfunc* fu, ICfunc* fv);
+        void gradient(ICfunc* fh);
+        void convection(ICfunc* fu, ICfunc* fv);
+        void massFlux(ICfunc* fu, ICfunc* fv, ICfunc* fh);
+        void kineticEnergy(ICfunc* fu, ICfunc* fv);
 };

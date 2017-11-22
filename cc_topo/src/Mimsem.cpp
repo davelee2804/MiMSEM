@@ -107,7 +107,11 @@ int main(int argc, char** argv) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hf);
 
-    test->ke(u_init,v_init);
+    test->vorticity(u_init, v_init);
+    test->gradient(h_init);
+    test->convection(u_init, v_init);
+    test->massFlux(u_init,v_init, h_init);
+    test->kineticEnergy(u_init,v_init);
 
     sw->init1(ui, u_init, v_init);
     sw->init2(hi, h_init);
