@@ -8,13 +8,15 @@ import h5py
 from Geom2 import *
 
 pn = 3
-ne = 12
+ne = 8
 print 'writing image'
 xg, yg, zg = init_geom(pn,ne,False)
 print '...done'
 
 filename = sys.argv[1]
 fieldname = sys.argv[2]
+tmin = float(sys.argv[3])
+tmax = float(sys.argv[4])
 print 'file to read ' + filename
 #f = h5py.File(filename,'r')
 #print f
@@ -43,10 +45,12 @@ for ii in np.arange(xlen):
 
 triang = mtri.Triangulation(theta,phi)
 fig = plt.figure()
-levs=np.linspace(-1.0,+1.0,100,endpoint=True)
-#plt.tricontourf(triang, W, levs)
-plt.tricontourf(triang, W, 100)
-plt.triplot(triang)
+if np.abs(tmin) < 1.0e-6 and np.abs(tmax) < 1.0e-6:
+	plt.tricontourf(triang, W, 100)
+else:
+	levs=np.linspace(tmin,tmax,100,endpoint=True)
+	plt.tricontourf(triang, W, levs)
+#plt.triplot(triang)
 plt.colorbar()
 plt.savefig('z_coord_cc.png')
 plt.show()

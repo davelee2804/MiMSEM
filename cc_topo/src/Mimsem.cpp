@@ -18,7 +18,7 @@
 using namespace std;
 
 #define EL_ORD 3
-#define N_ELS_X_LOC 4
+#define N_ELS_X_LOC 8
 
 // initial condition given by:
 //     Galewsky, Scott and Polvani (2004) Tellus, 56A 429-440
@@ -53,7 +53,7 @@ double h_init(double* x) {
     //double dphi = phi/ni;
     double dphi = fabs(phi/ni);
     double hHat = 120.0;
-    double h = 1000.0;
+    double h = 0.0;//1000.0;
     double grav = 9.80616;
     double omega = 7.292e-5;
     double u, f;
