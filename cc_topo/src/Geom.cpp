@@ -296,8 +296,6 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
 
                 uxArray[inds0[ii]] = (Jm[0][0]*valx + Jm[0][1]*valy)/jac;
                 vxArray[inds0[ii]] = (Jm[1][0]*valx + Jm[1][1]*valy)/jac;
-                //uxArray[inds0[ii]] = Jm[0][1];
-                //vxArray[inds0[ii]] = Jm[1][1];
             }
         }
     }

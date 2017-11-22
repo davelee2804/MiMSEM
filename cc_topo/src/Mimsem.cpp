@@ -13,17 +13,18 @@
 #include "ElMats.h"
 #include "Assembly.h"
 #include "SWEqn.h"
+#include "Test.h"
 
 using namespace std;
 
 #define EL_ORD 3
-#define N_ELS_X_LOC 8
+#define N_ELS_X_LOC 4
 
 // initial condition given by:
 //     Galewsky, Scott and Polvani (2004) Tellus, 56A 429-440
 double u_init(double* x) {
     double eps = 1.0e-8;
-    double umax = 80.0/6371220.0;
+    double umax = 80.0;///6371220.0;
     //double phi0 = M_PI/7.0;
     //double phi1 = M_PI/2.0 - phi0;
     double phi0 = -M_PI/4.0;
@@ -52,7 +53,7 @@ double h_init(double* x) {
     //double dphi = phi/ni;
     double dphi = fabs(phi/ni);
     double hHat = 120.0;
-    double h = 0.0;//1000.0;
+    double h = 1000.0;
     double grav = 9.80616;
     double omega = 7.292e-5;
     double u, f;
@@ -69,11 +70,11 @@ double h_init(double* x) {
         phiPrime += sgn*dphi;
         x2[2] = sin(phiPrime);
         u = u_init(x2);
-        f = 0.0;//2.0*omega*sin(phiPrime);
+        f = 2.0*omega*sin(phiPrime);
         h -= 1.0*u*(f + tan(phiPrime)*u/1.0)*dphi/grav;
     }
 
-    //h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
+    h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
 
     return h;
 }
@@ -86,6 +87,7 @@ int main(int argc, char** argv) {
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
+    Test* test;
     Vec ui, hi, uf, hf;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
@@ -98,11 +100,14 @@ int main(int argc, char** argv) {
     topo = new Topo(rank, EL_ORD, N_ELS_X_LOC);
     geom = new Geom(rank, topo);
     sw = new SWEqn(topo, geom);
+    test = new Test(sw);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uf);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hf);
+
+    test->ke(u_init,v_init);
 
     sw->init1(ui, u_init, v_init);
     sw->init2(hi, h_init);
@@ -112,14 +117,7 @@ int main(int argc, char** argv) {
     sprintf(fieldname,"pressure");
     geom->write2(hi,fieldname,0);
 
-Vec w;
-VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &w);
-sw->init0(w, h_init);
-sprintf(fieldname,"init_0_");
-geom->write0(w,fieldname,0);
-VecDestroy(&w);
-
-    for(step = 1; step <= 4; step++) {
+    for(step = 1; step <= 2; step++) {
         if(!rank) {
             cout << "doing step: " << step << endl;
         }
@@ -131,6 +129,7 @@ VecDestroy(&w);
     delete topo;
     delete geom;
     delete sw;
+    delete test;
 
     VecDestroy(&ui);
     VecDestroy(&uf);

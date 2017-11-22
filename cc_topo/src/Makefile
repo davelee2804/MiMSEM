@@ -21,13 +21,17 @@ OBJS = LinAlg.o \
        ElMats.o \
        Assembly.o \
        SWEqn.o \
+       Test.o \
        Mimsem.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-Mimsem.o: Mimsem.cpp SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+Mimsem.o: Mimsem.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Mimsem.cpp ${CXXFLAGS}
+
+Test.o: Test.cpp Test.h SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Test.cpp ${CXXFLAGS}
 
 SWEqn.o: SWEqn.cpp SWEqn.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c SWEqn.cpp ${CXXFLAGS}
