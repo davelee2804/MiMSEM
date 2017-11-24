@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 
 #include <petsc.h>
 #include <petscis.h>
@@ -23,6 +24,25 @@ Test::Test(SWEqn* _sw) {
 }
 
 Test::~Test() {
+}
+
+void Test::edgeFunc() {
+    ofstream file;
+    int ii, jj, ni = 256;
+    double xi, ei, dx = 2.0/ni;
+    char filename[20];
+
+    for(ii = 0; ii < sw->topo->elOrd; ii++) {
+        xi = -1.0;
+        sprintf(filename, "edge_test_%.2u.txt", ii);
+        file.open(filename);
+        for(jj = 0; jj <= ni; jj++) {
+            ei = sw->edge->eval(xi, ii);
+            xi += dx;
+            file << ei << endl;
+        }
+        file.close();
+    }
 }
 
 void Test::vorticity(ICfunc* fu, ICfunc* fv) {

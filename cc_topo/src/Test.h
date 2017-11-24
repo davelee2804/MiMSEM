@@ -3,6 +3,7 @@ class Test {
         Test(SWEqn* _sw);
         ~Test();
         SWEqn* sw;
+        void edgeFunc();
         void vorticity(ICfunc* fu, ICfunc* fv);
         void gradient(ICfunc* fh);
         void convection(ICfunc* fu, ICfunc* fv);
