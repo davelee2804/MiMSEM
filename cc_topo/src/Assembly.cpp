@@ -1230,7 +1230,7 @@ RotMat::~RotMat() {
 
 // edge to node incidence matrix
 E10mat::E10mat(Topo* _topo) {
-    int ex, ey, nn, np1, ii, jj, kk, row;
+    int ex, ey, nn, np1, ii, jj, kk, ll, row;
     int *inds_0, *inds_1x, *inds_1y;
     int cols[2];
     double vals[2];
@@ -1258,19 +1258,21 @@ E10mat::E10mat(Topo* _topo) {
             for(ii = 0; ii < nn; ii++) {
                 for(jj = 0; jj < nn; jj++) {
                     // x-normal edge
-                    kk = ii*np1 + jj;
+                    kk = jj*np1 + ii;
+                    ll = jj*np1 + ii;
                     row = inds_1x[kk];
-                    cols[0] = inds_0[kk];
-                    cols[1] = inds_0[kk+np1];
+                    cols[0] = inds_0[ll];
+                    cols[1] = inds_0[ll+np1];
                     vals[0] = +1.0;
                     vals[1] = -1.0;
                     MatSetValues(E10, 1, &row, 2, cols, vals, INSERT_VALUES);
 
                     // y-normal edge
-                    kk = ii*nn + jj;
+                    kk = jj*nn + ii;
+                    ll = jj*np1 + ii;
                     row = inds_1y[kk];
-                    cols[0] = inds_0[kk];
-                    cols[1] = inds_0[kk+1];
+                    cols[0] = inds_0[ll];
+                    cols[1] = inds_0[ll+1];
                     vals[0] = -1.0;
                     vals[1] = +1.0;
                     MatSetValues(E10, 1, &row, 2, cols, vals, INSERT_VALUES);

@@ -65,7 +65,7 @@ void SWEqn::coriolis() {
     int ii;
     PtQmat* PtQ = new PtQmat(topo, geom, node);
     PetscScalar *fArray;
-    Vec fxl, fxg, PtQfxg;
+    Vec fl, fxl, fxg, PtQfxg;
 
     // initialise the coriolis vector (local and global)
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl);
@@ -77,7 +77,7 @@ void SWEqn::coriolis() {
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
-        fArray[ii] = 2.0*omega*geom->x[ii][2];
+        fArray[ii] = 2.0*omega;//*geom->x[ii][2];
     }
     VecRestoreArray(fxl, &fArray);
 
@@ -92,11 +92,8 @@ void SWEqn::coriolis() {
     // diagonal mass matrix as vector
     VecPointwiseDivide(fg, PtQfxg, m0->vg);
     
-    // scatter to back to local vector
-    VecScatterBegin(topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
-
     delete PtQ;
+    VecDestroy(&fl);
     VecDestroy(&fxl);
     VecDestroy(&fxg);
     VecDestroy(&PtQfxg);
@@ -334,7 +331,6 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
 SWEqn::~SWEqn() {
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);
-    VecDestroy(&fl);
     VecDestroy(&fg);
 
     delete m0;
