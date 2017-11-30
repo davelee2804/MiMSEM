@@ -28,6 +28,7 @@ Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void Umat::assemble() {
+/*
     int ex, ey;
     int *inds_x, *inds_y;
     Wii* Q = new Wii(l->q, geom);
@@ -117,6 +118,117 @@ void Umat::assemble() {
     Free2D(U->nDofsJ, UtQV);
     Free2D(U->nDofsJ, VtQU);
     Free2D(U->nDofsJ, VtQV);
+    delete[] UtQUflat;
+    delete Q;
+    delete U;
+    delete V;
+    delete J;
+*/
+    int ex, ey, ii;
+    int *inds_x, *inds_y;
+    Wii* Q = new Wii(l->q, geom);
+    JacM1* J = new JacM1(l->q, geom);
+    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+    M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
+    double** JxU = Alloc2D(J->nDofsI, U->nDofsJ);
+    double** JxV = Alloc2D(J->nDofsI, U->nDofsJ);
+    double** JyU = Alloc2D(J->nDofsI, U->nDofsJ);
+    double** JyV = Alloc2D(J->nDofsI, U->nDofsJ);
+    double** Ut = Alloc2D(U->nDofsJ, J->nDofsI);
+    double** Vt = Alloc2D(U->nDofsJ, J->nDofsI);
+    double** UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** Qaa = Alloc2D(J->nDofsI, J->nDofsJ);
+    double** Qab = Alloc2D(J->nDofsI, J->nDofsJ);
+    double** Qba = Alloc2D(J->nDofsI, J->nDofsJ);
+    double** Qbb = Alloc2D(J->nDofsI, J->nDofsJ);
+    double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
+#ifdef VIEW_MAT
+    PetscViewer viewer;
+#endif
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            // incorporate the jacobian transformation for each element
+            Q->assemble(ex, ey);
+            J->assemble(ex, ey);
+
+            for(ii = 0; ii < J->nDofsI; ii++) {
+                Qaa[ii][ii] = (J->Aaa[ii][ii]*J->Aaa[ii][ii] + J->Aba[ii][ii]*J->Aba[ii][ii])*Q->A[ii][ii];
+                Qab[ii][ii] = (J->Aaa[ii][ii]*J->Aab[ii][ii] + J->Aba[ii][ii]*J->Abb[ii][ii])*Q->A[ii][ii];
+                Qba[ii][ii] = (J->Aaa[ii][ii]*J->Aab[ii][ii] + J->Aba[ii][ii]*J->Abb[ii][ii])*Q->A[ii][ii];
+                Qbb[ii][ii] = (J->Aab[ii][ii]*J->Aab[ii][ii] + J->Abb[ii][ii]*J->Abb[ii][ii])*Q->A[ii][ii];
+            }
+
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
+            Tran_IP(J->nDofsI, U->nDofsJ, U->A, Ut);
+            Tran_IP(J->nDofsI, U->nDofsJ, V->A, Vt);
+
+            Mult_IP(U->nDofsJ, J->nDofsI, J->nDofsJ, Ut, Qaa, UtQaa);
+            Mult_IP(U->nDofsJ, J->nDofsI, J->nDofsJ, Ut, Qba, UtQab);
+            Mult_IP(U->nDofsJ, J->nDofsI, J->nDofsJ, Vt, Qab, VtQba);
+            Mult_IP(U->nDofsJ, J->nDofsI, J->nDofsJ, Vt, Qbb, VtQbb);
+
+            Mult_IP(U->nDofsJ, U->nDofsJ, J->nDofsJ, UtQaa, U->A, UtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, J->nDofsJ, UtQab, V->A, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, J->nDofsJ, VtQba, U->A, VtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, J->nDofsJ, VtQbb, V->A, VtQV);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+#ifdef VIEW_MAT
+    PetscViewerASCIIOpen(PETSC_COMM_WORLD, "mat.dat", &viewer);
+    MatView(M, viewer);
+    PetscViewerDestroy(&viewer);
+    MatView(M, PETSC_VIEWER_DRAW_WORLD);
+#endif
+
+    Free2D(J->nDofsI, JxU);
+    Free2D(J->nDofsI, JxV);
+    Free2D(J->nDofsI, JyU);
+    Free2D(J->nDofsI, JyV);
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+    Free2D(U->nDofsJ, UtQaa);
+    Free2D(U->nDofsJ, UtQab);
+    Free2D(U->nDofsJ, VtQba);
+    Free2D(U->nDofsJ, VtQbb);
+    Free2D(U->nDofsJ, UtQU);
+    Free2D(U->nDofsJ, UtQV);
+    Free2D(U->nDofsJ, VtQU);
+    Free2D(U->nDofsJ, VtQV);
+    Free2D(J->nDofsI, Qaa);
+    Free2D(J->nDofsI, Qab);
+    Free2D(J->nDofsI, Qba);
+    Free2D(J->nDofsI, Qbb);
     delete[] UtQUflat;
     delete Q;
     delete U;
@@ -626,6 +738,7 @@ UtQmat::UtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void UtQmat::assemble() {
+/*
     int ex, ey, ii, mp12;
     int *inds_x, *inds_y, *inds_qx, *inds_qy;
     Wii* Q = new Wii(l->q, geom);
@@ -692,6 +805,94 @@ void UtQmat::assemble() {
     Free2D(U->nDofsJ, UtQ);
     delete[] UtQflat;
     delete[] inds_qy;
+    delete Q;
+    delete U;
+    delete V;
+    delete J;
+*/
+    int ex, ey, ii, mp12;
+    int *inds_x, *inds_y, *inds_0, *inds_0x, *inds_0y;
+    Wii* Q = new Wii(l->q, geom);
+    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+    M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
+    JacM1* J = new JacM1(l->q, geom);
+    double** Ut = Alloc2D(U->nDofsJ, J->nDofsI);
+    double** Vt = Alloc2D(U->nDofsJ, J->nDofsI);
+    double** UtQ = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** Qaa = Alloc2D(J->nDofsI, J->nDofsJ);
+    double** Qab = Alloc2D(J->nDofsI, J->nDofsJ);
+    double** Qba = Alloc2D(J->nDofsI, J->nDofsJ);
+    double** Qbb = Alloc2D(J->nDofsI, J->nDofsJ);
+    double* UtQflat = new double[U->nDofsJ*Q->nDofsJ];
+
+    mp12 = (l->q->n + 1)*(l->q->n + 1);
+    inds_0x = new int[mp12];
+    inds_0y = new int[mp12];
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n1l, 2*topo->n0l, topo->nDofs1G, 2*topo->nDofs0G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            // incorportate jacobian tranformation for each element
+            Q->assemble(ex, ey);
+            J->assemble(ex, ey);
+
+            for(ii = 0; ii < J->nDofsI; ii++) {
+                Qaa[ii][ii] = J->Aaa[ii][ii]*Q->A[ii][ii];
+                Qab[ii][ii] = J->Aba[ii][ii]*Q->A[ii][ii];
+                Qba[ii][ii] = J->Aab[ii][ii]*Q->A[ii][ii];
+                Qbb[ii][ii] = J->Abb[ii][ii]*Q->A[ii][ii];
+            }
+
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+            inds_0 = topo->elInds0_g(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                inds_0x[ii] = 2*inds_0[ii]+0;
+                inds_0y[ii] = 2*inds_0[ii]+1;
+            }
+
+            Tran_IP(J->nDofsI, U->nDofsJ, U->A, Ut);
+            Tran_IP(J->nDofsI, U->nDofsJ, V->A, Vt);
+
+            //
+            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Qaa, UtQ);
+            Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
+            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_0x, UtQflat, ADD_VALUES);
+
+            //
+            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Qab, UtQ);
+            Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
+            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_0y, UtQflat, ADD_VALUES);
+
+            //
+            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Vt, Qba, UtQ);
+            Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
+            MatSetValues(M, U->nDofsJ, inds_y, Q->nDofsJ, inds_0x, UtQflat, ADD_VALUES);
+
+            //
+            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Vt, Qbb, UtQ);
+            Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
+            MatSetValues(M, U->nDofsJ, inds_y, Q->nDofsJ, inds_0y, UtQflat, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+    Free2D(U->nDofsJ, UtQ);
+    Free2D(J->nDofsI, Qaa);
+    Free2D(J->nDofsI, Qab);
+    Free2D(J->nDofsI, Qba);
+    Free2D(J->nDofsI, Qbb);
+    delete[] UtQflat;
+    delete[] inds_0x;
+    delete[] inds_0y;
     delete Q;
     delete U;
     delete V;

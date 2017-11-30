@@ -212,31 +212,31 @@ def init_geom(pn, ne, make_image):
 	yg[6*nx*nx+1] = y1[nx*nx]
 	zg[6*nx*nx+1] = z1[nx*nx]
 
-	Rx = np.zeros((3,3),dtype=np.float64)
-	theta = 0.25*np.pi
-	Rx[0][0] = 1.0
-	Rx[1][1] = +np.cos(theta)
-	Rx[1][2] = -np.sin(theta)
-	Rx[2][1] = +np.sin(theta)
-	Rx[2][2] = +np.cos(theta)
-	Ry = np.zeros((3,3),dtype=np.float64)
-	Ry[0][0] = -np.sin(theta)
-	Ry[0][2] = +np.cos(theta)
-	Ry[1][1] = 1.0
-	Ry[2][0] = +np.cos(theta)
-	Ry[2][2] = +np.sin(theta)
-	Rxy = np.matmul(Ry,Rx)
+	#Rx = np.zeros((3,3),dtype=np.float64)
+	#theta = 0.25*np.pi
+	#Rx[0][0] = 1.0
+	#Rx[1][1] = +np.cos(theta)
+	#Rx[1][2] = -np.sin(theta)
+	#Rx[2][1] = +np.sin(theta)
+	#Rx[2][2] = +np.cos(theta)
+	#Ry = np.zeros((3,3),dtype=np.float64)
+	#Ry[0][0] = -np.sin(theta)
+	#Ry[0][2] = +np.cos(theta)
+	#Ry[1][1] = 1.0
+	#Ry[2][0] = +np.cos(theta)
+	#Ry[2][2] = +np.sin(theta)
+	#Rxy = np.matmul(Ry,Rx)
 
-        for ii in np.arange(6*nx*nx+2):
-		xk = np.array([xg[ii],yg[ii],zg[ii]],dtype=np.float64)
-		xj = np.zeros((3),dtype=np.float64)
-		for jj in np.arange(3):
-			for kk in np.arange(3):
-				xj[jj] = xj[jj] + Rxy[jj][kk]*xk[kk]
+	#for ii in np.arange(6*nx*nx+2):
+	#	xk = np.array([xg[ii],yg[ii],zg[ii]],dtype=np.float64)
+	#	xj = np.zeros((3),dtype=np.float64)
+	#	for jj in np.arange(3):
+	#		for kk in np.arange(3):
+	#			xj[jj] = xj[jj] + Rxy[jj][kk]*xk[kk]
 
-		xg[ii] = xj[0]
-		yg[ii] = xj[1]
-		zg[ii] = xj[2]
+	#	xg[ii] = xj[0]
+	#	yg[ii] = xj[1]
+	#	zg[ii] = xj[2]
 
 	if make_image:
 		fig = plt.figure()
@@ -254,4 +254,4 @@ def init_geom(pn, ne, make_image):
 		ax.set_zlabel('z')
 		plt.show()
 
-        return xg, yg, zg
+	return xg, yg, zg
