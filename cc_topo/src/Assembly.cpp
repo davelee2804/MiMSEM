@@ -1049,8 +1049,8 @@ void WtQUmat::assemble(Vec u1) {
 
             // note that we are assembling K = (u.u)/2 onto 2 forms
             for(kk = 0; kk < n2; kk++) {
-                ckx[kk] = 0.5*u1Array[inds_x[kk]];
-                cky[kk] = 0.5*u1Array[inds_y[kk]];
+                ckx[kk] = u1Array[inds_x[kk]];
+                cky[kk] = u1Array[inds_y[kk]];
             }
             U->assemble(ex, ey, ckx, cky);
             V->assemble(ex, ey, ckx, cky);

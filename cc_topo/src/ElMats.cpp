@@ -151,7 +151,7 @@ void M1x_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
         jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
         uz = (J[0][0]*ckx + J[0][1]*cky)/jac;
         um = (J[1][0]*ckx + J[1][1]*cky)/jac;
-        fac = 0.5*(uz*J[0][0] + um*J[1][0]);
+        fac = 0.5*(uz*J[0][0] + um*J[1][0])/jac;
 
         for(jj = 0; jj < nj; jj++) {
             li = node->ljxi[ii%mp1][jj%np1];
@@ -225,7 +225,7 @@ void M1y_j_Cxy_i::assemble(int ex, int ey, double* cx, double* cy) {
         jac = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
         uz = (J[0][0]*ckx + J[0][1]*cky)/jac;
         um = (J[1][0]*ckx + J[1][1]*cky)/jac;
-        fac = 0.5*(uz*J[0][1] + um*J[1][1]);
+        fac = 0.5*(uz*J[0][1] + um*J[1][1])/jac;
 
         for(jj = 0; jj < nj; jj++) {
             ei = edge->ejxi[ii%mp1][jj%nn];
