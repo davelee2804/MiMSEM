@@ -50,6 +50,16 @@ class Uhmat {
         double** UtQV;
         double** VtQU;
         double** VtQV;
+        double** Qaa;
+        double** Qab;
+        double** Qba;
+        double** Qbb;
+        double** Ut;
+        double** Vt;
+        double** UtQaa;
+        double** UtQab;
+        double** VtQba;
+        double** VtQbb;
         Wii* Q;
         JacM1* J;
         M1x_j_xy_i* U;

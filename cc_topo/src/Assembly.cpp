@@ -378,6 +378,18 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
     VtQU = Alloc2D(V->nDofsJ, V->nDofsJ);
     VtQV = Alloc2D(V->nDofsJ, V->nDofsJ);
+
+    Qaa = Alloc2D(J->nDofsI, J->nDofsJ);
+    Qab = Alloc2D(J->nDofsI, J->nDofsJ);
+    Qba = Alloc2D(J->nDofsI, J->nDofsJ);
+    Qbb = Alloc2D(J->nDofsI, J->nDofsJ);
+    Ut = Alloc2D(U->nDofsJ, J->nDofsI);
+    Vt = Alloc2D(U->nDofsJ, J->nDofsI);
+    UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
+
     UtQUflat = new double[U->nDofsJ*U->nDofsJ];
     ck = new double[l->n*l->n];
 
@@ -388,6 +400,7 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void Uhmat::assemble(Vec h2) {
+/*
     int ex, ey, kk, n2;
     int *inds_x, *inds_y, *inds2;
     PetscScalar* h2Array;
@@ -450,6 +463,70 @@ void Uhmat::assemble(Vec h2) {
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+*/
+    int ex, ey, ii, kk, n2;
+    int *inds_x, *inds_y, *inds2;
+    PetscScalar* h2Array;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    MatZeroEntries(M);
+    VecGetArray(h2, &h2Array);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
+            // incorporate the jacobian transformation for each element
+            Q->assemble(ex, ey);
+            J->assemble(ex, ey);
+
+            for(ii = 0; ii < J->nDofsI; ii++) {
+                Qaa[ii][ii] = (J->Aaa[ii][ii]*J->Aaa[ii][ii] + J->Aba[ii][ii]*J->Aba[ii][ii])*Q->A[ii][ii];
+                Qab[ii][ii] = (J->Aaa[ii][ii]*J->Aab[ii][ii] + J->Aba[ii][ii]*J->Abb[ii][ii])*Q->A[ii][ii];
+                Qba[ii][ii] = (J->Aaa[ii][ii]*J->Aab[ii][ii] + J->Aba[ii][ii]*J->Abb[ii][ii])*Q->A[ii][ii];
+                Qbb[ii][ii] = (J->Aab[ii][ii]*J->Aab[ii][ii] + J->Abb[ii][ii]*J->Abb[ii][ii])*Q->A[ii][ii];
+            }
+
+            inds2 = topo->elInds2_l(ex, ey);
+            for(kk = 0; kk < n2; kk++) {
+                ck[kk] = h2Array[inds2[kk]];
+            }
+            Uh->assemble(ex, ey, ck);
+            Vh->assemble(ex, ey, ck);
+
+            Tran_IP(J->nDofsI, U->nDofsJ, U->A, Ut);
+            Tran_IP(J->nDofsI, V->nDofsJ, V->A, Vt);
+
+            // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qba, VtQba);
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
+
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQaa, Uh->A, UtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, Vh->A, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, Uh->A, VtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, Vh->A, VtQV);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(h2, &h2Array);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
 
 Uhmat::~Uhmat() {
@@ -468,6 +545,17 @@ Uhmat::~Uhmat() {
     Free2D(Uh->nDofsJ, UtQV);
     Free2D(Vh->nDofsJ, VtQU);
     Free2D(Vh->nDofsJ, VtQV);
+
+    Free2D(J->nDofsI, Qaa);
+    Free2D(J->nDofsI, Qab);
+    Free2D(J->nDofsI, Qba);
+    Free2D(J->nDofsI, Qbb);
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+    Free2D(U->nDofsJ, UtQaa);
+    Free2D(U->nDofsJ, UtQab);
+    Free2D(U->nDofsJ, VtQba);
+    Free2D(U->nDofsJ, VtQbb);
 
     delete U;
     delete V;
