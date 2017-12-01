@@ -250,6 +250,7 @@ Wmat::Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 }
 
 void Wmat::assemble() {
+/*
     int ex, ey;
     int* inds;
 
@@ -292,6 +293,57 @@ void Wmat::assemble() {
 
     Free2D(J->nDofsI, JW);
     Free2D(W->nDofsJ, JWt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete W;
+    delete Q;
+    delete J;
+    delete[] WtQWflat;
+*/
+    int ex, ey, ii, mp12, *inds;
+    Wii* Q = new Wii(e->l->q, geom);
+    JacM2* J = new JacM2(e->l->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+    double** Qaa = Alloc2D(J->nDofsI, J->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, J->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+
+    mp12 = (e->l->q->n + 1)*(e->l->q->n + 1);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds = topo->elInds2_g(ex, ey);
+            // incorporate the jacobian transformation for each element
+            Q->assemble(ex, ey);
+            J->assemble(ex, ey);
+
+            for(ii = 0; ii < mp12; ii++) {
+                Qaa[ii][ii] = J->A[ii][ii]*J->A[ii][ii]*Q->A[ii][ii];
+            }
+
+            Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+        }
+    }
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(J->nDofsI, Qaa);
+    Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
     delete W;
@@ -713,6 +765,7 @@ WtQmat::WtQmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 }
 
 void WtQmat::assemble() {
+/*
     int ex, ey;
     int *inds_2, *inds_0;
 
@@ -754,6 +807,56 @@ void WtQmat::assemble() {
 
     Free2D(J->nDofsI, JW);
     Free2D(W->nDofsJ, JWt);
+    Free2D(W->nDofsJ, WtQ);
+    delete[] WtQflat;
+    delete W;
+    delete Q;
+    delete J;
+*/
+    int ex, ey, ii, mp12, *inds_2, *inds_0;
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+    Wii* Q = new Wii(e->l->q, geom);
+    JacM2* J = new JacM2(e->l->q, geom);
+    double** Qaa = Alloc2D(J->nDofsI, J->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, J->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n0l, topo->nDofs2G, topo->nDofs0G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+    MatZeroEntries(M);
+
+    mp12 = (e->l->q->n + 1)*(e->l->q->n + 1);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            // incorportate jacobian tranformation for each element
+            Q->assemble(ex, ey);
+            J->assemble(ex, ey);
+
+            for(ii = 0; ii < mp12; ii++) {
+                Qaa[ii][ii] = J->A[ii][ii]*Q->A[ii][ii];
+            }
+
+            Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+            Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQ);
+            Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
+
+            inds_2 = topo->elInds2_g(ex, ey);
+            inds_0 = topo->elInds0_g(ex, ey);
+
+            MatSetValues(M, W->nDofsJ, inds_2, Q->nDofsJ, inds_0, WtQflat, ADD_VALUES);
+        }
+    }
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(J->nDofsI, Qaa);
+    Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     delete[] WtQflat;
     delete W;
