@@ -300,7 +300,7 @@ void Wmat::assemble() {
     delete J;
     delete[] WtQWflat;
 */
-    int ex, ey, ii, mp12, *inds;
+    int ex, ey, ii, *inds;
     Wii* Q = new Wii(e->l->q, geom);
     JacM2* J = new JacM2(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
@@ -309,8 +309,6 @@ void Wmat::assemble() {
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-
-    mp12 = (e->l->q->n + 1)*(e->l->q->n + 1);
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
@@ -325,7 +323,7 @@ void Wmat::assemble() {
             Q->assemble(ex, ey);
             J->assemble(ex, ey);
 
-            for(ii = 0; ii < mp12; ii++) {
+            for(ii = 0; ii < J->nDofsI; ii++) {
                 Qaa[ii][ii] = J->A[ii][ii]*J->A[ii][ii]*Q->A[ii][ii];
             }
 
@@ -813,7 +811,7 @@ void WtQmat::assemble() {
     delete Q;
     delete J;
 */
-    int ex, ey, ii, mp12, *inds_2, *inds_0;
+    int ex, ey, ii, *inds_2, *inds_0;
     M2_j_xy_i* W = new M2_j_xy_i(e);
     Wii* Q = new Wii(e->l->q, geom);
     JacM2* J = new JacM2(e->l->q, geom);
@@ -828,15 +826,13 @@ void WtQmat::assemble() {
     MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
-    mp12 = (e->l->q->n + 1)*(e->l->q->n + 1);
-
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
             J->assemble(ex, ey);
 
-            for(ii = 0; ii < mp12; ii++) {
+            for(ii = 0; ii < J->nDofsI; ii++) {
                 Qaa[ii][ii] = J->A[ii][ii]*Q->A[ii][ii];
             }
 
@@ -1316,6 +1312,17 @@ RotMat::RotMat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     VtQU = Alloc2D(V->nDofsJ, V->nDofsJ);
     VtQV = Alloc2D(V->nDofsJ, V->nDofsJ);
 
+    Ut = Alloc2D(U->nDofsJ, J->nDofsI);
+    Vt = Alloc2D(V->nDofsJ, J->nDofsI);
+    Qaa = Alloc2D(J->nDofsI, J->nDofsJ);
+    Qab = Alloc2D(J->nDofsI, J->nDofsJ);
+    Qba = Alloc2D(J->nDofsI, J->nDofsJ);
+    Qbb = Alloc2D(J->nDofsI, J->nDofsJ);
+    UtQaa = Alloc2D(U->nDofsJ, J->nDofsJ);
+    UtQab = Alloc2D(U->nDofsJ, J->nDofsJ);
+    VtQba = Alloc2D(U->nDofsJ, J->nDofsJ);
+    VtQbb = Alloc2D(U->nDofsJ, J->nDofsJ);
+
     UtQUflat = new double[U->nDofsJ*V->nDofsJ];
     ckx = new double[(l->n+1)*(l->n+1)];
     cky = new double[(l->n+1)*(l->n+1)];
@@ -1327,6 +1334,7 @@ RotMat::RotMat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void RotMat::assemble(Vec q0) {
+/*
     int ex, ey, kk, np12;
     int *inds_x, *inds_y, *inds_0;
     PetscScalar* q0Array;
@@ -1392,6 +1400,71 @@ void RotMat::assemble(Vec q0) {
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+*/
+    int ex, ey, kk, np12;
+    int *inds_x, *inds_y, *inds_0;
+    PetscScalar* q0Array;
+
+    np12 = (l->n+1)*(l->n+1);
+
+    VecGetArray(q0, &q0Array);
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
+            // incorportate jacobian tranformation for each element
+            Q->assemble(ex, ey);
+            J->assemble(ex, ey);
+
+            inds_0 = topo->elInds0_l(ex, ey);
+            for(kk = 0; kk < np12; kk++) {
+                ckx[kk] = q0Array[inds_0[kk]];
+            }
+            Uq->assemble(ckx);
+            Vq->assemble(ckx);
+
+            for(kk = 0; kk < J->nDofsI; kk++) {
+                Qaa[kk][kk] = 0.0;
+                Qab[kk][kk] = (-J->Aaa[kk][kk]*J->Abb[kk][kk] + J->Aab[kk][kk]*J->Aba[kk][kk])*Q->A[kk][kk];
+                Qba[kk][kk] = (+J->Aaa[kk][kk]*J->Abb[kk][kk] - J->Aab[kk][kk]*J->Aba[kk][kk])*Q->A[kk][kk];
+                Qbb[kk][kk] = 0.0;
+            }
+
+            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+            Tran_IP(U->nDofsI, V->nDofsJ, V->A, Vt);
+
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qaa, UtQaa);
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qab, UtQab);
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Qba, VtQba);
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Qbb, VtQbb);
+
+            // take cross product by multiplying the x projection of the row vector with
+            // the y component of the column vector and vice versa
+            Mult_IP(U->nDofsJ, U->nDofsJ, U->nDofsI, UtQaa, Uq->A, UtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, U->nDofsI, UtQab, Vq->A, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, V->nDofsI, VtQba, Uq->A, VtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, V->nDofsI, VtQbb, Vq->A, VtQV);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(q0, &q0Array);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
 
 RotMat::~RotMat() {
@@ -1407,6 +1480,18 @@ RotMat::~RotMat() {
     Free2D(U->nDofsJ, UtQV);
     Free2D(V->nDofsJ, VtQU);
     Free2D(V->nDofsJ, VtQV);
+
+    Free2D(U->nDofsJ, Ut);
+    Free2D(V->nDofsJ, Vt);
+    Free2D(J->nDofsI, Qaa);
+    Free2D(J->nDofsI, Qab);
+    Free2D(J->nDofsI, Qba);
+    Free2D(J->nDofsI, Qbb);
+    Free2D(U->nDofsJ, UtQaa);
+    Free2D(U->nDofsJ, UtQab);
+    Free2D(U->nDofsJ, VtQba);
+    Free2D(U->nDofsJ, VtQbb);
+
     delete[] UtQUflat;
     delete[] ckx;
     delete[] cky;

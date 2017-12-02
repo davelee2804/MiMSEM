@@ -207,6 +207,18 @@ class RotMat {
         double** UtQV;
         double** VtQU;
         double** VtQV;
+
+        double** Ut;
+        double** Vt;
+        double** Qaa;
+        double** Qab;
+        double** Qba;
+        double** Qbb;
+        double** UtQaa;
+        double** UtQab;
+        double** VtQba;
+        double** VtQbb;
+
         M1x_j_xy_i* U;
         M1y_j_xy_i* V;
         M1x_j_Dxy_i* Uq;
