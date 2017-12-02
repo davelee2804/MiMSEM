@@ -25,10 +25,10 @@ using namespace std;
 double u_init(double* x) {
     double eps = 1.0e-8;
     double umax = 80.0;///6371220.0;
-    //double phi0 = M_PI/7.0;
-    //double phi1 = M_PI/2.0 - phi0;
-    double phi0 = -M_PI/4.0;
-    double phi1 = +M_PI/4.0;
+    double phi0 = M_PI/7.0;
+    double phi1 = M_PI/2.0 - phi0;
+    //double phi0 = -M_PI/4.0;
+    //double phi1 = +M_PI/4.0;
     double en = exp(-4.0/((phi1 - phi0)*(phi1 - phi0)));
     double phi = asin(x[2]);
 
@@ -53,7 +53,7 @@ double h_init(double* x) {
     //double dphi = phi/ni;
     double dphi = fabs(phi/ni);
     double hHat = 120.0;
-    double h = 0.0;//1000.0;
+    double h = 1000.0;
     double grav = 9.80616;
     double omega = 7.292e-5;
     double u, f;
@@ -82,7 +82,7 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 0.1*(2.0*M_PI/(4.0*12))/(80.0/6371220.0);
+    double dt = 0.1*(2.0*M_PI/(4.0*12))/80.0;
     char fieldname[20];
     Topo* topo;
     Geom* geom;
