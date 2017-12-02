@@ -84,6 +84,7 @@ int main(int argc, char** argv) {
     static char help[] = "petsc";
     double dt = 0.1*(2.0*M_PI/(4.0*12))/80.0;
     char fieldname[20];
+    bool dump;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
@@ -125,9 +126,10 @@ int main(int argc, char** argv) {
         if(!rank) {
             cout << "doing step: " << step << endl;
         }
-        sw->solve(ui, hi, uf, hf, dt, true);
-        VecCopy(ui,uf);
-        VecCopy(hi,hf);
+        dump = (step%1==0) ? true : false;
+        sw->solve(ui, hi, uf, hf, dt, dump);
+        VecCopy(uf,ui);
+        VecCopy(hf,hi);
     }
 
     delete topo;
