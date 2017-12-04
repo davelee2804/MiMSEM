@@ -79,7 +79,8 @@ void SWEqn::coriolis() {
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
-        fArray[ii] = 2.0*omega;//*geom->x[ii][2];
+        //fArray[ii] = 2.0*omega;//*geom->x[ii][2];
+        fArray[ii] = 2.0*omega*geom->x[ii][2];
     }
     VecRestoreArray(fxl, &fArray);
 
@@ -171,7 +172,7 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     // initialize the linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M1->M, M1->M);
-    KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
     KSPGetPC(ksp,&pc);
     PCSetType(pc, PCBJACOBI);

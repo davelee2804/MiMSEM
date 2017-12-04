@@ -72,7 +72,7 @@ double h_init(double* x) {
         x2[2] = sin(phiPrime);
         u = u_init(x2);
         f = 2.0*omega*sin(phiPrime);
-        h -= 6371220.0/RAD_EARTH*u*(f + tan(phiPrime)*u/6371220.0/RAD_EARTH)*dphi/grav;
+        h -= (6371220.0/RAD_EARTH)*u*(f + tan(phiPrime)*u*6371220.0/RAD_EARTH)*dphi/grav;
     }
 
     h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
@@ -83,9 +83,11 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 0.1*(2.0*M_PI/(4.0*12))/80.0;
+    double dt = 120.0;//0.1*(2.0*M_PI/(4.0*12))/80.0;
     char fieldname[20];
     bool dump;
+    int nSteps = 2;
+    int dumpEvery = 1;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
@@ -123,11 +125,11 @@ int main(int argc, char** argv) {
     sprintf(fieldname,"pressure");
     geom->write2(hi,fieldname,0);
 
-    for(step = 1; step <= 2; step++) {
+    for(step = 1; step <= nSteps; step++) {
         if(!rank) {
             cout << "doing step: " << step << endl;
         }
-        dump = (step%1==0) ? true : false;
+        dump = (step%dumpEvery == 0) ? true : false;
         sw->solve(ui, hi, uf, hf, dt, dump);
         VecCopy(uf,ui);
         VecCopy(hf,hi);
