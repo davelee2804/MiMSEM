@@ -15,6 +15,8 @@
 #include "Assembly.h"
 #include "SWEqn.h"
 
+#define RAD_EARTH 6371220.0
+
 using namespace std;
 int step = 0;
 
@@ -22,7 +24,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     topo = _topo;
     geom = _geom;
 
-    grav = 9.80616;
+    grav = 9.80616/RAD_EARTH;
     omega = 7.292e-5;
 
     quad = new GaussLobatto(topo->elOrd);
@@ -82,8 +84,8 @@ void SWEqn::coriolis() {
     VecRestoreArray(fxl, &fArray);
 
     // scatter array to global vector
-    VecScatterBegin(topo->gtol_0, fxl, fxg, ADD_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, fxl, fxg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
 
     // project vector onto 0 forms
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PtQfxg);

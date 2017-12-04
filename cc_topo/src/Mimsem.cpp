@@ -19,12 +19,13 @@ using namespace std;
 
 #define EL_ORD 3
 #define N_ELS_X_LOC 8
+#define RAD_EARTH 6371220.0
 
 // initial condition given by:
 //     Galewsky, Scott and Polvani (2004) Tellus, 56A 429-440
 double u_init(double* x) {
     double eps = 1.0e-8;
-    double umax = 80.0;///6371220.0;
+    double umax = 80.0/RAD_EARTH;
     double phi0 = M_PI/7.0;
     double phi1 = M_PI/2.0 - phi0;
     //double phi0 = -M_PI/4.0;
@@ -52,9 +53,9 @@ double h_init(double* x) {
     double lambda = atan2(x[1],x[0]);
     //double dphi = phi/ni;
     double dphi = fabs(phi/ni);
-    double hHat = 120.0;
-    double h = 1000.0;
-    double grav = 9.80616;
+    double hHat = 120.0/RAD_EARTH;
+    double h = 10000.0/RAD_EARTH;
+    double grav = 9.80616/RAD_EARTH;
     double omega = 7.292e-5;
     double u, f;
     double alpha = 1.0/3.0;
@@ -71,7 +72,7 @@ double h_init(double* x) {
         x2[2] = sin(phiPrime);
         u = u_init(x2);
         f = 2.0*omega*sin(phiPrime);
-        h -= 1.0*u*(f + tan(phiPrime)*u/1.0)*dphi/grav;
+        h -= 6371220.0/RAD_EARTH*u*(f + tan(phiPrime)*u/6371220.0/RAD_EARTH)*dphi/grav;
     }
 
     h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
