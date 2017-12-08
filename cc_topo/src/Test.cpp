@@ -98,25 +98,21 @@ void Test::gradient(ICfunc* fh) {
 }
 
 void Test::divergence(ICfunc* fu, ICfunc* fv) {
-    Vec u, Mu, du;
+    Vec u, du;
     char filename[20];
 
     VecCreateMPI(MPI_COMM_WORLD, sw->topo->n1l, sw->topo->nDofs1G, &u);
-    VecCreateMPI(MPI_COMM_WORLD, sw->topo->n1l, sw->topo->nDofs1G, &Mu);
     VecCreateMPI(MPI_COMM_WORLD, sw->topo->n2l, sw->topo->nDofs2G, &du);
 
-    VecZeroEntries(Mu);
     VecZeroEntries(du);
 
     sw->init1(u, fu, fv);
-    MatMult(sw->M1->M, u, Mu);
-    MatMult(sw->EtoF->E21, Mu, du);
+    MatMult(sw->EtoF->E21, u, du);
 
     sprintf(filename,"test_div");
     sw->geom->write2(du, filename, 0);
 
     VecDestroy(&u);
-    VecDestroy(&Mu);
     VecDestroy(&du);
 }
 
