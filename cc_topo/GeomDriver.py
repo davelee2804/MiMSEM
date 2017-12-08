@@ -11,7 +11,7 @@ from Geom2 import *
 pn = int(sys.argv[1])
 ne = int(sys.argv[2])
 n_procs = int(sys.argv[3])
-xg, yg, zg = init_geom(pn, ne, True)
+xg, yg, zg = init_geom(pn, ne, False)
 
 #fig = plt.figure()
 #ax = Axes3D(fig)

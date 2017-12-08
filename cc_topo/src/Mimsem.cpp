@@ -18,7 +18,7 @@
 using namespace std;
 
 #define EL_ORD 3
-#define N_ELS_X_LOC 8
+#define N_ELS_X_LOC 32
 #define RAD_EARTH 6371220.0
 
 // initial condition given by:
@@ -72,7 +72,7 @@ double h_init(double* x) {
         x2[2] = sin(phiPrime);
         u = u_init(x2);
         f = 2.0*omega*sin(phiPrime);
-        h -= (6371220.0/RAD_EARTH)*u*(f + tan(phiPrime)*u*6371220.0/RAD_EARTH)*dphi/grav;
+        h -= (6371220.0/RAD_EARTH)*u*(f + tan(phiPrime)*u*(6371220.0/RAD_EARTH))*dphi/grav;
     }
 
     h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
 
     test->vorticity(u_init, v_init);
     test->gradient(h_init);
+    test->divergence(u_init, v_init);
     test->convection(u_init, v_init);
     test->massFlux(u_init,v_init, h_init);
     test->kineticEnergy(u_init,v_init);

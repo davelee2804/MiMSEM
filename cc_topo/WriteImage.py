@@ -27,7 +27,7 @@ print 'file to read ' + filename
 #w = f[fieldname][:]
 #print w.shape
 #print xg.shape
-w=np.loadtxt(filename)
+w=np.loadtxt(filename + '.dat')
 
 xlen = xg.shape[0]
 X = np.zeros((xlen,3),dtype=np.float64)
@@ -52,5 +52,5 @@ else:
 	plt.tricontourf(triang, W, levs)
 #plt.triplot(triang)
 plt.colorbar()
-plt.savefig('z_coord_cc.png')
+plt.savefig(filename + '.png')
 plt.show()

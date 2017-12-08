@@ -97,6 +97,42 @@ void Test::gradient(ICfunc* fh) {
     VecDestroy(&M2h);
 }
 
+void Test::divergence(ICfunc* fu, ICfunc* fv) {
+    Vec u, Mu, dMu, du;
+    KSP ksp;
+    char filename[20];
+
+    VecCreateMPI(MPI_COMM_WORLD, sw->topo->n1l, sw->topo->nDofs1G, &u);
+    VecCreateMPI(MPI_COMM_WORLD, sw->topo->n1l, sw->topo->nDofs1G, &Mu);
+    VecCreateMPI(MPI_COMM_WORLD, sw->topo->n2l, sw->topo->nDofs2G, &dMu);
+    VecCreateMPI(MPI_COMM_WORLD, sw->topo->n2l, sw->topo->nDofs2G, &du);
+
+    VecZeroEntries(Mu);
+    VecZeroEntries(dMu);
+    VecZeroEntries(du);
+
+    sw->init1(u, fu, fv);
+    MatMult(sw->M1->M, u, Mu);
+    MatMult(sw->EtoF->E21, Mu, dMu);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp);
+    KSPSetOperators(ksp, sw->M2->M, sw->M2->M);
+    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp, KSPGMRES);
+    KSPSetOptionsPrefix(ksp,"test_div_");
+    KSPSetFromOptions(ksp);
+    KSPSolve(ksp, dMu, du);
+
+    sprintf(filename,"test_div");
+    sw->geom->write2(du, filename, 0);
+
+    KSPDestroy(&ksp);
+    VecDestroy(&u);
+    VecDestroy(&Mu);
+    VecDestroy(&dMu);
+    VecDestroy(&du);
+}
+
 void Test::convection(ICfunc* fu, ICfunc* fv) {
     Vec w, wl, u, Ru, c;
     KSP ksp;
@@ -132,6 +168,7 @@ void Test::convection(ICfunc* fu, ICfunc* fv) {
     sprintf(filename,"test_conv");
     sw->geom->write1(c, filename, 0);
 
+    KSPDestroy(&ksp);
     VecDestroy(&w);
     VecDestroy(&wl);
     VecDestroy(&u);
