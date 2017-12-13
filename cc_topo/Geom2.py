@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 
 from Proc2 import *
 
-def init_geom(pn, ne, make_image):
+def init_geom(pn, ne, make_image, expand_sphere):
 	a = np.sqrt(7.0)
 	b = np.sqrt((7.0 - 2.0*a)/21.0)
 	c = np.sqrt((7.0 + 2.0*a)/21.0)
@@ -237,6 +237,16 @@ def init_geom(pn, ne, make_image):
 	#	xg[ii] = xj[0]
 	#	yg[ii] = xj[1]
 	#	zg[ii] = xj[2]
+
+	if expand_sphere:
+		re = 6371220.0
+		for ii in np.arange(6*nx*nx+2):
+			theta = np.arctan2(yg[ii],xg[ii]);
+			phi = np.arcsin(zg[ii])
+
+			xg[ii] = re*np.cos(phi)*np.cos(theta)
+			yg[ii] = re*np.cos(phi)*np.sin(theta)
+			zg[ii] = re*np.sin(phi)
 
 	if make_image:
 		fig = plt.figure()

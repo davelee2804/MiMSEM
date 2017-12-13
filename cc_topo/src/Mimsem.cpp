@@ -20,18 +20,19 @@ using namespace std;
 #define EL_ORD 3
 #define N_ELS_X_LOC 32
 #define RAD_EARTH 6371220.0
+#define RAD_SPHERE 1.0
 
 // initial condition given by:
 //     Galewsky, Scott and Polvani (2004) Tellus, 56A 429-440
 double u_init(double* x) {
     double eps = 1.0e-8;
-    double umax = 80.0/RAD_EARTH;
+    double umax = 80.0*(RAD_SPHERE/RAD_EARTH);
     double phi0 = M_PI/7.0;
     double phi1 = M_PI/2.0 - phi0;
     //double phi0 = -M_PI/4.0;
     //double phi1 = +M_PI/4.0;
     double en = exp(-4.0/((phi1 - phi0)*(phi1 - phi0)));
-    double phi = asin(x[2]);
+    double phi = asin(x[2]/RAD_SPHERE);
 
     if(phi > phi0 + eps && phi < phi1 - eps) {
         return (umax/en)*exp(1.0/((phi - phi0)*(phi - phi1)));
@@ -49,13 +50,13 @@ double h_init(double* x) {
     int ii, ni = 1000;
     double phiPrime = 0.0;
     //double phiPrime = -0.5*M_PI;
-    double phi = asin(x[2]);
+    double phi = asin(x[2]/RAD_SPHERE);
     double lambda = atan2(x[1],x[0]);
     //double dphi = phi/ni;
     double dphi = fabs(phi/ni);
-    double hHat = 120.0/RAD_EARTH;
-    double h = 10000.0/RAD_EARTH;
-    double grav = 9.80616/RAD_EARTH;
+    double hHat = 120.0*(RAD_SPHERE/RAD_EARTH);
+    double h = 10000.0*(RAD_SPHERE/RAD_EARTH);
+    double grav = 9.80616*(RAD_SPHERE/RAD_EARTH);
     double omega = 7.292e-5;
     double u, f;
     double alpha = 1.0/3.0;
@@ -72,7 +73,7 @@ double h_init(double* x) {
         x2[2] = sin(phiPrime);
         u = u_init(x2);
         f = 2.0*omega*sin(phiPrime);
-        h -= (6371220.0/RAD_EARTH)*u*(f + tan(phiPrime)*u*(6371220.0/RAD_EARTH))*dphi/grav;
+        h -= RAD_SPHERE*u*(f + tan(phiPrime)*u/RAD_SPHERE)*dphi/grav;
     }
 
     h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));

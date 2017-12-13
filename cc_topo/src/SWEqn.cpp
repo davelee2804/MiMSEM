@@ -16,6 +16,7 @@
 #include "SWEqn.h"
 
 #define RAD_EARTH 6371220.0
+#define RAD_SPHERE 1.0
 
 using namespace std;
 int step = 0;
@@ -24,7 +25,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     topo = _topo;
     geom = _geom;
 
-    grav = 9.80616/RAD_EARTH;
+    grav = 9.80616*(RAD_SPHERE/RAD_EARTH);
     omega = 7.292e-5;
 
     quad = new GaussLobatto(topo->elOrd);
@@ -80,7 +81,8 @@ void SWEqn::coriolis() {
     VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
         //fArray[ii] = 2.0*omega;//*geom->x[ii][2];
-        fArray[ii] = 2.0*omega*geom->x[ii][2];
+        //fArray[ii] = 2.0*omega*geom->x[ii][2];
+        fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
     }
     VecRestoreArray(fxl, &fArray);
 

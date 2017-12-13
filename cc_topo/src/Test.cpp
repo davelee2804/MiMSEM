@@ -78,7 +78,7 @@ void Test::gradient(ICfunc* fh) {
 
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, sw->M1->M, sw->M1->M);
-    KSPSetTolerances(ksp, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
     KSPGetPC(ksp,&pc);
     PCSetType(pc, PCBJACOBI);

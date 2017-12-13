@@ -17,6 +17,7 @@ using namespace std;
 using std::string;
 
 //#define WITH_HDF5
+#define RAD_SPHERE 1.0
 
 Geom::Geom(int _pi, Topo* _topo) {
     int ii, jj;
@@ -62,7 +63,7 @@ Geom::Geom(int _pi, Topo* _topo) {
            jj++;
         }
         s[ii][0] = atan2(x[ii][1],x[ii][0]);
-        s[ii][1] = asin(x[ii][2]);
+        s[ii][1] = asin(x[ii][2]/RAD_SPHERE);
         //cout << ii << "\t" << x[ii][0] << "\t" << x[ii][1] << "\t" << x[ii][2] << endl;
         ii++;
     }
