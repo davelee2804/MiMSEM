@@ -9,7 +9,6 @@ HDF5_INCLUDE=-I${HDF5_DIR}/include
 include ${PETSC_DIR}/conf/variables
 include ${PETSC_DIR}/conf/rules
 
-#CXX = /home/dave/soft/mpi/openmpi-1.8.3/bin/mpic++
 CXX = mpic++
 
 CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -g -Wall

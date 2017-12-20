@@ -10,7 +10,7 @@ from Geom2 import *
 pn = 3
 ne = 8
 print 'writing image'
-xg, yg, zg = init_geom(pn,ne,False)
+xg, yg, zg = init_geom(pn,ne,False,False)
 print '...done'
 
 filename = sys.argv[1]

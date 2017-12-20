@@ -70,7 +70,7 @@ double h_init(double* x) {
     x2[1] = x[1];
     for(ii = 0; ii < ni; ii++) {
         phiPrime += sgn*dphi;
-        x2[2] = sin(phiPrime);
+        x2[2] = RAD_SPHERE*sin(phiPrime);
         u = u_init(x2);
         f = 2.0*omega*sin(phiPrime);
         h -= RAD_SPHERE*u*(f + tan(phiPrime)*u/RAD_SPHERE)*dphi/grav;
