@@ -27,6 +27,17 @@ print 'file to read ' + filename
 #w = f[fieldname][:]
 #print w.shape
 #print xg.shape
+
+#delete text lines
+f = open(filename + '.dat','r')
+lines = f.readlines()
+f.close()
+f = open(filename + '.dat','w')
+for line in lines:
+	if line[0] != ' ' and line[0] != 'V' and line[0] != 'P':
+		f.write(line)
+f.close()
+
 w=np.loadtxt(filename + '.dat')
 
 xlen = xg.shape[0]
