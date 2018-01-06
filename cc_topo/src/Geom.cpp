@@ -34,7 +34,7 @@ Geom::Geom(int _pi, Topo* _topo) {
     edge = new LagrangeEdge(topo->elOrd, node);
 
     // determine the number of global nodes
-    sprintf(filename, "geom_%.4u.txt", pi);
+    sprintf(filename, "input/geom_%.4u.txt", pi);
     file.open(filename);
     nl = 0;
     while (std::getline(file, line))
@@ -52,7 +52,7 @@ Geom::Geom(int _pi, Topo* _topo) {
         s[ii] = new double[2];
     }
 
-    sprintf(filename, "geom_%.4u.txt", pi);
+    sprintf(filename, "input/geom_%.4u.txt", pi);
     file.open(filename);
     ii = 0;
     while (std::getline(file, line)) {
@@ -233,10 +233,10 @@ void Geom::write0(Vec q, char* fieldname, int tstep) {
     VecScatterEnd(topo->gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
 
 #ifdef WITH_HDF5
-    sprintf(filename, "%s_%.4u.h5", fieldname, tstep);
+    sprintf(filename, "output/%s_%.4u.h5", fieldname, tstep);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
 #else
-    sprintf(filename, "%s_%.4u.dat", fieldname, tstep);
+    sprintf(filename, "output/%s_%.4u.dat", fieldname, tstep);
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecView(qxg, viewer);
@@ -306,10 +306,10 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
 
     // scatter and write the zonal components
 #ifdef WITH_HDF5
-    sprintf(filename, "%s_%.4u_x.h5", fieldname, tstep);
+    sprintf(filename, "output/%s_%.4u_x.h5", fieldname, tstep);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
 #else
-    sprintf(filename, "%s_%.4u_x.dat", fieldname, tstep);
+    sprintf(filename, "output/%s_%.4u_x.dat", fieldname, tstep);
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecZeroEntries(uxg);
@@ -320,10 +320,10 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
 
     // scatter and write the meridional components
 #ifdef WITH_HDF5
-    sprintf(filename, "%s_%.4u_y.h5", fieldname, tstep);
+    sprintf(filename, "output/%s_%.4u_y.h5", fieldname, tstep);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
 #else
-    sprintf(filename, "%s_%.4u_y.dat", fieldname, tstep);
+    sprintf(filename, "output/%s_%.4u_y.dat", fieldname, tstep);
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecZeroEntries(uxg);
@@ -397,10 +397,10 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     VecScatterEnd(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
 
 #ifdef WITH_HDF5
-    sprintf(filename, "%s_%.4u.h5", fieldname, tstep);
+    sprintf(filename, "output/%s_%.4u.h5", fieldname, tstep);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
 #else
-    sprintf(filename, "%s_%.4u.dat", fieldname, tstep);
+    sprintf(filename, "output/%s_%.4u.dat", fieldname, tstep);
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecView(hxg, viewer);

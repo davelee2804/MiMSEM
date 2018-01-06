@@ -27,7 +27,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     nDofsX = elOrd*nElsX;
 
     // loading the nodes for this processor
-    sprintf(filename, "nodes_%.4u.txt", pi);
+    sprintf(filename, "input/nodes_%.4u.txt", pi);
     file.open(filename);
     n0 = 0;
     while (std::getline(file, line))
@@ -40,7 +40,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     loadObjs(filename, loc0);
 
     // loading the edges (x-normal) for this processor
-    sprintf(filename, "edges_x_%.4u.txt", pi);
+    sprintf(filename, "input/edges_x_%.4u.txt", pi);
     file.open(filename);
     n1x = 0;
     while (std::getline(file, line))
@@ -53,7 +53,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     loadObjs(filename, loc1x);
 
     // loading the edges (y-normal) for this processor
-    sprintf(filename, "edges_y_%.4u.txt", pi);
+    sprintf(filename, "input/edges_y_%.4u.txt", pi);
     file.open(filename);
     n1y = 0;
     while (std::getline(file, line))
@@ -81,7 +81,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     }
 
     // loading the faces for this processor
-    sprintf(filename, "faces_%.4u.txt", pi);
+    sprintf(filename, "input/faces_%.4u.txt", pi);
     file.open(filename);
     n2 = 0;
     while (std::getline(file, line))
@@ -121,7 +121,7 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     ISCreateStride(MPI_COMM_SELF, n2, 0, 1, &is_l_2);
 
     // load the local sizes
-    sprintf(filename, "local_sizes_%.4u.txt", pi);
+    sprintf(filename, "input/local_sizes_%.4u.txt", pi);
     file.open(filename);
     ii = 0;
     while (std::getline(file, line)) {
