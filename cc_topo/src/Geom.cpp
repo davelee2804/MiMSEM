@@ -196,6 +196,68 @@ double Geom::jacDet(int ex, int ey, int px, int py, double** J) {
     return fabs(J[0][0]*J[1][1] - J[0][1]*J[1][0]);
 }
 
+void Geom::interp0(int ex, int ey, int px, int py, double* vec, double* val) {
+    int jj, mp1;
+    int* inds0 = topo->elInds0_l(ex, ey);
+
+    mp1 = quad->n + 1;
+    jj = py*mp1 + px;
+
+    // assumes diagonal mass matrix for 0 forms
+    val[0] = vec[inds0[jj]];
+}
+
+void Geom::interp1_l(int ex, int ey, int px, int py, double* vec, double* val) {
+    int jj, nn, np1, n2;
+    int *inds1x, *inds1y;
+
+    inds1x = topo->elInds1x_l(ex, ey);
+    inds1y = topo->elInds1y_l(ex, ey);
+
+    nn = topo->elOrd;
+    np1 = topo->elOrd + 1;
+    n2 = nn*np1;
+
+    val[0] = 0.0;
+    val[1] = 0.0;
+    for(jj = 0; jj < n2; jj++) {
+        val[0] += vec[inds1x[jj]]*node->ljxi[px][jj%np1]*edge->ejxi[py][jj/np1];
+        val[1] += vec[inds1y[jj]]*edge->ejxi[px][jj%nn]*node->ljxi[py][jj/nn];
+    }
+}
+
+void Geom::interp2_l(int ex, int ey, int px, int py, double* vec, double* val) {
+    int jj, nn, n2;
+    int* inds2 = topo->elInds2_l(ex, ey);
+
+    nn = topo->elOrd;
+    n2 = nn*nn;
+
+    val[0] = 0.0;
+    for(jj = 0; jj < n2; jj++) {
+        val[0] += vec[inds2[jj]]*edge->ejxi[px][jj%nn]*edge->ejxi[py][jj/nn];
+    }
+}
+
+void Geom::interp1_g(int ex, int ey, int px, int py, double* vec, double* val, double** J) {
+    double val_l[2];
+    double jac = jacDet(ex, ey, px, py, J);
+
+    interp1_l(ex, ey, px, py, vec, val_l);
+
+    val[0] = (J[0][0]*val_l[0] + J[0][1]*val_l[1])/jac;
+    val[1] = (J[1][0]*val_l[0] + J[1][1]*val_l[1])/jac;
+}
+
+void Geom::interp2_g(int ex, int ey, int px, int py, double* vec, double* val, double** J) {
+    double val_l[1];
+    double jac = jacDet(ex, ey, px, py, J);
+
+    interp2_l(ex, ey, px, py, vec, val_l);
+
+    val[0] = val_l[0]/jac;
+}
+
 void Geom::write0(Vec q, char* fieldname, int tstep) {
     int ex, ey, ii, jj, mp1, mp12;
     int* inds0;
