@@ -511,7 +511,7 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     VecDestroy(&WQb);
 }
 
-double SWEqn::err0(Vec u, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
+double SWEqn::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
     int ex, ey, ii, mp1, mp12;
     int *inds0;
     double det;
@@ -519,16 +519,20 @@ double SWEqn::err0(Vec u, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
     double local[2], global[2]; // first entry is the H(rot) error, the second is the norm
     double **J;
     PetscScalar *array_0, *array_1;
-    Vec dug, dul;
+    Vec ul, dug, dul;
 
     J = new double*[2];
     J[0] = new double[2];
     J[1] = new double[2];
 
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ul);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dul);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dug);
 
-    MatMult(NtoE->E10, u, dug);
+    VecScatterBegin(topo->gtol_0, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    MatMult(NtoE->E10, ug, dug);
     VecScatterBegin(topo->gtol_1, dug, dul, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_1, dug, dul, INSERT_VALUES, SCATTER_FORWARD);
 
@@ -537,7 +541,7 @@ double SWEqn::err0(Vec u, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
 
     local[0] = local[1] = 0.0;
 
-    VecGetArray(u, &array_0);
+    VecGetArray(ul, &array_0);
     VecGetArray(dul, &array_1);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -547,7 +551,7 @@ double SWEqn::err0(Vec u, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, array_0, un);
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_0, dun, J);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, dun, J);
 
                 ua[0] = fw(geom->x[inds0[ii]]);
                 dua[0] = fu(geom->x[inds0[ii]]);
@@ -562,7 +566,7 @@ double SWEqn::err0(Vec u, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
             }
         }
     }
-    VecRestoreArray(u, &array_0);
+    VecRestoreArray(ul, &array_0);
     VecRestoreArray(dul, &array_1);
 
     MPI_Allreduce(local, global, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -570,6 +574,132 @@ double SWEqn::err0(Vec u, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
     delete[] J[0];
     delete[] J[1];
     delete[] J;
+    VecDestroy(&ul);
+    VecDestroy(&dul);
+    VecDestroy(&dug);
+
+    return sqrt(global[0]/global[1]);
+}
+
+double SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp) {
+    int ex, ey, ii, mp1, mp12;
+    int *inds0;
+    double det;
+    double un[2], dun[1], ua[2], dua[1];
+    double local[2], global[2]; // first entry is the H(rot) error, the second is the norm
+    double **J;
+    PetscScalar *array_1, *array_2;
+    Vec ul, dug, dul;
+
+    J = new double*[2];
+    J[0] = new double[2];
+    J[1] = new double[2];
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &dul);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dug);
+
+    VecScatterBegin(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    MatMult(EtoF->E21, ug, dug);
+    VecScatterBegin(topo->gtol_2, dug, dul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, dug, dul, INSERT_VALUES, SCATTER_FORWARD);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    local[0] = local[1] = 0.0;
+
+    VecGetArray(ul, &array_1);
+    VecGetArray(dul, &array_2);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = topo->elInds0_l(ex, ey);
+
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, un, J);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, dun, J);
+
+                ua[0] = fu(geom->x[inds0[ii]]);
+                ua[1] = fv(geom->x[inds0[ii]]);
+                dua[0] = fp(geom->x[inds0[ii]]);
+
+                local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*((un[0] - ua[0])*(un[0] - ua[0]) + 
+                                                                 (un[1] - ua[1])*(un[1] - ua[1]) + 
+                                                                 (dun[0] - dua[0])*(dun[0] - dua[0]));
+                local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(ua[0]*ua[0] + 
+                                                                 ua[1]*ua[1] + 
+                                                                 dua[0]*dua[0]);
+            }
+        }
+    }
+    VecRestoreArray(ul, &array_1);
+    VecRestoreArray(dul, &array_2);
+
+    MPI_Allreduce(local, global, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    delete[] J[0];
+    delete[] J[1];
+    delete[] J;
+    VecDestroy(&ul);
+    VecDestroy(&dul);
+    VecDestroy(&dug);
+
+    return sqrt(global[0]/global[1]);
+}
+
+double SWEqn::err2(Vec ug, ICfunc* fu) {
+    int ex, ey, ii, mp1, mp12;
+    int *inds0;
+    double det;
+    double un[1], ua[1];
+    double local[2], global[2]; // first entry is the H(rot) error, the second is the norm
+    double **J;
+    PetscScalar *array_2;
+    Vec ul, dug, dul;
+
+    J = new double*[2];
+    J[0] = new double[2];
+    J[1] = new double[2];
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+
+    VecScatterBegin(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    local[0] = local[1] = 0.0;
+
+    VecGetArray(ul, &array_2);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = topo->elInds0_l(ex, ey);
+
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, un, J);
+
+                ua[0] = fu(geom->x[inds0[ii]]);
+
+                local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(un[0] - ua[0])*(un[0] - ua[0]);
+                local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*ua[0]*ua[0];
+            }
+        }
+    }
+    VecRestoreArray(ul, &array_2);
+
+    MPI_Allreduce(local, global, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    delete[] J[0];
+    delete[] J[1];
+    delete[] J;
+    VecDestroy(&ul);
     VecDestroy(&dul);
     VecDestroy(&dug);
 

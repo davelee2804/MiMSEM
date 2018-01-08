@@ -30,4 +30,6 @@ class SWEqn {
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
         void init2(Vec h, ICfunc* func);
         double err0(Vec u, ICfunc* fw, ICfunc* fu, ICfunc* fv);
+        double err1(Vec u, ICfunc* fu, ICfunc* fv, ICfunc* fp);
+        double err2(Vec u, ICfunc* fu);
 };
