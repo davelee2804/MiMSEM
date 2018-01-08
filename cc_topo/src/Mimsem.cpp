@@ -18,9 +18,9 @@
 using namespace std;
 
 #define EL_ORD 3
-#define N_ELS_X_LOC 32
+#define N_ELS_X_LOC 8
 #define RAD_EARTH 6371220.0
-#define RAD_SPHERE 1.0
+#define RAD_SPHERE 6371220.0
 
 // initial condition given by:
 //     Galewsky, Scott and Polvani (2004) Tellus, 56A 429-440

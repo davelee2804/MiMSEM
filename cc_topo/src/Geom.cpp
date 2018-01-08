@@ -17,7 +17,7 @@ using namespace std;
 using std::string;
 
 //#define WITH_HDF5
-#define RAD_SPHERE 1.0
+#define RAD_SPHERE 6371220.0
 
 Geom::Geom(int _pi, Topo* _topo) {
     int ii, jj;

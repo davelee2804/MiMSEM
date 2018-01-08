@@ -29,4 +29,5 @@ class SWEqn {
         void init0(Vec q, ICfunc* func);
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
         void init2(Vec h, ICfunc* func);
+        double err0(Vec u, ICfunc* fw, ICfunc* fu, ICfunc* fv);
 };
