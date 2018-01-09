@@ -112,17 +112,11 @@ int main(int argc, char** argv) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hf);
 
-    if(!rank) cout << "testing vorticity..." << endl;
     test->vorticity(u_init, v_init);
-    if(!rank) cout << "testing gradient..." << endl;
     test->gradient(h_init);
-    if(!rank) cout << "testing divergence..." << endl;
     test->divergence(u_init, v_init);
-    if(!rank) cout << "testing convection..." << endl;
     test->convection(u_init, v_init);
-    if(!rank) cout << "testing mass flux..." << endl;
     test->massFlux(u_init,v_init, h_init);
-    if(!rank) cout << "testing kinetic energy..." << endl;
     test->kineticEnergy(u_init,v_init);
 
     sw->init1(ui, u_init, v_init);

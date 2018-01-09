@@ -246,7 +246,7 @@ void Uhmat::assemble(Vec h2) {
     double hi, det;
     PetscScalar* h2Array;
 
-    mp1 = l->q->n;
+    mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
     MatZeroEntries(M);
@@ -267,7 +267,7 @@ void Uhmat::assemble(Vec h2) {
             }
 
             Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
-            Tran_IP(U->nDofsI, V->nDofsJ, V->A, Vt);
+            Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
 
             // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
             Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);

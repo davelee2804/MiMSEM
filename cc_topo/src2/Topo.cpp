@@ -69,12 +69,6 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
 
     // add x-normal and y-normal edges into single set of indices
     loc1 = new int[n1x+n1y];
-    //for(ii = 0; ii < n1x; ii++) {
-    //    loc1[ii] = loc1x[ii];
-    //}
-    //for(ii = 0; ii < n1y; ii++) {
-    //    loc1[ii+n1x] = loc1y[ii];
-    //}
     for(ii = 0; ii < n1x; ii++) {
         loc1[2*ii+0] = loc1x[ii];
         loc1[2*ii+1] = loc1y[ii];
@@ -223,7 +217,6 @@ int* Topo::elInds1x_l(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd; iy++) {
         for(ix = 0; ix < elOrd + 1; ix++) {
-            //inds1x[kk] = (ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix;
             inds1x_l[kk] = 2*((ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix) + 0;
             kk++;
         }
@@ -238,7 +231,6 @@ int* Topo::elInds1y_l(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd + 1; iy++) {
         for(ix = 0; ix < elOrd; ix++) {
-            //inds1y[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix + n1x;
             inds1y_l[kk] = 2*((ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix) + 1;
             kk++;
         }
