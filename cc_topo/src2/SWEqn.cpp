@@ -82,9 +82,9 @@ void SWEqn::coriolis() {
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
-        //fArray[ii] = 2.0*omega;//*geom->x[ii][2];
+        fArray[ii] = 2.0*omega;
         //fArray[ii] = 2.0*omega*geom->x[ii][2];
-        fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
+        //fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
     }
     VecRestoreArray(fxl, &fArray);
 
