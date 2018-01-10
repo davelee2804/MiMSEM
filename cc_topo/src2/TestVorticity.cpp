@@ -34,11 +34,13 @@ double v_init(double* x) {
 double w_init(double* x) {
     double theta = atan2(x[1],x[0]);
     double phi = asin(x[2]/RAD_SPHERE);
-    double a = +1.0/RAD_SPHERE/cos(phi);
-    double b = -2.0*RAD_SPHERE*sin(phi)*cos(phi)*cos(theta);
-    double c = +RAD_SPHERE*cos(phi)*cos(theta);
-
-    return a*(b - c);
+    //double a = +1.0/RAD_SPHERE/cos(phi);
+    //double b = -2.0*RAD_SPHERE*sin(phi)*cos(phi)*cos(theta);
+    //double c = +RAD_SPHERE*cos(phi)*cos(theta);
+    //return a*(c - b);
+    double b = -2.0*sin(phi)*cos(theta);
+    double c = +cos(theta);
+    return c - b;
 }
 
 int main(int argc, char** argv) {
