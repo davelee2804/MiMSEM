@@ -166,8 +166,8 @@ void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
 double Geom::jacDet(int ex, int ey, int px, int py, double** J) {
     jacobian(ex, ey, px, py, J);
 
-    //return (J[0][0]*J[1][1] - J[0][1]*J[1][0]);
-    return fabs(J[0][0]*J[1][1] - J[0][1]*J[1][0]);
+    return (J[0][0]*J[1][1] - J[0][1]*J[1][0]);
+    //return fabs(J[0][0]*J[1][1] - J[0][1]*J[1][0]);
 }
 
 void Geom::interp0(int ex, int ey, int px, int py, double* vec, double* val) {

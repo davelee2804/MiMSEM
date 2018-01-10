@@ -25,17 +25,19 @@ using namespace std;
 // 1/(R.cos(phi))d.p/d.theta
 double u_init(double* x) {
     double theta = atan2(x[1],x[0]);
-    double phi = acos(x[2]/RAD_SPHERE);
+    double phi = asin(x[2]/RAD_SPHERE);
 
-    return 1.0/RAD_SPHERE/cos(phi)*(-RAD_SPHERE*cos(phi)*sin(theta));
+    //return 1.0/RAD_SPHERE/cos(phi)*(-RAD_SPHERE*cos(phi)*sin(theta));
+    return -sin(theta);
 }
 
 // (1/R)d.p/d.phi
 double v_init(double* x) {
     double theta = atan2(x[1],x[0]);
-    double phi = acos(x[2]/RAD_SPHERE);
+    double phi = asin(x[2]/RAD_SPHERE);
 
-    return 1.0/RAD_SPHERE*(-RAD_SPHERE*sin(phi)*cos(theta));
+    //return 1.0/RAD_SPHERE*(-RAD_SPHERE*sin(phi)*cos(theta));
+    return -sin(phi)*cos(theta);
 }
 
 double p_init(double* x) {
@@ -98,7 +100,7 @@ int main(int argc, char** argv) {
     sprintf(fieldname,"pressure");
     geom->write2(pi,fieldname,0);
 
-    // TODO: check that the velocity components are correct for H(div) error
+    // TODO: check that the pressure component is correct for H(div) error
     err = sw->err1(un, u_init, v_init, p_init);
     if(!rank) cout << "H(div) velocity error: " << err << endl;
 

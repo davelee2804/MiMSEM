@@ -33,7 +33,7 @@ double v_init(double* x) {
 // 1/(R.cos(phi))(d(u.cos(phi))/d.phi - d.v/d.theta)
 double w_init(double* x) {
     double theta = atan2(x[1],x[0]);
-    double phi = acos(x[2]/RAD_SPHERE);
+    double phi = asin(x[2]/RAD_SPHERE);
     double a = +1.0/RAD_SPHERE/cos(phi);
     double b = -2.0*RAD_SPHERE*sin(phi)*cos(phi)*cos(theta);
     double c = +RAD_SPHERE*cos(phi)*cos(theta);
