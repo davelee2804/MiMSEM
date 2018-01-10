@@ -655,16 +655,15 @@ double SWEqn::err2(Vec ug, ICfunc* fu) {
     double local[2], global[2]; // first entry is the H(rot) error, the second is the norm
     double **J;
     PetscScalar *array_2;
-    Vec ul, dug, dul;
+    Vec ul;
 
     J = new double*[2];
     J[0] = new double[2];
     J[1] = new double[2];
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
-
-    VecScatterBegin(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &ul);
+    VecScatterBegin(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
@@ -696,8 +695,6 @@ double SWEqn::err2(Vec ug, ICfunc* fu) {
     delete[] J[1];
     delete[] J;
     VecDestroy(&ul);
-    VecDestroy(&dul);
-    VecDestroy(&dug);
 
     return sqrt(global[0]/global[1]);
 }
