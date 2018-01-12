@@ -15,6 +15,8 @@
 using namespace std;
 
 //#define VIEW_MAT
+#define RAD_EARTH 6371220.0
+#define PIOLA
 
 // mass matrix for the 1 form vector (x-normal degrees of
 // freedom first then y-normal degrees of freedom)
@@ -70,9 +72,15 @@ void Umat::assemble() {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
 
+#ifdef PIOLA
                 Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
                 Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
+#else
+                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii];
+                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii];
+                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii];
+#endif
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -176,7 +184,11 @@ void Wmat::assemble() {
 
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+#ifdef PIOLA
                 Qaa[ii][ii] = Q->A[ii][ii]/det/det;
+#else
+                Qaa[ii][ii] = det*det*Q->A[ii][ii];
+#endif
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -261,9 +273,15 @@ void Uhmat::assemble(Vec h2) {
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi, J);
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
 
+#ifdef PIOLA
                 Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
                 Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
+#else
+                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii];
+                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii];
+                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii];
+#endif
             }
 
             Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
@@ -422,7 +440,11 @@ void WtQmat::assemble() {
 
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+#ifdef PIOLA
                 Qaa[ii][ii] = Q->A[ii][ii]/det;
+#else
+                Qaa[ii][ii] = det*Q->A[ii][ii];
+#endif
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -548,10 +570,17 @@ void UtQmat::assemble() {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
 
+#ifdef PIOLA
                 Qaa[ii][ii] = J[0][0]*Q->A[ii][ii]/det;
                 Qab[ii][ii] = J[1][0]*Q->A[ii][ii]/det;
                 Qba[ii][ii] = J[0][1]*Q->A[ii][ii]/det;
                 Qbb[ii][ii] = J[1][1]*Q->A[ii][ii]/det;
+#else
+                Qaa[ii][ii] = J[0][0]*Q->A[ii][ii];
+                Qab[ii][ii] = J[1][0]*Q->A[ii][ii];
+                Qba[ii][ii] = J[0][1]*Q->A[ii][ii];
+                Qbb[ii][ii] = J[1][1]*Q->A[ii][ii];
+#endif
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -658,8 +687,13 @@ void WtQUmat::assemble(Vec u1) {
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux, J);
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
 
+#ifdef PIOLA
                 Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]/det/det;
+#else
+                Qaa[ii][ii] = 0.5*det*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii];
+                Qab[ii][ii] = 0.5*det*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii];
+#endif
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -758,8 +792,13 @@ void RotMat::assemble(Vec q0) {
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
 
+#ifdef PIOLA
                 Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
+#else
+                Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii];
+                Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii];
+#endif
             }
 
             Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
@@ -839,8 +878,13 @@ E10mat::E10mat(Topo* _topo) {
                     row = inds_1x[kk];
                     cols[0] = inds_0[ll];
                     cols[1] = inds_0[ll+np1];
+#ifdef PIOLA
+                    vals[0] = +1.0/RAD_EARTH;
+                    vals[1] = -1.0/RAD_EARTH;
+#else
                     vals[0] = +1.0;
                     vals[1] = -1.0;
+#endif
                     MatSetValues(E10, 1, &row, 2, cols, vals, INSERT_VALUES);
 
                     // y-normal edge
@@ -849,8 +893,13 @@ E10mat::E10mat(Topo* _topo) {
                     row = inds_1y[kk];
                     cols[0] = inds_0[ll];
                     cols[1] = inds_0[ll+1];
+#ifdef PIOLA
+                    vals[0] = -1.0/RAD_EARTH;
+                    vals[1] = +1.0/RAD_EARTH;
+#else
                     vals[0] = -1.0;
                     vals[1] = +1.0;
+#endif
                     MatSetValues(E10, 1, &row, 2, cols, vals, INSERT_VALUES);
                 }
             }
@@ -905,10 +954,17 @@ E21mat::E21mat(Topo* _topo) {
                     cols[1] = inds_1x[ii*np1+jj+1];
                     cols[2] = inds_1y[ii*nn+jj];
                     cols[3] = inds_1y[(ii+1)*nn+jj];
+#ifdef PIOLA
+                    vals[0] = -1.0/RAD_EARTH;
+                    vals[1] = +1.0/RAD_EARTH;
+                    vals[2] = -1.0/RAD_EARTH;
+                    vals[3] = +1.0/RAD_EARTH;
+#else
                     vals[0] = -1.0;
                     vals[1] = +1.0;
                     vals[2] = -1.0;
                     vals[3] = +1.0;
+#endif
                     MatSetValues(E21, 1, &row, 4, cols, vals, INSERT_VALUES);
                 }
             }

@@ -18,6 +18,7 @@ using std::string;
 
 //#define WITH_HDF5
 #define RAD_SPHERE 6371220.0
+#define PIOLA
 
 Geom::Geom(int _pi, Topo* _topo) {
     int ii, jj;
@@ -219,8 +220,13 @@ void Geom::interp1_g(int ex, int ey, int px, int py, double* vec, double* val, d
 
     interp1_l(ex, ey, px, py, vec, val_l);
 
+#ifdef PIOLA
     val[0] = (J[0][0]*val_l[0] + J[0][1]*val_l[1])/jac;
     val[1] = (J[1][0]*val_l[0] + J[1][1]*val_l[1])/jac;
+#else
+    val[0] = (J[0][0]*val_l[0] + J[0][1]*val_l[1]);
+    val[1] = (J[1][0]*val_l[0] + J[1][1]*val_l[1]);
+#endif
 }
 
 void Geom::interp2_g(int ex, int ey, int px, int py, double* vec, double* val, double** J) {
@@ -229,7 +235,11 @@ void Geom::interp2_g(int ex, int ey, int px, int py, double* vec, double* val, d
 
     interp2_l(ex, ey, px, py, vec, val_l);
 
+#ifdef PIOLA
     val[0] = val_l[0]/jac;
+#else
+    val[0] = jac*val_l[0];
+#endif
 }
 
 void Geom::write0(Vec q, char* fieldname, int tstep) {
