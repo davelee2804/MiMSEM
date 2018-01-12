@@ -32,4 +32,6 @@ class SWEqn {
         double err0(Vec u, ICfunc* fw, ICfunc* fu, ICfunc* fv);
         double err1(Vec u, ICfunc* fu, ICfunc* fv, ICfunc* fp);
         double err2(Vec u, ICfunc* fu);
+        double int0(Vec u);
+        double int2(Vec u);
 };

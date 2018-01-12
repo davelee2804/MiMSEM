@@ -82,9 +82,8 @@ void SWEqn::coriolis() {
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
-        fArray[ii] = 2.0*omega;
-        //fArray[ii] = 2.0*omega*geom->x[ii][2];
-        //fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
+        //fArray[ii] = 2.0*omega;
+        fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
     }
     VecRestoreArray(fxl, &fArray);
 
@@ -697,4 +696,92 @@ double SWEqn::err2(Vec ug, ICfunc* fu) {
     VecDestroy(&ul);
 
     return sqrt(global[0]/global[1]);
+}
+
+double SWEqn::int0(Vec ug) {
+    int ex, ey, ii, mp1, mp12;
+    double det, uq, local, global;
+    double **J;
+    PetscScalar *array_0;
+    Vec ul;
+
+    J = new double*[2];
+    J[0] = new double[2];
+    J[1] = new double[2];
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ul);
+    VecScatterBegin(topo->gtol_0, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    local = 0.0;
+
+    VecGetArray(ul, &array_0);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                geom->interp0(ex, ey, ii%mp1, ii/mp1, array_0, &uq);
+
+                local += det*quad->w[ii%mp1]*quad->w[ii/mp1]*uq;
+            }
+        }
+    }
+    VecRestoreArray(ul, &array_0);
+
+    MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    delete[] J[0];
+    delete[] J[1];
+    delete[] J;
+    VecDestroy(&ul);
+
+    return global;
+}
+
+double SWEqn::int2(Vec ug) {
+    int ex, ey, ii, mp1, mp12;
+    double det, uq, local, global;
+    double **J;
+    PetscScalar *array_2;
+    Vec ul;
+
+    J = new double*[2];
+    J[0] = new double[2];
+    J[1] = new double[2];
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &ul);
+    VecScatterBegin(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    local = 0.0;
+
+    VecGetArray(ul, &array_2);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, &uq, J);
+
+                local += det*quad->w[ii%mp1]*quad->w[ii/mp1]*uq;
+            }
+        }
+    }
+    VecRestoreArray(ul, &array_2);
+
+    MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    delete[] J[0];
+    delete[] J[1];
+    delete[] J;
+    VecDestroy(&ul);
+
+    return global;
 }

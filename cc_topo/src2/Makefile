@@ -22,24 +22,24 @@ OBJS = LinAlg.o \
        SWEqn.o \
        Test.o \
        TestVorticity.o
-#       TestDivergence.o
 #       TestGradient.o
+#       TestDivergence.o
 #       Mimsem.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-#Mimsem.o: Mimsem.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-#	${CXX} -c Mimsem.cpp ${CXXFLAGS}
+Mimsem.o: Mimsem.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Mimsem.cpp ${CXXFLAGS}
 
 TestVorticity.o: TestVorticity.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c TestVorticity.cpp ${CXXFLAGS}
 
-#TestDivergence.o: TestDivergence.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-#	${CXX} -c TestDivergence.cpp ${CXXFLAGS}
+TestDivergence.o: TestDivergence.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c TestDivergence.cpp ${CXXFLAGS}
 
-#TestGradient.o: TestGradient.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-#	${CXX} -c TestGradient.cpp ${CXXFLAGS}
+TestGradient.o: TestGradient.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c TestGradient.cpp ${CXXFLAGS}
 
 Test.o: Test.cpp Test.h SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Test.cpp ${CXXFLAGS}
