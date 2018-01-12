@@ -122,3 +122,76 @@ void Tran_IP(int ni, int nj, double** A, double** B) {
         }
     }
 }
+
+double ArcLen(double* a, double* b, double rad) {
+    double cx, cy, cz, c;
+
+    cx = b[0] - a[0];
+    cy = b[1] - a[1];
+    cz = b[2] - a[2];
+
+    c = sqrt(cx*cx + cy*cy + cz*cz);
+
+    return rad*2.0*asin(c/(2.0*rad));
+}
+
+bool ArcInt(double rad, double* ai, double* af, double* bi, double* bf, double* xo) {
+    double l_ai_af, l_ai_o, l_af_o, l_bi_bf, l_bi_o, l_bf_o, rad2;
+    double va[3], vb[3], vl[3], vr[3];
+
+    // Construct a vector normal to the plane of the great circle made by each of the two arcs
+    va[0] = ai[1]*af[2] - af[1]*ai[2];
+    va[1] = af[0]*ai[2] - ai[0]*af[2];
+    va[2] = ai[0]*af[1] - af[0]*ai[1];
+
+    vb[0] = bi[1]*bf[2] - bf[1]*bi[2];
+    vb[1] = bf[0]*bi[2] - bi[0]*bf[2];
+    vb[2] = bi[0]*bf[1] - bf[0]*bi[1];
+
+    // Find the coordinate of the intersecting planes as the cross product of the vectors defining 
+    // the planes of the great circles
+    vl[0] = va[1]*vb[2] - vb[1]*va[2];
+    vl[1] = vb[0]*va[2] - va[0]*vb[2];
+    vl[2] = va[0]*vb[1] - vb[0]*va[1];
+
+    // Normalize
+    rad2 = sqrt(vl[0]*vl[0] + vl[1]*vl[1] + vl[2]*vl[2]);
+    vl[0] = rad*vl[0]/rad2;
+    vl[1] = rad*vl[1]/rad2;
+    vl[2] = rad*vl[2]/rad2;
+    vr[0] = -vl[0];
+    vr[1] = -vl[1];
+    vr[2] = -vl[2];
+
+    // Check that the intersection point lies within the limits of the two arcs
+    l_ai_af = ArcLen(ai, af, rad);
+    l_ai_o  = ArcLen(ai, vl, rad);
+    l_af_o  = ArcLen(af, vl, rad);
+
+    l_bi_bf = ArcLen(bi, bf, rad);
+    l_bi_o  = ArcLen(bi, vl, rad);
+    l_bf_o  = ArcLen(bf, vl, rad);
+
+    if(fabs(l_ai_af - l_ai_o - l_af_o) < 1.0e-6 && fabs(l_bi_bf - l_bi_o - l_bf_o) < 1.0e-6) {
+        xo[0] = vl[0];
+        xo[1] = vl[1];
+        xo[2] = vl[2];
+        return true;
+    }
+
+    // Check the antipodal intersection point
+    l_ai_o  = ArcLen(ai, vr, rad);
+    l_af_o  = ArcLen(af, vr, rad);
+
+    l_bi_o  = ArcLen(bi, vr, rad);
+    l_bf_o  = ArcLen(bf, vr, rad);
+
+    if (fabs(l_ai_af - l_ai_o - l_af_o) < 1.0e-6 && fabs(l_bi_bf - l_bi_o - l_bf_o) < 1.0e-6) {
+        xo[0] = vr[0];
+        xo[1] = vr[1];
+        xo[2] = vr[2];
+        return true;
+    }
+
+    return false;
+}
