@@ -14,6 +14,7 @@ def init_geom(pn, ne, make_image, expand_sphere):
 
 	q2 = np.array([-1.0,0.0,+1.0])
 	q3 = np.array([-1.0,-np.sqrt(0.2),+np.sqrt(0.2),+1.0])
+	q4 = np.array([-1,-np.sqrt(3.0/7.0),0.0,+np.sqrt(3.0/7.0),+1])
 	q5 = np.array([-1.0,-c,-b,+b,+c,+1.0])
 
 	nx = pn*ne
@@ -24,6 +25,8 @@ def init_geom(pn, ne, make_image, expand_sphere):
 			X[el*pn:(el+1)*pn] = dx*0.5*(q2[:pn]+1.0) + el*dx - 0.25*np.pi
 		if pn == 3:
 			X[el*pn:(el+1)*pn] = dx*0.5*(q3[:pn]+1.0) + el*dx - 0.25*np.pi
+		if pn == 4:
+			X[el*pn:(el+1)*pn] = dx*0.5*(q4[:pn]+1.0) + el*dx - 0.25*np.pi
 		elif pn == 5:
 			X[el*pn:(el+1)*pn] = dx*0.5*(q5[:pn]+1.0) + el*dx - 0.25*np.pi
 	
