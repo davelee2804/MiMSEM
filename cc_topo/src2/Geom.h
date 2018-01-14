@@ -20,4 +20,5 @@ class Geom {
         void write0(Vec q, char* fieldname, int tstep);
         void write1(Vec u, char* fieldname, int tstep);
         void write2(Vec h, char* fieldname, int tstep);
+        void updateGlobalCoords();
 };

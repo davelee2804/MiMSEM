@@ -69,6 +69,10 @@ Geom::Geom(int _pi, Topo* _topo) {
         ii++;
     }
     file.close();
+
+    // update the global coordinates within each element for consistency with the local 
+    // coordinates as defined by the Jacobian mapping
+    updateGlobalCoords();
 }
 
 Geom::~Geom() {
@@ -86,8 +90,10 @@ Geom::~Geom() {
     delete quad;
 }
 
-// isoparametric jacobian, with the global coordinate approximated as an expansion over the test 
-// functions. derivatives are evaluated from the lagrange polynomial derivatives within each element
+// Local to global Jacobian mapping
+// Reference:
+//    Guba, Taylor, Ullrich, Overfelt and Levy (2014)
+//    Geosci. Model Dev. 7 2803 - 2816
 void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
     int ii, jj, kk, mp1 = quad->n + 1;
     int* inds_0 = topo->elInds0_l(ex, ey);
@@ -439,4 +445,50 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     delete[] Jm[0];
     delete[] Jm[1];
     delete[] Jm;
+}
+
+// update global coordinates (cartesian and spherical) for consistency with local
+// coordinates as derived from the Jacobian
+void Geom::updateGlobalCoords() {
+    int ex, ey, ii, jj, mp1, mp12;
+    int* inds0;
+    double theta, phi, x1, x2, rTildeMag;
+    double rTilde[3];
+    double *c1, *c2, *c3, *c4;
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = topo->elInds0_l(ex, ey);
+
+            c1 = x[inds0[0]];
+            c2 = x[inds0[mp1-1]];
+            c3 = x[inds0[mp1*mp1-1]];
+            c4 = x[inds0[(mp1-1)*(mp1)]];
+
+            for(ii = 0; ii < mp12; ii++) {
+                if(ii == 0 || ii == mp1-1 || ii == mp12-1 || ii == mp1*(mp1-1)) continue;
+
+                jj = inds0[ii];
+
+                x1 = quad->x[ii%mp1];
+                x2 = quad->x[ii/mp1];
+
+                rTilde[0] = 0.25*((1.0-x1)*(1.0-x2)*c1[0] + (1.0+x1)*(1.0-x2)*c2[0] + (1.0+x1)*(1.0+x2)*c3[0] + (1.0-x1)*(1.0+x2)*c4[0]);
+                rTilde[1] = 0.25*((1.0-x1)*(1.0-x2)*c1[1] + (1.0+x1)*(1.0-x2)*c2[1] + (1.0+x1)*(1.0+x2)*c3[1] + (1.0-x1)*(1.0+x2)*c4[1]);
+                rTilde[2] = 0.25*((1.0-x1)*(1.0-x2)*c1[2] + (1.0+x1)*(1.0-x2)*c2[2] + (1.0+x1)*(1.0+x2)*c3[2] + (1.0-x1)*(1.0+x2)*c4[2]);
+
+                rTildeMag = sqrt(rTilde[0]*rTilde[0] + rTilde[1]*rTilde[1] + rTilde[2]*rTilde[2]);
+
+                x[jj][0] = RAD_SPHERE*rTilde[0]/rTildeMag;
+                x[jj][1] = RAD_SPHERE*rTilde[1]/rTildeMag;
+                x[jj][2] = RAD_SPHERE*rTilde[2]/rTildeMag;
+
+                s[jj][0] = atan2(x[jj][1], x[jj][0]);
+                s[jj][1] = asin(x[jj][2]/RAD_SPHERE);
+            }
+        }
+    }
 }
