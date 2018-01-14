@@ -878,13 +878,8 @@ E10mat::E10mat(Topo* _topo) {
                     row = inds_1x[kk];
                     cols[0] = inds_0[ll];
                     cols[1] = inds_0[ll+np1];
-#ifdef PIOLA
-                    vals[0] = +1.0/RAD_EARTH;
-                    vals[1] = -1.0/RAD_EARTH;
-#else
                     vals[0] = +1.0;
                     vals[1] = -1.0;
-#endif
                     MatSetValues(E10, 1, &row, 2, cols, vals, INSERT_VALUES);
 
                     // y-normal edge
@@ -893,13 +888,8 @@ E10mat::E10mat(Topo* _topo) {
                     row = inds_1y[kk];
                     cols[0] = inds_0[ll];
                     cols[1] = inds_0[ll+1];
-#ifdef PIOLA
-                    vals[0] = -1.0/RAD_EARTH;
-                    vals[1] = +1.0/RAD_EARTH;
-#else
                     vals[0] = -1.0;
                     vals[1] = +1.0;
-#endif
                     MatSetValues(E10, 1, &row, 2, cols, vals, INSERT_VALUES);
                 }
             }
@@ -954,17 +944,10 @@ E21mat::E21mat(Topo* _topo) {
                     cols[1] = inds_1x[ii*np1+jj+1];
                     cols[2] = inds_1y[ii*nn+jj];
                     cols[3] = inds_1y[(ii+1)*nn+jj];
-#ifdef PIOLA
-                    vals[0] = -1.0/RAD_EARTH;
-                    vals[1] = +1.0/RAD_EARTH;
-                    vals[2] = -1.0/RAD_EARTH;
-                    vals[3] = +1.0/RAD_EARTH;
-#else
                     vals[0] = -1.0;
                     vals[1] = +1.0;
                     vals[2] = -1.0;
                     vals[3] = +1.0;
-#endif
                     MatSetValues(E21, 1, &row, 4, cols, vals, INSERT_VALUES);
                 }
             }

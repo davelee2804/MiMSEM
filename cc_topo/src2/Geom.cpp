@@ -158,10 +158,10 @@ void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
         }
     }
 
-    J[0][0] *= 0.25*rTildeMagInv;
-    J[0][1] *= 0.25*rTildeMagInv;
-    J[1][0] *= 0.25*rTildeMagInv;
-    J[1][1] *= 0.25*rTildeMagInv;
+    J[0][0] *= 0.25*RAD_SPHERE*rTildeMagInv;
+    J[0][1] *= 0.25*RAD_SPHERE*rTildeMagInv;
+    J[1][0] *= 0.25*RAD_SPHERE*rTildeMagInv;
+    J[1][1] *= 0.25*RAD_SPHERE*rTildeMagInv;
 }
 
 double Geom::jacDet(int ex, int ey, int px, int py, double** J) {
