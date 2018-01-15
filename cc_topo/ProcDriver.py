@@ -16,6 +16,11 @@ for pi in np.arange(n_procs):
 	pc.print_faces(pi)
 	pc.procs[pi].writeLocalSizes()
 
+f = open('grid_res.txt', 'w')
+f.write(str(pn) + '\n')
+f.write(str(ne/pc.npx))
+f.close()
+
 '''
 print 'results for 24 procs'
 print '0:\t[19 17  1  3  2 23 21 -1'

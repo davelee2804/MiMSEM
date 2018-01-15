@@ -12,7 +12,7 @@
 using namespace std;
 using std::string;
 
-Topo::Topo(int _pi, int _elOrd, int _nElsX) {
+Topo::Topo(int _pi) {
     Vec vl, vg;
 
     int ii, n_procs;
@@ -22,8 +22,18 @@ Topo::Topo(int _pi, int _elOrd, int _nElsX) {
     string line;
 
     pi = _pi;
-    elOrd = _elOrd;
-    nElsX = _nElsX;
+
+    // read the element order and number of elements in each dimension per processor
+    sprintf(filename, "input/grid_res.txt");
+    file.open(filename);
+    std::getline(file, line);
+    elOrd = atoi(line.c_str());
+    std::getline(file, line);
+    nElsX = atoi(line.c_str());
+    file.close();
+
+    if(!pi) cout << "element order: " << elOrd << "\tno. els in each dimension per proc. " << nElsX << endl;
+
     nDofsX = elOrd*nElsX;
 
     // loading the nodes for this processor
