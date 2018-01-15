@@ -83,8 +83,7 @@ void SWEqn::coriolis() {
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
-        fArray[ii] = 2.0*omega;
-        //fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
+        fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
     }
     VecRestoreArray(fxl, &fArray);
 
@@ -350,6 +349,7 @@ void SWEqn::massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt
     VecAXPY(hui, 1.0, huj);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dhu);
+    VecZeroEntries(dhu);
     MatMult(EtoF->E21, hui, dhu);
 
     VecZeroEntries(hf);
@@ -465,11 +465,11 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
         hnorm /= topo->nDofs2G;
         VecCopy(hf, hj);
 
-        if(!rank) cout << "|u|: " << unorm << "\t|h|: " << hnorm << endl;
+        if(!rank) cout << iter << "\t|u|: " << unorm << "\t|h|: " << hnorm << endl;
         iter++;
 
         if(iter > 100) done = true;
-        if(unorm < 1.0e-6 && hnorm < 1.0e-6) done = true;
+        if(unorm < 1.0e-4 && hnorm < 1.0e-4) done = true;
     } while(!done);
 
     // write fields
