@@ -17,10 +17,8 @@
 
 using namespace std;
 
-#define EL_ORD 3
-#define N_ELS_X_LOC 8
-#define RAD_EARTH 6371220.0
-#define RAD_SPHERE 6371220.0
+//#define RAD_SPHERE 6371220.0
+#define RAD_SPHERE 1.0
 
 double u_init(double* x) {
     return x[0]; // R.cos(phi).cos(theta)
@@ -30,7 +28,7 @@ double v_init(double* x) {
     return x[1]; // R.cos(phi).sin(theta)
 }
 
-// 1/(R.cos(phi))(d(u.cos(phi))/d.phi - d.v/d.theta)
+// -1/(R.cos(phi))(d(u.cos(phi))/d.phi - d.v/d.theta)
 double w_init(double* x) {
     double theta = atan2(x[1],x[0]);
     double phi = asin(x[2]/RAD_SPHERE);
@@ -38,9 +36,25 @@ double w_init(double* x) {
     //double b = -2.0*RAD_SPHERE*sin(phi)*cos(phi)*cos(theta);
     //double c = +RAD_SPHERE*cos(phi)*cos(theta);
     //return a*(c - b);
-    double b = -2.0*sin(phi)*cos(theta);
-    double c = +cos(theta);
-    return c - b;
+    double b = 2.0*sin(phi)*cos(theta);
+    double c = cos(theta);
+    return c + b;
+}
+
+double dwx_init(double* x) {
+    double theta = atan2(x[1],x[0]);
+    double phi = asin(x[2]/RAD_SPHERE);
+
+    //return (-1.0/RAD_SPHERE*cos(phi))*(2.0*sin(phi)*sin(theta) - sin(theta));
+    return (-1.0/RAD_SPHERE)*(2.0*cos(phi)*cos(theta));
+}
+
+double dwy_init(double* x) {
+    double theta = atan2(x[1],x[0]);
+    double phi = asin(x[2]/RAD_SPHERE);
+
+    //return (-1.0/RAD_SPHERE)*(-2.0*cos(phi)*cos(theta));
+    return (1.0/RAD_SPHERE/cos(phi))*(-2.0*sin(phi)*sin(theta) - sin(theta));
 }
 
 int main(int argc, char** argv) {
@@ -52,7 +66,7 @@ int main(int argc, char** argv) {
     Geom* geom;
     SWEqn* sw;
     Test* test;
-    Vec wn, wa, du, ui;
+    Vec wn, wa, du, ui, dwa, dwn;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 
@@ -61,7 +75,7 @@ int main(int argc, char** argv) {
 
     cout << "importing topology for processor: " << rank << " of " << size << endl;
 
-    topo = new Topo(rank, EL_ORD, N_ELS_X_LOC);
+    topo = new Topo(rank);
     geom = new Geom(rank, topo);
     sw = new SWEqn(topo, geom);
     test = new Test(sw);
@@ -70,12 +84,12 @@ int main(int argc, char** argv) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &wa);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &du);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dwa);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dwn);
 
     sw->init0(wa, w_init);
     sw->init1(ui, u_init, v_init);
 
-    //VecZeroEntries(sw->fg);
-    //sw->diagnose_w(ui, &wn);
     VecZeroEntries(du);
     MatMult(sw->E01M1, ui, du);
     VecPointwiseDivide(wn, du, sw->m0->vg);
@@ -87,8 +101,18 @@ int main(int argc, char** argv) {
     sprintf(fieldname,"velocity");
     geom->write1(ui,fieldname,0);
 
+    sw->init1(dwa, dwx_init, dwy_init);
+    MatMult(sw->NtoE->E10, wn, dwn);
+
+    sprintf(fieldname,"dwa");
+    geom->write1(dwa,fieldname,0);
+    sprintf(fieldname,"dwn");
+    geom->write1(dwn,fieldname,0);
+
+    cout << "global vorticity " << sw->int0(wn) << endl;
+
     // TODO: check that the velocity components are correct for H(rot) error
-    err = sw->err0(wn, w_init, u_init, v_init);
+    err = sw->err0(wn, w_init, dwx_init, dwy_init);
     if(!rank) cout << "H(rot) vorticity error: " << err << endl;
 
     delete topo;
@@ -100,6 +124,8 @@ int main(int argc, char** argv) {
     VecDestroy(&wa);
     VecDestroy(&du);
     VecDestroy(&ui);
+    VecDestroy(&dwa);
+    VecDestroy(&dwn);
 
     PetscFinalize();
 

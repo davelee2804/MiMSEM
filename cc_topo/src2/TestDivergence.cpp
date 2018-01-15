@@ -17,10 +17,8 @@
 
 using namespace std;
 
-#define EL_ORD 3
-#define N_ELS_X_LOC 8
-#define RAD_EARTH 6371220.0
-#define RAD_SPHERE 6371220.0
+//#define RAD_SPHERE 6371220.0
+#define RAD_SPHERE 1.0
 
 double u_init(double* x) {
     return x[0]; // R.cos(phi).cos(theta)
@@ -61,7 +59,7 @@ int main(int argc, char** argv) {
 
     cout << "importing topology for processor: " << rank << " of " << size << endl;
 
-    topo = new Topo(rank, EL_ORD, N_ELS_X_LOC);
+    topo = new Topo(rank);
     geom = new Geom(rank, topo);
     sw = new SWEqn(topo, geom);
     test = new Test(sw);
@@ -82,7 +80,6 @@ int main(int argc, char** argv) {
     sprintf(fieldname,"pres_a");
     geom->write2(pa,fieldname,0);
 
-    // TODO: check that the velocity components are correct for H(rot) error
     err = sw->err2(pn, p_init);
     if(!rank) cout << "L2 divergence error: " << err << endl;
 

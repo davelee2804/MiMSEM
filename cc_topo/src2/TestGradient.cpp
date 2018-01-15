@@ -17,10 +17,8 @@
 
 using namespace std;
 
-#define EL_ORD 3
-#define N_ELS_X_LOC 8
-#define RAD_EARTH 6371220.0
-#define RAD_SPHERE 6371220.0
+//#define RAD_SPHERE 6371220.0
+#define RAD_SPHERE 1.0
 
 // 1/(R.cos(phi))d.p/d.theta
 double u_init(double* x) {
@@ -44,6 +42,14 @@ double p_init(double* x) {
     return x[0]; // R.cos(phi).cos(theta)
 }
 
+double dux_init(double* x) {
+    double theta = atan2(x[1],x[0]);
+    double phi = asin(x[2]/RAD_SPHERE);
+
+    return (1.0/RAD_SPHERE/cos(phi))*(-cos(theta)) +
+           (1.0/RAD_SPHERE/cos(phi))*(-cos(2.0*phi)*cos(theta));
+}
+
 int main(int argc, char** argv) {
     int size, rank;
     double err;
@@ -53,7 +59,7 @@ int main(int argc, char** argv) {
     Geom* geom;
     SWEqn* sw;
     Test* test;
-    Vec un, ua, pi, M2h, dM2h;
+    Vec un, ua, pi, M2h, dM2h, dun, dua;
     PC pc;
     KSP ksp;
 
@@ -64,7 +70,7 @@ int main(int argc, char** argv) {
 
     cout << "importing topology for processor: " << rank << " of " << size << endl;
 
-    topo = new Topo(rank, EL_ORD, N_ELS_X_LOC);
+    topo = new Topo(rank);
     geom = new Geom(rank, topo);
     sw = new SWEqn(topo, geom);
     test = new Test(sw);
@@ -72,6 +78,8 @@ int main(int argc, char** argv) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &un);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ua);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &pi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dua);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dun);
 
     VecCreateMPI(MPI_COMM_WORLD, sw->topo->n1l, sw->topo->nDofs1G, &dM2h);
     VecCreateMPI(MPI_COMM_WORLD, sw->topo->n2l, sw->topo->nDofs2G, &M2h);
@@ -100,8 +108,16 @@ int main(int argc, char** argv) {
     sprintf(fieldname,"pressure");
     geom->write2(pi,fieldname,0);
 
+    sw->init2(dua, dux_init);
+    MatMult(sw->EtoF->E21, un, dun);
+
+    sprintf(fieldname,"dua");
+    geom->write2(dua,fieldname,0);
+    sprintf(fieldname,"dun");
+    geom->write2(dun,fieldname,0);
+
     // TODO: check that the pressure component is correct for H(div) error
-    err = sw->err1(un, u_init, v_init, p_init);
+    err = sw->err1(un, u_init, v_init, dux_init);
     if(!rank) cout << "H(div) velocity error: " << err << endl;
 
     delete topo;
@@ -114,6 +130,8 @@ int main(int argc, char** argv) {
     VecDestroy(&pi);
     VecDestroy(&M2h);
     VecDestroy(&dM2h);
+    VecDestroy(&dua);
+    VecDestroy(&dun);
     KSPDestroy(&ksp);
 
     PetscFinalize();
