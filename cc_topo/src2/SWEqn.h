@@ -35,4 +35,7 @@ class SWEqn {
         double int0(Vec u);
         double int2(Vec u);
         double intE(Vec u, Vec h);
+        void solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
+        void massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt);
+        void momentumEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt);
 };

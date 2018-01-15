@@ -83,8 +83,8 @@ void SWEqn::coriolis() {
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
-        //fArray[ii] = 2.0*omega;
-        fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
+        fArray[ii] = 2.0*omega;
+        //fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
     }
     VecRestoreArray(fxl, &fArray);
 
@@ -137,6 +137,7 @@ void SWEqn::diagnose_F(Vec u, Vec hl, KSP ksp, Vec* hu) {
 
     // solve the linear system
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, hu);
+    VecZeroEntries(*hu);
     KSPSolve(ksp, Fu, *hu);
     VecDestroy(&Fu);
 }
@@ -332,6 +333,163 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
 
     VecDestroy(&bu);
 
+    KSPDestroy(&ksp);
+}
+
+void SWEqn::massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt) {
+    Vec hui, huj, hl, dhu;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
+    VecZeroEntries(hl);
+    VecScatterBegin(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+
+    diagnose_F(ui, hl, ksp, &hui);
+    diagnose_F(uj, hl, ksp, &huj);
+
+    VecAXPY(hui, 1.0, huj);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dhu);
+    MatMult(EtoF->E21, hui, dhu);
+
+    VecZeroEntries(hf);
+    VecAXPY(hf, 1.0, hi);
+    VecAXPY(hf, -0.5*dt, dhu);
+
+    VecDestroy(&hl);
+    VecDestroy(&hui);
+    VecDestroy(&huj);
+    VecDestroy(&dhu);
+}
+
+void SWEqn::momentumEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec uf, KSP ksp, double dt) {
+    Vec Ru, Ku, Mhi, Mhj, b;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &b);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ru);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ku);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mhi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mhj);
+
+    VecZeroEntries(b);
+    VecZeroEntries(Ru);
+    VecZeroEntries(Ku);
+    VecZeroEntries(Mhi);
+    VecZeroEntries(Mhj);
+
+    MatMult(R->M, ui, Ru);
+    MatMult(K->M, ui, Ku);
+    MatMult(M2->M, hi, Mhi);
+    MatMult(M2->M, hj, Mhj);
+
+    VecAXPY(Mhi, 1.0, Mhj);
+    VecScale(Mhi, 0.5*grav);
+    VecAXPY(Mhi, 1.0, Ku);
+    MatMult(EtoF->E12, Mhi, b);
+    VecAXPY(b, 1.0, Ru);
+    VecAYPX(b, -dt, ui);
+
+    VecZeroEntries(uf);
+    KSPSolve(ksp, b, uf);
+
+    VecDestroy(&b);
+    VecDestroy(&Ru);
+    VecDestroy(&Ku);
+    VecDestroy(&Mhi);
+    VecDestroy(&Mhj);
+}
+
+void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
+    bool done;
+    int iter, rank;
+    char fieldname[20];
+    PetscScalar unorm, hnorm;
+    Vec wi, wl, ul, uj, hj, du, dh;
+    PC pc;
+    KSP ksp;
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uj);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dh);
+
+    // initialize the linear solver
+    KSPCreate(MPI_COMM_WORLD, &ksp);
+    KSPSetOperators(ksp, M1->M, M1->M);
+    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp, KSPGMRES);
+    KSPGetPC(ksp,&pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+    KSPSetOptionsPrefix(ksp,"sw_");
+    KSPSetFromOptions(ksp);
+
+    // assemble the convective and kinetic energy terms at the current time level
+    diagnose_w(ui, &wi);
+
+    VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecScatterBegin(topo->gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    R->assemble(wl);
+    K->assemble(ul);
+
+    VecCopy(ui, uj);
+    VecCopy(hi, hj);
+
+    done = false;
+    iter = 0;
+    unorm = 1.0e+9;
+    hnorm = 1.0e+9;
+    do {
+        massEuler(ui, hi, uj, hj, hf, ksp, dt);
+        momentumEuler(ui, hi, uj, hj, uf, ksp, dt);
+
+        VecZeroEntries(du);
+        VecAXPY(du, +1.0, uf);
+        VecAXPY(du, -1.0, uj);
+        VecNorm(du, NORM_2, &unorm);
+        unorm /= topo->nDofs1G;
+        VecCopy(uf, uj);
+
+        VecZeroEntries(dh);
+        VecAXPY(dh, +1.0, hf);
+        VecAXPY(dh, -1.0, hj);
+        VecNorm(dh, NORM_2, &hnorm);
+        hnorm /= topo->nDofs2G;
+        VecCopy(hf, hj);
+
+        if(!rank) cout << "|u|: " << unorm << "\t|h|: " << hnorm << endl;
+        iter++;
+
+        if(iter > 100) done = true;
+        if(unorm < 1.0e-6 && hnorm < 1.0e-6) done = true;
+    } while(!done);
+
+    // write fields
+    if(save) {
+        step++;
+        sprintf(fieldname, "vorticity");
+        geom->write0(wi, fieldname, step);
+        sprintf(fieldname, "velocity");
+        geom->write1(uf, fieldname, step);
+        sprintf(fieldname, "pressure");
+        geom->write2(hf, fieldname, step);
+    }
+
+    VecDestroy(&wi);
+    VecDestroy(&wl);
+    VecDestroy(&ul);
+    VecDestroy(&uj);
+    VecDestroy(&du);
+    VecDestroy(&hj);
+    VecDestroy(&dh);
     KSPDestroy(&ksp);
 }
 
