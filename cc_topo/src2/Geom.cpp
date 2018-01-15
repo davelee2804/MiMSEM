@@ -18,6 +18,7 @@ using std::string;
 
 //#define WITH_HDF5
 #define RAD_SPHERE 6371220.0
+//#define RAD_SPHERE 1.0
 #define PIOLA
 
 Geom::Geom(int _pi, Topo* _topo) {
@@ -452,7 +453,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
 void Geom::updateGlobalCoords() {
     int ex, ey, ii, jj, mp1, mp12;
     int* inds0;
-    double theta, phi, x1, x2, rTildeMag;
+    double x1, x2, rTildeMag;
     double rTilde[3];
     double *c1, *c2, *c3, *c4;
 

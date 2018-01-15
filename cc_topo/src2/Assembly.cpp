@@ -15,7 +15,6 @@
 using namespace std;
 
 //#define VIEW_MAT
-#define RAD_EARTH 6371220.0
 #define PIOLA
 
 // mass matrix for the 1 form vector (x-normal degrees of

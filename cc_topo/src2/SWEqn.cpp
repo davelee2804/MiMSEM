@@ -19,6 +19,7 @@
 
 #define RAD_EARTH 6371220.0
 #define RAD_SPHERE 6371220.0
+//#define RAD_SPHERE 1.0
 
 using namespace std;
 int step = 0;
@@ -782,6 +783,59 @@ double SWEqn::int2(Vec ug) {
     delete[] J[1];
     delete[] J;
     VecDestroy(&ul);
+
+    return global;
+}
+
+double SWEqn::intE(Vec ug, Vec hg) {
+    int ex, ey, ii, mp1, mp12;
+    double det, hq, local, global;
+    double uq[2];
+    double **J;
+    PetscScalar *array_1, *array_2;
+    Vec ul, hl;
+
+    J = new double*[2];
+    J[0] = new double[2];
+    J[1] = new double[2];
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecScatterBegin(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
+    VecScatterBegin(topo->gtol_2, hg, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, hg, hl, INSERT_VALUES, SCATTER_FORWARD);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    local = 0.0;
+
+    VecGetArray(ul, &array_1);
+    VecGetArray(hl, &array_2);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, uq, J);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, &hq, J);
+
+                local += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(grav*hq + 0.5*(uq[0]*uq[0] + uq[1]*uq[1]));
+            }
+        }
+    }
+    VecRestoreArray(ul, &array_1);
+    VecRestoreArray(hl, &array_2);
+
+    MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    delete[] J[0];
+    delete[] J[1];
+    delete[] J;
+    VecDestroy(&ul);
+    VecDestroy(&hl);
 
     return global;
 }

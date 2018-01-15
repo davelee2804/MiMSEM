@@ -34,4 +34,5 @@ class SWEqn {
         double err2(Vec u, ICfunc* fu);
         double int0(Vec u);
         double int2(Vec u);
+        double intE(Vec u, Vec h);
 };

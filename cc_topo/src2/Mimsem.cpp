@@ -17,8 +17,6 @@
 
 using namespace std;
 
-#define EL_ORD 3
-#define N_ELS_X_LOC 8
 #define RAD_EARTH 6371220.0
 #define RAD_SPHERE 6371220.0
 
@@ -84,16 +82,17 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 120.0;//0.1*(2.0*M_PI/(4.0*12))/80.0;
+    double dt = 360.0;//120.0;//0.1*(2.0*M_PI/(4.0*12))/80.0;
+    double vort_0, mass_0, ener_0, vort, mass, ener;
     char fieldname[20];
     bool dump;
-    int nSteps = 2;
+    int nSteps = 10;
     int dumpEvery = 1;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
     Test* test;
-    Vec ui, hi, uf, hf;
+    Vec wi, ui, hi, uf, hf;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 
@@ -102,7 +101,7 @@ int main(int argc, char** argv) {
 
     cout << "importing topology for processor: " << rank << " of " << size << endl;
 
-    topo = new Topo(rank, EL_ORD, N_ELS_X_LOC);
+    topo = new Topo(rank);
     geom = new Geom(rank, topo);
     sw = new SWEqn(topo, geom);
     test = new Test(sw);
@@ -127,6 +126,12 @@ int main(int argc, char** argv) {
     sprintf(fieldname,"pressure");
     geom->write2(hi,fieldname,0);
 
+    sw->diagnose_w(ui, &wi);
+    vort_0 = sw->int0(wi);
+    mass_0 = sw->int2(hi);
+    ener_0 = sw->intE(ui, hi);
+    VecDestroy(&wi);
+
     for(step = 1; step <= nSteps; step++) {
         if(!rank) {
             cout << "doing step: " << step << endl;
@@ -135,6 +140,18 @@ int main(int argc, char** argv) {
         sw->solve(ui, hi, uf, hf, dt, dump);
         VecCopy(uf,ui);
         VecCopy(hf,hi);
+        if(dump) {
+            sw->diagnose_w(ui, &wi);
+            vort = sw->int0(wi);
+            mass = sw->int2(hi);
+            ener = sw->intE(ui, hi);
+            VecDestroy(&wi);
+            if(!rank) {
+                cout << "conservation of mass:      " << (mass - mass_0)/mass_0 << endl;
+                cout << "conservation of vorticity: " << (vort - vort_0)/vort_0 << endl;
+                cout << "conservation of energy:    " << (ener - ener_0)/ener_0 << endl;
+            }
+        }
     }
 
     delete topo;
