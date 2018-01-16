@@ -1001,7 +1001,7 @@ UFmat::UFmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 void UFmat::assemble(Vec ui, Vec uj) {
     int ex, ey, mp1, mp12, ii;
     int *inds_x, *inds_y, *inds_2;
-    double det, vel_i[2], vel_j[2], uq[2], Jt[2][2];
+    double det, vel_i[2], vel_j[2], uq[2];
     PetscScalar *uiArray, *ujArray;
 
     mp1 = l->q->n + 1;
@@ -1021,16 +1021,12 @@ void UFmat::assemble(Vec ui, Vec uj) {
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, ujArray, vel_j, J);
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
 
-                Jt[0][0] = J[0][0]/det;
-                Jt[0][1] = J[1][0]/det;
-                Jt[1][0] = J[0][1]/det;
-                Jt[1][1] = J[1][1]/det;
-
                 vel_i[0] = 0.5*(vel_i[0] + vel_j[0]);
                 vel_i[1] = 0.5*(vel_i[1] + vel_j[1]);
 
-                uq[0] = Jt[0][0]*vel_i[0] + Jt[0][1]*vel_i[1];
-                uq[1] = Jt[1][0]*vel_i[0] + Jt[1][1]*vel_i[1];
+                // [J^T].u/det(J)
+                uq[0] = (J[0][0]*vel_i[0] + J[1][0]*vel_i[1])/det;
+                uq[1] = (J[0][1]*vel_i[0] + J[1][1]*vel_i[1])/det;
 
 #ifdef PIOLA
                 Qaa[ii][ii] = uq[0]*Q->A[ii][ii]/det;

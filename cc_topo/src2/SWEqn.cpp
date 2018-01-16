@@ -338,35 +338,35 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     KSPDestroy(&ksp);
 }
 
-void SWEqn::massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt) {
-    Vec uil, ujl, bh, one;
-    Mat W;
+void SWEqn::massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp1, KSP ksp2, double dt) {
+    Vec hl, Fi, Fj, dF, WdF, b;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &bh);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &one);
-    VecZeroEntries(uil);
-    VecZeroEntries(ujl);
-    VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
+    VecScatterBegin(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
 
-    UF->assemble(uil, ujl);
-    MatMatMult(EtoF->E21, UF->M, MAT_INITIAL_MATRIX, 1.0, &W);
-    MatScale(W, dt);
-    VecSet(one, 1.0);
-    MatDiagonalSet(W, one, ADD_VALUES);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dF);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WdF);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &b);
 
-    MatMult(M2->M, hi, bh);
-    KSPSolve(ksp, bh, hf);
+    diagnose_F(ui, hl, ksp1, &Fi);
+    diagnose_F(uj, hl, ksp1, &Fj);
 
-    VecDestroy(&uil);
-    VecDestroy(&ujl);
-    VecDestroy(&bh);
-    VecDestroy(&one);
-    MatDestroy(&W);
+    VecAXPY(Fi, 1.0, Fj);
+    MatMult(EtoF->E21, Fi, dF);
+    MatMult(M2->M, dF, WdF);
+
+    MatMult(M2->M, hi, b);
+    VecAXPY(b, -0.5*dt, WdF);
+
+    KSPSolve(ksp2, b, hf);
+
+    VecDestroy(&hl);
+    VecDestroy(&Fi);
+    VecDestroy(&Fj);
+    VecDestroy(&dF);
+    VecDestroy(&WdF);
+    VecDestroy(&b);
 }
 
 void SWEqn::momentumEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec uf, KSP ksp, double dt) {
@@ -468,8 +468,9 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     unorm = 1.0e+9;
     hnorm = 1.0e+9;
     do {
-        massEuler(ui, hi, uj, hj, hf, ksp2, dt);
-        momentumEuler(ui, hi, uj, hj, uf, ksp1, dt);
+        massEuler(ui, hi, uj, hj, hf, ksp1, ksp2, dt);
+        //momentumEuler(ui, hi, uj, hj, uf, ksp1, dt);
+        momentumEuler(ui, hi, uj, hf, uf, ksp1, dt);
 
         VecZeroEntries(du);
         VecAXPY(du, +1.0, uf);
@@ -489,7 +490,7 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
         iter++;
 
         if(iter > 100) done = true;
-        if(unorm < 1.0e-12 && hnorm < 1.0e-12) done = true;
+        if(unorm < 1.0e-3 && hnorm < 1.0e-3) done = true;
     } while(!done);
 
     // write fields
