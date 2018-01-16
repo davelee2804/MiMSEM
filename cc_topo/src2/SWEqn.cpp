@@ -339,20 +339,25 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
 }
 
 void SWEqn::massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp1, KSP ksp2, double dt) {
-    Vec hl, Fi, Fj, dF, WdF, b;
+    Vec hl, hui, huj, Fi, dF, WdF, b;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
     VecScatterBegin(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
 
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &hui);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &huj);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dF);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WdF);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &b);
 
-    diagnose_F(ui, hl, ksp1, &Fi);
-    diagnose_F(uj, hl, ksp1, &Fj);
+    F->assemble(hl);
+    MatMult(F->M, ui, hui);
+    MatMult(F->M, uj, huj);
+    VecAXPY(hui, 1.0, huj);
+    KSPSolve(ksp1, hui, Fi);
 
-    VecAXPY(Fi, 1.0, Fj);
     MatMult(EtoF->E21, Fi, dF);
     MatMult(M2->M, dF, WdF);
 
@@ -362,8 +367,9 @@ void SWEqn::massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp1, KSP ksp2
     KSPSolve(ksp2, b, hf);
 
     VecDestroy(&hl);
+    VecDestroy(&hui);
+    VecDestroy(&huj);
     VecDestroy(&Fi);
-    VecDestroy(&Fj);
     VecDestroy(&dF);
     VecDestroy(&WdF);
     VecDestroy(&b);
@@ -726,6 +732,7 @@ double SWEqn::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
+if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, array_0, un);
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, dun, J);
@@ -796,6 +803,7 @@ double SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp) {
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
+if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, un, J);
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, dun, J);
@@ -858,6 +866,7 @@ double SWEqn::err2(Vec ug, ICfunc* fu) {
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
+if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
                 det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, un, J);
 
@@ -1003,7 +1012,7 @@ double SWEqn::intE(Vec ug, Vec hg) {
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, uq, J);
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, &hq, J);
 
-                local += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(grav*hq + 0.5*(uq[0]*uq[0] + uq[1]*uq[1]));
+                local += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(grav*hq*hq + 0.5*hq*(uq[0]*uq[0] + uq[1]*uq[1]));
             }
         }
     }
