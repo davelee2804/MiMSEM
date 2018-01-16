@@ -167,3 +167,29 @@ class E21mat {
         Mat E21;
         Mat E12;
 };
+
+class UFmat {
+    public:
+        UFmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~UFmat();
+        double* UtQWflat;
+        double** J;
+        double** UtQW;
+        double** VtQW;
+        double** Qaa;
+        double** Qba;
+        double** Ut;
+        double** Vt;
+        double** UtQaa;
+        double** VtQba;
+        Wii* Q;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        M2_j_xy_i* W;
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(Vec ui, Vec uj);
+};

@@ -82,11 +82,11 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 360.0;//120.0;//0.1*(2.0*M_PI/(4.0*12))/80.0;
+    double dt = 120.0;//0.1*(2.0*M_PI/(4.0*12))/80.0;
     double vort_0, mass_0, ener_0, vort, mass, ener;
     char fieldname[20];
     bool dump;
-    int nSteps = 10;
+    int nSteps = 40;
     int dumpEvery = 1;
     Topo* topo;
     Geom* geom;
@@ -111,12 +111,12 @@ int main(int argc, char** argv) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hf);
 
-    test->vorticity(u_init, v_init);
-    test->gradient(h_init);
-    test->divergence(u_init, v_init);
-    test->convection(u_init, v_init);
-    test->massFlux(u_init,v_init, h_init);
-    test->kineticEnergy(u_init,v_init);
+    //test->vorticity(u_init, v_init);
+    //test->gradient(h_init);
+    //test->divergence(u_init, v_init);
+    //test->convection(u_init, v_init);
+    //test->massFlux(u_init,v_init, h_init);
+    //test->kineticEnergy(u_init,v_init);
 
     sw->init1(ui, u_init, v_init);
     sw->init2(hi, h_init);
@@ -137,7 +137,8 @@ int main(int argc, char** argv) {
             cout << "doing step: " << step << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        sw->solve(ui, hi, uf, hf, dt, dump);
+        //sw->solve(ui, hi, uf, hf, dt, dump);
+        sw->solve_EEC(ui, hi, uf, hf, dt, dump);
         VecCopy(uf,ui);
         VecCopy(hf,hi);
         if(dump) {
@@ -148,7 +149,7 @@ int main(int argc, char** argv) {
             VecDestroy(&wi);
             if(!rank) {
                 cout << "conservation of mass:      " << (mass - mass_0)/mass_0 << endl;
-                cout << "conservation of vorticity: " << (vort - vort_0)/vort_0 << endl;
+                cout << "conservation of vorticity: " << (vort - vort_0) << endl;
                 cout << "conservation of energy:    " << (ener - ener_0)/ener_0 << endl;
             }
         }

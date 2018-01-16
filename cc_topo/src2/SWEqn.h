@@ -19,6 +19,7 @@ class SWEqn {
         RotMat* R;
         Uhmat* F;
         WtQUmat* K;
+        UFmat* UF;
         Vec fg;            // coriolis vector (global)
         Mat E01M1;
         Mat E12M2;

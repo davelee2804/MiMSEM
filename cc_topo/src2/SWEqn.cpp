@@ -61,6 +61,9 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     // kinetic energy operator
     K = new WtQUmat(topo, geom, node, edge);
 
+    // mass flux operator with h and u reversed (only necessary for the exact energy conserving scheme)
+    UF = new UFmat(topo, geom, node, edge);
+
     // coriolis vector (projected onto 0 forms)
     coriolis();
 }
@@ -336,42 +339,48 @@ void SWEqn::solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
 }
 
 void SWEqn::massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt) {
-    Vec hui, huj, hl, dhu;
+    Vec uil, ujl, bh, one;
+    Mat W;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
-    VecZeroEntries(hl);
-    VecScatterBegin(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &bh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &one);
+    VecZeroEntries(uil);
+    VecZeroEntries(ujl);
+    VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
 
-    diagnose_F(ui, hl, ksp, &hui);
-    diagnose_F(uj, hl, ksp, &huj);
+    UF->assemble(uil, ujl);
+    MatMatMult(EtoF->E21, UF->M, MAT_INITIAL_MATRIX, 1.0, &W);
+    MatScale(W, dt);
+    VecSet(one, 1.0);
+    MatDiagonalSet(W, one, ADD_VALUES);
 
-    VecAXPY(hui, 1.0, huj);
+    MatMult(M2->M, hi, bh);
+    KSPSolve(ksp, bh, hf);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dhu);
-    VecZeroEntries(dhu);
-    MatMult(EtoF->E21, hui, dhu);
-
-    VecZeroEntries(hf);
-    VecAXPY(hf, 1.0, hi);
-    VecAXPY(hf, -0.5*dt, dhu);
-
-    VecDestroy(&hl);
-    VecDestroy(&hui);
-    VecDestroy(&huj);
-    VecDestroy(&dhu);
+    VecDestroy(&uil);
+    VecDestroy(&ujl);
+    VecDestroy(&bh);
+    VecDestroy(&one);
+    MatDestroy(&W);
 }
 
 void SWEqn::momentumEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec uf, KSP ksp, double dt) {
-    Vec Ru, Ku, Mhi, Mhj, b;
+    Vec Ru, Ku, Mhi, Mhj, bu, bF;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &b);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bF);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ru);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ku);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mhi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mhj);
 
-    VecZeroEntries(b);
+    VecZeroEntries(bu);
+    VecZeroEntries(bF);
     VecZeroEntries(Ru);
     VecZeroEntries(Ku);
     VecZeroEntries(Mhi);
@@ -385,14 +394,17 @@ void SWEqn::momentumEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec uf, KSP ksp, doubl
     VecAXPY(Mhi, 1.0, Mhj);
     VecScale(Mhi, 0.5*grav);
     VecAXPY(Mhi, 1.0, Ku);
-    MatMult(EtoF->E12, Mhi, b);
-    VecAXPY(b, 1.0, Ru);
-    VecAYPX(b, -dt, ui);
+    MatMult(EtoF->E12, Mhi, bF);
+    VecAXPY(bF, 1.0, Ru);
+
+    MatMult(M1->M, ui, bu);
+    VecAXPY(bu, -dt, bF);
 
     VecZeroEntries(uf);
-    KSPSolve(ksp, b, uf);
+    KSPSolve(ksp, bu, uf);
 
-    VecDestroy(&b);
+    VecDestroy(&bu);
+    VecDestroy(&bF);
     VecDestroy(&Ru);
     VecDestroy(&Ku);
     VecDestroy(&Mhi);
@@ -406,7 +418,7 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     PetscScalar unorm, hnorm;
     Vec wi, wl, ul, uj, hj, du, dh;
     PC pc;
-    KSP ksp;
+    KSP ksp1, ksp2;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
@@ -417,16 +429,24 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dh);
 
-    // initialize the linear solver
-    KSPCreate(MPI_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, M1->M, M1->M);
-    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp, KSPGMRES);
-    KSPGetPC(ksp,&pc);
+    // initialize the linear solver for 1 forms
+    KSPCreate(MPI_COMM_WORLD, &ksp1);
+    KSPSetOperators(ksp1, M1->M, M1->M);
+    KSPSetTolerances(ksp1, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp1, KSPGMRES);
+    KSPGetPC(ksp1,&pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
-    KSPSetOptionsPrefix(ksp,"sw_");
-    KSPSetFromOptions(ksp);
+    KSPSetOptionsPrefix(ksp1,"sw_1_");
+    KSPSetFromOptions(ksp1);
+
+    // initialize the linear solver for 2 forms
+    KSPCreate(MPI_COMM_WORLD, &ksp2);
+    KSPSetOperators(ksp2, M2->M, M2->M);
+    KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp2, KSPGMRES);
+    KSPSetOptionsPrefix(ksp2,"sw_2_");
+    KSPSetFromOptions(ksp2);
 
     // assemble the convective and kinetic energy terms at the current time level
     diagnose_w(ui, &wi);
@@ -448,8 +468,8 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     unorm = 1.0e+9;
     hnorm = 1.0e+9;
     do {
-        massEuler(ui, hi, uj, hj, hf, ksp, dt);
-        momentumEuler(ui, hi, uj, hj, uf, ksp, dt);
+        massEuler(ui, hi, uj, hj, hf, ksp2, dt);
+        momentumEuler(ui, hi, uj, hj, uf, ksp1, dt);
 
         VecZeroEntries(du);
         VecAXPY(du, +1.0, uf);
@@ -469,7 +489,7 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
         iter++;
 
         if(iter > 100) done = true;
-        if(unorm < 1.0e-4 && hnorm < 1.0e-4) done = true;
+        if(unorm < 1.0e-12 && hnorm < 1.0e-12) done = true;
     } while(!done);
 
     // write fields
@@ -490,7 +510,8 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecDestroy(&du);
     VecDestroy(&hj);
     VecDestroy(&dh);
-    KSPDestroy(&ksp);
+    KSPDestroy(&ksp1);
+    KSPDestroy(&ksp2);
 }
 
 SWEqn::~SWEqn() {
@@ -508,6 +529,7 @@ SWEqn::~SWEqn() {
     delete R;
     delete F;
     delete K;
+    delete UF;
 
     delete edge;
     delete node;
