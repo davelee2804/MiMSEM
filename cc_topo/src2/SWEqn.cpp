@@ -61,9 +61,6 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     // kinetic energy operator
     K = new WtQUmat(topo, geom, node, edge);
 
-    // mass flux operator with h and u reversed (only necessary for the exact energy conserving scheme)
-    UF = new UFmat(topo, geom, node, edge);
-
     // coriolis vector (projected onto 0 forms)
     coriolis();
 }
@@ -536,7 +533,6 @@ SWEqn::~SWEqn() {
     delete R;
     delete F;
     delete K;
-    delete UF;
 
     delete edge;
     delete node;
@@ -695,7 +691,7 @@ void SWEqn::init2(Vec h, ICfunc* func) {
 }
 
 double SWEqn::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
-    int ex, ey, ii, mp1, mp12;
+    int ex, ey, ei, ii, mp1, mp12;
     int *inds0;
     double det;
     double un[1], dun[2], ua[1], dua[2];
@@ -729,13 +725,14 @@ double SWEqn::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
 if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                det = geom->det[ei][ii];
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, array_0, un);
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, dun, J);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, dun);
 
                 ua[0] = fw(geom->x[inds0[ii]]);
                 dua[0] = fu(geom->x[inds0[ii]]);
@@ -766,7 +763,7 @@ if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
 }
 
 double SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp) {
-    int ex, ey, ii, mp1, mp12;
+    int ex, ey, ei, ii, mp1, mp12;
     int *inds0;
     double det;
     double un[2], dun[1], ua[2], dua[1];
@@ -800,13 +797,14 @@ double SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
 if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, un, J);
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, dun, J);
+                det = geom->det[ei][ii];
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, un);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, dun);
 
                 ua[0] = fu(geom->x[inds0[ii]]);
                 ua[1] = fv(geom->x[inds0[ii]]);
@@ -837,7 +835,7 @@ if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
 }
 
 double SWEqn::err2(Vec ug, ICfunc* fu) {
-    int ex, ey, ii, mp1, mp12;
+    int ex, ey, ei, ii, mp1, mp12;
     int *inds0;
     double det;
     double un[1], ua[1];
@@ -863,12 +861,13 @@ double SWEqn::err2(Vec ug, ICfunc* fu) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
 if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, un, J);
+                det = geom->det[ei][ii];
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, un);
 
                 ua[0] = fu(geom->x[inds0[ii]]);
 
@@ -890,7 +889,7 @@ if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
 }
 
 double SWEqn::int0(Vec ug) {
-    int ex, ey, ii, mp1, mp12;
+    int ex, ey, ei, ii, mp1, mp12;
     double det, uq, local, global;
     double **J;
     PetscScalar *array_0;
@@ -913,8 +912,10 @@ double SWEqn::int0(Vec ug) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
             for(ii = 0; ii < mp12; ii++) {
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                det = geom->det[ei][ii];
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, array_0, &uq);
 
                 local += det*quad->w[ii%mp1]*quad->w[ii/mp1]*uq;
@@ -934,7 +935,7 @@ double SWEqn::int0(Vec ug) {
 }
 
 double SWEqn::int2(Vec ug) {
-    int ex, ey, ii, mp1, mp12;
+    int ex, ey, ei, ii, mp1, mp12;
     double det, uq, local, global;
     double **J;
     PetscScalar *array_2;
@@ -957,9 +958,11 @@ double SWEqn::int2(Vec ug) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
             for(ii = 0; ii < mp12; ii++) {
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, &uq, J);
+                det = geom->det[ei][ii];
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, &uq);
 
                 local += det*quad->w[ii%mp1]*quad->w[ii/mp1]*uq;
             }
@@ -978,7 +981,7 @@ double SWEqn::int2(Vec ug) {
 }
 
 double SWEqn::intE(Vec ug, Vec hg) {
-    int ex, ey, ii, mp1, mp12;
+    int ex, ey, ei, ii, mp1, mp12;
     double det, hq, local, global;
     double uq[2];
     double **J;
@@ -1007,10 +1010,12 @@ double SWEqn::intE(Vec ug, Vec hg) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
             for(ii = 0; ii < mp12; ii++) {
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, uq, J);
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, &hq, J);
+                det = geom->det[ei][ii];
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, uq);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, &hq);
 
                 local += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(grav*hq*hq + 0.5*hq*(uq[0]*uq[0] + uq[1]*uq[1]));
             }

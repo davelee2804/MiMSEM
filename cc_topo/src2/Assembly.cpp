@@ -29,13 +29,12 @@ Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void Umat::assemble() {
-    int ex, ey, ii, mp1, mp12;
+    int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y;
     Wii* Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
-    double det;
-    double** J = Alloc2D(2, 2);
+    double det, **J;
     double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
     double** UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
@@ -68,8 +67,10 @@ void Umat::assemble() {
             // incorporate the jacobian transformation for each element
             Q->assemble(ex, ey);
 
+            ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
 
 #ifdef PIOLA
                 Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
@@ -121,7 +122,6 @@ void Umat::assemble() {
     MatView(M, PETSC_VIEWER_DRAW_WORLD);
 #endif
 
-    Free2D(2, J);
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
     Free2D(U->nDofsJ, UtQaa);
@@ -155,11 +155,10 @@ Wmat::Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 }
 
 void Wmat::assemble() {
-    int ex, ey, mp1, mp12, ii, *inds;
+    int ex, ey, ei, mp1, mp12, ii, *inds;
     double det;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
-    double** J = Alloc2D(2, 2);
     double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
     double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
@@ -181,8 +180,9 @@ void Wmat::assemble() {
             // incorporate the jacobian transformation for each element
             Q->assemble(ex, ey);
 
+            ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                det = geom->det[ei][ii];
 #ifdef PIOLA
                 Qaa[ii][ii] = Q->A[ii][ii]/det/det;
 #else
@@ -203,7 +203,6 @@ void Wmat::assemble() {
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(2, J);
     Free2D(Q->nDofsI, Qaa);
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
@@ -228,7 +227,6 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     U = new M1x_j_xy_i(l, e);
     V = new M1y_j_xy_i(l, e);
 
-    J = Alloc2D(2, 2);
     UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
     UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
     VtQU = Alloc2D(V->nDofsJ, V->nDofsJ);
@@ -252,7 +250,7 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void Uhmat::assemble(Vec h2) {
-    int ex, ey, mp1, mp12, ii;
+    int ex, ey, ei, mp1, mp12, ii;
     int *inds_x, *inds_y;
     double hi, det;
     PetscScalar* h2Array;
@@ -268,9 +266,11 @@ void Uhmat::assemble(Vec h2) {
             // incorporate the jacobian transformation for each element
             Q->assemble(ex, ey);
 
+            ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi, J);
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
 
 #ifdef PIOLA
                 Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
@@ -322,7 +322,6 @@ void Uhmat::assemble(Vec h2) {
 Uhmat::~Uhmat() {
     delete[] UtQUflat;
 
-    Free2D(2, J);
     Free2D(U->nDofsJ, UtQU);
     Free2D(U->nDofsJ, UtQV);
     Free2D(V->nDofsJ, VtQU);
@@ -413,11 +412,10 @@ WtQmat::WtQmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 }
 
 void WtQmat::assemble() {
-    int ex, ey, mp1, mp12, ii, *inds_2, *inds_0;
+    int ex, ey, ei, mp1, mp12, ii, *inds_2, *inds_0;
     double det;
     M2_j_xy_i* W = new M2_j_xy_i(e);
     Wii* Q = new Wii(e->l->q, geom);
-    double** J = Alloc2D(2, 2);
     double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
     double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
@@ -437,8 +435,9 @@ void WtQmat::assemble() {
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
 
+            ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                det = geom->det[ei][ii];
 #ifdef PIOLA
                 Qaa[ii][ii] = Q->A[ii][ii]/det;
 #else
@@ -461,7 +460,6 @@ void WtQmat::assemble() {
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(2, J);
     Free2D(Q->nDofsI, Qaa);
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
@@ -534,13 +532,12 @@ UtQmat::UtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void UtQmat::assemble() {
-    int ex, ey, ii, mp1, mp12;
+    int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_0, *inds_0x, *inds_0y;
-    double det;
+    double det, **J;
     Wii* Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
-    double** J = Alloc2D(2, 2);
     double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
     double** UtQ = Alloc2D(U->nDofsJ, Q->nDofsJ);
@@ -566,8 +563,10 @@ void UtQmat::assemble() {
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
 
+            ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
 
 #ifdef PIOLA
                 Qaa[ii][ii] = J[0][0]*Q->A[ii][ii]/det;
@@ -617,7 +616,6 @@ void UtQmat::assemble() {
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(2, J);
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
     Free2D(U->nDofsJ, UtQ);
@@ -648,7 +646,6 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     V = new M1y_j_xy_i(l, e);
     W = new M2_j_xy_i(e);
     Q = new Wii(l->q, geom);
-    J = Alloc2D(2, 2);
     Wt = Alloc2D(W->nDofsJ, W->nDofsI);
     Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
     Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
@@ -666,7 +663,7 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void WtQUmat::assemble(Vec u1) {
-    int ex, ey, ii, mp1, mp12;
+    int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_2;
     double det, ux[2];
     PetscScalar* u1Array;
@@ -682,9 +679,11 @@ void WtQUmat::assemble(Vec u1) {
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
 
+            ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux, J);
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
 
 #ifdef PIOLA
                 Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det/det;
@@ -720,7 +719,6 @@ void WtQUmat::assemble(Vec u1) {
 }
 
 WtQUmat::~WtQUmat() {
-    Free2D(2, J);
     Free2D(W->nDofsJ, Wt);
     Free2D(Q->nDofsI, Qaa);
     Free2D(Q->nDofsI, Qab);
@@ -749,7 +747,6 @@ RotMat::RotMat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     U = new M1x_j_xy_i(l, e);
     V = new M1y_j_xy_i(l, e);
 
-    J = Alloc2D(2, 2);
     Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     Vt = Alloc2D(V->nDofsJ, U->nDofsI);
     Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
@@ -768,7 +765,7 @@ RotMat::RotMat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 }
 
 void RotMat::assemble(Vec q0) {
-    int ex, ey, ii, mp1, mp12;
+    int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y;
     double det, vort;
     PetscScalar* q0Array;
@@ -787,9 +784,11 @@ void RotMat::assemble(Vec q0) {
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
 
+            ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
 
 #ifdef PIOLA
                 Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
@@ -825,7 +824,6 @@ void RotMat::assemble(Vec q0) {
 }
 
 RotMat::~RotMat() {
-    Free2D(2, J);
     Free2D(U->nDofsJ, Ut);
     Free2D(V->nDofsJ, Vt);
     Free2D(Q->nDofsI, Qab);
@@ -966,122 +964,4 @@ E21mat::E21mat(Topo* _topo) {
 E21mat::~E21mat() {
     MatDestroy(&E21);
     MatDestroy(&E12);
-}
-
-// 1 form mass matrix with 2 forms interpolated to quadrature points
-UFmat::UFmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
-    topo = _topo;
-    geom = _geom;
-    l = _l;
-    e = _e;
-
-    Q = new Wii(l->q, geom);
-    U = new M1x_j_xy_i(l, e);
-    V = new M1y_j_xy_i(l, e);
-    W = new M2_j_xy_i(e);
-
-    J = Alloc2D(2, 2);
-    UtQW = Alloc2D(U->nDofsJ, W->nDofsJ);
-    VtQW = Alloc2D(V->nDofsJ, W->nDofsJ);
-    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Qba = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Ut = Alloc2D(U->nDofsJ, U->nDofsI);
-    Vt = Alloc2D(U->nDofsJ, U->nDofsI);
-    UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
-
-    UtQWflat = new double[U->nDofsJ*W->nDofsJ];
-
-    MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n1l, topo->n2l, topo->nDofs1G, topo->nDofs2G);
-    MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-}
-
-void UFmat::assemble(Vec ui, Vec uj) {
-    int ex, ey, mp1, mp12, ii;
-    int *inds_x, *inds_y, *inds_2;
-    double det, vel_i[2], vel_j[2], uq[2];
-    PetscScalar *uiArray, *ujArray;
-
-    mp1 = l->q->n + 1;
-    mp12 = mp1*mp1;
-
-    MatZeroEntries(M);
-    VecGetArray(ui, &uiArray);
-    VecGetArray(uj, &ujArray);
-
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            // incorporate the jacobian transformation for each element
-            Q->assemble(ex, ey);
-
-            for(ii = 0; ii < mp12; ii++) {
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uiArray, vel_i, J);
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, ujArray, vel_j, J);
-                det = geom->jacDet(ex, ey, ii%mp1, ii/mp1, J);
-
-                vel_i[0] = 0.5*(vel_i[0] + vel_j[0]);
-                vel_i[1] = 0.5*(vel_i[1] + vel_j[1]);
-
-                // [J^T].u/det(J)
-                uq[0] = (J[0][0]*vel_i[0] + J[1][0]*vel_i[1])/det;
-                uq[1] = (J[0][1]*vel_i[0] + J[1][1]*vel_i[1])/det;
-
-#ifdef PIOLA
-                Qaa[ii][ii] = uq[0]*Q->A[ii][ii]/det;
-                Qba[ii][ii] = uq[1]*Q->A[ii][ii]/det;
-#else
-                Qaa[ii][ii] = det*det*uq[0]*Q->A[ii][ii];
-                Qba[ii][ii] = det*det*uq[1]*Q->A[ii][ii];
-#endif
-            }
-
-            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
-            Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
-
-            // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
-            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
-            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qba, VtQba);
-
-            Mult_IP(U->nDofsJ, W->nDofsJ, Q->nDofsJ, UtQaa, W->A, UtQW);
-            Mult_IP(U->nDofsJ, W->nDofsJ, Q->nDofsJ, VtQba, W->A, VtQW);
-
-            inds_x = topo->elInds1x_g(ex, ey);
-            inds_y = topo->elInds1y_g(ex, ey);
-            inds_2 = topo->elInds2_g(ex, ey);
-
-            Flat2D_IP(U->nDofsJ, W->nDofsJ, UtQW, UtQWflat);
-            MatSetValues(M, U->nDofsJ, inds_x, W->nDofsJ, inds_2, UtQWflat, ADD_VALUES);
-
-            Flat2D_IP(U->nDofsJ, W->nDofsJ, VtQW, UtQWflat);
-            MatSetValues(M, U->nDofsJ, inds_y, W->nDofsJ, inds_2, UtQWflat, ADD_VALUES);
-        }
-    }
-    VecRestoreArray(ui, &uiArray);
-    VecRestoreArray(uj, &ujArray);
-
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
-}
-
-UFmat::~UFmat() {
-    delete[] UtQWflat;
-
-    Free2D(2, J);
-    Free2D(U->nDofsJ, UtQW);
-    Free2D(V->nDofsJ, VtQW);
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qba);
-    Free2D(U->nDofsJ, Ut);
-    Free2D(U->nDofsJ, Vt);
-    Free2D(U->nDofsJ, UtQaa);
-    Free2D(U->nDofsJ, VtQba);
-
-    delete U;
-    delete V;
-    delete Q;
-    delete W;
-
-    MatDestroy(&M);
 }

@@ -74,10 +74,24 @@ Geom::Geom(int _pi, Topo* _topo) {
     // update the global coordinates within each element for consistency with the local 
     // coordinates as defined by the Jacobian mapping
     updateGlobalCoords();
+
+    det = new double*[topo->nElsX*topo->nElsX];
+    J = new double***[topo->nElsX*topo->nElsX];
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        det[ii] = new double[(quad->n+1)*(quad->n+1)];
+        J[ii] = new double**[(quad->n+1)*(quad->n+1)];
+        for(jj = 0; jj < (quad->n+1)*(quad->n+1); jj++) {
+            J[ii][jj] = new double*[2];
+            J[ii][jj][0] = new double[2];
+            J[ii][jj][1] = new double[2];
+        }
+    }
+
+    initJacobians();
 }
 
 Geom::~Geom() {
-    int ii;
+    int ii, jj;
 
     for(ii = 0; ii < nl; ii++) {
         delete[] x[ii];
@@ -85,6 +99,18 @@ Geom::~Geom() {
     }
     delete[] x;
     delete[] s;
+
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        for(jj = 0; jj < (quad->n+1)*(quad->n+1); jj++) {
+            delete[] J[ii][jj][0];
+            delete[] J[ii][jj][1];
+            delete[] J[ii][jj];
+        }
+        delete[] J[ii];
+        delete[] det[ii];
+    }
+    delete[] J;
+    delete[] det;
 
     delete edge;
     delete node;
@@ -95,7 +121,7 @@ Geom::~Geom() {
 // Reference:
 //    Guba, Taylor, Ullrich, Overfelt and Levy (2014)
 //    Geosci. Model Dev. 7 2803 - 2816
-void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
+void Geom::jacobian(int ex, int ey, int px, int py, double** jac) {
     int ii, jj, kk, mp1 = quad->n + 1;
     int* inds_0 = topo->elInds0_l(ex, ey);
     double* c1 = x[inds_0[0]];
@@ -158,24 +184,24 @@ void Geom::jacobian(int ex, int ey, int px, int py, double** J) {
 
     for(ii = 0; ii < 2; ii++) {
         for(jj = 0; jj < 2; jj++) {
-            J[ii][jj] = 0.0;
+            jac[ii][jj] = 0.0;
             for(kk = 0; kk < 4; kk++) {
-                J[ii][jj] += ABC[ii][kk]*D[kk][jj];
+                jac[ii][jj] += ABC[ii][kk]*D[kk][jj];
             }
         }
     }
 
-    J[0][0] *= 0.25*RAD_SPHERE*rTildeMagInv;
-    J[0][1] *= 0.25*RAD_SPHERE*rTildeMagInv;
-    J[1][0] *= 0.25*RAD_SPHERE*rTildeMagInv;
-    J[1][1] *= 0.25*RAD_SPHERE*rTildeMagInv;
+    jac[0][0] *= 0.25*RAD_SPHERE*rTildeMagInv;
+    jac[0][1] *= 0.25*RAD_SPHERE*rTildeMagInv;
+    jac[1][0] *= 0.25*RAD_SPHERE*rTildeMagInv;
+    jac[1][1] *= 0.25*RAD_SPHERE*rTildeMagInv;
 }
 
-double Geom::jacDet(int ex, int ey, int px, int py, double** J) {
-    jacobian(ex, ey, px, py, J);
+double Geom::jacDet(int ex, int ey, int px, int py, double** jac) {
+    jacobian(ex, ey, px, py, jac);
 
-    return (J[0][0]*J[1][1] - J[0][1]*J[1][0]);
-    //return fabs(J[0][0]*J[1][1] - J[0][1]*J[1][0]);
+    return (jac[0][0]*jac[1][1] - jac[0][1]*jac[1][0]);
+    //return fabs(jac[0][0]*jac[1][1] - jac[0][1]*jac[1][0]);
 }
 
 void Geom::interp0(int ex, int ey, int px, int py, double* vec, double* val) {
@@ -221,31 +247,36 @@ void Geom::interp2_l(int ex, int ey, int px, int py, double* vec, double* val) {
     }
 }
 
-void Geom::interp1_g(int ex, int ey, int px, int py, double* vec, double* val, double** J) {
+void Geom::interp1_g(int ex, int ey, int px, int py, double* vec, double* val) {
+    int el = ey*topo->nElsX + ex;
+    int pi = py*(quad->n+1) + px;
     double val_l[2];
-    double jac = jacDet(ex, ey, px, py, J);
+    double dj = det[el][pi];
+    double** jac = J[el][pi];
 
     interp1_l(ex, ey, px, py, vec, val_l);
 
 #ifdef PIOLA
-    val[0] = (J[0][0]*val_l[0] + J[0][1]*val_l[1])/jac;
-    val[1] = (J[1][0]*val_l[0] + J[1][1]*val_l[1])/jac;
+    val[0] = (jac[0][0]*val_l[0] + jac[0][1]*val_l[1])/dj;
+    val[1] = (jac[1][0]*val_l[0] + jac[1][1]*val_l[1])/dj;
 #else
-    val[0] = (J[0][0]*val_l[0] + J[0][1]*val_l[1]);
-    val[1] = (J[1][0]*val_l[0] + J[1][1]*val_l[1]);
+    val[0] = (jac[0][0]*val_l[0] + jac[0][1]*val_l[1]);
+    val[1] = (jac[1][0]*val_l[0] + jac[1][1]*val_l[1]);
 #endif
 }
 
-void Geom::interp2_g(int ex, int ey, int px, int py, double* vec, double* val, double** J) {
+void Geom::interp2_g(int ex, int ey, int px, int py, double* vec, double* val) {
+    int el = ey*topo->nElsX + ex;
+    int pi = py*(quad->n+1) + px;
     double val_l[1];
-    double jac = jacDet(ex, ey, px, py, J);
+    double dj = det[el][pi];
 
     interp2_l(ex, ey, px, py, vec, val_l);
 
 #ifdef PIOLA
-    val[0] = val_l[0]/jac;
+    val[0] = val_l[0]/dj;
 #else
-    val[0] = jac*val_l[0];
+    val[0] = dj*val_l[0];
 #endif
 }
 
@@ -334,7 +365,7 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
 
             // loop over quadrature points
             for(ii = 0; ii < mp12; ii++) {
-                interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, val, Jm);
+                interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, val);
 
                 uxArray[inds0[ii]] = val[0];
                 vxArray[inds0[ii]] = val[1];
@@ -417,7 +448,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
 
             // loop over quadrature points
             for(ii = 0; ii < mp12; ii++) {
-                interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &val, Jm);
+                interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &val);
 
                 hxArray[inds0[ii]] = val;
             }
@@ -489,6 +520,23 @@ void Geom::updateGlobalCoords() {
 
                 s[jj][0] = atan2(x[jj][1], x[jj][0]);
                 s[jj][1] = asin(x[jj][2]/RAD_SPHERE);
+            }
+        }
+    }
+}
+
+void Geom::initJacobians() {
+    int ex, ey, el, mp1, mp12, ii;
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            el = ey*topo->nElsX + ex;
+
+            for(ii = 0; ii < mp12; ii++) {
+                det[el][ii] = jacDet(ex, ey, ii%mp1, ii/mp1, J[el][ii]);
             }
         }
     }
