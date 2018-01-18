@@ -336,16 +336,12 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     int *inds0;
     char filename[100];
     double val[2];
-    double** Jm;
     Vec ul, uxg, uxl, vxl;
     PetscViewer viewer;
     PetscScalar *uArray, *uxArray, *vxArray;
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
-    Jm = new double*[2];
-    Jm[0] = new double[2];
-    Jm[1] = new double[2];
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
     VecZeroEntries(ul);
@@ -408,10 +404,6 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     VecDestroy(&uxl);
     VecDestroy(&vxl);
     VecDestroy(&uxg);
-
-    delete[] Jm[0];
-    delete[] Jm[1];
-    delete[] Jm;
 }
 
 // interpolate 2 form field to quadrature points
@@ -420,16 +412,12 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     int *inds0;
     char filename[100];
     double val;
-    double** Jm;
     Vec hl, hxl, hxg;
     PetscScalar *hxArray, *hArray;
     PetscViewer viewer;
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
-    Jm = new double*[2];
-    Jm[0] = new double[2];
-    Jm[1] = new double[2];
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
     VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
@@ -473,10 +461,6 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     VecDestroy(&hxg);
     VecDestroy(&hxl);
     VecDestroy(&hl);
-
-    delete[] Jm[0];
-    delete[] Jm[1];
-    delete[] Jm;
 }
 
 // update global coordinates (cartesian and spherical) for consistency with local

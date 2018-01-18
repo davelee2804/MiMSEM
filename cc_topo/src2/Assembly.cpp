@@ -252,7 +252,7 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 void Uhmat::assemble(Vec h2) {
     int ex, ey, ei, mp1, mp12, ii;
     int *inds_x, *inds_y;
-    double hi, det;
+    double hi, det, **J;
     PetscScalar* h2Array;
 
     mp1 = l->q->n + 1;
@@ -665,7 +665,7 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 void WtQUmat::assemble(Vec u1) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_2;
-    double det, ux[2];
+    double det, **J, ux[2];
     PetscScalar* u1Array;
 
     mp1 = l->n + 1;
@@ -767,7 +767,7 @@ RotMat::RotMat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 void RotMat::assemble(Vec q0) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y;
-    double det, vort;
+    double det, **J, vort;
     PetscScalar* q0Array;
 
     mp1 = l->n + 1;

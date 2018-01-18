@@ -26,7 +26,6 @@ class Uhmat {
         Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
         ~Uhmat();
         double* UtQUflat;
-        double** J;
         double** UtQU;
         double** UtQV;
         double** VtQU;
@@ -110,7 +109,6 @@ class WtQUmat {
         Mat M;
         double* WtQUflat;
         double* WtQVflat;
-        double** J;
         double** Wt;
         double** Qaa;
         double** Qab;
@@ -135,7 +133,6 @@ class RotMat {
         LagrangeEdge* e;
         Mat M;
         double* UtQUflat;
-        double** J;
         double** Ut;
         double** Vt;
         double** Qab;
