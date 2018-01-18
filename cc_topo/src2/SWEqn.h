@@ -25,7 +25,6 @@ class SWEqn {
         void coriolis();
         void diagnose_w(Vec u, Vec* w);
         void diagnose_F(Vec u, Vec h, KSP ksp, Vec* hu);
-        void solve(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
         void init0(Vec q, ICfunc* func);
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
         void init2(Vec h, ICfunc* func);
@@ -35,7 +34,13 @@ class SWEqn {
         double int0(Vec u);
         double int2(Vec u);
         double intE(Vec u, Vec h);
+        void solve_RK2(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
+        void solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
         void solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
-        void massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp1, KSP ksp2, double dt);
-        void momentumEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt);
+        void _massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp1, KSP ksp2, double dt);
+        void _momentumEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt);
+        void _massEqn(Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt);
+        void _momentumEqn(Vec ui, Vec uj, Vec hj, Vec uf, KSP ksp, double dt);
+        void _massTend(Vec ui, Vec hi, KSP ksp, Vec *Fh);
+        void _momentumTend(Vec ui, Vec hi, Vec *Fh);
 };
