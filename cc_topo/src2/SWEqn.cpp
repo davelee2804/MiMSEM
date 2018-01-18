@@ -107,7 +107,7 @@ void SWEqn::coriolis() {
 
 // derive vorticity (global vector) as \omega = curl u + f
 // assumes diagonal 0 form mass matrix
-void SWEqn::diagnose_w(Vec u, Vec *w) {
+void SWEqn::diagnose_w(Vec u, Vec *w, bool add_f) {
     Vec du;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
@@ -118,7 +118,9 @@ void SWEqn::diagnose_w(Vec u, Vec *w) {
     // diagonal mass matrix as vector
     VecPointwiseDivide(*w, du, m0->vg);
     // add the (0 form) coriolis vector
-    VecAYPX(*w, 1.0, fg);
+    if(add_f) {
+        VecAYPX(*w, 1.0, fg);
+    }
 
     VecDestroy(&du);
 }
@@ -168,7 +170,7 @@ void SWEqn::_massEqn(Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt) {
 void SWEqn::_momentumEqn(Vec ui, Vec uj, Vec hj, Vec uf, KSP ksp, double dt) {
     Vec wj, wl, ul, Ru, Ku, Mh, dh, bu;
 
-    diagnose_w(uj, &wj);
+    diagnose_w(uj, &wj, true);
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
@@ -248,7 +250,7 @@ void SWEqn::solve_RK2(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     // write fields
     if(save) {
         step++;
-        diagnose_w(uf, &wf);
+        diagnose_w(uf, &wf, false);
 
         sprintf(fieldname, "vorticity");
         geom->write0(wf, fieldname, step);
@@ -286,15 +288,15 @@ void SWEqn::_massTend(Vec ui, Vec hi, KSP ksp, Vec *Fh) {
     VecDestroy(&Fi);
 }
 
-void SWEqn::_momentumTend(Vec ui, Vec hi, Vec *Fu) {
-    Vec wl, ul, wi, Ru, Ku, Mh;
+void SWEqn::_momentumTend(Vec ui, Vec hi, KSP ksp, Vec *Fu) {
+    Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, Fu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ru);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ku);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mh);
 
-    diagnose_w(ui, &wi);
+    diagnose_w(ui, &wi, true);
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
@@ -313,12 +315,19 @@ void SWEqn::_momentumTend(Vec ui, Vec hi, Vec *Fu) {
     MatMult(EtoF->E12, Mh, *Fu);
     VecAXPY(*Fu, 1.0, Ru);
 
+    // add in the biharmonic voscosity
+    //laplacian(ui, ksp, &d2u);
+    //laplacian(d2u, ksp, &d4u);
+    //VecAXPY(*Fu, 1.0, d4u);
+
     VecDestroy(&wl);
     VecDestroy(&ul);
     VecDestroy(&wi);
     VecDestroy(&Ru);
     VecDestroy(&Ku);
     VecDestroy(&Mh);
+    VecDestroy(&d2u);
+    VecDestroy(&d4u);
 }
 
 // RK2 time integrator (stiffly stable scheme)
@@ -352,7 +361,7 @@ void SWEqn::solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     // first step
     if(!rank) cout << "first step...." << endl;
 
-    _momentumTend(ui, hi, &Ui);
+    _momentumTend(ui, hi, ksp, &Ui);
     _massTend(ui, hi, ksp, &Hi);
 
     VecCopy(Mu, bu);
@@ -365,7 +374,7 @@ void SWEqn::solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     // second step
     if(!rank) cout << "second step..." << endl;
 
-    _momentumTend(uj, hj, &Uj);
+    _momentumTend(uj, hj, ksp, &Uj);
     _massTend(uj, hj, ksp, &Hj);
 
     VecCopy(Mu, bu);
@@ -382,7 +391,7 @@ void SWEqn::solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     // write fields
     if(save) {
         step++;
-        diagnose_w(uf, &wf);
+        diagnose_w(uf, &wf, false);
 
         sprintf(fieldname, "vorticity");
         geom->write0(wf, fieldname, step);
@@ -522,7 +531,7 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     KSPSetFromOptions(ksp2);
 
     // assemble the convective and kinetic energy terms at the current time level
-    diagnose_w(ui, &wi);
+    diagnose_w(ui, &wi, true);
 
     VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
@@ -586,6 +595,47 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecDestroy(&dh);
     KSPDestroy(&ksp1);
     KSPDestroy(&ksp2);
+}
+
+void SWEqn::laplacian(Vec ui, KSP ksp, Vec* ddu) {
+    double alpha = -1.0e+6;
+    Vec Du, Cu, RCu, GDu, MDu, dMDu;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, ddu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &RCu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &GDu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMDu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Du);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &MDu);
+
+    /*** divergent component ***/
+    // div (strong form)
+    MatMult(EtoF->E21, ui, Du);
+
+    // grad (weak form)
+    MatMult(M2->M, Du, MDu);
+    MatMult(EtoF->E12, MDu, dMDu);
+    KSPSolve(ksp, dMDu, GDu);
+
+    /*** rotational component ***/
+    // curl (weak form)
+    diagnose_w(ui, &Cu, false);
+
+    // rot (strong form)
+    MatMult(NtoE->E10, Cu, RCu);
+
+    // add rotational and divergent components
+    VecCopy(GDu, *ddu);
+    VecAXPY(*ddu, +1.0, RCu);
+
+    VecScale(*ddu, alpha);
+
+    VecDestroy(&Cu);
+    VecDestroy(&RCu);
+    VecDestroy(&GDu);
+    VecDestroy(&dMDu);
+    VecDestroy(&Du);
+    VecDestroy(&MDu);
 }
 
 SWEqn::~SWEqn() {

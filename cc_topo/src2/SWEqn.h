@@ -23,7 +23,7 @@ class SWEqn {
         Mat E01M1;
         Mat E12M2;
         void coriolis();
-        void diagnose_w(Vec u, Vec* w);
+        void diagnose_w(Vec u, Vec* w, bool add_f);
         void diagnose_F(Vec u, Vec h, KSP ksp, Vec* hu);
         void init0(Vec q, ICfunc* func);
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
@@ -37,10 +37,12 @@ class SWEqn {
         void solve_RK2(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
         void solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
         void solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
+        void laplacian(Vec ui, KSP ksp, Vec* ddu); 
+    private:
         void _massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp1, KSP ksp2, double dt);
         void _momentumEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt);
         void _massEqn(Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt);
         void _momentumEqn(Vec ui, Vec uj, Vec hj, Vec uf, KSP ksp, double dt);
         void _massTend(Vec ui, Vec hi, KSP ksp, Vec *Fh);
-        void _momentumTend(Vec ui, Vec hi, Vec *Fh);
+        void _momentumTend(Vec ui, Vec hi, KSP ksp, Vec *Fh);
 };

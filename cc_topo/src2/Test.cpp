@@ -52,7 +52,7 @@ void Test::vorticity(ICfunc* fu, ICfunc* fv) {
     VecCreateMPI(MPI_COMM_WORLD, sw->topo->n1l, sw->topo->nDofs1G, &u);
 
     sw->init1(u, fu, fv);
-    sw->diagnose_w(u, &w);
+    sw->diagnose_w(u, &w, true);
 
     sprintf(filename,"test_w");
     sw->geom->write0(w, filename, 0);
@@ -128,7 +128,7 @@ void Test::convection(ICfunc* fu, ICfunc* fv) {
     VecCreateMPI(MPI_COMM_WORLD, sw->topo->n1l, sw->topo->nDofs1G, &c);
 
     sw->init1(u, fu, fv);
-    sw->diagnose_w(u, &w);
+    sw->diagnose_w(u, &w, true);
     
     VecScatterBegin(sw->topo->gtol_0, w, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(sw->topo->gtol_0, w, wl, INSERT_VALUES, SCATTER_FORWARD);

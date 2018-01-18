@@ -86,8 +86,8 @@ int main(int argc, char** argv) {
     double vort_0, mass_0, ener_0, vort, mass, ener;
     char fieldname[20];
     bool dump;
-    int nSteps = 40;
-    int dumpEvery = 1;
+    int nSteps = 240;
+    int dumpEvery = 15;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
@@ -126,7 +126,7 @@ int main(int argc, char** argv) {
     sprintf(fieldname,"pressure");
     geom->write2(hi,fieldname,0);
 
-    sw->diagnose_w(ui, &wi);
+    sw->diagnose_w(ui, &wi, false);
     vort_0 = sw->int0(wi);
     mass_0 = sw->int2(hi);
     ener_0 = sw->intE(ui, hi);
@@ -138,11 +138,11 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         //sw->solve(ui, hi, uf, hf, dt, dump);
-        sw->solve_EEC(ui, hi, uf, hf, dt, dump);
+        sw->solve_RK2_SS(ui, hi, uf, hf, dt, dump);
         VecCopy(uf,ui);
         VecCopy(hf,hi);
         if(dump) {
-            sw->diagnose_w(ui, &wi);
+            sw->diagnose_w(ui, &wi, false);
             vort = sw->int0(wi);
             mass = sw->int2(hi);
             ener = sw->intE(ui, hi);

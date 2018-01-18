@@ -23,7 +23,6 @@ using namespace std;
 // 1/(R.cos(phi))d.p/d.theta
 double u_init(double* x) {
     double theta = atan2(x[1],x[0]);
-    double phi = asin(x[2]/RAD_SPHERE);
 
     //return 1.0/RAD_SPHERE/cos(phi)*(-RAD_SPHERE*cos(phi)*sin(theta));
     return -sin(theta);
