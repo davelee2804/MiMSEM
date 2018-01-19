@@ -30,6 +30,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     grav = 9.80616*(RAD_SPHERE/RAD_EARTH);
     omega = 7.292e-5;
+    del2 = viscosity();
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -63,6 +64,15 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     // coriolis vector (projected onto 0 forms)
     coriolis();
+}
+
+// laplacian viscosity, from Guba et. al. (2014) GMD
+double SWEqn::viscosity() {
+    double ae = 4.0*M_PI*RAD_SPHERE*RAD_SPHERE;
+    double dx = sqrt(ae/topo->nDofs0G);
+    double del4 = 0.072*pow(dx,3.2);
+
+    return -sqrt(del4);
 }
 
 // project coriolis term onto 0 forms
@@ -316,9 +326,9 @@ void SWEqn::_momentumTend(Vec ui, Vec hi, KSP ksp, Vec *Fu) {
     VecAXPY(*Fu, 1.0, Ru);
 
     // add in the biharmonic voscosity
-    //laplacian(ui, ksp, &d2u);
-    //laplacian(d2u, ksp, &d4u);
-    //VecAXPY(*Fu, 1.0, d4u);
+    laplacian(ui, ksp, &d2u);
+    laplacian(d2u, ksp, &d4u);
+    VecAXPY(*Fu, 1.0, d4u);
 
     VecDestroy(&wl);
     VecDestroy(&ul);
@@ -598,7 +608,6 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
 }
 
 void SWEqn::laplacian(Vec ui, KSP ksp, Vec* ddu) {
-    double alpha = -1.0e+6;
     Vec Du, Cu, RCu, GDu, MDu, dMDu;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, ddu);
@@ -626,9 +635,9 @@ void SWEqn::laplacian(Vec ui, KSP ksp, Vec* ddu) {
 
     // add rotational and divergent components
     VecCopy(GDu, *ddu);
-    VecAXPY(*ddu, +1.0, RCu);
+    VecAXPY(*ddu, +1.0, RCu); // TODO: check sign here
 
-    VecScale(*ddu, alpha);
+    VecScale(*ddu, del2);
 
     VecDestroy(&Cu);
     VecDestroy(&RCu);

@@ -6,6 +6,7 @@ class SWEqn {
         ~SWEqn();
         double grav;
         double omega;
+        double del2;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
@@ -39,6 +40,7 @@ class SWEqn {
         void solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
         void laplacian(Vec ui, KSP ksp, Vec* ddu); 
     private:
+        double viscosity();
         void _massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp1, KSP ksp2, double dt);
         void _momentumEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt);
         void _massEqn(Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt);
