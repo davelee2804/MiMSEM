@@ -11,7 +11,7 @@ include ${PETSC_DIR}/conf/rules
 
 CXX = mpic++
 
-CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -g -Wall
+CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -O3 -Wall
 
 OBJS = LinAlg.o \
        Basis.o \
@@ -21,16 +21,20 @@ OBJS = LinAlg.o \
        Assembly.o \
        SWEqn.o \
        Test.o \
-       TestVorticity.o
+       RossbyHaurwitz.o
+#       Mimsem.o
+#       TestVorticity.o
 #       TestGradient.o
 #       TestDivergence.o
-#       Mimsem.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
 Mimsem.o: Mimsem.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Mimsem.cpp ${CXXFLAGS}
+
+RossbyHaurwitz.o: RossbyHaurwitz.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c RossbyHaurwitz.cpp ${CXXFLAGS}
 
 TestVorticity.o: TestVorticity.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c TestVorticity.cpp ${CXXFLAGS}
