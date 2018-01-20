@@ -38,7 +38,8 @@ class SWEqn {
         void solve_RK2(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
         void solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
         void solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
-        void laplacian(Vec ui, KSP ksp, Vec* ddu); 
+        void laplacian(Vec ui, KSP ksp, Vec* ddu);
+        void writeConservation(Vec ui, Vec hi, double mass0, double vort0, double ener0);
     private:
         double viscosity();
         void _massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp1, KSP ksp2, double dt);

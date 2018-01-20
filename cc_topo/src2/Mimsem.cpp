@@ -142,16 +142,7 @@ int main(int argc, char** argv) {
         VecCopy(uf,ui);
         VecCopy(hf,hi);
         if(dump) {
-            sw->diagnose_w(ui, &wi, false);
-            vort = sw->int0(wi);
-            mass = sw->int2(hi);
-            ener = sw->intE(ui, hi);
-            VecDestroy(&wi);
-            if(!rank) {
-                cout << "conservation of mass:      " << (mass - mass_0)/mass_0 << endl;
-                cout << "conservation of vorticity: " << (vort - vort_0) << endl;
-                cout << "conservation of energy:    " << (ener - ener_0)/ener_0 << endl;
-            }
+            sw->writeConservation(ui, hi, mass_0, vort_0, ener_0);
         }
     }
 

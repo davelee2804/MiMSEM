@@ -32,6 +32,12 @@ using namespace std;
    Reference:
        Williamson, Drake, Hack, Jakob and Swartzrauber (1992) 
        J. Comp. Phys. 102 211-224
+
+   plot extrema:
+       depth       +7980.0   +10565.0
+       velocity-x   0.0      +100.0
+       velocity-y  -64.0     +64.0
+       vorticity   -7.5e-5   +7.5e-5
 */
 
 double w_init(double* x) {
@@ -156,16 +162,7 @@ int main(int argc, char** argv) {
         VecCopy(uf,ui);
         VecCopy(hf,hi);
         if(dump) {
-            sw->diagnose_w(ui, &wi, false);
-            vort = sw->int0(wi);
-            mass = sw->int2(hi);
-            ener = sw->intE(ui, hi);
-            VecDestroy(&wi);
-            if(!rank) {
-                cout << "conservation of mass:      " << (mass - mass_0)/mass_0 << endl;
-                cout << "conservation of vorticity: " << (vort - vort_0) << endl;
-                cout << "conservation of energy:    " << (ener - ener_0)/ener_0 << endl;
-            }
+            sw->writeConservation(ui, hi, mass_0, vort_0, ener_0);
         }
     }
 

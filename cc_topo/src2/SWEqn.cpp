@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 
 #include <mpi.h>
 
@@ -1115,3 +1116,32 @@ double SWEqn::intE(Vec ug, Vec hg) {
 
     return global;
 }
+
+void SWEqn::writeConservation(Vec ui, Vec hi, double mass0, double vort0, double ener0) {
+    int rank;
+    double mass, vort, ener;
+    char filename[50];
+    ofstream file;
+    Vec wi;
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    diagnose_w(ui, &wi, false);
+
+    mass = int2(hi);
+    vort = int0(wi);
+    ener = intE(ui, hi);
+
+    if(!rank) {
+        cout << "conservation of mass:      " << (mass - mass0)/mass0 << endl;
+        cout << "conservation of vorticity: " << (vort - vort0) << endl;
+        cout << "conservation of energy:    " << (ener - ener0)/ener0 << endl;
+
+        sprintf(filename, "output/conservation.dat");
+        file.open(filename, ios::out | ios::app);
+        file << (mass-mass0)/mass0 << "\t" << (vort-vort0) << "\t" << (ener-ener0)/ener0 << endl;
+        file.close();
+    }
+
+    VecDestroy(&wi);
+} 
