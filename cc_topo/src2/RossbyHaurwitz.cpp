@@ -103,9 +103,9 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    //double dt = 10.0*60.0; time step for 4 3rd order elements per dimensnion per face
-    double dt = 6.0*60.0;
-    double vort_0, mass_0, ener_0, vort, mass, ener;
+    //double dt = 10.0*60.0; time step for 4 3rd order elements per dimension per face
+    double dt = 6.0*60.0; // time step for 6 3rd order elements per dimension per face
+    double vort_0, mass_0, ener_0;
     char fieldname[20];
     bool dump;
     int nSteps = 4250;
