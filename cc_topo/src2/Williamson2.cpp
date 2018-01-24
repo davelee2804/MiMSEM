@@ -64,14 +64,12 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    //double dt = 10.0*60.0; time step for 4 3rd order elements per dimension per face
-    double dt = 6.0*60.0; // time step for 6 3rd order elements per dimension per face
-    //double dt = 0.5*6.0*60.0; // stable for 3.5 days
-    double vort_0, mass_0, ener_0, l2_w, l2_u, l2_h;
+    double dt = 1.0*6.0*60.0; // time step for 4 3rd order elements per dimension per face
+    double vort_0, mass_0, ener_0, err_w[3], err_u[3], err_h[3];
     char fieldname[20], filename[50];
     bool dump;
-    int nSteps = 1200;
-    int dumpEvery = 10;
+    int nSteps = 1*1200;
+    int dumpEvery = 1*10;
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -125,18 +123,20 @@ int main(int argc, char** argv) {
         VecCopy(uf,ui);
         VecCopy(hf,hi);
         if(dump) {
-            sw->writeConservation(ui, hi, mass_0, vort_0, ener_0);
+            sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
 
             sw->diagnose_w(ui, &wi, true);
-            l2_w = sw->err0(wi, w_init, NULL, NULL);
-            l2_u = sw->err1(ui, u_init, v_init, NULL);
-            l2_h = sw->err2(hi, h_init);
+            sw->err0(wi, w_init, NULL, NULL, err_w);
+            sw->err1(ui, u_init, v_init, NULL, err_u);
+            sw->err2(hi, h_init, err_h);
             VecDestroy(&wi);
 
             if(!rank) {
                 sprintf(filename, "output/l2Errs.dat");
                 file.open(filename, ios::out | ios::app);
-                file << step*dt/60.0/60.0/24.0 << "\t" << l2_w << "\t" << l2_u << "\t" << l2_h << endl;
+                file << step*dt/60.0/60.0/24.0 << "\t" << err_w[0] << "\t" << err_u[0] << "\t" << err_h[0] <<
+                                                  "\t" << err_w[1] << "\t" << err_u[1] << "\t" << err_h[1] <<
+                                                  "\t" << err_w[2] << "\t" << err_u[2] << "\t" << err_h[2] << endl;
                 file.close();
             }
         }
