@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
     double dt = 120.0;//0.1*(2.0*M_PI/(4.0*12))/80.0;
-    double vort_0, mass_0, ener_0, vort, mass, ener;
+    double vort_0, mass_0, ener_0;
     char fieldname[20];
     bool dump;
     int nSteps = 240;
@@ -137,12 +137,12 @@ int main(int argc, char** argv) {
             cout << "doing step: " << step << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        //sw->solve(ui, hi, uf, hf, dt, dump);
         sw->solve_RK2_SS(ui, hi, uf, hf, dt, dump);
+        //sw->solve_EEC(ui, hi, uf, hf, dt, dump);
         VecCopy(uf,ui);
         VecCopy(hf,hi);
         if(dump) {
-            sw->writeConservation(ui, hi, mass_0, vort_0, ener_0);
+            sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
         }
     }
 
