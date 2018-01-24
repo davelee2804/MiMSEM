@@ -19,8 +19,8 @@
 #include "SWEqn.h"
 
 #define RAD_EARTH 6371220.0
-//#define RAD_SPHERE 6371220.0
-#define RAD_SPHERE 1.0
+#define RAD_SPHERE 6371220.0
+//#define RAD_SPHERE 1.0
 //#define USE_VISC
 #define W2_ALPHA 0.0
 
@@ -905,9 +905,9 @@ void SWEqn::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv, double* norms) {
     VecDestroy(&dul);
     VecDestroy(&dug);
 
-    norms[0] = sqrt(global_1[0]/global_1[1]);
+    norms[0] = global_1[0]/global_1[1];
     norms[1] = sqrt(global_2[0]/global_2[1]);
-    norms[2] = sqrt(global_i[0]/global_i[1]);
+    norms[2] = global_i[0]/global_i[1];
 }
 
 void SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
@@ -987,9 +987,9 @@ void SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
     VecDestroy(&dul);
     VecDestroy(&dug);
 
-    norms[0] = sqrt(global_1[0]/global_1[1]);
+    norms[0] = global_1[0]/global_1[1];
     norms[1] = sqrt(global_2[0]/global_2[1]);
-    norms[2] = sqrt(global_i[0]/global_i[1]);
+    norms[2] = global_i[0]/global_i[1];
 }
 
 void SWEqn::err2(Vec ug, ICfunc* fu, double* norms) {
@@ -1050,9 +1050,9 @@ void SWEqn::err2(Vec ug, ICfunc* fu, double* norms) {
 
     VecDestroy(&ul);
 
-    norms[0] = sqrt(global_1[0]/global_1[1]);
+    norms[0] = global_1[0]/global_1[1];
     norms[1] = sqrt(global_2[0]/global_2[1]);
-    norms[2] = sqrt(global_i[0]/global_i[1]);
+    norms[2] = global_i[0]/global_i[1];
 }
 
 double SWEqn::int0(Vec ug) {
