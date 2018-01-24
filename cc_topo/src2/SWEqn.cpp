@@ -21,6 +21,8 @@
 #define RAD_EARTH 6371220.0
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
+//#define USE_VISC
+#define W2_ALPHA 0.0
 
 using namespace std;
 int step = 0;
@@ -95,6 +97,7 @@ void SWEqn::coriolis() {
     VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
         fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
+        //fArray[ii] = 2.0*omega*( -cos(geom->s[ii][0])*cos(geom->s[ii][1])*sin(W2_ALPHA) + sin(geom->s[ii][1]*cos(W2_ALPHA)) );
     }
     VecRestoreArray(fxl, &fArray);
 
@@ -326,10 +329,12 @@ void SWEqn::_momentumTend(Vec ui, Vec hi, KSP ksp, Vec *Fu) {
     MatMult(EtoF->E12, Mh, *Fu);
     VecAXPY(*Fu, 1.0, Ru);
 
+#ifdef USE_VISC
     // add in the biharmonic voscosity
     laplacian(ui, ksp, &d2u);
     laplacian(d2u, ksp, &d4u);
     VecAXPY(*Fu, 1.0, d4u);
+#endif
 
     VecDestroy(&wl);
     VecDestroy(&ul);
@@ -337,8 +342,10 @@ void SWEqn::_momentumTend(Vec ui, Vec hi, KSP ksp, Vec *Fu) {
     VecDestroy(&Ru);
     VecDestroy(&Ku);
     VecDestroy(&Mh);
+#ifdef USE_VISC
     VecDestroy(&d2u);
     VecDestroy(&d4u);
+#endif
 }
 
 // RK2 time integrator (stiffly stable scheme)
@@ -583,7 +590,8 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
         iter++;
 
         if(iter > 100) done = true;
-        if(unorm < 1.0e-3 && hnorm < 1.0e-3) done = true;
+        //if(unorm < 1.0e-3 && hnorm < 1.0e-3) done = true;
+        if(unorm < 1.0e-6 && hnorm < 2.0e-2) done = true;
     } while(!done);
 
     // write fields
@@ -857,18 +865,21 @@ double SWEqn::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
 if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
                 det = geom->det[ei][ii];
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, array_0, un);
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, dun);
-
                 ua[0] = fw(geom->x[inds0[ii]]);
-                dua[0] = fu(geom->x[inds0[ii]]);
-                dua[1] = fv(geom->x[inds0[ii]]);
 
-                local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*((un[0] - ua[0])*(un[0] - ua[0]) + 
-                                                                 (dun[0] - dua[0])*(dun[0] - dua[0]) + 
-                                                                 (dun[1] - dua[1])*(dun[1] - dua[1]));
-                local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(ua[0]*ua[0] + 
-                                                                 dua[0]*dua[0] + 
-                                                                 dua[1]*dua[1]);
+                local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(un[0] - ua[0])*(un[0] - ua[0]);
+                local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*ua[0]*ua[0];
+
+                if(fu != NULL && fv != NULL) {
+                    geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, dun);
+
+                    dua[0] = fu(geom->x[inds0[ii]]);
+                    dua[1] = fv(geom->x[inds0[ii]]);
+
+                    local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*
+                                ((dun[0] - dua[0])*(dun[0] - dua[0]) + (dun[1] - dua[1])*(dun[1] - dua[1]));
+                    local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(dua[0]*dua[0] + dua[1]*dua[1]);
+                }
             }
         }
     }
@@ -921,18 +932,21 @@ double SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp) {
 if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
                 det = geom->det[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, un);
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, dun);
 
                 ua[0] = fu(geom->x[inds0[ii]]);
                 ua[1] = fv(geom->x[inds0[ii]]);
-                dua[0] = fp(geom->x[inds0[ii]]);
 
-                local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*((un[0] - ua[0])*(un[0] - ua[0]) + 
-                                                                 (un[1] - ua[1])*(un[1] - ua[1]) + 
-                                                                 (dun[0] - dua[0])*(dun[0] - dua[0]));
-                local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(ua[0]*ua[0] + 
-                                                                 ua[1]*ua[1] + 
-                                                                 dua[0]*dua[0]);
+                local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*
+                            ((un[0] - ua[0])*(un[0] - ua[0]) + (un[1] - ua[1])*(un[1] - ua[1]));
+                local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(ua[0]*ua[0] + ua[1]*ua[1]);
+
+                if(fp != NULL) {
+                    geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, dun);
+                    dua[0] = fp(geom->x[inds0[ii]]);
+
+                    local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(dun[0] - dua[0])*(dun[0] - dua[0]);
+                    local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*dua[0]*dua[0];
+                }
             }
         }
     }
@@ -1117,7 +1131,7 @@ double SWEqn::intE(Vec ug, Vec hg) {
     return global;
 }
 
-void SWEqn::writeConservation(Vec ui, Vec hi, double mass0, double vort0, double ener0) {
+void SWEqn::writeConservation(double time, Vec ui, Vec hi, double mass0, double vort0, double ener0) {
     int rank;
     double mass, vort, ener;
     char filename[50];
@@ -1139,7 +1153,8 @@ void SWEqn::writeConservation(Vec ui, Vec hi, double mass0, double vort0, double
 
         sprintf(filename, "output/conservation.dat");
         file.open(filename, ios::out | ios::app);
-        file << (mass-mass0)/mass0 << "\t" << (vort-vort0) << "\t" << (ener-ener0)/ener0 << endl;
+        // write time in days
+        file << time/60.0/60.0/24.0 << "\t" << (mass-mass0)/mass0 << "\t" << (vort-vort0) << "\t" << (ener-ener0)/ener0 << endl;
         file.close();
     }
 
