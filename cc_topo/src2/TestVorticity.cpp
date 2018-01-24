@@ -59,7 +59,7 @@ double dwy_init(double* x) {
 
 int main(int argc, char** argv) {
     int size, rank;
-    double err;
+    double err[3];
     static char help[] = "petsc";
     char fieldname[20];
     Topo* topo;
@@ -112,8 +112,8 @@ int main(int argc, char** argv) {
     cout << "global vorticity " << sw->int0(wn) << endl;
 
     // TODO: check that the velocity components are correct for H(rot) error
-    err = sw->err0(wn, w_init, dwx_init, dwy_init);
-    if(!rank) cout << "H(rot) vorticity error: " << err << endl;
+    sw->err0(wn, w_init, dwx_init, dwy_init, err);
+    if(!rank) cout << "H(rot) vorticity error: " << err[1] << endl;
 
     delete topo;
     delete geom;

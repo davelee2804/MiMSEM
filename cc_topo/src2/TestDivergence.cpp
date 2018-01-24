@@ -43,7 +43,7 @@ double p_init(double* x) {
 
 int main(int argc, char** argv) {
     int size, rank;
-    double err;
+    double err[3];
     static char help[] = "petsc";
     char fieldname[20];
     Topo* topo;
@@ -80,8 +80,8 @@ int main(int argc, char** argv) {
     sprintf(fieldname,"pres_a");
     geom->write2(pa,fieldname,0);
 
-    err = sw->err2(pn, p_init);
-    if(!rank) cout << "L2 divergence error: " << err << endl;
+    sw->err2(pn, p_init, err);
+    if(!rank) cout << "L2 divergence error: " << err[1] << endl;
 
     delete topo;
     delete geom;

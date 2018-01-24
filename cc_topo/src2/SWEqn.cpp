@@ -19,8 +19,8 @@
 #include "SWEqn.h"
 
 #define RAD_EARTH 6371220.0
-#define RAD_SPHERE 6371220.0
-//#define RAD_SPHERE 1.0
+//#define RAD_SPHERE 6371220.0
+#define RAD_SPHERE 1.0
 //#define USE_VISC
 #define W2_ALPHA 0.0
 
@@ -828,12 +828,12 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     VecDestroy(&WQb);
 }
 
-double SWEqn::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
+void SWEqn::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv, double* norms) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds0;
-    double det;
+    double det, wd, l_inf;
     double un[1], dun[2], ua[1], dua[2];
-    double local[2], global[2]; // first entry is the H(rot) error, the second is the norm
+    double local_1[2], global_1[2], local_2[2], global_2[2], local_i[2], global_i[2]; // first entry is the error, the second is the norm
     PetscScalar *array_0, *array_1;
     Vec ul, dug, dul;
 
@@ -851,7 +851,9 @@ double SWEqn::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    local[0] = local[1] = 0.0;
+    local_1[0] = local_1[1] = 0.0;
+    local_2[0] = local_2[1] = 0.0;
+    local_i[0] = local_i[1] = 0.0;
 
     VecGetArray(ul, &array_0);
     VecGetArray(dul, &array_1);
@@ -862,23 +864,32 @@ double SWEqn::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv) {
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
-if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
-                det = geom->det[ei][ii];
+//if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, array_0, un);
                 ua[0] = fw(geom->x[inds0[ii]]);
 
-                local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(un[0] - ua[0])*(un[0] - ua[0]);
-                local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*ua[0]*ua[0];
+                det = geom->det[ei][ii];
+                wd = det*quad->w[ii%mp1]*quad->w[ii/mp1];
+
+                local_1[0] += wd*fabs(un[0] - ua[0]);
+                local_1[1] += wd*fabs(ua[0]);
+
+                local_2[0] += wd*(un[0] - ua[0])*(un[0] - ua[0]);
+                local_2[1] += wd*ua[0]*ua[0];
+
+                l_inf = wd*fabs(un[0] - ua[0]);
+                if(fabs(l_inf) > local_i[0]) {
+                    local_i[0] = fabs(l_inf);
+                    local_i[1] = fabs(wd*fabs(ua[0]));
+                }
 
                 if(fu != NULL && fv != NULL) {
                     geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, dun);
-
                     dua[0] = fu(geom->x[inds0[ii]]);
                     dua[1] = fv(geom->x[inds0[ii]]);
 
-                    local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*
-                                ((dun[0] - dua[0])*(dun[0] - dua[0]) + (dun[1] - dua[1])*(dun[1] - dua[1]));
-                    local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(dua[0]*dua[0] + dua[1]*dua[1]);
+                    local_2[0] += wd*((dun[0] - dua[0])*(dun[0] - dua[0]) + (dun[1] - dua[1])*(dun[1] - dua[1]));
+                    local_2[1] += wd*(dua[0]*dua[0] + dua[1]*dua[1]);
                 }
             }
         }
@@ -886,21 +897,25 @@ if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
     VecRestoreArray(ul, &array_0);
     VecRestoreArray(dul, &array_1);
 
-    MPI_Allreduce(local, global, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(local_1, global_1, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(local_2, global_2, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(local_i, global_i, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
     VecDestroy(&ul);
     VecDestroy(&dul);
     VecDestroy(&dug);
 
-    return sqrt(global[0]/global[1]);
+    norms[0] = sqrt(global_1[0]/global_1[1]);
+    norms[1] = sqrt(global_2[0]/global_2[1]);
+    norms[2] = sqrt(global_i[0]/global_i[1]);
 }
 
-double SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp) {
+void SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds0;
-    double det;
+    double det, wd, l_inf;
     double un[2], dun[1], ua[2], dua[1];
-    double local[2], global[2]; // first entry is the H(rot) error, the second is the norm
+    double local_1[2], global_1[2], local_2[2], global_2[2], local_i[2], global_i[2]; // first entry is the error, the second is the norm
     PetscScalar *array_1, *array_2;
     Vec ul, dug, dul;
 
@@ -918,7 +933,9 @@ double SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    local[0] = local[1] = 0.0;
+    local_1[0] = local_1[1] = 0.0;
+    local_2[0] = local_2[1] = 0.0;
+    local_i[0] = local_i[1] = 0.0;
 
     VecGetArray(ul, &array_1);
     VecGetArray(dul, &array_2);
@@ -929,23 +946,32 @@ double SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp) {
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
-if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
-                det = geom->det[ei][ii];
+//if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, un);
-
                 ua[0] = fu(geom->x[inds0[ii]]);
                 ua[1] = fv(geom->x[inds0[ii]]);
 
-                local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*
-                            ((un[0] - ua[0])*(un[0] - ua[0]) + (un[1] - ua[1])*(un[1] - ua[1]));
-                local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(ua[0]*ua[0] + ua[1]*ua[1]);
+                det = geom->det[ei][ii];
+                wd = det*quad->w[ii%mp1]*quad->w[ii/mp1];
 
+                local_1[0] += wd*(fabs(un[0] - ua[0]) + fabs(un[1] - ua[1]));
+                local_1[1] += wd*(fabs(ua[0]) + fabs(ua[1]));
+
+                local_2[0] += wd*((un[0] - ua[0])*(un[0] - ua[0]) + (un[1] - ua[1])*(un[1] - ua[1]));
+                local_2[1] += wd*(ua[0]*ua[0] + ua[1]*ua[1]);
+
+                l_inf = wd*(fabs(un[0] - ua[0]) + fabs(un[1] - ua[1]));
+                if(fabs(l_inf) > local_i[0]) {
+                    local_i[0] = fabs(l_inf);
+                    local_i[1] = wd*(fabs(ua[0]) + fabs(ua[1]));
+                }
+ 
                 if(fp != NULL) {
                     geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, dun);
                     dua[0] = fp(geom->x[inds0[ii]]);
 
-                    local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(dun[0] - dua[0])*(dun[0] - dua[0]);
-                    local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*dua[0]*dua[0];
+                    local_2[0] += wd*(dun[0] - dua[0])*(dun[0] - dua[0]);
+                    local_2[1] += wd*dua[0]*dua[0];
                 }
             }
         }
@@ -953,21 +979,25 @@ if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
     VecRestoreArray(ul, &array_1);
     VecRestoreArray(dul, &array_2);
 
-    MPI_Allreduce(local, global, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(local_1, global_1, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(local_2, global_2, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(local_i, global_i, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
     VecDestroy(&ul);
     VecDestroy(&dul);
     VecDestroy(&dug);
 
-    return sqrt(global[0]/global[1]);
+    norms[0] = sqrt(global_1[0]/global_1[1]);
+    norms[1] = sqrt(global_2[0]/global_2[1]);
+    norms[2] = sqrt(global_i[0]/global_i[1]);
 }
 
-double SWEqn::err2(Vec ug, ICfunc* fu) {
+void SWEqn::err2(Vec ug, ICfunc* fu, double* norms) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds0;
-    double det;
+    double det, wd, l_inf;
     double un[1], ua[1];
-    double local[2], global[2]; // first entry is the H(rot) error, the second is the norm
+    double local_1[2], global_1[2], local_2[2], global_2[2], local_i[2], global_i[2]; // first entry is the error, the second is the norm
     PetscScalar *array_2;
     Vec ul;
 
@@ -978,7 +1008,9 @@ double SWEqn::err2(Vec ug, ICfunc* fu) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    local[0] = local[1] = 0.0;
+    local_1[0] = local_1[1] = 0.0;
+    local_2[0] = local_2[1] = 0.0;
+    local_i[0] = local_i[1] = 0.0;
 
     VecGetArray(ul, &array_2);
 
@@ -988,24 +1020,39 @@ double SWEqn::err2(Vec ug, ICfunc* fu) {
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
-if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
-                det = geom->det[ei][ii];
+//if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, un);
-
                 ua[0] = fu(geom->x[inds0[ii]]);
 
-                local[0] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(un[0] - ua[0])*(un[0] - ua[0]);
-                local[1] += det*quad->w[ii%mp1]*quad->w[ii/mp1]*ua[0]*ua[0];
+                det = geom->det[ei][ii];
+                wd = det*quad->w[ii%mp1]*quad->w[ii/mp1];
+
+                local_1[0] += wd*fabs(un[0] - ua[0]);
+                local_1[1] += wd*fabs(ua[0]);
+
+                local_2[0] += wd*(un[0] - ua[0])*(un[0] - ua[0]);
+                local_2[1] += wd*ua[0]*ua[0];
+
+                l_inf = wd*fabs(un[0] - ua[0]);
+                if(fabs(l_inf) > local_i[0]) {
+                    local_i[0] = fabs(l_inf);
+                    local_i[1] = fabs(wd*fabs(ua[0]));
+                }
+
             }
         }
     }
     VecRestoreArray(ul, &array_2);
 
-    MPI_Allreduce(local, global, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(local_1, global_1, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(local_2, global_2, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(local_i, global_i, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
     VecDestroy(&ul);
 
-    return sqrt(global[0]/global[1]);
+    norms[0] = sqrt(global_1[0]/global_1[1]);
+    norms[1] = sqrt(global_2[0]/global_2[1]);
+    norms[2] = sqrt(global_i[0]/global_i[1]);
 }
 
 double SWEqn::int0(Vec ug) {

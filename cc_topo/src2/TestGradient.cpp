@@ -51,7 +51,7 @@ double dux_init(double* x) {
 
 int main(int argc, char** argv) {
     int size, rank;
-    double err;
+    double err[3];
     static char help[] = "petsc";
     char fieldname[20];
     Topo* topo;
@@ -116,8 +116,8 @@ int main(int argc, char** argv) {
     geom->write2(dun,fieldname,0);
 
     // TODO: check that the pressure component is correct for H(div) error
-    err = sw->err1(un, u_init, v_init, dux_init);
-    if(!rank) cout << "H(div) velocity error: " << err << endl;
+    sw->err1(un, u_init, v_init, dux_init, err);
+    if(!rank) cout << "H(div) velocity error: " << err[1] << endl;
 
     delete topo;
     delete geom;
