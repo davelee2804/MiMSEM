@@ -21,20 +21,31 @@ OBJS = LinAlg.o \
        Assembly.o \
        SWEqn.o \
        Test.o \
-       RossbyHaurwitz.o
-#       Mimsem.o
-#       TestVorticity.o
-#       TestGradient.o
+       Galewsky.o
 #       TestDivergence.o
+#       TestGradient.o
+#       TestVorticity.o
+#       Williamson2.o
+#       RossbyHaurwitz.o
+#       TestF.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-Mimsem.o: Mimsem.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c Mimsem.cpp ${CXXFLAGS}
+Galewsky.o: Galewsky.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Galewsky.cpp ${CXXFLAGS}
 
 RossbyHaurwitz.o: RossbyHaurwitz.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c RossbyHaurwitz.cpp ${CXXFLAGS}
+
+Williamson2.o: Williamson2.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Williamson2.cpp ${CXXFLAGS}
+
+TestK.o: TestK.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c TestK.cpp ${CXXFLAGS}
+
+TestF.o: TestF.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c TestF.cpp ${CXXFLAGS}
 
 TestVorticity.o: TestVorticity.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c TestVorticity.cpp ${CXXFLAGS}
