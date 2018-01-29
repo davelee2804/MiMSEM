@@ -104,12 +104,13 @@ int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
     //double dt = 10.0*60.0; time step for 4 3rd order elements per dimension per face
-    double dt = 6.0*60.0; // time step for 6 3rd order elements per dimension per face
+    //double dt = 6.0*60.0; // time step for 6 3rd order elements per dimension per face
+    double dt = 3.0*60.0; // stable for 3.5 days (with no viscosity) 6x3rd order elements per dimension per face
     double vort_0, mass_0, ener_0;
     char fieldname[20];
     bool dump;
-    int nSteps = 4250;
-    int dumpEvery = 25;
+    int nSteps = 6720;  // two weeks with a 3 minute time step
+    int dumpEvery = 20; // dump every hour
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
@@ -162,7 +163,7 @@ int main(int argc, char** argv) {
         VecCopy(uf,ui);
         VecCopy(hf,hi);
         if(dump) {
-            sw->writeConservation(ui, hi, mass_0, vort_0, ener_0);
+            sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
         }
     }
 
