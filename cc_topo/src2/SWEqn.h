@@ -7,6 +7,7 @@ class SWEqn {
         double grav;
         double omega;
         double del2;
+        bool do_visc;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;

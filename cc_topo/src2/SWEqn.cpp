@@ -21,8 +21,7 @@
 #define RAD_EARTH 6371220.0
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
-//#define USE_VISC
-#define W2_ALPHA 0.0
+//#define W2_ALPHA 0.0
 
 using namespace std;
 int step = 0;
@@ -34,6 +33,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     grav = 9.80616*(RAD_SPHERE/RAD_EARTH);
     omega = 7.292e-5;
     del2 = viscosity();
+    do_visc = true;
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -96,8 +96,11 @@ void SWEqn::coriolis() {
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
+#ifdef W2_ALPHA
+        fArray[ii] = 2.0*omega*( -cos(geom->s[ii][0])*cos(geom->s[ii][1])*sin(W2_ALPHA) + sin(geom->s[ii][1])*cos(W2_ALPHA) );
+#else
         fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
-        //fArray[ii] = 2.0*omega*( -cos(geom->s[ii][0])*cos(geom->s[ii][1])*sin(W2_ALPHA) + sin(geom->s[ii][1]*cos(W2_ALPHA)) );
+#endif
     }
     VecRestoreArray(fxl, &fArray);
 
@@ -329,12 +332,12 @@ void SWEqn::_momentumTend(Vec ui, Vec hi, KSP ksp, Vec *Fu) {
     MatMult(EtoF->E12, Mh, *Fu);
     VecAXPY(*Fu, 1.0, Ru);
 
-#ifdef USE_VISC
     // add in the biharmonic voscosity
-    laplacian(ui, ksp, &d2u);
-    laplacian(d2u, ksp, &d4u);
-    VecAXPY(*Fu, 1.0, d4u);
-#endif
+    if(do_visc) {
+        laplacian(ui, ksp, &d2u);
+        laplacian(d2u, ksp, &d4u);
+        VecAXPY(*Fu, 1.0, d4u);
+    }
 
     VecDestroy(&wl);
     VecDestroy(&ul);
@@ -342,10 +345,10 @@ void SWEqn::_momentumTend(Vec ui, Vec hi, KSP ksp, Vec *Fu) {
     VecDestroy(&Ru);
     VecDestroy(&Ku);
     VecDestroy(&Mh);
-#ifdef USE_VISC
-    VecDestroy(&d2u);
-    VecDestroy(&d4u);
-#endif
+    if(do_visc) {
+        VecDestroy(&d2u);
+        VecDestroy(&d4u);
+    }
 }
 
 // RK2 time integrator (stiffly stable scheme)
@@ -864,7 +867,6 @@ void SWEqn::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv, double* norms) {
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
-//if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, array_0, un);
                 ua[0] = fw(geom->x[inds0[ii]]);
 
@@ -946,7 +948,6 @@ void SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
-//if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, un);
                 ua[0] = fu(geom->x[inds0[ii]]);
                 ua[1] = fv(geom->x[inds0[ii]]);
@@ -1020,7 +1021,6 @@ void SWEqn::err2(Vec ug, ICfunc* fu, double* norms) {
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
-//if(fabs(geom->s[inds0[ii]][1]) > 0.375*M_PI) continue;
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, un);
                 ua[0] = fu(geom->x[inds0[ii]]);
 

@@ -74,7 +74,6 @@ int main(int argc, char** argv) {
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
-    Test* test;
     Vec wi, ui, hi, uf, hf;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
@@ -87,7 +86,7 @@ int main(int argc, char** argv) {
     topo = new Topo(rank);
     geom = new Geom(rank, topo);
     sw = new SWEqn(topo, geom);
-    test = new Test(sw);
+    sw->do_visc = false;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &wi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
@@ -125,7 +124,7 @@ int main(int argc, char** argv) {
         if(dump) {
             sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
 
-            sw->diagnose_w(ui, &wi, true);
+            sw->diagnose_w(ui, &wi, false);
             sw->err0(wi, w_init, NULL, NULL, err_w);
             sw->err1(ui, u_init, v_init, NULL, err_u);
             sw->err2(hi, h_init, err_h);
@@ -145,7 +144,6 @@ int main(int argc, char** argv) {
     delete topo;
     delete geom;
     delete sw;
-    delete test;
 
     VecDestroy(&ui);
     VecDestroy(&uf);
