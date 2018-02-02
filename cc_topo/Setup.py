@@ -12,7 +12,11 @@ pn = int(sys.argv[1])
 ne = int(sys.argv[2])
 n_procs = int(sys.argv[3])
 
-os.makedirs('./src2/input')
+try:
+	os.makedirs('./src2/input')
+	os.makedirs('./src2/output')
+except OSError:
+	pass
 
 # Generate the topology
 pc = ParaCube(n_procs,pn,ne)
