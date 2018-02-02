@@ -29,7 +29,7 @@ for pi in np.arange(n_procs):
 	pc.procs[pi].writeLocalSizes()
 
 # Write the grid metadata
-f = open('grid_res.txt', 'w')
+f = open('src2/input/grid_res.txt', 'w')
 f.write(str(pn) + '\n')
 f.write(str(ne/pc.npx))
 f.close()
