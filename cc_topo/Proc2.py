@@ -326,7 +326,7 @@ class Proc:
 		a[1] = self.n1xl
 		a[2] = self.n1yl
 		a[3] = self.n2l
-		np.savetxt('local_sizes_%.4u'%self.procID + '.txt', a, fmt='%u')
+		np.savetxt('./src2/input/local_sizes_%.4u'%self.procID + '.txt', a, fmt='%u')
 
 # face of the cube
 class Face:
@@ -642,18 +642,18 @@ class ParaCube:
 	def print_nodes(self,pi):
 		proc = self.procs[pi]
 		#print str(pi) + ':\t' + str(proc.loc0)
-		np.savetxt('nodes_%.4u'%pi + '.txt', proc.loc0, fmt='%u')
+		np.savetxt('./src2/input/nodes_%.4u'%pi + '.txt', proc.loc0, fmt='%u')
 
 	def print_edges(self,pi,dim):
 		proc = self.procs[pi]
 		if dim == 0:
 			#print str(pi) + ' (x):\t' + str(proc.loc1x)
-			np.savetxt('edges_x_%.4u'%pi + '.txt', proc.loc1x, fmt='%u')
+			np.savetxt('./src2/input/edges_x_%.4u'%pi + '.txt', proc.loc1x, fmt='%u')
 		else:
 			#print str(pi) + ' (y):\t' + str(proc.loc1y)
-			np.savetxt('edges_y_%.4u'%pi + '.txt', proc.loc1y, fmt='%u')
+			np.savetxt('./src2/input/edges_y_%.4u'%pi + '.txt', proc.loc1y, fmt='%u')
 
 	def print_faces(self,pi):
 		proc = self.procs[pi]
 		#print str(pi) + ':\t' + str(proc.loc2)
-		np.savetxt('faces_%.4u'%pi + '.txt', proc.loc2, fmt='%u')
+		np.savetxt('./src2/input/faces_%.4u'%pi + '.txt', proc.loc2, fmt='%u')
