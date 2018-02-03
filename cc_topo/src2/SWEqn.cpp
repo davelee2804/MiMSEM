@@ -21,12 +21,14 @@
 #define RAD_EARTH 6371220.0
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
-//#define W2_ALPHA 0.0
+#define W2_ALPHA (0.25*M_PI)
 
 using namespace std;
 int step = 0;
 
 SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
+    PC pc;
+
     topo = _topo;
     geom = _geom;
 
@@ -67,6 +69,17 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     // coriolis vector (projected onto 0 forms)
     coriolis();
+
+    // initialize the linear solver
+    KSPCreate(MPI_COMM_WORLD, &ksp);
+    KSPSetOperators(ksp, M1->M, M1->M);
+    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp, KSPGMRES);
+    KSPGetPC(ksp,&pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+    KSPSetOptionsPrefix(ksp,"sw_");
+    KSPSetFromOptions(ksp);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -142,7 +155,7 @@ void SWEqn::diagnose_w(Vec u, Vec *w, bool add_f) {
     VecDestroy(&du);
 }
 
-void SWEqn::diagnose_F(Vec u, Vec hl, KSP ksp, Vec* hu) {
+void SWEqn::diagnose_F(Vec u, Vec hl, Vec* hu) {
     Vec Fu;
 
     // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
@@ -160,7 +173,7 @@ void SWEqn::diagnose_F(Vec u, Vec hl, KSP ksp, Vec* hu) {
     VecDestroy(&Fu);
 }
 
-void SWEqn::_massEqn(Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt) {
+void SWEqn::_massEqn(Vec hi, Vec uj, Vec hj, Vec hf, double dt) {
     Vec hl, hu, Fj, dF;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
@@ -184,7 +197,7 @@ void SWEqn::_massEqn(Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp, double dt) {
     VecDestroy(&dF);
 }
 
-void SWEqn::_momentumEqn(Vec ui, Vec uj, Vec hj, Vec uf, KSP ksp, double dt) {
+void SWEqn::_momentumEqn(Vec ui, Vec uj, Vec hj, Vec uf, double dt) {
     Vec wj, wl, ul, Ru, Ku, Mh, dh, bu;
 
     diagnose_w(uj, &wj, true);
@@ -231,36 +244,23 @@ void SWEqn::solve_RK2(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     int rank;
     char fieldname[20];
     Vec wf, uh, hh;
-    PC pc;
-    KSP ksp;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hh);
 
-    // initialize the linear solver
-    KSPCreate(MPI_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, M1->M, M1->M);
-    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp, KSPGMRES);
-    KSPGetPC(ksp,&pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
-    KSPSetOptionsPrefix(ksp,"sw_");
-    KSPSetFromOptions(ksp);
-
     /*** half step ***/
     if(!rank) cout << "half step..." << endl;
 
-    _massEqn(hi, ui, hi, hh, ksp, 0.5*dt);
-    _momentumEqn(ui, ui, hi, uh, ksp, 0.5*dt);
+    _massEqn(hi, ui, hi, hh, 0.5*dt);
+    _momentumEqn(ui, ui, hi, uh, 0.5*dt);
 
     /*** full step ***/
     if(!rank) cout << "full step..." << endl;
 
-    _massEqn(hi, uh, hh, hf, ksp, dt);
-    _momentumEqn(ui, uh, hh, uf, ksp, dt);
+    _massEqn(hi, uh, hh, hf, dt);
+    _momentumEqn(ui, uh, hh, uf, dt);
 
     if(!rank) cout << "...done." << endl;
 
@@ -281,10 +281,9 @@ void SWEqn::solve_RK2(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
 
     VecDestroy(&uh);
     VecDestroy(&hh);
-    KSPDestroy(&ksp);
 }
 
-void SWEqn::_massTend(Vec ui, Vec hi, KSP ksp, Vec *Fh) {
+void SWEqn::_massTend(Vec ui, Vec hi, Vec *Fh) {
     Vec hl, hu, Fi;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
@@ -305,7 +304,7 @@ void SWEqn::_massTend(Vec ui, Vec hi, KSP ksp, Vec *Fh) {
     VecDestroy(&Fi);
 }
 
-void SWEqn::_momentumTend(Vec ui, Vec hi, KSP ksp, Vec *Fu) {
+void SWEqn::_momentumTend(Vec ui, Vec hi, Vec *Fu) {
     Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, Fu);
@@ -334,8 +333,8 @@ void SWEqn::_momentumTend(Vec ui, Vec hi, KSP ksp, Vec *Fu) {
 
     // add in the biharmonic voscosity
     if(do_visc) {
-        laplacian(ui, ksp, &d2u);
-        laplacian(d2u, ksp, &d4u);
+        laplacian(ui, &d2u);
+        laplacian(d2u, &d4u);
         VecAXPY(*Fu, 1.0, d4u);
     }
 
@@ -356,8 +355,6 @@ void SWEqn::solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     int rank;
     char fieldname[20];
     Vec wf, Ui, Uj, Hi, Hj, Mu, bu, uj, hj;
-    PC pc;
-    KSP ksp;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
@@ -366,24 +363,13 @@ void SWEqn::solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uj);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
 
-    // initialize the linear solver
-    KSPCreate(MPI_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, M1->M, M1->M);
-    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp, KSPGMRES);
-    KSPGetPC(ksp,&pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
-    KSPSetOptionsPrefix(ksp,"sw_");
-    KSPSetFromOptions(ksp);
-
     MatMult(M1->M, ui, Mu);
 
     // first step
     if(!rank) cout << "first step...." << endl;
 
-    _momentumTend(ui, hi, ksp, &Ui);
-    _massTend(ui, hi, ksp, &Hi);
+    _momentumTend(ui, hi, &Ui);
+    _massTend(ui, hi, &Hi);
 
     VecCopy(Mu, bu);
     VecAXPY(bu, -dt, Ui);
@@ -395,8 +381,8 @@ void SWEqn::solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     // second step
     if(!rank) cout << "second step..." << endl;
 
-    _momentumTend(uj, hj, ksp, &Uj);
-    _massTend(uj, hj, ksp, &Hj);
+    _momentumTend(uj, hj, &Uj);
+    _massTend(uj, hj, &Hj);
 
     VecCopy(Mu, bu);
     VecAXPY(bu, -0.5*dt, Ui);
@@ -432,10 +418,9 @@ void SWEqn::solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecDestroy(&Uj);
     VecDestroy(&Hi);
     VecDestroy(&Hj);
-    KSPDestroy(&ksp);
 }
 
-void SWEqn::_massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp1, KSP ksp2, double dt) {
+void SWEqn::_massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp2, double dt) {
     Vec hl, hui, huj, Fi, dF, WdF, b;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
@@ -453,7 +438,7 @@ void SWEqn::_massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp1, KSP ksp
     MatMult(F->M, ui, hui);
     MatMult(F->M, uj, huj);
     VecAXPY(hui, 1.0, huj);
-    KSPSolve(ksp1, hui, Fi);
+    KSPSolve(ksp, hui, Fi);
 
     MatMult(EtoF->E21, Fi, dF);
     MatMult(M2->M, dF, WdF);
@@ -472,7 +457,7 @@ void SWEqn::_massEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec hf, KSP ksp1, KSP ksp
     VecDestroy(&b);
 }
 
-void SWEqn::_momentumEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec uf, KSP ksp, double dt) {
+void SWEqn::_momentumEuler(Vec ui, Vec hi, Vec uj, Vec hj, Vec uf, double dt) {
     Vec Ru, Ku, Mhi, Mhj, bu, bF;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
@@ -520,8 +505,7 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     char fieldname[20];
     PetscScalar unorm, hnorm;
     Vec wi, wl, ul, uj, hj, du, dh;
-    PC pc;
-    KSP ksp1, ksp2;
+    KSP ksp2;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
@@ -531,17 +515,6 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dh);
-
-    // initialize the linear solver for 1 forms
-    KSPCreate(MPI_COMM_WORLD, &ksp1);
-    KSPSetOperators(ksp1, M1->M, M1->M);
-    KSPSetTolerances(ksp1, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp1, KSPGMRES);
-    KSPGetPC(ksp1,&pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
-    KSPSetOptionsPrefix(ksp1,"sw_1_");
-    KSPSetFromOptions(ksp1);
 
     // initialize the linear solver for 2 forms
     KSPCreate(MPI_COMM_WORLD, &ksp2);
@@ -571,9 +544,9 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     unorm = 1.0e+9;
     hnorm = 1.0e+9;
     do {
-        _massEuler(ui, hi, uj, hj, hf, ksp1, ksp2, dt);
-        //_momentumEuler(ui, hi, uj, hj, uf, ksp1, dt);
-        _momentumEuler(ui, hi, uj, hf, uf, ksp1, dt);
+        _massEuler(ui, hi, uj, hj, hf, ksp2, dt);
+        //_momentumEuler(ui, hi, uj, hj, uf, dt);
+        _momentumEuler(ui, hi, uj, hf, uf, dt);
 
         VecZeroEntries(du);
         VecAXPY(du, +1.0, uf);
@@ -615,11 +588,10 @@ void SWEqn::solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecDestroy(&du);
     VecDestroy(&hj);
     VecDestroy(&dh);
-    KSPDestroy(&ksp1);
     KSPDestroy(&ksp2);
 }
 
-void SWEqn::laplacian(Vec ui, KSP ksp, Vec* ddu) {
+void SWEqn::laplacian(Vec ui, Vec* ddu) {
     Vec Du, Cu, RCu, GDu, MDu, dMDu;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, ddu);
@@ -660,6 +632,7 @@ void SWEqn::laplacian(Vec ui, KSP ksp, Vec* ddu) {
 }
 
 SWEqn::~SWEqn() {
+    KSPDestroy(&ksp);
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);
     VecDestroy(&fg);
@@ -722,8 +695,6 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     int *inds0, *loc02;
     UtQmat* UQ = new UtQmat(topo, geom, node, edge);
     PetscScalar *bArray;
-    KSP ksp;
-    PC pc;
     Vec bl, bg, UQb;
     IS isl, isg;
     VecScatter scat;
@@ -761,22 +732,11 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
     MatMult(UQ->M, bg, UQb);
-
-    KSPCreate(MPI_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, M1->M, M1->M);
-    KSPGetPC(ksp,&pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
-    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp, KSPGMRES);
-    KSPSetOptionsPrefix(ksp,"init1_");
-    KSPSetFromOptions(ksp);
     KSPSolve(ksp, UQb, u);
 
     VecDestroy(&bl);
     VecDestroy(&bg);
     VecDestroy(&UQb);
-    KSPDestroy(&ksp);
     ISDestroy(&isl);
     ISDestroy(&isg);
     VecScatterDestroy(&scat);
@@ -788,7 +748,7 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     int ex, ey, ii, mp1, mp12;
     int *inds0;
     PetscScalar *bArray;
-    KSP ksp;
+    KSP ksp2;
     Vec bl, bg, WQb;
     WtQmat* WQ = new WtQmat(topo, geom, edge);
 
@@ -816,16 +776,16 @@ void SWEqn::init2(Vec h, ICfunc* func) {
 
     MatMult(WQ->M, bg, WQb);
 
-    KSPCreate(MPI_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, M2->M, M2->M);
-    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp, KSPGMRES);
-    KSPSetOptionsPrefix(ksp,"init2_");
-    KSPSetFromOptions(ksp);
-    KSPSolve(ksp, WQb, h);
+    KSPCreate(MPI_COMM_WORLD, &ksp2);
+    KSPSetOperators(ksp2, M2->M, M2->M);
+    KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp2, KSPGMRES);
+    KSPSetOptionsPrefix(ksp2,"init2_");
+    KSPSetFromOptions(ksp2);
+    KSPSolve(ksp2, WQb, h);
 
     delete WQ;
-    KSPDestroy(&ksp);
+    KSPDestroy(&ksp2);
     VecDestroy(&bl);
     VecDestroy(&bg);
     VecDestroy(&WQb);

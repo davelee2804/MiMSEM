@@ -161,8 +161,6 @@ void Test::convection(ICfunc* fu, ICfunc* fv) {
 
 void Test::massFlux(ICfunc* fu, ICfunc* fv, ICfunc* fh) {
     Vec u, F, h, hl;
-    KSP ksp;
-    PC pc;
     char filename[20];
 
     VecCreateSeq(MPI_COMM_SELF, sw->topo->n2, &hl);
@@ -175,22 +173,11 @@ void Test::massFlux(ICfunc* fu, ICfunc* fv, ICfunc* fh) {
     VecScatterBegin(sw->topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(sw->topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
 
-    KSPCreate(MPI_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, sw->M1->M, sw->M1->M);
-    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp, KSPGMRES);
-    KSPGetPC(ksp,&pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2*sw->topo->elOrd*(sw->topo->elOrd+1), NULL);
-    KSPSetOptionsPrefix(ksp,"test_mf_");
-    KSPSetFromOptions(ksp);
-
-    sw->diagnose_F(u, hl, ksp, &F);
+    sw->diagnose_F(u, hl, &F);
 
     sprintf(filename,"test_mf");
     sw->geom->write1(F, filename, 0);
 
-    KSPDestroy(&ksp);
     VecDestroy(&hl);
     VecDestroy(&u);
     VecDestroy(&h);
