@@ -86,12 +86,11 @@ int main(int argc, char** argv) {
     double vort_0, mass_0, ener_0;
     char fieldname[20];
     bool dump;
-    int nSteps = 240;
-    int dumpEvery = 15;
+    int nSteps = 5040;
+    int dumpEvery = 30;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
-    Test* test;
     Vec wi, ui, hi, uf, hf;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
@@ -104,19 +103,11 @@ int main(int argc, char** argv) {
     topo = new Topo(rank);
     geom = new Geom(rank, topo);
     sw = new SWEqn(topo, geom);
-    test = new Test(sw);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uf);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hf);
-
-    //test->vorticity(u_init, v_init);
-    //test->gradient(h_init);
-    //test->divergence(u_init, v_init);
-    //test->convection(u_init, v_init);
-    //test->massFlux(u_init,v_init, h_init);
-    //test->kineticEnergy(u_init,v_init);
 
     sw->init1(ui, u_init, v_init);
     sw->init2(hi, h_init);
@@ -138,7 +129,6 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         sw->solve_RK2_SS(ui, hi, uf, hf, dt, dump);
-        //sw->solve_EEC(ui, hi, uf, hf, dt, dump);
         VecCopy(uf,ui);
         VecCopy(hf,hi);
         if(dump) {
@@ -149,7 +139,6 @@ int main(int argc, char** argv) {
     delete topo;
     delete geom;
     delete sw;
-    delete test;
 
     VecDestroy(&ui);
     VecDestroy(&uf);

@@ -21,7 +21,7 @@
 #define RAD_EARTH 6371220.0
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
-#define W2_ALPHA (0.25*M_PI)
+//#define W2_ALPHA (0.25*M_PI)
 
 using namespace std;
 int step = 0;

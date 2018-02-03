@@ -8,7 +8,7 @@ import h5py
 from Geom2 import *
 
 pn = 3
-ne = 8
+ne = 12
 print 'writing image'
 xg, yg, zg = init_geom(pn,ne,False,False)
 print '...done'
@@ -62,6 +62,9 @@ else:
 	levs=np.linspace(tmin,tmax,100,endpoint=True)
 	plt.tricontourf(triang, W, levs)
 #plt.triplot(triang)
-plt.colorbar()
+plt.colorbar(orientation='horizontal')
+#tc=plt.tricontour(triang,W,1000.0*np.array([9.0,9.2,9.4,9.6,9.8,10.0]),colors='k')
+plt.xlim([-np.pi,+np.pi])
+plt.ylim([-0.5*np.pi,+0.5*np.pi])
 plt.savefig(filename + '.png')
 plt.show()
