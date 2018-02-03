@@ -25,7 +25,7 @@ using namespace std;
 #define W2_OMEGA 7.292e-5
 #define W2_U0 38.61068276698372
 #define W2_H0 2998.1154702758267
-#define W2_ALPHA 0.0
+#define W2_ALPHA (0.25*M_PI)
 
 /* Williamson test case 2
    Reference:
@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
         if(dump) {
             sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
 
-            sw->diagnose_w(ui, &wi, false);
+            sw->diagnose_w(ui, &wi, true);
             sw->err0(wi, w_init, NULL, NULL, err_w);
             sw->err1(ui, u_init, v_init, NULL, err_u);
             sw->err2(hi, h_init, err_h);
