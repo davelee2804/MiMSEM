@@ -84,14 +84,16 @@ int main(int argc, char** argv) {
     static char help[] = "petsc";
     double dt = 120.0;//0.1*(2.0*M_PI/(4.0*12))/80.0;
     double vort_0, mass_0, ener_0;
-    char fieldname[20];
+    char fieldname[50];
     bool dump;
+    int startStep = atoi(argv[1]);
     int nSteps = 5040;
     int dumpEvery = 30;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
     Vec wi, ui, hi, uf, hf;
+    PetscViewer viewer;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 
@@ -109,13 +111,25 @@ int main(int argc, char** argv) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hf);
 
-    sw->init1(ui, u_init, v_init);
-    sw->init2(hi, h_init);
+    if(startStep == 0) {
+        sw->init1(ui, u_init, v_init);
+        sw->init2(hi, h_init);
 
-    sprintf(fieldname,"velocity");
-    geom->write1(ui,fieldname,0);
-    sprintf(fieldname,"pressure");
-    geom->write2(hi,fieldname,0);
+        sprintf(fieldname,"velocity");
+        geom->write1(ui,fieldname,0);
+        sprintf(fieldname,"pressure");
+        geom->write2(hi,fieldname,0);
+    } else {
+        sprintf(fieldname, "output/pressure_%.4u.vec", startStep);
+        PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+        VecLoad(hi, viewer);
+        PetscViewerDestroy(&viewer);
+
+        sprintf(fieldname, "output/velocity_%.4u.vec", startStep);
+        PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+        VecLoad(ui, viewer);
+        PetscViewerDestroy(&viewer);
+    }
 
     sw->diagnose_w(ui, &wi, false);
     vort_0 = sw->int0(wi);
@@ -123,7 +137,7 @@ int main(int argc, char** argv) {
     ener_0 = sw->intE(ui, hi);
     VecDestroy(&wi);
 
-    for(step = 1; step <= nSteps; step++) {
+    for(step = startStep + 1; step <= nSteps; step++) {
         if(!rank) {
             cout << "doing step: " << step << endl;
         }

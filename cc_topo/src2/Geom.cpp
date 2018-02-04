@@ -404,6 +404,12 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     VecDestroy(&uxl);
     VecDestroy(&vxl);
     VecDestroy(&uxg);
+
+    // also write the vector itself
+    sprintf(filename, "output/%s_%.4u.vec", fieldname, tstep);
+    PetscViewerBinaryOpen(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
+    VecView(u, viewer);
+    PetscViewerDestroy(&viewer);
 }
 
 // interpolate 2 form field to quadrature points
@@ -461,6 +467,12 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     VecDestroy(&hxg);
     VecDestroy(&hxl);
     VecDestroy(&hl);
+
+    // also write the vector itself
+    sprintf(filename, "output/%s_%.4u.vec", fieldname, tstep);
+    PetscViewerBinaryOpen(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
+    VecView(h, viewer);
+    PetscViewerDestroy(&viewer);
 }
 
 // update global coordinates (cartesian and spherical) for consistency with local
