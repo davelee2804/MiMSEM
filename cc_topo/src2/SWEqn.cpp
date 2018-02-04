@@ -24,7 +24,6 @@
 //#define W2_ALPHA (0.25*M_PI)
 
 using namespace std;
-int step = 0;
 
 SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     PC pc;
@@ -36,6 +35,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     omega = 7.292e-5;
     del2 = viscosity();
     do_visc = true;
+    step = 0;
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);

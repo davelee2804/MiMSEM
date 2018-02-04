@@ -105,6 +105,7 @@ int main(int argc, char** argv) {
     topo = new Topo(rank);
     geom = new Geom(rank, topo);
     sw = new SWEqn(topo, geom);
+    sw->step = startStep;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uf);
@@ -137,9 +138,9 @@ int main(int argc, char** argv) {
     ener_0 = sw->intE(ui, hi);
     VecDestroy(&wi);
 
-    for(step = startStep + 1; step <= nSteps; step++) {
+    for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
-            cout << "doing step: " << step << endl;
+            cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
         sw->solve_RK2_SS(ui, hi, uf, hf, dt, dump);

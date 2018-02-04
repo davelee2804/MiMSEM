@@ -8,6 +8,7 @@ class SWEqn {
         double omega;
         double del2;
         bool do_visc;
+        int step;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
