@@ -14,9 +14,6 @@
 
 using namespace std;
 
-//#define VIEW_MAT
-#define PIOLA
-
 // mass matrix for the 1 form vector (x-normal degrees of
 // freedom first then y-normal degrees of freedom)
 Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
@@ -49,9 +46,6 @@ void Umat::assemble() {
     double** Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
     double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
     double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
-#ifdef VIEW_MAT
-    PetscViewer viewer;
-#endif
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
@@ -72,15 +66,9 @@ void Umat::assemble() {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-#ifdef PIOLA
                 Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
                 Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
-#else
-                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii];
-                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii];
-                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii];
-#endif
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -114,13 +102,6 @@ void Umat::assemble() {
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
-
-#ifdef VIEW_MAT
-    PetscViewerASCIIOpen(PETSC_COMM_WORLD, "mat.dat", &viewer);
-    MatView(M, viewer);
-    PetscViewerDestroy(&viewer);
-    MatView(M, PETSC_VIEWER_DRAW_WORLD);
-#endif
 
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
@@ -183,11 +164,7 @@ void Wmat::assemble() {
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-#ifdef PIOLA
                 Qaa[ii][ii] = Q->A[ii][ii]/det/det;
-#else
-                Qaa[ii][ii] = det*det*Q->A[ii][ii];
-#endif
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -272,15 +249,9 @@ void Uhmat::assemble(Vec h2) {
                 J = geom->J[ei][ii];
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
 
-#ifdef PIOLA
                 Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
                 Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
-#else
-                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii];
-                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii];
-                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii];
-#endif
             }
 
             Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
@@ -438,11 +409,7 @@ void WtQmat::assemble() {
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-#ifdef PIOLA
                 Qaa[ii][ii] = Q->A[ii][ii]/det;
-#else
-                Qaa[ii][ii] = det*Q->A[ii][ii];
-#endif
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -568,17 +535,10 @@ void UtQmat::assemble() {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-#ifdef PIOLA
                 Qaa[ii][ii] = J[0][0]*Q->A[ii][ii]/det;
                 Qab[ii][ii] = J[1][0]*Q->A[ii][ii]/det;
                 Qba[ii][ii] = J[0][1]*Q->A[ii][ii]/det;
                 Qbb[ii][ii] = J[1][1]*Q->A[ii][ii]/det;
-#else
-                Qaa[ii][ii] = J[0][0]*Q->A[ii][ii];
-                Qab[ii][ii] = J[1][0]*Q->A[ii][ii];
-                Qba[ii][ii] = J[0][1]*Q->A[ii][ii];
-                Qbb[ii][ii] = J[1][1]*Q->A[ii][ii];
-#endif
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -685,13 +645,8 @@ void WtQUmat::assemble(Vec u1) {
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
 
-#ifdef PIOLA
                 Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]/det/det;
-#else
-                Qaa[ii][ii] = 0.5*det*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii];
-                Qab[ii][ii] = 0.5*det*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii];
-#endif
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -790,13 +745,8 @@ void RotMat::assemble(Vec q0) {
                 J = geom->J[ei][ii];
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
 
-#ifdef PIOLA
                 Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
-#else
-                Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii];
-                Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii];
-#endif
             }
 
             Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
