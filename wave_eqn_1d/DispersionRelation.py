@@ -34,8 +34,10 @@ def disp_rel(nx,n,m):
 
 	det = 0.5*lx/topo.nx
 
-	g = 10.0
-	H = 1.6
+	#g = 10.0
+	#H = 1.6
+	g = 1.0
+	H = 1.0
 	k = 2.0*np.pi
 	omega = k*np.sqrt(g*H)
 
@@ -54,20 +56,22 @@ def disp_rel(nx,n,m):
 	vecr = vecs.real
 	vecr2 = vecr[:,inds]
 
-	return vr2, vecr2
+	return vr2, vecr2, x
 
-vals2, vecs2 = disp_rel(150,2,2)
-vals3, vecs3 = disp_rel(100,3,3)
-vals4, vecs4 = disp_rel( 75,4,4)
-vals5, vecs5 = disp_rel( 60,5,5)
-vals6, vecs6 = disp_rel( 50,6,6)
+vals2, vecs2, x2 = disp_rel(150,2,2)
+vals3, vecs3, x3 = disp_rel(100,3,3)
+vals4, vecs4, x4 = disp_rel( 75,4,4)
+vals5, vecs5, x5 = disp_rel( 60,5,5)
+vals6, vecs6, x6 = disp_rel( 50,6,6)
 
-#vals2, vecs2 = disp_rel(150,2,2+2)
-#vals3, vecs3 = disp_rel(100,3,3+2)
-#vals4, vecs4 = disp_rel( 75,4,4+2)
+#vals2, vecs2, x2 = disp_rel(150,2,2+2)
+#vals3, vecs3, x3 = disp_rel(100,3,3+2)
+#vals4, vecs4, x4 = disp_rel( 75,4,4+2)
 
-g = 10.0
-H = 1.6
+#g = 10.0
+#H = 1.6
+g = 1.0
+H = 1.0
 lx = 1.0
 k = 2.0*np.pi
 kk = k*np.arange(300)/lx
@@ -79,14 +83,14 @@ plt.plot((2.0*np.pi+0.5*kk[:-2])/2.0/np.pi,np.sqrt(np.abs(vals4)))
 plt.plot((2.0*np.pi+0.5*kk[:-2])/2.0/np.pi,np.sqrt(np.abs(vals5)))
 plt.plot((2.0*np.pi+0.5*kk[:-2])/2.0/np.pi,np.sqrt(np.abs(vals6)))
 plt.legend(['analytic','p=2','p=3','p=4','p=5','p=6'],loc='upper left')
-plt.xlabel('wavenumber')
-plt.ylabel('phase speed')
-#plt.savefig('dispersion_relation_inexact_quadrature.png')
+plt.xlabel('$k$')
+plt.ylabel('$\omega$')
+plt.savefig('dispersion_relation_inexact_quadrature.png')
+#plt.savefig('dispersion_relation_exact_quadrature.png')
 plt.show()
 
-#plt.plot(x,vecr2[:,0].real)
-#plt.plot(x,vecr2[:,1].real)
-#plt.plot(x,vecr2[:,2].real)
-#plt.plot(x,vecr2[:,3].real)
-#plt.plot(x,vecr2[:,4].real)
-#plt.show()
+plt.plot(x4,vecs4[:,0].real)
+plt.plot(x4,vecs4[:,2].real)
+plt.plot(x4,vecs4[:,4].real)
+plt.plot(x4,vecs4[:,6].real)
+plt.show()
