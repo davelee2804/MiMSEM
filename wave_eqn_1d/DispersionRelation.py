@@ -24,10 +24,11 @@ def disp_rel(nx,n,m,mixed):
 	nxm = nx*m
 
 	topo = Topo(nx,n)
-	if mixed:
-		quad = GaussLegendre(m)
-	else:
-		quad = GaussLobatto(m)
+	#if mixed:
+	#	quad = GaussLegendre(m)
+	#else:
+	#	quad = GaussLobatto(m)
+	quad = GaussLobatto(m)
 	topo_q = Topo(nx,m)
 
 	lx = 1.0
@@ -53,7 +54,8 @@ def disp_rel(nx,n,m,mixed):
 	np.fill_diagonal(A,1.0)
 
 	if mixed:
-		B = g*H*we.A*we.B
+		#B = g*H*we.A*we.B
+		B = g*H*we.B*we.A
 	else:
 		B = g*H*we.A*we.A
 
@@ -125,25 +127,9 @@ lx = 1.0
 k = 2.0*np.pi
 kk = k*np.arange(300)/lx
 
-plt.plot((kk[:(300)/2])/2.0/np.pi,np.sqrt(g*H)*kk[:(300)/2],c='k')
-plt.plot((2.0*np.pi+0.5*kk[:-2])/2.0/np.pi,np.sqrt(np.abs(vals2)))
-plt.plot((2.0*np.pi+0.5*kk[:-2])/2.0/np.pi,np.sqrt(np.abs(vals3)))
-plt.plot((2.0*np.pi+0.5*kk[:-2])/2.0/np.pi,np.sqrt(np.abs(vals4)))
-if inexact:
-	plt.plot((2.0*np.pi+0.5*kk[:-2])/2.0/np.pi,np.sqrt(np.abs(vals5)))
-	plt.plot((2.0*np.pi+0.5*kk[:-2])/2.0/np.pi,np.sqrt(np.abs(vals6)))
-plt.legend(['analytic','p=2','p=3','p=4','p=5','p=6'],loc='upper left')
-plt.xlabel('$k$')
-plt.ylabel('$\omega$')
-plt.ylim([0.0,1600])
-if inexact:
-	plt.savefig('dispersion_relation_inexact_quadrature.png')
-else:
-	plt.savefig('dispersion_relation_exact_quadrature.png')
-plt.show()
-
-xx = x4
-vv = vecs4
+# plot the lowest eigenfunctions
+xx = x6
+vv = vecs6
 
 plt.figure()
 plt.subplot(2, 3, 1)
@@ -171,12 +157,13 @@ plt.plot(xx,vv[:,10].real)
 plt.xticks([])
 plt.yticks([])
 if mixed:
-	plt.savefig('eigenfuncs_4_mixed.png')
+	plt.savefig('eigenfuncs_6_mixed.png')
 else:
-	plt.savefig('eigenfuncs_4_agrid.png')
+	plt.savefig('eigenfuncs_6_agrid.png')
 
 plt.show()
 
+# re-order the eigenvalues based on fourier decomposition
 k2 = fourier_decomp(vals2,vecs2,x2)
 k3 = fourier_decomp(vals3,vecs3,x3)
 k4 = fourier_decomp(vals4,vecs4,x4)
