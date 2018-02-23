@@ -55,3 +55,18 @@ class WaveEqn:
 		hf,uf = self.solveEuler(hi,ui,hh,uh,dt)
 
 		return hf,uf
+
+	def solveRK2_SS(self,hi,ui,dt):
+		Fui = self.g*self.B*hi
+		Fhi = self.H*self.A*ui
+
+		uj = ui - dt*Fui
+		hj = hi - dt*Fhi
+
+		Fuj = self.g*self.B*hj
+		Fhj = self.H*self.A*uj
+
+		uf = ui - 0.5*dt*(Fui + Fuj)
+		hf = hi - 0.5*dt*(Fhi + Fhj)
+
+		return hf, uf

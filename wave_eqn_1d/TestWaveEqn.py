@@ -98,7 +98,7 @@ def energy(hi,ui,g,H,topo,quad,N,E,det):
 
 	return en
 
-eec = True
+eec = False
 
 nx = 4
 n = 6 # basis order
@@ -179,7 +179,7 @@ for step in np.arange(nsteps) + 1:
 	if eec:
 		hf,uf = we.solve(hi,ui)
 	else:
-		hf,uf = we.solveRK2(hi,ui,dt)
+		hf,uf = we.solveRK2_SS(hi,ui,dt)
 
 	hi[:] = hf[:]
 	ui[:] = uf[:]
