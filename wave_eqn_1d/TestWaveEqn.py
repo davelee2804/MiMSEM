@@ -98,6 +98,8 @@ def energy(hi,ui,g,H,topo,quad,N,E,det):
 
 	return en
 
+eec = True
+
 nx = 4
 n = 6 # basis order
 m = 6 # quadrature order
@@ -124,9 +126,9 @@ for j in np.arange(n):
 
 lx = 1.0
 dx = lx/nx
-x = np.zeros(n*nx)
+x = np.zeros(m*nx)
 for i in np.arange(nx):
-    x[i*n:(i+1)*n] = i*dx + (quad.x[:n] + 1.0)*0.5*dx
+    x[i*m:(i+1)*m] = i*dx + (quad.x[:m] + 1.0)*0.5*dx
 
 det = 0.5*lx/topo.nx
 
@@ -148,11 +150,12 @@ dt = time/nsteps
 print 'max step: %f'%(lx/(nx)/np.sqrt(g*H))
 print 'time step: %f'%dt
 
-output_dir = 'output_mimsem'
-#output_dir = 'output_mimsem_eec'
-
-we = WaveEqn(topo,quad,topo_q,lx,g,H)
-#we = WaveEqn_EEC(topo,quad,topo_q,lx,g,H,dt)
+if eec:
+	output_dir = 'output_mimsem_eec'
+	we = WaveEqn_EEC(topo,quad,topo_q,lx,g,H,dt)
+else:
+	output_dir = 'output_mimsem'
+	we = WaveEqn(topo,quad,topo_q,lx,g,H)
 
 Mxto0 = Xto0(topo,quad).M
 ui = Mxto0*ux
@@ -164,8 +167,8 @@ ho = np.zeros(n*nx,dtype=np.float64)
 uo[:] = ui[:]
 ho[:] = hi[:]
 
-uc = np.zeros((21,n*nx),dtype=np.float64)
-hc = np.zeros((21,n*nx),dtype=np.float64)
+uc = np.zeros((21,m*nx),dtype=np.float64)
+hc = np.zeros((21,m*nx),dtype=np.float64)
 
 i_dump = 0
 plot(hi,ui,x,topo,topo_q,Njxi,Ejxi,i_dump,ho,uo,hc,uc,output_dir)
@@ -173,8 +176,10 @@ plot(hi,ui,x,topo,topo_q,Njxi,Ejxi,i_dump,ho,uo,hc,uc,output_dir)
 en0 = energy(hi,ui,g,H,topo,quad,Njxi,Ejxi,det)
 
 for step in np.arange(nsteps) + 1:
-	hf,uf = we.solveRK2(hi,ui,dt)
-	#hf,uf = we.solve(hi,ui)
+	if eec:
+		hf,uf = we.solve(hi,ui)
+	else:
+		hf,uf = we.solveRK2(hi,ui,dt)
 
 	hi[:] = hf[:]
 	ui[:] = uf[:]
