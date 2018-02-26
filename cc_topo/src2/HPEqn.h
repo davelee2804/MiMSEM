@@ -1,6 +1,6 @@
 class HPEqn {
     public:
-        HPEqn(Topo* _topo, Geom* _geom, int _nLevs, double* _levs);
+        HPEqn(Topo* _topo, Geom* _geom, int _nLevs, double* _pBot, double* _pMid);
         ~HPEqn();
         Topo* topo;
         Geom* geom;
@@ -8,7 +8,8 @@ class HPEqn {
         double R;
         double cp;
         int nLevs;
-        double* levs;  // vertical isobaric pressure levels
+        double* pBot;  // vertical isobaric pressure level bottoms
+        double* pMid;  // vertical isobaric pressure level middles
         Vec* ui;       // horizontal velocity field at each pressure level
         Vec* uh;
         Vec* uf;

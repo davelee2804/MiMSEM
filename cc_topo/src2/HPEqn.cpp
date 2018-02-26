@@ -21,13 +21,14 @@
 
 using namespace std;
 
-HPEqn::HPEqn(Topo* _topo, Geom* _geom, int _nLevs, double* _levs) {
+HPEqn::HPEqn(Topo* _topo, Geom* _geom, int _nLevs, double* _pBot, double* _pMid) {
     int k;
 
     topo = _topo;
     geom = _geom;
     nLevs = _nLevs;
-    levs = _levs;
+    pBot = _pBot;
+    pMid = _pMid;
 
     R = 8.3144598;
     cp = 1.0035;
@@ -130,12 +131,41 @@ void HPEqn::diagnose_vertVel(Vec* u, Vec* w) {
     VecDestroy(&wj);
 }
 
+// weak form of the vertical integral:
+//
+// <\gamma_h,\Phi_h> = -R<\gamma_h,\int_{p_{0}}^{p_{k+1/2}}T_h/P_{k+1/2}>
+// since T_h and \Phi_h are both on Q_h (faces), this reduces to:
+//
+// \Phi_h = \int_{p_{0}^{k+1/2}}T_h/P_{k+1/2}
 void HPEqn::diagnose_geoPot(Vec* T, Vec* Phi) {
+    int k;
+    Vec sum;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &sum);
+    VecZeroEntries(sum);
+
+    // assume p_{top} = 0
+    VecAXPY(sum, -R*(pMid[0] - 0.0)/pMid[0], T[0]);
+    VecCopy(sum, Phi[0]);
+    VecAXPY(sum, -R*(pBot[0] - pMid[0])/pMid[0], T[0]);
+
+    for(k = 1; k < nLevs; k++) {
+        VecAXPY(sum, -R*(pMid[k] - pBot[k-1])/pMid[k], T[k-1]);
+        VecCopy(sum, Phi[k]);
+        VecAXPY(sum, -R*(pBot[k] - pMid[k])/pMid[k], T[0]);
+    }
+
+    VecDestroy(&sum);
 }
 
 void HPEqn::diagnose_wT(Vec* w, Vec* T, Vec* wT) {
 }
 
+// weak form vertical velocity transport
+// reverse engineered from energetic consistency between potential and
+// kinetic energy transfers on pressure levels as:
+//
+// <\beta_h,u_h w_h d(u_h)/dp> = <\beta_h,0.5u_h^2 d(w_h)/dp>
 void HPEqn::diagnose_wdudz(Vec* u) {
 }
 
