@@ -10,6 +10,9 @@
 #include "Basis.h"
 #include "Topo.h"
 #include "Geom.h"
+#include "ElMats.h"
+#include "Assembly.h"
+#include "SWEqn.h"
 
 using namespace std;
 
@@ -17,7 +20,8 @@ using namespace std;
 //#define RAD_SPHERE 6371220.0
 #define RAD_SPHERE 1.0
 #define LEN 1000000
-#define NELS 4
+//#define NELS 4
+#define NELS 32
 #define NTHETA (2*3*4*NELS)
 
 int rank;
@@ -111,9 +115,11 @@ void Jacobian(double* c1, double* c2, double* c3, double* c4, double* xi, double
 
 bool FindLocal(double* c1, double* c2, double* c3, double* c4, double*  theta_i, double* xi) {
     bool found = false;
-    int ii, numIts = 100;
+    int ii, numIts = 200;
     double eps = 1.0e-12;
-    double theta_j[2], dTheta[2], dx[2], dxAbs, dThetaAbs, jac[4], jacInv[4], detInv;
+    //double eps = 1.0e-14;
+    //double eps = 1.0e-10;
+    double theta_j[2], dTheta[2], dx[2], abs, jac[4], jacInv[4], di;
 
     ii = 0;
     xi[0] = xi[1] = dx[0] = dx[1] = 0.0;
@@ -121,18 +127,19 @@ bool FindLocal(double* c1, double* c2, double* c3, double* c4, double*  theta_i,
         LocalToGlobal(c1, c2, c3, c4, xi, theta_j);
         dTheta[0] = theta_i[0] - theta_j[0];
         dTheta[1] = theta_i[1] - theta_j[1];
-        dTheta[0] *= eps + fabs(cos(theta_i[1]));
+        //dTheta[0] *= eps + fabs(cos(theta_i[1]));
+        dTheta[0] *= fabs(cos(theta_i[1]));
 
         Jacobian(c1, c2, c3, c4, xi, jac);
-        detInv = 1.0/(jac[0]*jac[3] - jac[1]*jac[2]);
+        di = 1.0/(jac[0]*jac[3] - jac[1]*jac[2]);
         //
         //jac[0] /= cos(theta_i[1]);
         //jac[1] /= cos(theta_i[1]);
         //
-        jacInv[0] = +detInv*jac[3];
-        jacInv[1] = -detInv*jac[1];
-        jacInv[2] = -detInv*jac[2];
-        jacInv[3] = +detInv*jac[0];
+        jacInv[0] = +di*jac[3];
+        jacInv[1] = -di*jac[1];
+        jacInv[2] = -di*jac[2];
+        jacInv[3] = +di*jac[0];
 
         dx[0] = jacInv[0]*dTheta[0] + jacInv[1]*dTheta[1];
         dx[1] = jacInv[2]*dTheta[0] + jacInv[3]*dTheta[1];
@@ -140,15 +147,70 @@ bool FindLocal(double* c1, double* c2, double* c3, double* c4, double*  theta_i,
         xi[0] += dx[0];
         xi[1] += dx[1];
 
-        dxAbs = sqrt(dx[0]*dx[0] + dx[1]*dx[1]);
-        dThetaAbs = sqrt(dTheta[0]*dTheta[0] + dTheta[1]*dTheta[1]);
+        //abs = sqrt(dx[0]*dx[0] + dx[1]*dx[1]);
+        abs = sqrt(dTheta[0]*dTheta[0] + dTheta[1]*dTheta[1]);
         ii++;
-    //} while(ii < numIts && dxAbs > eps);
-    } while(ii < numIts && dThetaAbs > eps);
+    } while(ii < numIts && abs > eps);
 
-    if(ii < numIts && fabs(xi[0]) < 1.0 + 1.0e-8 && fabs(xi[1]) < 1.0 + 1.0e-8) found = true;
+    if(ii < numIts && fabs(xi[0]) < 1.0 + 1.0e-6 && fabs(xi[1]) < 1.0 + 1.0e-6) found = true;
+    //if(ii < numIts && fabs(xi[0]) < 1.0 + 1.0e-4 && fabs(xi[1]) < 1.0 + 1.0e-4) found = true;
 
     return found;
+}
+
+double Interp2(Geom* geom, PetscScalar* kArray, double* c1, double* c2, double* c3, double* c4, int el, double* xi) {
+    int ii;
+    int n = geom->topo->elOrd;
+    int ex = el%geom->topo->nElsX;
+    int ey = el/geom->topo->nElsX;
+    int* inds = geom->topo->elInds2_l(ex, ey);
+    double ei, ej;
+    double u2 = 0.0;
+    double jac[4], det;
+    LagrangeEdge* edge = geom->edge;
+
+    Jacobian(c1, c2, c3, c4, xi, jac);
+    det = jac[0]*jac[3] - jac[1]*jac[2];
+
+    for(ii = 0; ii < n*n; ii++) {
+        ei = edge->eval(xi[0], ii%n);
+        ej = edge->eval(xi[1], ii/n);
+        u2 += kArray[inds[ii]]*ei*ej;
+    }
+    u2 /= det*6371220.0*6371220.0;
+
+    return u2;
+}
+
+void KineticEnergy(SWEqn* sw, Vec ui, Vec ke) {
+    Vec ul, u2;
+    KSP ksp;
+
+    if(!rank) cout << "solving for kinetic energy..." << endl;
+
+    VecCreateSeq(MPI_COMM_SELF, sw->topo->n1, &ul);
+    VecCreateMPI(MPI_COMM_WORLD, sw->topo->n2l, sw->topo->nDofs2G, &u2);
+
+    VecScatterBegin(sw->topo->gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(sw->topo->gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecZeroEntries(ke);
+    sw->K->assemble(ul);
+    MatMult(sw->K->M, ui, u2);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp);
+    KSPSetOperators(ksp, sw->M2->M, sw->M2->M);
+    KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp, KSPGMRES);
+    KSPSetOptionsPrefix(ksp,"test_ke_");
+    KSPSetFromOptions(ksp);
+    KSPSolve(ksp, u2, ke);
+
+    if(!rank) cout << "\t...done." << endl;
+
+    KSPDestroy(&ksp);
+    VecDestroy(&ul);
+    VecDestroy(&u2);
 }
 
 int main(int argc, char** argv) {
@@ -161,14 +223,19 @@ int main(int argc, char** argv) {
     double *xi1 = new double[LEN];
     double *theta0 = new double[LEN];
     double *theta1 = new double[LEN];
+    double *kTheta = new double[LEN];
     double dTheta;
     double theta_o[2], theta_i[2], xi[2];
     double *c1, *c2, *c3, *c4;
     static char help[] = "petsc";
     char filename[50];
     ofstream file;
+    PetscScalar* kArray;
+    Vec ui, ke, kel;
+    PetscViewer viewer;
     Topo* topo;
     Geom* geom;
+    SWEqn* sw;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 
@@ -179,6 +246,21 @@ int main(int argc, char** argv) {
 
     topo = new Topo(rank);
     geom = new Geom(rank, topo);
+    sw = new SWEqn(topo, geom);
+
+    VecCreateSeq(MPI_COMM_SELF, sw->topo->n2, &kel);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &ke);
+
+    sprintf(filename, "output_gal_32x3p_dt40s/velocity_0168.vec");
+    PetscViewerBinaryOpen(PETSC_COMM_WORLD, filename, FILE_MODE_READ, &viewer);
+    VecLoad(ui, viewer);
+    PetscViewerDestroy(&viewer);
+
+    KineticEnergy(sw, ui, ke);
+    VecScatterBegin(sw->topo->gtol_2, ke, kel, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(sw->topo->gtol_2, ke, kel, INSERT_VALUES, SCATTER_FORWARD);
+    VecGetArray(kel, &kArray);
 
     kk = 0;
     mp1 = geom->quad->n + 1;
@@ -196,8 +278,8 @@ int main(int argc, char** argv) {
         LocalToGlobal(c1, c2, c3, c4, xi, theta_o);
 
         // get the number of increments across and up for the bottom left corner
-        theta_n[0] = (theta_o[0] + 1.0*M_PI)/dTheta;
-        theta_n[1] = (theta_o[1] + 0.5*M_PI)/dTheta;
+        theta_n[0] = (int)((theta_o[0] + 1.0*M_PI)/dTheta);
+        theta_n[1] = (int)((theta_o[1] + 0.5*M_PI)/dTheta);
 
         theta_n[0] = (theta_n[0] - NX/2)%NTHETA;
         theta_n[1] = (theta_n[1] - NX/2);
@@ -210,11 +292,9 @@ int main(int argc, char** argv) {
             theta_m[1] = (theta_n[1] + jj/NX);
             if(theta_m[1] > NTHETA/2 + 1) continue;
 
-            theta_i[0] = theta_m[0]*dTheta - 1.0*M_PI;
-            theta_i[1] = theta_m[1]*dTheta - 0.5*M_PI;
-            theta_i[0] += 0.5*dTheta;
+            theta_i[0] = theta_m[0]*dTheta - 1.0*M_PI + 0.5*dTheta;
+            theta_i[1] = theta_m[1]*dTheta - 0.5*M_PI + 0.5*dTheta;
             if(theta_i[0] > 1.0*M_PI) theta_i[0] -= 2.0*M_PI;
-            theta_i[1] += 0.5*dTheta;
             if(theta_i[1] > 0.5*M_PI) continue;
 
             if(FindLocal(c1, c2, c3, c4, theta_i, xi)) {
@@ -223,27 +303,36 @@ int main(int argc, char** argv) {
                 xi1[kk] = xi[1];
                 theta0[kk] = theta_i[0];
                 theta1[kk] = theta_i[1];
+                kTheta[kk] = Interp2(geom, kArray, c1, c2, c3, c4, ii, xi);
+
                 kk++;
             }
         }
     }
+    VecRestoreArray(kel, &kArray);
     cout << rank << ":\t" << kk << endl;
 
     sprintf(filename, "gtol_%.4u.txt", rank);
     file.open(filename);
     for(ii = 0; ii < kk; ii++) {
-        file << els[ii] << "\t" << theta0[ii] << "\t" << theta1[ii] << "\t" << xi0[ii] << "\t" << xi1[ii] << endl;
+        file << theta0[ii] << "\t" << theta1[ii] << "\t" << kTheta[ii] << endl;
     }
     file.close();
 
+    VecDestroy(&ui);
+    VecDestroy(&ke);
+    VecDestroy(&kel);
+
     delete topo;
     delete geom;
+    delete sw;
 
     delete[] els;
     delete[] xi0;
     delete[] xi1;
     delete[] theta0;
     delete[] theta1;
+    delete[] kTheta;
 
     PetscFinalize();
 
