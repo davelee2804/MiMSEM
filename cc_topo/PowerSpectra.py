@@ -34,6 +34,9 @@ for ii in np.arange(n):
 		print 'ERROR!'
 	ke2[iy,ix] = ke[ii]
 
+print np.max(ke[:n])
+print np.min(ke[:n])
+
 #inds = np.argsort(lat)
 #lon = lon[inds]
 #lat = lat[inds]
@@ -51,19 +54,20 @@ print (1.0*n)/(1.0*nLon*nLat)
 print (180/np.pi)*np.max(lat)
 print (180/np.pi)*np.min(lat)
 
-plt.plot((1.0/np.pi)*lon,(1.0/np.pi)*lat,'.')
-plt.xlim([-1.0,+1.0])
-plt.ylim([-0.5,+0.5])
-plt.show()
+#plt.plot((1.0/np.pi)*lon,(1.0/np.pi)*lat,'.')
+#plt.xlim([-1.0,+1.0])
+#plt.ylim([-0.5,+0.5])
+#plt.show()
 
-levs = np.logspace(-8,5,200)
+levs = np.logspace(-8,4,200)
+print levs
 
 xx = np.linspace(-1.0*np.pi,+1.0*np.pi,nLon)
 yy = np.linspace(-0.5*np.pi,+0.5*np.pi,nLat)
 XX,YY=np.meshgrid(xx,yy)
 #plt.contourf(XX, YY, ke2, 100, locator=ticker.LogLocator())
 plt.contourf(XX, YY, ke2, norm=LogNorm(), levels=levs)
-plt.colorbar(orientation='horizontal',ticks=np.array([1.0e-8,1.0e-6,1.0e-4,1.0e-2,0.0,1.0e2,1.0e4]))
+plt.colorbar(orientation='horizontal',ticks=[1.0e-8,1.0e-6,1.0e-4,1.0e-2,1.0e+0,1.0e+2,1.0e+4])
 plt.savefig('kinetic_energy_galewsky_7days.png')
 plt.show()
 
@@ -71,7 +75,10 @@ coeffs = SHExpandDH(ke2, sampling=2)
 power = spectrum(coeffs, unit='per_l')
 nl = coeffs.shape[1]/2
 plt.loglog(np.arange(nl), power[:nl])
-plt.loglog(np.arange(nl-6)+6, 1.0e+7*np.power(np.arange(nl-6)+6,-3.0))
-plt.loglog([50.0,50.0],[1.0e+5,1.0e-1])
+#plt.loglog(np.arange(nl-6)+6, 1.0e+7*np.power(np.arange(nl-6)+6,-3.0))
+plt.loglog(np.arange(nl-6)+6, 8.0e+6*np.power(np.arange(nl-6)+6,-3.0))
+#plt.loglog([50.0,50.0],[1.0e+5,1.0e-1])
+plt.xlabel('$k$')
+plt.ylabel('$KE$')
 plt.savefig('ke_spectra_galewsky_7days.png')
 plt.show()
