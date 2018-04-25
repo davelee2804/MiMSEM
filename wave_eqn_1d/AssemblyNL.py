@@ -144,9 +144,13 @@ class P_pres_mat:
 			pq_kmh = np.diag(np.dot(edge.ejxi,p_kmh[inds1]))
 			pq_kph = np.diag(np.dot(edge.ejxi,p_kph[inds1]))
 			if(do_full):
-				pk = 0.500*dEta*(1.0*pq_kmh + 1.0*pq_kph)
+				pk = 0.50*dEta*(1.0*pq_kmh + 1.0*pq_kph)
 			else:
-				pk = 0.125*dEta*(3.0*pq_kmh + 1.0*pq_kph)
+				#pk = 0.125*dEta*(3.0*pq_kmh + 1.0*pq_kph)
+				# this evaluation of the half layer is inexact,
+				# but allows for energetic consistency, so is only
+				# first order accurate
+				pk = 0.25*dEta*(1.0*pq_kmh + 1.0*pq_kph)
 
 			A = mult(PtQ,pk)
 			B = mult(A,P)
@@ -205,4 +209,66 @@ class P_pres_mat_orig:
 		nr = topo.nx*n
 		nc = topo.nx*n
 		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+# right hand side matrix for the vertical momentum transport equation
+# row is a 0 form, column is a 1 form and a 1 form is interpolated onto 
+# the quadrature points
+# TODO: jacobian scaling
+class M01_pres_mat:
+	def __init__(self,topo,quad,ke):
+		U = M0_j_x_i(topo.n,quad.n).A
+		P = M1_j_x_i(topo.n,quad.n).A
+		Ut = U.transpose()
+		Q = Wii(quad.n).A
+		UtQ = mult(Ut,Q)
+
+		maps,nnz = self.genMap(topo)
+
+		n = topo.n
+		np1 = n + 1
+		n2 = topo.n*topo.n
+		nnz = topo.nx*np1*np1
+		rows = np.zeros(nnz,dtype=np.int32)
+		cols = np.zeros(nnz,dtype=np.int32)
+		vals = np.zeros(nnz,dtype=np.float64)
+		for ex in np.arange(topo.nx):
+			inds0 = topo.localToGlobal0(ex)
+			inds1 = topo.localToGlobal1(ex)
+
+			keq = np.diag(np.dot(edge.ejxi,ke[inds1]))
+			A = mult(UtQ,keq)
+			B = mult(A,P)
+
+			for jj in np.arange(np1*n):
+				row = inds0[jj/n]
+				col = inds1[jj%n]
+				ii = maps[row,col]
+				if ii == -1:
+					print 'ERROR! assembly'
+				rows[ii] = row
+				cols[ii] = col
+				vals[ii] = vals[ii] + A[jj/n,jj%n]
+
+		nr = topo.nx*n
+		nc = topo.nx*n
+		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+	def genMap(self,topo):
+		n = topo.n
+		np1 = topo.n+1
+		nr = topo.nx*topo.n
+		nc = topo.nx*topo.n
+		maps = -1*np.ones((nr,nc),dtype=np.int32)
+		ii = 0
+		for ex in np.arange(topo.nx):
+			inds0 = topo.localToGlobal0(ex)
+			inds1 = topo.localToGlobal1(ex)
+			for jj in np.arange(np1*n):
+				row = inds0[jj/n]
+				col = inds1[jj%n]
+				if maps[row][col] == -1:
+					maps[row][col] = ii
+					ii = ii + 1
+
+		return maps, ii
 

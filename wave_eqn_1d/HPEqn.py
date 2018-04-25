@@ -84,41 +84,39 @@ class HPEqn:
 				dps[i] = dps[i] + dFk[i]*self.dEta[k]
 
 		# update the surface pressure
-		ps = ps + dps
+		self.ps = self.ps + dps
 
 		# compute the pressure (skipping over the top level where
 		# a rigid lid has been imposed)
+		# TODO: does this need to be done in the weak form?
 		for k = np.arange(pres.shape[0] - 1) + 1
 			pres[k,:] = self.Aeta[k]*self.po + self.Beta[k]*ps[:]
 
-	# diagnose the geopotential via hydrostatic balance
-	# TODO make sure this computation satisfies:
-	#	1) hydrostatic balance
-	#	2) compatibility identity (\Phi - \Phi_s)_j = \int_{\eta_{top}}^{\eta}RT\pi/p d\eta
-	def diag_phi(pres, tau, phi):
-		# assume phi is 0 on the top surface
-		phi_half = np.zeros(phi.shape,dtype=np.float64)
+	# diagnose the mass weighted specific volume, R.T.\pi/p
+	def diag_C(tau, pres):
+		C = np.zeros(tau.shape,dtype=np.float64)
+		for k in np.arange(tau.shape[0]):
+			Pk = P_pres_mat(self.topo,self.quad,self.dEta[k],pres[k,:],pres[k+1,:],False).M
+			Pkinv = la.inv(Pk)
+			M1tau = self.R*self.M1*tau[k,:]
+			C[k,:] = Pkinv*M1tau
 
-		for k in np.arange(phi.shape[0] - 1):
-			# TODO: should the half layer be integrated exactly, or using the same rule as 
-			# for the full layer?
-			Pf = P_pres_mat(self.topo,self.quad,self.dEta[k],pres[k,:],pres[k+1,:],False).M
-			Ph = P_pres_mat(self.topo,self.quad,self.dEta[k],pres[k,:],pres[k+1,:],True ).M
-			Pf_inv = la.inv(Pf)
-			Ph_inv = la.inv(Ph)
+		return C
 
-			phi_half[k,:] = phi_half[k-1,:] - self.dEta[k]*self.R*Pf_inv*self.M1*tau[k,:]
-			phi[k,:] = phi_half[k,:] -    0.5*self.dEta[k]*self.R*Ph_inv*self.M1*tau[k,:]
+	# diagnose the geopotential at the layer mid levels
+	def diag_Phi(C):
+		Phi = np.zeros(C.shape,dtype=np.float64)
+		Ck = np.zeros(C.shape[1],dtype=np.float64)
+		for k in np.arange(C.shape[0]):
+			Ck[:] = 0.0
+			for j in np.arange(k-1):
+				Ck[:] = Ck[:] + self.dEta[j]*C[j,:]
 
-	# standard approach for ensuring compatability
-	def diag_phi_orig(pres, tau, phi):
-		tp_sum = np.zeros(pres.shape[1],dtype=np.float64)
+			Ck[:] = Ck[:] + 0.5*self.dEta[k]*C[k,:]
+			# TODO: check that this relation holds pointwise
+			Phi[k,:] = Ck[:]
 
-		for k in np.arange(phi.shape[0] - 1):
-			P = P_pres_mat_orig(self.topo,self.quad,self.dEta[k],pres[k,:],pres[k+1,:]).M
-			tp_sum = tp_sum - 0.5*self.dEta[k]*self.R*P*tau[k,:]
-			phi[k,:] = self.M1inv*tp_sum
-			tp_sum = tp_sum - 0.5*self.dEta[k]*self.R*P*tau[k,:]
+		return Phi
 
 	# diagnose the pressure gradient at the full levels
 	def diag_pres_grad(pres):
@@ -135,19 +133,15 @@ class HPEqn:
 		return dp
 
 	# diagnose the mass weighted vertical velocity
-	def diag_piw(F, ps):
+	# this is done in the strong form (no galerkin projection)
+	def diag_piw(F):
 		piw = np.zeros((F.shape[0]+1,ps.shape[0]),dtype=np.float64)
-		dFsum = np.zeros((ps.shape[0]),dtype=np.float64)
 
 		# assume 0 vertical velocity on top and bottom boundaries, 
 		# so only evaluate internal values
 		for k in np.arange(piw.shape[0]-2)+1:
 			dF = self.D10*F[k,:]
-			dFsum = self.dEta[k]*dF[:]
-
-			# TODO: check the signs here
-			# TODO: make sure that Beta[k] = B(\eta_{k+1/2})
-			piw[k,:] = self.Beta[k]*ps[:] - dFsum[:]
+			piw[k,:] = piw[k-1,:] - (self.Beta[k] - self.Beta[k-1])*self.ps[:] - dF[:]*self.dEta[k-1]
 
 		return piw
 
@@ -157,7 +151,7 @@ class HPEqn:
 		for k in np.arange(vel.shape[0]):
 			K = U_vel_mat(self.topo,self.quad,vel[k,:]).M
 			Ku = K*vel[k,:]
-			ke[k,:] = self.M1inv*Ku
+			ke[k,:] = 0.5*self.M1inv*Ku
 
 		return ke
 
@@ -166,6 +160,20 @@ class HPEqn:
 	def diag_G(ke,F,piw):
 		G = np.zeros(F.shape,dtype=np.float64)
 		for k in np.arange(F.shape[0]):
-			M = U_vel_mat(self.topo,self.quad,F[k,:]).M
-			Minv = la.inv(M)
+			Mf = U_vel_mat(self.topo,self.quad,F[k,:]).M
+			Mfinv = la.inv(Mf)
+
+			Mk = M01_pres_mat(self.topo,self.quad,ke).M
 			dw = (piw[k+1,:] - piw[k,:])/self.dEta[k]
+			Mkw = Mk*dw
+			G[k,:] = -Mfinv*Mkw
+
+		return G
+
+	# diagnose the specific volume for compatibility with respect to the
+	# transfer of kinetic to internal energy (as a 0 form)
+	# TODO
+	def diag_A(pres,vel,F,tau):
+		A = np.zeros()
+
+		return A
