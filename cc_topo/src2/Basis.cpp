@@ -83,7 +83,7 @@ GaussLobatto::GaussLobatto(int _n) {
     for(ii = 0; ii <= n; ii++) {
         a+= w[ii];
     }
-    if(abs(a - 2.0) > 1.0e-8) {
+    if(fabs(a - 2.0) > 1.0e-8) {
         cout << "quadrature weights error!" << endl;
     }
 }
