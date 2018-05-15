@@ -682,8 +682,8 @@ void WtQUmat::assemble(Vec u1, Vec* w1, int lev) {
                     wb += w1Array[(lev+0)*W->nDofsJ+jj]*gamma;
                     wt += w1Array[(lev+1)*W->nDofsJ+jj]*gamma;
                 }
-                Qaa[ii][ii] *= 0.5*(wb + wt);
-                Qab[ii][ii] *= 0.5*(wb + wt);
+                Qaa[ii][ii] += 0.5*(wb + wt)*Q->A[ii][ii]/det/det;
+                Qab[ii][ii] += 0.5*(wb + wt)*Q->A[ii][ii]/det/det;
 
                 // rescale by the inverse of the vertical determinant (piecewise 
                 // constant in the vertical)

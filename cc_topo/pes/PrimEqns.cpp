@@ -533,9 +533,31 @@ void PrimEqns::AssembleGrav(int ex, int ey, Mat Mg) {
 }
 
 /*
-Kinetic energy for the 2 form column
+Kinetic energy vector for the 2 form column from the 
+horiztonal kinetic energy vectors already assembled
 */
-void PrimEqns::AssembleKE(int ex, int ey, Vec* ui, Vec wi, Mat Mk) {
+void PrimEqns::VerticalKE(int ex, int ey, Vec* kh, Vec* kv) {
+    int kk, jj;
+    int n2 = topo->elOrd*topo->elOrd;
+    int* inds_2 = topo->elInds2_g(ex, ey);
+    PetscScalar *khArray, *kvArray;
+
+    
+
+    // vertical kinetic energy vector is piecewise constant in each level
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, kv);
+    VecGetArray(*kv, &kvArray);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecGetArray(kh[kk], &khArray);
+
+        for(jj = 0; jj < n2; jj++) {
+            kvArray[kk*n2+jj] = khArray[inds_2[jj]];
+        }
+        VecRestoreArray(kh[kk], &khArray);
+    }
+
+    VecRestoreArray(*kv, &kvArray);
 }
 
 #if 0
