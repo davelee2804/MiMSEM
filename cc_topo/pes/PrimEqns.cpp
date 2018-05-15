@@ -61,6 +61,9 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom) {
     // coriolis vector (projected onto 0 forms)
     coriolis();
 
+    // assemble the vertical gradient and divergence incidence matrices
+    vertOps();
+
     // initialize the 1 form linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp1);
     KSPSetOperators(ksp1, M1->M, M1->M);
@@ -236,7 +239,7 @@ void PrimEqns::curl(Vec u, Vec* w, bool add_f) {
 
 void PrimEqns::VertVelRHS(Vec* ui, Vec* wi, Vec **fw) {
     int ex, ey, n2, iLev;
-    Mat A, B, G;
+    Mat A, B, G, DG;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -253,7 +256,7 @@ void PrimEqns::VertVelRHS(Vec* ui, Vec* wi, Vec **fw) {
 
     MatCreate(MPI_COMM_SELF, &G);
     MatSetType(G, MATSEQAIJ);
-    MatSetSizes(G, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSetSizes(G, geom->nk*n2, geom->nk*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
     MatSeqAIJSetPreallocation(G, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     *fw = new Vec[geom->nk+1];
@@ -267,21 +270,26 @@ void PrimEqns::VertVelRHS(Vec* ui, Vec* wi, Vec **fw) {
             AssembleConst(ex, ey, A);
             AssembleLinear(ex, ey, B);
             AssembleGrav(ex, ey, G);
+
+            MatMatMult(V10, G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DG);
+            MatAXPY(B, +1.0, DG, SAME_NONZERO_PATTERN); //TODO check this pattern is ok
         }
     }
 
     MatDestroy(&A);
     MatDestroy(&B);
     MatDestroy(&G);
+    MatDestroy(&DG);
 }
 
 /*
 Assemble the vertical gradient and divergence orientation matrices
 */
 void PrimEqns::vertOps() {
-    int ii, kk, n2;
+    int ii, kk, n2, rows[2], cols[1];
+    double vals[2] = {+1.0, -1.0};
     Mat V10t;
-
+    
     n2 = topo->elOrd*topo->elOrd;
 
     MatCreate(MPI_COMM_WORLD, &V10);
@@ -291,7 +299,11 @@ void PrimEqns::vertOps() {
 
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < n2; ii++) {
-            //TODO
+            rows[0] = kk*n2 + ii;
+            rows[1] = (kk+1)*n2 + ii;
+            cols[0] = kk*n2 + ii;
+
+            MatSetValues(V10, 2, rows, 1, cols, vals, ADD_VALUES);
         }
     }
     MatAssemblyBegin(V10, MAT_FINAL_ASSEMBLY);
@@ -441,6 +453,96 @@ void PrimEqns::AssembleGrav(int ex, int ey, Mat Mg) {
     int ii, kk, ei, mp12;
     int* inds, *inds0;
     double det;
+    int rows[99], cols[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+
+    inds  = topo->elInds2_g(ex, ey);
+    inds0 = topo->elInds0_g(ex, ey);
+    mp12  = (quad->n + 1)*(quad->n + 1);
+
+    MatZeroEntries(Mg);
+
+    // Assemble the matrices
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        Q->assemble(ex, ey);
+        ei = ey*topo->nElsX + ex;
+       
+        // assemble the lower layer 
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]/det/det;
+
+            // row is piecewise constant and column is piecewise linear after scaling 
+            // by the jacobian determinant the metric term is 1 (ie: do nothing)
+             
+            // evaluate gravity at the layer interface
+            Q0[ii][ii] *= geom->levs[kk][inds0[ii]]*GRAVITY;
+        }
+
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = inds[ii] + kk*W->nDofsJ;
+            cols[ii] = inds[ii] + kk*W->nDofsJ;
+        }
+        MatSetValues(Mg, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+
+        // assemble the upper layer
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]/det/det;
+
+            // row is piecewise constant and column is piecewise linear after scaling 
+            // by the jacobian determinant the metric term is 1 (ie: do nothing)
+             
+            // evaluate gravity at the layer interface
+            Q0[ii][ii] *= geom->levs[kk+1][inds0[ii]]*GRAVITY;
+        }
+
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = inds[ii] + kk*W->nDofsJ;
+            cols[ii] = inds[ii] + (kk+1)*W->nDofsJ;
+        }
+        MatSetValues(Mg, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+    }
+    MatAssemblyBegin(Mg, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(Mg, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}
+
+/*
+Kinetic energy for the 2 form column
+*/
+void PrimEqns::AssembleKE(int ex, int ey, Vec* ui, Vec wi, Mat Mk) {
+}
+
+#if 0
+void PrimEqns::AssembleGrav(int ex, int ey, Mat Mg) {
+    int ii, kk, ei, mp12;
+    int* inds, *inds0;
+    double det;
     int inds2k[99];
     Wii* Q = new Wii(node->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(edge);
@@ -502,7 +604,4 @@ void PrimEqns::AssembleGrav(int ex, int ey, Mat Mg) {
     delete Q;
     delete W;
 }
-
-/*
-Make the vertical orientation matrices
-*/
+#endif

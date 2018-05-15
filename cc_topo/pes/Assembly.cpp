@@ -255,10 +255,14 @@ void Uhmat::assemble(Vec h2, int lev) {
                 J = geom->J[ei][ii];
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
 
+                // density field is piecewise constant in the vertical
+                hi *= 2.0/geom->thick[lev][inds_0[ii]];
+
                 Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
                 Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
 
+                // horiztonal velocity is piecewise constant in the vertical
                 Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
                 Qab[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
                 Qbb[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
@@ -636,11 +640,11 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
 }
 
-void WtQUmat::assemble(Vec u1, int lev) {
-    int ex, ey, ei, ii, mp1, mp12;
+void WtQUmat::assemble(Vec u1, Vec* w1, int lev) {
+    int ex, ey, ei, ii, jj, mp1, mp12;
     int *inds_x, *inds_y, *inds_2, *inds_0;
-    double det, **J, ux[2];
-    PetscScalar* u1Array;
+    double det, **J, ux[2], wt, wb, gamma;
+    PetscScalar *u1Array, *w1Array;
 
     mp1 = l->n + 1;
     mp12 = mp1*mp1;
@@ -650,6 +654,9 @@ void WtQUmat::assemble(Vec u1, int lev) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
+            // vertical velocities are stored as an array of column vectors
+            VecGetArray(w1[ey*topo->nElsX+ex], &w1Array);
+
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
 
@@ -660,12 +667,30 @@ void WtQUmat::assemble(Vec u1, int lev) {
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
 
+                // horiztontal velocity is piecewise constant in the vertical
+                ux[0] *= 2.0/geom->thick[lev][inds_0[ii]];
+                ux[1] *= 2.0/geom->thick[lev][inds_0[ii]];
+
                 Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]/det/det;
 
+                // add in the square of the vertical velocity at the layer top and bottom
+                wb = wt = 0.0;
+                for(jj = 0; jj < W->nDofsJ; jj++) {
+                    gamma = e->ejxi[ii%mp1][jj%topo->elOrd]*e->ejxi[ii/mp1][jj/topo->elOrd];
+
+                    wb += w1Array[(lev+0)*W->nDofsJ+jj]*gamma;
+                    wt += w1Array[(lev+1)*W->nDofsJ+jj]*gamma;
+                }
+                Qaa[ii][ii] *= 0.5*(wb + wt);
+                Qab[ii][ii] *= 0.5*(wb + wt);
+
+                // rescale by the inverse of the vertical determinant (piecewise 
+                // constant in the vertical)
                 Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
                 Qab[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
             }
+            VecRestoreArray(w1[ey*topo->nElsX+ex], &w1Array);
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
             Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQaa);
@@ -763,6 +788,9 @@ void RotMat::assemble(Vec q0, int lev) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
+
+                // vertical vorticity is piecewise constant in the vertical
+                vort *= 2.0/geom->thick[lev][inds_0[ii]];
 
                 Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;

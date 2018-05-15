@@ -32,6 +32,7 @@ class PrimEqns {
         void AssembleConst(int ex, int ey, Mat M0);  // piecewise constant (in vertical) mass matrix
         void AssembleLinear(int ex, int ey, Mat M1); // piecewise linear (in vertical) mass matrix
         void AssembleGrav(int ex, int ey, Mat Mg);   // vertical gravity gradient operator
+        void AssembleKE(int ex, int ey, Vec* ui, Vec wi, Mat Mg); // kinetic energy matrix
         void VertVelRHS(Vec* ui, Vec* wi, Vec **fw);
         void solve_RK2(Vec wi, Vec di, Vec hi, Vec wf, Vec df, Vec hf, double dt, bool save);
 };
