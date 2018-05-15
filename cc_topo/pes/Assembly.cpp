@@ -643,7 +643,7 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 void WtQUmat::assemble(Vec u1, Vec* w1, int lev) {
     int ex, ey, ei, ii, jj, mp1, mp12;
     int *inds_x, *inds_y, *inds_2, *inds_0;
-    double det, **J, ux[2], wt, wb, gamma;
+    double det, **J, ux[2], wt, wb, wi, gamma;
     PetscScalar *u1Array, *w1Array;
 
     mp1 = l->n + 1;
@@ -682,8 +682,10 @@ void WtQUmat::assemble(Vec u1, Vec* w1, int lev) {
                     wb += w1Array[(lev+0)*W->nDofsJ+jj]*gamma;
                     wt += w1Array[(lev+1)*W->nDofsJ+jj]*gamma;
                 }
-                Qaa[ii][ii] += 0.5*(wb + wt)*Q->A[ii][ii]/det/det;
-                Qab[ii][ii] += 0.5*(wb + wt)*Q->A[ii][ii]/det/det;
+                wi = 0.5*(wb + wt);
+
+                Qaa[ii][ii] += 0.5*wi*wi*Q->A[ii][ii]/det/det;
+                Qab[ii][ii] += 0.5*wi*wi*Q->A[ii][ii]/det/det;
 
                 // rescale by the inverse of the vertical determinant (piecewise 
                 // constant in the vertical)
