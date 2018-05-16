@@ -41,6 +41,9 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom) {
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
 
+    E01M1 = NULL;
+    E12M2 = NULL;
+
     // 0 form lumped mass matrix (vector)
     m0 = new Pvec(topo, geom, node);
 
@@ -54,9 +57,14 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom) {
     NtoE = new E10mat(topo);
     EtoF = new E21mat(topo);
 
-    // adjoint differential operators (curl and grad)
-    MatMatMult(NtoE->E01, M1->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E01M1);
-    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
+    // rotational operator
+    R = new RotMat(topo, geom, node, edge);
+
+    // mass flux operator
+    F = new Uhmat(topo, geom, node, edge);
+
+    // kinetic energy operator
+    K = new WtQUmat(topo, geom, node, edge);
 
     // coriolis vector (projected onto 0 forms)
     coriolis();
@@ -198,20 +206,91 @@ PrimEqns::~PrimEqns() {
     delete NtoE;
     delete EtoF;
 
+    delete R;
+    delete F;
+    delete K;
+
     delete edge;
     delete node;
     delete quad;
 }
 
 /*
+compute the right hand side for the momentum equation for a given level
+note that the vertical velocity, uv, is stored as a different vector for 
+each element
+*/
+void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec theta, Vec exner, int lev, Vec *Fu) {
+    Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u, dExner, theta_l;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, Fu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ru);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ku);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mh);
+
+    curl(uh, &wi, lev, true);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    R->assemble(wl, lev);
+    K->assemble(ul, uv, lev);
+
+    MatMult(R->M, uh, Ru);
+    MatMult(K->M, uh, Ku);
+    MatMult(EtoF->E12, Ku, *Fu);
+    VecAXPY(*Fu, 1.0, Ru);
+
+    // add the thermodynamic term
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &theta_l);//TODO 0 form or 2 form??
+    VecScatterBegin(topo->gtol_0, theta, theta_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, theta, theta_l, INSERT_VALUES, SCATTER_FORWARD);
+
+    grad(exner, &dExner, lev);
+
+
+    // add in the biharmonic voscosity
+    if(do_visc) {
+        laplacian(uh, &d2u, lev);
+        laplacian(d2u, &d4u, lev);
+        VecAXPY(*Fu, 1.0, d4u);
+    }
+
+    VecDestroy(&wl);
+    VecDestroy(&ul);
+    VecDestroy(&wi);
+    VecDestroy(&Ru);
+    VecDestroy(&Ku);
+    VecDestroy(&Mh);
+    VecDestroy(&dExner);
+    VecDestroy(&theta_l);
+    if(do_visc) {
+        VecDestroy(&d2u);
+        VecDestroy(&d4u);
+    }
+}
+
+/*
 Take the weak form gradient of a 2 form scalar field as a 1 form vector field
 */
-void PrimEqns::grad(Vec phi, Vec* u) {
+void PrimEqns::grad(Vec phi, Vec* u, int lev) {
     Vec dPhi;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dPhi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, u);
 
+    M2->assemble(lev);
+    if(!E12M2) {
+        MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
+    } else {
+        MatMatMult(EtoF->E12, M2->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &E12M2);
+    }
+
+    VecZeroEntries(dPhi);
     MatMult(E12M2, phi, dPhi);
     KSPSolve(ksp1, dPhi, *u);
 
@@ -221,12 +300,20 @@ void PrimEqns::grad(Vec phi, Vec* u) {
 /*
 Take the weak form curl of a 1 form vector field as a 1 form vector field
 */
-void PrimEqns::curl(Vec u, Vec* w, bool add_f) {
+void PrimEqns::curl(Vec u, Vec* w, int lev, bool add_f) {
 	Vec du;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &du);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &du);
 
+    M1->assemble(lev);
+    if(!E01M1) {
+        MatMatMult(NtoE->E01, M1->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E01M1);
+    } else {
+        MatMatMult(NtoE->E01, M1->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &E01M1);
+    }
+
+    VecZeroEntries(du);
     MatMult(E01M1, u, du);
     VecPointwiseDivide(*w, du, m0->vg);
 
@@ -235,6 +322,44 @@ void PrimEqns::curl(Vec u, Vec* w, bool add_f) {
         VecAYPX(*w, 1.0, fg);
     }
     VecDestroy(&du);
+}
+
+void PrimEqns::laplacian(Vec ui, Vec* ddu, int lev) {
+    Vec Du, Cu, RCu, GDu, MDu, dMDu;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, ddu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &RCu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &GDu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMDu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Du);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &MDu);
+
+    /*** divergent component ***/
+    // div (strong form)
+    MatMult(EtoF->E21, ui, Du);
+
+    // grad (weak form)
+    grad(Du, &GDu, lev);
+
+    /*** rotational component ***/
+    // curl (weak form)
+    curl(ui, &Cu, lev, false);
+
+    // rot (strong form)
+    MatMult(NtoE->E10, Cu, RCu);
+
+    // add rotational and divergent components
+    VecCopy(GDu, *ddu);
+    VecAXPY(*ddu, +1.0, RCu); // TODO: check sign here
+
+    VecScale(*ddu, del2);
+
+    VecDestroy(&Cu);
+    VecDestroy(&RCu);
+    VecDestroy(&GDu);
+    VecDestroy(&dMDu);
+    VecDestroy(&Du);
+    VecDestroy(&MDu);
 }
 
 void PrimEqns::VertVelRHS(Vec* ui, Vec* wi, Vec **fw) {
