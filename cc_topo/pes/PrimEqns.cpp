@@ -560,11 +560,13 @@ void PrimEqns::VerticalKE(int ex, int ey, Vec* kh, Vec* kv) {
     VecRestoreArray(*kv, &kvArray);
 }
 
-#if 0
-void PrimEqns::AssembleGrav(int ex, int ey, Mat Mg) {
-    int ii, kk, ei, mp12;
-    int* inds, *inds0;
-    double det;
+/*
+Derive the vertical mass flux
+*/
+void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec wi, Mat Mp) {
+    int ii, kk, ei, mp1, mp12;
+    int* inds;
+    double det, rho;
     int inds2k[99];
     Wii* Q = new Wii(node->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(edge);
@@ -573,12 +575,13 @@ void PrimEqns::AssembleGrav(int ex, int ey, Mat Mg) {
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar* pArray;
 
     inds  = topo->elInds2_g(ex, ey);
-    inds0 = topo->elInds0_g(ex, ey);
-    mp12  = (quad->n + 1)*(quad->n + 1);
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
 
-    MatZeroEntries(Mg);
+    MatZeroEntries(Mp);
 
     // Assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
@@ -586,15 +589,20 @@ void PrimEqns::AssembleGrav(int ex, int ey, Mat Mg) {
         Q->assemble(ex, ey);
         ei = ey*topo->nElsX + ex;
         
+        VecGetArray(pi[kk], &pArray);
+
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
             Q0[ii][ii] = Q->A[ii][ii]/det/det;
 
-            // no vertical metric term here, just add in the 
-            // vertical gravity gradient
-            // TODO check the scaling here for the strong form vertical gravity gradient
-            Q0[ii][ii] *= 0.5*GRAVITY*geom->thick[kk][inds0[ii]];
+            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &rho);
+            Q0[ii][ii] *= rho;
+
+            // multiply by the vertical determinant for the vertical integral,
+            // then divide by the vertical determinant to rescale the piecewise
+            // constant density, so do nothing.
         }
+        VecRestoreArray(pi[kk], &pArray);
 
 		// Assemble the piecewise constant mass matrix for level k
         Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -606,17 +614,17 @@ void PrimEqns::AssembleGrav(int ex, int ey, Mat Mg) {
         for(ii = 0; ii < W->nDofsJ; ii++) {
             inds2k[ii] = inds[ii] + kk*W->nDofsJ;
         }
-        MatSetValues(Mg, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
         // assemble the second basis function
         for(ii = 0; ii < W->nDofsJ; ii++) {
             inds2k[ii] = inds[ii] + (kk+1)*W->nDofsJ;
         }
-        MatSetValues(Mg, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
     }
-    MatAssemblyBegin(Mg, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(Mg, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(Mp, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(Mp, MAT_FINAL_ASSEMBLY);
 
     Free2D(Q->nDofsI, Q0);
     Free2D(W->nDofsJ, Wt);
@@ -626,4 +634,3 @@ void PrimEqns::AssembleGrav(int ex, int ey, Mat Mg) {
     delete Q;
     delete W;
 }
-#endif
