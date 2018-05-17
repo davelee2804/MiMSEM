@@ -21,6 +21,15 @@ Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     geom = _geom;
     l = _l;
     e = _e;
+
+    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+
+    delete U;
 }
 
 void Umat::assemble(int lev) {
@@ -45,10 +54,6 @@ void Umat::assemble(int lev) {
     double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
     double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
 
-    MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
-    MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
     mp1 = l->n + 1;
@@ -135,6 +140,15 @@ Wmat::Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     topo = _topo;
     geom = _geom;
     e = _e;
+
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+
+    delete W;
 }
 
 void Wmat::assemble(int lev) {
@@ -148,10 +162,6 @@ void Wmat::assemble(int lev) {
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
-    MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
-    MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
     mp1 = e->l->q->n + 1;

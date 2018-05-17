@@ -37,8 +37,9 @@ class PrimEqns {
         void AssembleLinear(int ex, int ey, Mat M1);       // piecewise linear (in vertical) mass matrix
         void AssembleGrav(int ex, int ey, Mat Mg);         // vertical gravity gradient operator
         void VerticalKE(int ex, int ey, Vec* kh, Vec* kv); // kinetic energy vertical vector
-        void VertFlux(int ex, int ey, Vec* pi, Vec wi, Mat Mp); // vertical mass flux matrix
+        void VertFlux(int ex, int ey, Vec* pi, Mat Mp);    // vertical mass flux matrix
         void VertVelRHS(Vec* ui, Vec* wi, Vec **fw);
+        void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp);
         void solve_RK2(Vec wi, Vec di, Vec hi, Vec wf, Vec df, Vec hf, double dt, bool save);
         void horizMomRHS(Vec ui, Vec* wi, Vec theta, Vec exner, int lev, Vec *Fu);
 };

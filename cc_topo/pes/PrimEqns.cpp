@@ -245,8 +245,8 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec theta, Vec exner, int lev, Vec *
     MatMult(EtoF->E12, Ku, *Fu);
     VecAXPY(*Fu, 1.0, Ru);
 
-    // add the thermodynamic term
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &theta_l);//TODO 0 form or 2 form??
+    // add the thermodynamic term (theta is a 0 form)
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &theta_l);
     VecScatterBegin(topo->gtol_0, theta, theta_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_0, theta, theta_l, INSERT_VALUES, SCATTER_FORWARD);
 
@@ -272,6 +272,108 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec theta, Vec exner, int lev, Vec *
         VecDestroy(&d2u);
         VecDestroy(&d4u);
     }
+}
+
+/*
+compute the continuity equation right hand side for all levels
+*/
+void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
+    int ii, kk, ex, ey, n2, *inds2;
+    Vec Mpu, dMpu, Dv;
+    Vec pl, pu, Fi, Dh;
+    Mat Mp, M0;
+    PetscScalar* dArray, *fArray;
+    PC pc;
+    KSP kspCol;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Mpu);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &dMpu);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
+
+    // allocate the RHS vectors at each level
+    Fp = new Vec*[geom->nk];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Fp[kk]);
+        VecZeroEntries(*Fp[kk]);
+    }
+
+    // compute the vertical mass fluxes (piecewise linear in the vertical)
+    MatCreate(MPI_COMM_SELF, &M0);
+    MatSetType(M0, MATSEQAIJ);
+    MatSetSizes(M0, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
+    MatSeqAIJSetPreallocation(M0, topo->elOrd*topo->elOrd, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &Mp);
+    MatSetType(Mp, MATSEQAIJ);
+    MatSetSizes(Mp, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSeqAIJSetPreallocation(Mp, topo->elOrd*topo->elOrd, PETSC_NULL);
+
+    KSPCreate(MPI_COMM_SELF, &kspCol);
+    KSPSetOperators(kspCol, M0, M0);
+    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspCol, KSPGMRES);
+    KSPGetPC(kspCol,&pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    KSPSetOptionsPrefix(kspCol,"kspCol_");
+    KSPSetFromOptions(kspCol);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds2 = topo->elInds2_l(ex, ey);
+
+            VertFlux(ex, ey, pi, Mp);
+            MatMult(Mp, uv[ey*topo->nElsX+ex], Mpu);
+
+            // weak form linear solve for this instead
+            MatMult(V01, Mpu, dMpu);
+            KSPSolve(kspCol, dMpu, Dv);
+
+            // copy the vertical contribution to the divergence into the
+            // horiztonal vectors
+            VecGetArray(Dv, &dArray);
+            for(kk = 0; kk < geom->nk; kk++) {
+                VecGetArray(*Fp[kk], &fArray);
+                for(ii = 0; ii < n2; ii++) {
+                    fArray[inds2[ii]] += dArray[kk*n2+ii];
+                }
+                VecRestoreArray(*Fp[kk], &fArray);
+            }
+            VecRestoreArray(Dv, &dArray);
+        }
+    }
+    VecDestroy(&Mpu);
+    VecDestroy(&dMpu);
+    VecDestroy(&Dv);
+    MatDestroy(&M0);
+    MatDestroy(&Mp);
+    KSPDestroy(&kspCol);
+
+    // compute the horiztonal mass fluxes
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &pl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Dh);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecScatterBegin(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
+
+        // add the horiztonal fluxes
+        F->assemble(pl, kk);
+        M1->assemble(kk);
+        MatMult(F->M, uh[kk], pu);
+        KSPSolve(ksp1, pu, Fi);
+        MatMult(EtoF->E21, Fi, Dh);
+        VecAXPY(*Fp[kk], 1.0, Dh);
+    }
+
+    VecDestroy(&pl);
+    VecDestroy(&pu);
+    VecDestroy(&Fi);
+    VecDestroy(&Dh);
 }
 
 /*
@@ -658,7 +760,7 @@ void PrimEqns::AssembleGrav(int ex, int ey, Mat Mg) {
 }
 
 /*
-Kinetic energy vector for the 2 form column from the 
+kinetic energy vector for the 2 form column from the 
 horiztonal kinetic energy vectors already assembled
 */
 void PrimEqns::VerticalKE(int ex, int ey, Vec* kh, Vec* kv) {
@@ -666,8 +768,6 @@ void PrimEqns::VerticalKE(int ex, int ey, Vec* kh, Vec* kv) {
     int n2 = topo->elOrd*topo->elOrd;
     int* inds_2 = topo->elInds2_g(ex, ey);
     PetscScalar *khArray, *kvArray;
-
-    
 
     // vertical kinetic energy vector is piecewise constant in each level
     VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, kv);
@@ -686,9 +786,9 @@ void PrimEqns::VerticalKE(int ex, int ey, Vec* kh, Vec* kv) {
 }
 
 /*
-Derive the vertical mass flux
+derive the vertical mass flux
 */
-void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec wi, Mat Mp) {
+void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp) {
     int ii, kk, ei, mp1, mp12;
     int* inds;
     double det, rho;
