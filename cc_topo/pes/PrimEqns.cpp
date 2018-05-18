@@ -25,9 +25,10 @@
 
 using namespace std;
 
-PrimEqns::PrimEqns(Topo* _topo, Geom* _geom) {
+PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     PC pc;
 
+    dt = _dt;
     topo = _topo;
     geom = _geom;
 
@@ -279,17 +280,14 @@ compute the continuity equation right hand side for all levels
 */
 void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     int ii, kk, ex, ey, n2, *inds2;
-    Vec Mpu, dMpu, Dv;
+    Vec Mpu, Dv;
     Vec pl, pu, Fi, Dh;
     Mat Mp, M0;
     PetscScalar* dArray, *fArray;
-    PC pc;
-    KSP kspCol;
 
     n2 = topo->elOrd*topo->elOrd;
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Mpu);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &dMpu);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
     // allocate the RHS vectors at each level
@@ -310,26 +308,14 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     MatSetSizes(Mp, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
     MatSeqAIJSetPreallocation(Mp, topo->elOrd*topo->elOrd, PETSC_NULL);
 
-    KSPCreate(MPI_COMM_SELF, &kspCol);
-    KSPSetOperators(kspCol, M0, M0);
-    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol,&pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, n2, NULL);
-    KSPSetOptionsPrefix(kspCol,"kspCol_");
-    KSPSetFromOptions(kspCol);
-
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds2 = topo->elInds2_l(ex, ey);
 
             VertFlux(ex, ey, pi, Mp);
             MatMult(Mp, uv[ey*topo->nElsX+ex], Mpu);
-
-            // weak form linear solve for this instead
-            MatMult(V01, Mpu, dMpu);
-            KSPSolve(kspCol, dMpu, Dv);
+            // strong form vertical divergence
+            MatMult(V10, Mpu, Dv);
 
             // copy the vertical contribution to the divergence into the
             // horiztonal vectors
@@ -345,11 +331,9 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
         }
     }
     VecDestroy(&Mpu);
-    VecDestroy(&dMpu);
     VecDestroy(&Dv);
     MatDestroy(&M0);
     MatDestroy(&Mp);
-    KSPDestroy(&kspCol);
 
     // compute the horiztonal mass fluxes
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &pl);
@@ -495,8 +479,7 @@ void PrimEqns::VertVelRHS(Vec* ui, Vec* wi, Vec **fw) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             AssembleConst(ex, ey, A);
-            AssembleLinear(ex, ey, B);
-            AssembleGrav(ex, ey, G);
+            AssembleLinear(ex, ey, B, true);
 
             MatMatMult(V10, G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DG);
             MatAXPY(B, +1.0, DG, SAME_NONZERO_PATTERN); //TODO check this pattern is ok
@@ -510,10 +493,12 @@ void PrimEqns::VertVelRHS(Vec* ui, Vec* wi, Vec **fw) {
 }
 
 /*
-Assemble the vertical gradient and divergence orientation matrices
+assemble the vertical gradient and divergence orientation matrices
+V10 is the strong form vertical divergence from the linear to the
+constant basis functions
 */
 void PrimEqns::vertOps() {
-    int ii, kk, n2, rows[2], cols[1];
+    int ii, kk, n2, rows[1], cols[2];
     double vals[2] = {+1.0, -1.0};
     Mat V10t;
     
@@ -527,10 +512,10 @@ void PrimEqns::vertOps() {
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < n2; ii++) {
             rows[0] = kk*n2 + ii;
-            rows[1] = (kk+1)*n2 + ii;
             cols[0] = kk*n2 + ii;
+            cols[1] = (kk+1)*n2 + ii;
 
-            MatSetValues(V10, 2, rows, 1, cols, vals, ADD_VALUES);
+            MatSetValues(V10, 1, rows, 2, cols, vals, ADD_VALUES);
         }
     }
     MatAssemblyBegin(V10, MAT_FINAL_ASSEMBLY);
@@ -544,7 +529,7 @@ void PrimEqns::vertOps() {
 }
 
 /*
-Assemble a 3D mass matrix as a tensor product of 2 forms in the 
+assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and constant basis functions in the vertical
 */
 void PrimEqns::AssembleConst(int ex, int ey, Mat M0) {
@@ -566,7 +551,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat M0) {
 
     MatZeroEntries(M0);
 
-    // Assemble the matrices
+    // assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
         // build the 2D mass matrix
         Q->assemble(ex, ey);
@@ -581,7 +566,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat M0) {
             Q0[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
         }
 
-		// Assemble the piecewise constant mass matrix for level k
+        // assemble the piecewise constant mass matrix for level k
         Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -608,7 +593,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat M0) {
 Assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and linear basis functions in the vertical
 */
-void PrimEqns::AssembleLinear(int ex, int ey, Mat M1) {
+void PrimEqns::AssembleLinear(int ex, int ey, Mat M1, bool add_g) {
     int ii, kk, ei, mp12;
     int* inds, *inds0;
     double det;
@@ -639,9 +624,13 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M1) {
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
+
+            if(add_g) {
+                Q0[ii][ii] *= (1.0 + dt*GRAVITY);
+            }
         }
 
-		// Assemble the piecewise constant mass matrix for level k
+        // assemble the piecewise constant mass matrix for level k
         Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -672,6 +661,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M1) {
     delete W;
 }
 
+#if 0
 /*
 vertical gravity forcing gradient term (to be assembled 
 into the left hand side as an implicit term)
@@ -758,6 +748,7 @@ void PrimEqns::AssembleGrav(int ex, int ey, Mat Mg) {
     delete Q;
     delete W;
 }
+#endif
 
 /*
 kinetic energy vector for the 2 form column from the 
@@ -808,7 +799,7 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp) {
 
     MatZeroEntries(Mp);
 
-    // Assemble the matrices
+    // assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
         // build the 2D mass matrix
         Q->assemble(ex, ey);
@@ -829,7 +820,7 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp) {
         }
         VecRestoreArray(pi[kk], &pArray);
 
-		// Assemble the piecewise constant mass matrix for level k
+        // assemble the piecewise constant mass matrix for level k
         Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);

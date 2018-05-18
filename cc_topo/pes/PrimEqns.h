@@ -1,7 +1,8 @@
 class PrimEqns {
     public:
-        PrimEqns(Topo* _topo, Geom* _geom);
+        PrimEqns(Topo* _topo, Geom* _geom, double _dt);
         ~PrimEqns();
+        double dt;
         double grav;
         double omega;
         double del2;
@@ -34,8 +35,8 @@ class PrimEqns {
         void curl(Vec u, Vec* w, int lev, bool add_f);     // weak form curl operator
         void laplacian(Vec u, Vec* ddu, int lev);          // laplacian operator via helmholtz decomposition
         void AssembleConst(int ex, int ey, Mat M0);        // piecewise constant (in vertical) mass matrix
-        void AssembleLinear(int ex, int ey, Mat M1);       // piecewise linear (in vertical) mass matrix
-        void AssembleGrav(int ex, int ey, Mat Mg);         // vertical gravity gradient operator
+        void AssembleLinear(int ex, int ey, Mat M1, bool add_g);       // piecewise linear (in vertical) mass matrix
+        //void AssembleGrav(int ex, int ey, Mat Mg);         // vertical gravity gradient operator
         void VerticalKE(int ex, int ey, Vec* kh, Vec* kv); // kinetic energy vertical vector
         void VertFlux(int ex, int ey, Vec* pi, Mat Mp);    // vertical mass flux matrix
         void VertVelRHS(Vec* ui, Vec* wi, Vec **fw);
