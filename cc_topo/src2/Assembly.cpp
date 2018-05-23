@@ -993,9 +993,9 @@ void Krhs::assemble(Vec kq, Vec* F) {
                 Qbb[ii][ii] = J[1][1]*Q->A[ii][ii]/det;
             }
 
-            inds_x = topo->elInds1x_g(ex, ey);
-            inds_y = topo->elInds1y_g(ex, ey);
-            inds_0 = topo->elInds0_g(ex, ey);
+            inds_x = topo->elInds1x_l(ex, ey);
+            inds_y = topo->elInds1y_l(ex, ey);
+            inds_0 = topo->elInds0_l(ex, ey);
 
             Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
             Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
