@@ -915,3 +915,157 @@ E21mat::~E21mat() {
     MatDestroy(&E21);
     MatDestroy(&E12);
 }
+
+////////////////////////////////////////////////////////////////////////
+Krhs::Krhs(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    l = _l;
+    e = _e;
+}
+
+double GetSign(int jj, int mp1) {
+    if(jj == 0) {
+        return +2.0;
+    }
+    else if(jj == mp1*mp1-1) {
+        return -2.0;
+    }
+    else if(jj == mp1-1 || jj == (mp1-1)*mp1) {
+        return  0.0;
+    }
+    else if(jj%mp1 == 0 || jj/mp1 == 0) {
+        return +1.0;
+    }
+    else if(jj%mp1 == mp1-1 || jj/mp1 == mp1-1) {
+        return -1.0;
+    }
+    else {
+        return  0.0;
+    }
+}
+
+void Krhs::assemble(Vec kq, Vec* F) {
+    int jj;
+    Vec Fl;
+    PetscScalar *kArray, *fArray;
+    double val;
+
+    int ex, ey, ei, ii, mp1, mp12;
+    int *inds_x, *inds_y, *inds_0;
+    double det, **J, sgn;
+    Wii* Q = new Wii(l->q, geom);
+    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+    M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
+    double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    double** UtQ = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Qba = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double* UtQflat = new double[U->nDofsJ*Q->nDofsJ];
+
+    mp1 = l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &Fl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, F);
+
+    VecZeroEntries(Fl);
+
+    VecGetArray(Fl, &fArray);
+    VecGetArray(kq, &kArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            // incorportate jacobian tranformation for each element
+            Q->assemble(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                Qaa[ii][ii] = J[0][0]*Q->A[ii][ii]/det;
+                Qab[ii][ii] = J[1][0]*Q->A[ii][ii]/det;
+                Qba[ii][ii] = J[0][1]*Q->A[ii][ii]/det;
+                Qbb[ii][ii] = J[1][1]*Q->A[ii][ii]/det;
+            }
+
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+            inds_0 = topo->elInds0_g(ex, ey);
+
+            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+            Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+
+            //
+            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Qaa, UtQ);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                val = 0.0;
+                for(jj = 0; jj < Q->nDofsJ; jj++) {
+                    sgn = GetSign(jj, mp1);
+                    val += sgn*UtQ[ii][jj]*kArray[inds_0[jj]];
+                }
+                fArray[inds_x[ii]] += val;
+            }
+
+            //
+            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Qab, UtQ);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                val = 0.0;
+                for(jj = 0; jj < Q->nDofsJ; jj++) {
+                    sgn = GetSign(jj, mp1);
+                    val += sgn*UtQ[ii][jj]*kArray[inds_0[jj]];
+                }
+                fArray[inds_x[ii]] += val;
+            }
+
+            //
+            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Vt, Qba, UtQ);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                val = 0.0;
+                for(jj = 0; jj < Q->nDofsJ; jj++) {
+                    sgn = GetSign(jj, mp1);
+                    val += sgn*UtQ[ii][jj]*kArray[inds_0[jj]];
+                }
+                fArray[inds_y[ii]] += val;
+            }
+
+            //
+            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Vt, Qbb, UtQ);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                val = 0.0;
+                for(jj = 0; jj < Q->nDofsJ; jj++) {
+                    sgn = GetSign(jj, mp1);
+                    val += sgn*UtQ[ii][jj]*kArray[inds_0[jj]];
+                }
+                fArray[inds_y[ii]] += val;
+            }
+        }
+    }
+    VecRestoreArray(Fl, &fArray);
+    VecRestoreArray(kq, &kArray);
+
+    VecScatterBegin(topo->gtol_1, Fl, *F, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_1, Fl, *F, INSERT_VALUES, SCATTER_REVERSE);
+
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+    Free2D(U->nDofsJ, UtQ);
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(Q->nDofsI, Qab);
+    Free2D(Q->nDofsI, Qba);
+    Free2D(Q->nDofsI, Qbb);
+    delete[] UtQflat;
+    delete Q;
+    delete U;
+    delete V;
+
+    VecDestroy(&Fl);
+}
+
+Krhs::~Krhs() {
+}
+

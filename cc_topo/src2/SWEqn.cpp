@@ -283,6 +283,75 @@ void SWEqn::solve_RK2(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
     VecDestroy(&hh);
 }
 
+void SWEqn::boundaryInt(Vec ui, Vec hi, Vec Ku, Vec* bi) {
+    int mp1 = quad->n + 1;
+    double kph, scale;
+    PetscScalar *kArray, *fArray;
+    Vec fi, fl, ki, kl;
+    KSP ksp2;
+    Krhs* Fk = new Krhs(topo, geom, node, edge);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &kl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &ki);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp2);
+    KSPSetOperators(ksp2, M2->M, M2->M);
+    KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp2, KSPGMRES);
+    KSPSetOptionsPrefix(ksp2,"sw_2_");
+    KSPSetFromOptions(ksp2);
+
+    KSPSolve(ksp2, Ku, ki);
+    VecAXPY(ki, grav, hi);
+
+    VecScatterBegin(topo->gtol_2, ki, kl, ADD_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, ki, kl, ADD_VALUES, SCATTER_FORWARD);
+
+    VecGetArray(kl, &kArray);
+    VecGetArray(fl, &fArray);
+
+    for(int ey = 0; ey < topo->nElsX; ey++) {
+        for(int ex = 0; ex < topo->nElsX; ex++) {
+            int* inds0 = topo->elInds0_l(ex, ey);
+            for(int qi = 0; qi < mp1*mp1; qi++) {
+                geom->interp2_g(ex, ey, qi%mp1, qi/mp1, kArray, &kph);
+                if(qi == 0 || qi == mp1 - 1 || qi == mp1*(mp1-1) || qi == mp1*mp1-1) {
+                    scale = 0.25;
+                }
+                else if(qi/mp1 == 0 || qi/mp1 == mp1-1 || qi%mp1 == 0 || qi%mp1 == mp1-1) {
+                    scale = 0.5;
+                }
+                else {
+                    scale = 0.0;
+                }
+                fArray[inds0[qi]] = scale*kph;
+            }
+        }
+    }
+
+    VecRestoreArray(kl, &kArray);
+    VecRestoreArray(fl, &fArray);
+
+    VecScatterBegin(topo->gtol_0, fl, fi, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, fl, fi, ADD_VALUES, SCATTER_REVERSE);
+
+    VecZeroEntries(fl);
+
+    VecScatterBegin(topo->gtol_0, fi, fl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, fi, fl, INSERT_VALUES, SCATTER_FORWARD);
+
+    Fk->assemble(fl, bi);
+
+    VecDestroy(&kl);
+    VecDestroy(&fl);
+    VecDestroy(&ki);
+    VecDestroy(&fi);
+    KSPDestroy(&ksp2);
+    delete Fk;
+}
+
 void SWEqn::_massTend(Vec ui, Vec hi, Vec *Fh) {
     Vec hl, hu, Fi;
 
@@ -305,7 +374,7 @@ void SWEqn::_massTend(Vec ui, Vec hi, Vec *Fh) {
 }
 
 void SWEqn::_momentumTend(Vec ui, Vec hi, Vec *Fu) {
-    Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u;
+    Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u;//, bi;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, Fu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ru);
@@ -338,6 +407,11 @@ void SWEqn::_momentumTend(Vec ui, Vec hi, Vec *Fu) {
         VecAXPY(*Fu, 1.0, d4u);
     }
 
+    // TODO: add in the bernoulli function flux terms
+    //boundaryInt(ui, hi, Ku, &bi);
+    //VecAXPY(bi, 1.0, *Fu);
+    //VecDestroy(&bi);
+ 
     VecDestroy(&wl);
     VecDestroy(&ul);
     VecDestroy(&wi);
@@ -981,6 +1055,7 @@ void SWEqn::err2(Vec ug, ICfunc* fu, double* norms) {
             inds0 = topo->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
+if(fabs(geom->s[inds0[ii]][1]) > 0.45*M_PI) continue;
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, un);
                 ua[0] = fu(geom->x[inds0[ii]]);
 

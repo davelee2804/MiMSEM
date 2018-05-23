@@ -164,3 +164,15 @@ class E21mat {
         Mat E21;
         Mat E12;
 };
+
+class Krhs {
+    public:
+        Krhs(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~Krhs();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        void assemble(Vec k, Vec* F);
+};
+
