@@ -409,7 +409,7 @@ void SWEqn::_momentumTend(Vec ui, Vec hi, Vec *Fu) {
 
     // TODO: add in the bernoulli function flux terms
     //boundaryInt(ui, hi, Ku, &bi);
-    //VecAXPY(bi, 1.0, *Fu);
+    //VecAXPY(*Fu, 1.0, bi);
     //VecDestroy(&bi);
  
     VecDestroy(&wl);
