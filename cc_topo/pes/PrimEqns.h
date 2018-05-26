@@ -21,6 +21,7 @@ class PrimEqns {
         RotMat* R;
         Uhmat* F;
         WtQUmat* K;
+        Whmat* T;
         Vec fg;                                      // coriolis vector (global)
         Mat E01M1;
         Mat E12M2;
@@ -42,5 +43,5 @@ class PrimEqns {
         void VertVelRHS(Vec* ui, Vec* wi, Vec **fw);
         void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp);
         void solve_RK2(Vec wi, Vec di, Vec hi, Vec wf, Vec df, Vec hf, double dt, bool save);
-        void horizMomRHS(Vec ui, Vec* wi, Vec theta, Vec exner, int lev, Vec *Fu);
+        void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, Vec *Fu);
 };

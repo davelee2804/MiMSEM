@@ -164,3 +164,41 @@ class E21mat {
         Mat E21;
         Mat E12;
 };
+
+/*class UtQWmat {
+    public:
+        UtQWmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~UtQWmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        double* UtQWflat;
+        double* VtQWflat;
+        double** Ut;
+        double** Vt;
+        double** Qaa;
+        double** Qab;
+        double** UtQaa;
+        double** VtQab;
+        double** UtQW;
+        double** VtQW;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        M2_j_xy_i* W;
+        Wii* Q;
+        void assemble(int lev);
+};*/
+
+class Whmat {
+    public:
+        Whmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~Whmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(Vec theta, int lev);
+};
+

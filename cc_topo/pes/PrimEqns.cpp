@@ -67,6 +67,10 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     // kinetic energy operator
     K = new WtQUmat(topo, geom, node, edge);
 
+    // potential temperature projection operator
+    //T = new UtQWmat(topo, geom, node, edge);
+    T = new Whmat(topo, geom, edge);
+
     // coriolis vector (projected onto 0 forms)
     coriolis();
 
@@ -210,6 +214,7 @@ PrimEqns::~PrimEqns() {
     delete R;
     delete F;
     delete K;
+    delete T;
 
     delete edge;
     delete node;
@@ -221,18 +226,22 @@ compute the right hand side for the momentum equation for a given level
 note that the vertical velocity, uv, is stored as a different vector for 
 each element
 */
-void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec theta, Vec exner, int lev, Vec *Fu) {
-    Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u, dExner, theta_l;
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, Fu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ru);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ku);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mh);
-
-    curl(uh, &wi, lev, true);
+void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec *Fu) {
+    Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u, theta_k, theta_k_l, dp;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k_l);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, Fu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ru);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ku);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_k);
+
+    curl(uh, &wi, lev, true);
+
     VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterBegin(topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
@@ -246,13 +255,21 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec theta, Vec exner, int lev, Vec *
     MatMult(EtoF->E12, Ku, *Fu);
     VecAXPY(*Fu, 1.0, Ru);
 
-    // add the thermodynamic term (theta is a 0 form)
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &theta_l);
-    VecScatterBegin(topo->gtol_0, theta, theta_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_0, theta, theta_l, INSERT_VALUES, SCATTER_FORWARD);
-
-    grad(exner, &dExner, lev);
-
+    // add the thermodynamic term (theta is in the same space as the vertical velocity)
+    // project theta onto 1 forms
+    VecZeroEntries(theta_k);
+    VecAXPY(theta_k, 0.5, theta[lev]);
+    VecAXPY(theta_k, 0.5, theta[lev+1]);
+    VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+    T->assemble(theta_k_l, lev);
+    if(!E12M2) {
+        MatMatMult(EtoF->E12, T->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
+    } else {
+        MatMatMult(EtoF->E12, T->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &E12M2);
+    }
+    MatMult(E12M2, exner, dp);
+    VecAXPY(*Fu, 1.0, dp);
 
     // add in the biharmonic voscosity
     if(do_visc) {
@@ -267,8 +284,9 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec theta, Vec exner, int lev, Vec *
     VecDestroy(&Ru);
     VecDestroy(&Ku);
     VecDestroy(&Mh);
-    VecDestroy(&dExner);
-    VecDestroy(&theta_l);
+    VecDestroy(&dp);
+    VecDestroy(&theta_k);
+    VecDestroy(&theta_k_l);
     if(do_visc) {
         VecDestroy(&d2u);
         VecDestroy(&d4u);
