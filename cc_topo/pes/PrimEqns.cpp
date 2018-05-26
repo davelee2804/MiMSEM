@@ -227,7 +227,7 @@ note that the vertical velocity, uv, is stored as a different vector for
 each element
 */
 void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec *Fu) {
-    Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u, theta_k, theta_k_l, dp;
+    Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u, theta_k, theta_k_l, dExner, dp;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
@@ -262,6 +262,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
     VecAXPY(theta_k, 0.5, theta[lev+1]);
     VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+/*
     T->assemble(theta_k_l, lev);
     if(!E12M2) {
         MatMatMult(EtoF->E12, T->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
@@ -269,6 +270,11 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
         MatMatMult(EtoF->E12, T->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &E12M2);
     }
     MatMult(E12M2, exner, dp);
+    VecAXPY(*Fu, 1.0, dp);
+*/
+    grad(exner, &dExner, lev);
+    F->assemble(theta_k_l, lev, false);
+    MatMult(F->M, dExner, dp);
     VecAXPY(*Fu, 1.0, dp);
 
     // add in the biharmonic voscosity
@@ -284,6 +290,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
     VecDestroy(&Ru);
     VecDestroy(&Ku);
     VecDestroy(&Mh);
+    VecDestroy(&dExner);
     VecDestroy(&dp);
     VecDestroy(&theta_k);
     VecDestroy(&theta_k_l);
@@ -364,7 +371,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
         VecScatterEnd(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
 
         // add the horiztonal fluxes
-        F->assemble(pl, kk);
+        F->assemble(pl, kk, true);
         M1->assemble(kk);
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fi);

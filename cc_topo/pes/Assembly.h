@@ -47,7 +47,7 @@ class Uhmat {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
-        void assemble(Vec h2, int lev);
+        void assemble(Vec h2, int lev, bool const_vert);
 };
 
 class Pvec {

@@ -241,7 +241,7 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
 }
 
-void Uhmat::assemble(Vec h2, int lev) {
+void Uhmat::assemble(Vec h2, int lev, bool const_vert) {
     int ex, ey, ei, mp1, mp12, ii;
     int *inds_x, *inds_y, *inds_0;
     double hi, det, **J;
@@ -266,7 +266,9 @@ void Uhmat::assemble(Vec h2, int lev) {
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
 
                 // density field is piecewise constant in the vertical
-                hi *= 2.0/geom->thick[lev][inds_0[ii]];
+                if (const_vert) {
+                    hi *= 2.0/geom->thick[lev][inds_0[ii]];
+                }
 
                 Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
