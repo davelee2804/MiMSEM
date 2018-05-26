@@ -473,7 +473,7 @@ void PrimEqns::laplacian(Vec ui, Vec* ddu, int lev) {
     VecDestroy(&MDu);
 }
 
-void PrimEqns::VertVelRHS(Vec* ui, Vec* wi, Vec **fw) {
+void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec **fw) {
     int ex, ey, n2, iLev;
     Mat A, B, G, DG;
 
