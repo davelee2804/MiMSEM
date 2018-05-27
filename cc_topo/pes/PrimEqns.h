@@ -43,5 +43,6 @@ class PrimEqns {
         void tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft);
         void vertMomRHS(Vec* ui, Vec* wi, Vec **fw);
         void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, Vec *Fu);
+        void progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec exner_i, Vec* exner_f, int lev);
         void solve_RK2(Vec wi, Vec di, Vec hi, Vec wf, Vec df, Vec hf, double dt, bool save);
 };

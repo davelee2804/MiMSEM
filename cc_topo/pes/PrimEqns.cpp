@@ -302,10 +302,12 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
 
 /*
 compute the continuity equation right hand side for all levels
+uh: horiztonal velocity by vertical level
+uv: vertical velocity by horiztonal element
 */
 void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     int ii, kk, ex, ey, n2, *inds2;
-    Vec Mpu, Dv;
+    Vec Mpu, Fv, Dv;
     Vec pl, pu, Fi, Dh;
     Mat Mp, M0;
     PC pc;
@@ -315,6 +317,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     n2 = topo->elOrd*topo->elOrd;
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Mpu);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Fv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
     // allocate the RHS vectors at each level
@@ -351,11 +354,10 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
 
             VertFlux(ex, ey, pi, NULL, Mp);
             MatMult(Mp, uv[ey*topo->nElsX+ex], Mpu);
-            //TODO project back onto vertical 0 forms via linear solve
             AssembleLinear(ex, ey, M0, false);
-            //KSPSolve(kspCol, dMpu, Mpu);
+            KSPSolve(kspCol, Mpu, Fv);
             // strong form vertical divergence
-            MatMult(V10, Mpu, Dv);
+            MatMult(V10, Fv, Dv);
 
             // copy the vertical contribution to the divergence into the
             // horiztonal vectors
@@ -371,6 +373,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
         }
     }
     VecDestroy(&Mpu);
+    VecDestroy(&Fv);
     VecDestroy(&Dv);
     MatDestroy(&M0);
     MatDestroy(&Mp);
@@ -403,10 +406,12 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
 
 /*
 compute the temperature equation right hand side for all levels
+uh: horiztonal velocity by vertical level
+uv: vertical velocity by horiztonal element
 */
 void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     int ii, kk, ex, ey, n2, *inds2;
-    Vec Mtu, Dv;
+    Vec Mtu, Fv, Dv;
     Vec pl, pu, Fi, Dh;
     Vec theta_k, theta_k_l;
     Mat Mt, M0;
@@ -417,6 +422,7 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     n2 = topo->elOrd*topo->elOrd;
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Mtu);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Fv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
     // allocate the RHS vectors at each level
@@ -453,11 +459,10 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
 
             VertFlux(ex, ey, pi, theta, Mt);
             MatMult(Mt, uv[ey*topo->nElsX+ex], Mtu);
-            //TODO project back onto vertical 0 forms via linear solve
             AssembleLinear(ex, ey, M0, false);
-            //KSPSolve(kspCol, dMpu, Mpu);
+            KSPSolve(kspCol, Mtu, Fv);
             // strong form vertical divergence
-            MatMult(V10, Mtu, Dv);
+            MatMult(V10, Fv, Dv);
 
             // copy the vertical contribution to the divergence into the
             // horiztonal vectors
@@ -511,6 +516,63 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     VecDestroy(&Dh);
     VecDestroy(&theta_k);
     VecDestroy(&theta_k_l);
+}
+
+/*
+prognose the exner pressure
+*/
+void PrimEqns::progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec exner_i, Vec* exner_f, int lev) {
+    Vec rho_l, theta_k, theta_k_l, rhs;
+    PC pc;
+    KSP kspE;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rho_l);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k_l);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_k);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, exner_f);
+
+    KSPCreate(MPI_COMM_WORLD, &kspE);
+    KSPSetOperators(kspE, F->M, F->M);
+    KSPSetTolerances(kspE, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspE, KSPGMRES);
+    KSPGetPC(kspE,&pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
+    KSPSetOptionsPrefix(kspE,"exner_");
+    KSPSetFromOptions(kspE);
+
+    // assemble the right hand side
+    VecZeroEntries(theta_k);
+    VecAXPY(theta_k, 0.5, theta_i[lev]);
+    VecAXPY(theta_k, 0.5, theta_i[lev+1]);
+
+    VecScatterBegin(topo->gtol_2, rho_i, rho_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, rho_i, rho_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+
+    F->assemble(rho_l, theta_k_l, lev, true);
+    MatMult(F->M, exner_i, rhs);
+
+    // assemble the nonlinear operator
+    VecZeroEntries(theta_k);
+    VecAXPY(theta_k, 0.5, theta_f[lev]);
+    VecAXPY(theta_k, 0.5, theta_f[lev+1]);
+
+    VecScatterBegin(topo->gtol_2, rho_f, rho_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, rho_f, rho_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+
+    F->assemble(rho_l, theta_k_l, lev, true);
+    KSPSolve(kspE, rhs, *exner_f);
+
+    VecDestroy(&rho_l);
+    VecDestroy(&theta_k_l);
+    VecDestroy(&theta_k);
+    VecDestroy(&rhs);
+    KSPDestroy(&kspE);
 }
 
 /*
