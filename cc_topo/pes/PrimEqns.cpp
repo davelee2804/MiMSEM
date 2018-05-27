@@ -26,6 +26,7 @@
 using namespace std;
 
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
+    int ii;
     PC pc;
 
     dt = _dt;
@@ -69,7 +70,7 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
 
     // potential temperature projection operator
     //T = new UtQWmat(topo, geom, node, edge);
-    T = new Whmat(topo, geom, edge);
+    //T = new Whmat(topo, geom, edge);
 
     // coriolis vector (projected onto 0 forms)
     coriolis();
@@ -98,6 +99,11 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
     KSPSetOptionsPrefix(ksp2,"2_");
     KSPSetFromOptions(ksp2);
+
+    Kv = new Vec[topo->nElsX*topo->nElsX];
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &Kv[ii]);
+    }
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -176,30 +182,19 @@ void PrimEqns::solve_RK2(Vec wi, Vec di, Vec hi, Vec wf, Vec df, Vec hf, double 
     }
 }
 
-/*
-void PrimEqns::getRHS(Vec wi, Vec di, Vec hi, Vec* Wi, Vec* Di, Vec* Hi) {
-    Vec psi, phi;
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, Wi);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Di);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Hi);
-
-
-    // derive the stream function and the potential
-
-
-    // get solenoidal and divergent mass flux components
-
-
-}
-*/
-
 PrimEqns::~PrimEqns() {
+    int ii;
+
     KSPDestroy(&ksp1);
     KSPDestroy(&ksp2);
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);
     VecDestroy(&fg);
+
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecDestroy(&Kv[ii]);
+    }
+    delete[] Kv;
 
     MatDestroy(&V01);
     MatDestroy(&V10);
@@ -214,11 +209,40 @@ PrimEqns::~PrimEqns() {
     delete R;
     delete F;
     delete K;
-    delete T;
+    //delete T;
 
     delete edge;
     delete node;
     delete quad;
+}
+
+void PrimEqns::UpdateKEVert(Vec ke, int lev) {
+    int ex, ey, n2, ii;
+    int* inds2;
+    Vec kl;
+    PetscScalar *khArray, *kvArray;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &kl);
+    VecScatterBegin(topo->gtol_2, ke, kl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, ke, kl, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecGetArray(kl, &khArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds2 = topo->elInds2_l(ex, ey);
+
+            VecGetArray(Kv[ey*topo->nElsX + ex], &kvArray);
+            for(ii = 0; ii < n2; ii++) {
+                kvArray[lev*n2+ii] = khArray[inds2[ii]];
+            }
+            VecRestoreArray(Kv[ey*topo->nElsX + ex], &kvArray);
+        }
+    }
+    VecRestoreArray(ke, &khArray);
+
+    VecDestroy(&kl);
 }
 
 /*
@@ -243,8 +267,8 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
     curl(uh, &wi, lev, true);
 
     VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterBegin(topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     R->assemble(wl, lev);
@@ -254,6 +278,10 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
     MatMult(K->M, uh, Ku);
     MatMult(EtoF->E12, Ku, *Fu);
     VecAXPY(*Fu, 1.0, Ru);
+
+    // must do horiztonal momentum rhs before vertical, so that that kinetic energy 
+    // can be added to the vertical vectors
+    UpdateKEVert(Ku, lev);
 
     // add the thermodynamic term (theta is in the same space as the vertical velocity)
     // project theta onto 1 forms
@@ -298,6 +326,50 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
         VecDestroy(&d2u);
         VecDestroy(&d4u);
     }
+}
+
+void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
+    int ex, ey, n2, ei;
+    Mat A, B, G, DG;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    // vertical velocity is computer per element, so matrices are local to this processor
+    MatCreate(MPI_COMM_SELF, &A);
+    MatSetType(A, MATSEQAIJ);
+    MatSetSizes(A, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
+    MatSeqAIJSetPreallocation(A, topo->elOrd*topo->elOrd, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &B);
+    MatSetType(B, MATSEQAIJ);
+    MatSetSizes(B, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSeqAIJSetPreallocation(B, topo->elOrd*topo->elOrd, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &G);
+    MatSetType(G, MATSEQAIJ);
+    MatSetSizes(G, geom->nk*n2, geom->nk*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSeqAIJSetPreallocation(G, topo->elOrd*topo->elOrd, PETSC_NULL);
+
+    *fw = new Vec[topo->nElsX*topo->nElsX];
+    for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*topo->n2, fw[ei]);
+        VecZeroEntries(*fw[ei]);
+    }
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            AssembleConst(ex, ey, A);
+            AssembleLinear(ex, ey, B, true);
+
+            MatMatMult(V10, G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DG);
+            MatAXPY(B, +1.0, DG, SAME_NONZERO_PATTERN); //TODO check this pattern is ok
+        }
+    }
+
+    MatDestroy(&A);
+    MatDestroy(&B);
+    MatDestroy(&G);
+    MatDestroy(&DG);
 }
 
 /*
@@ -661,50 +733,6 @@ void PrimEqns::laplacian(Vec ui, Vec* ddu, int lev) {
     VecDestroy(&dMDu);
     VecDestroy(&Du);
     VecDestroy(&MDu);
-}
-
-void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec **fw) {
-    int ex, ey, n2, iLev;
-    Mat A, B, G, DG;
-
-    n2 = topo->elOrd*topo->elOrd;
-
-    // vertical velocity is computer per element, so matrices are local to this processor
-    MatCreate(MPI_COMM_SELF, &A);
-    MatSetType(A, MATSEQAIJ);
-    MatSetSizes(A, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(A, topo->elOrd*topo->elOrd, PETSC_NULL);
-
-    MatCreate(MPI_COMM_SELF, &B);
-    MatSetType(B, MATSEQAIJ);
-    MatSetSizes(B, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
-    MatSeqAIJSetPreallocation(B, topo->elOrd*topo->elOrd, PETSC_NULL);
-
-    MatCreate(MPI_COMM_SELF, &G);
-    MatSetType(G, MATSEQAIJ);
-    MatSetSizes(G, geom->nk*n2, geom->nk*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
-    MatSeqAIJSetPreallocation(G, topo->elOrd*topo->elOrd, PETSC_NULL);
-
-    *fw = new Vec[geom->nk+1];
-    for(iLev = 0; iLev < geom->nk + 1; iLev++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, fw[iLev]);
-        VecZeroEntries(*fw[iLev]);
-    }
-
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            AssembleConst(ex, ey, A);
-            AssembleLinear(ex, ey, B, true);
-
-            MatMatMult(V10, G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DG);
-            MatAXPY(B, +1.0, DG, SAME_NONZERO_PATTERN); //TODO check this pattern is ok
-        }
-    }
-
-    MatDestroy(&A);
-    MatDestroy(&B);
-    MatDestroy(&G);
-    MatDestroy(&DG);
 }
 
 /*
