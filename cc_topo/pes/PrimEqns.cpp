@@ -308,6 +308,8 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     Vec Mpu, Dv;
     Vec pl, pu, Fi, Dh;
     Mat Mp, M0;
+    PC pc;
+    KSP kspCol;
     PetscScalar* dArray, *fArray;
 
     n2 = topo->elOrd*topo->elOrd;
@@ -333,12 +335,25 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     MatSetSizes(Mp, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
     MatSeqAIJSetPreallocation(Mp, topo->elOrd*topo->elOrd, PETSC_NULL);
 
+    KSPCreate(MPI_COMM_SELF, &kspCol);
+    KSPSetOperators(kspCol, M0, M0);
+    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspCol, KSPGMRES);
+    KSPGetPC(kspCol,&pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    KSPSetOptionsPrefix(kspCol,"kspCol_");
+    KSPSetFromOptions(kspCol);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds2 = topo->elInds2_l(ex, ey);
 
             VertFlux(ex, ey, pi, NULL, Mp);
             MatMult(Mp, uv[ey*topo->nElsX+ex], Mpu);
+            //TODO project back onto vertical 0 forms via linear solve
+            AssembleLinear(ex, ey, M0, false);
+            //KSPSolve(kspCol, dMpu, Mpu);
             // strong form vertical divergence
             MatMult(V10, Mpu, Dv);
 
@@ -359,6 +374,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     VecDestroy(&Dv);
     MatDestroy(&M0);
     MatDestroy(&Mp);
+    KSPDestroy(&kspCol);
 
     // compute the horiztonal mass fluxes
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &pl);
@@ -394,6 +410,8 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     Vec pl, pu, Fi, Dh;
     Vec theta_k, theta_k_l;
     Mat Mt, M0;
+    PC pc;
+    KSP kspCol;
     PetscScalar* dArray, *fArray;
 
     n2 = topo->elOrd*topo->elOrd;
@@ -419,12 +437,25 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     MatSetSizes(Mt, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
     MatSeqAIJSetPreallocation(Mt, topo->elOrd*topo->elOrd, PETSC_NULL);
 
+    KSPCreate(MPI_COMM_SELF, &kspCol);
+    KSPSetOperators(kspCol, M0, M0);
+    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspCol, KSPGMRES);
+    KSPGetPC(kspCol,&pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    KSPSetOptionsPrefix(kspCol,"kspCol_");
+    KSPSetFromOptions(kspCol);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds2 = topo->elInds2_l(ex, ey);
 
             VertFlux(ex, ey, pi, theta, Mt);
             MatMult(Mt, uv[ey*topo->nElsX+ex], Mtu);
+            //TODO project back onto vertical 0 forms via linear solve
+            AssembleLinear(ex, ey, M0, false);
+            //KSPSolve(kspCol, dMpu, Mpu);
             // strong form vertical divergence
             MatMult(V10, Mtu, Dv);
 
@@ -445,6 +476,7 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     VecDestroy(&Dv);
     MatDestroy(&M0);
     MatDestroy(&Mt);
+    KSPDestroy(&kspCol);
 
     // compute the horiztonal mass fluxes
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &pl);
@@ -653,7 +685,7 @@ void PrimEqns::vertOps() {
 assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and constant basis functions in the vertical
 */
-void PrimEqns::AssembleConst(int ex, int ey, Mat M0) {
+void PrimEqns::AssembleConst(int ex, int ey, Mat M1) {
     int ii, kk, ei, mp12;
     int* inds, *inds0;
     double det;
@@ -670,7 +702,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat M0) {
     inds0 = topo->elInds0_g(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
-    MatZeroEntries(M0);
+    MatZeroEntries(M1);
 
     // assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
@@ -696,10 +728,10 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat M0) {
         for(ii = 0; ii < W->nDofsJ; ii++) {
             inds2k[ii] = inds[ii] + kk*W->nDofsJ;
         }
-        MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        MatSetValues(M1, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
     }
-    MatAssemblyBegin(M0, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M0, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(M1, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M1, MAT_FINAL_ASSEMBLY);
 
     Free2D(Q->nDofsI, Q0);
     Free2D(W->nDofsJ, Wt);
@@ -714,7 +746,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat M0) {
 Assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and linear basis functions in the vertical
 */
-void PrimEqns::AssembleLinear(int ex, int ey, Mat M1, bool add_g) {
+void PrimEqns::AssembleLinear(int ex, int ey, Mat M0, bool add_g) {
     int ii, kk, ei, mp12;
     int* inds, *inds0;
     double det;
@@ -731,7 +763,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M1, bool add_g) {
     inds0 = topo->elInds0_g(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
-    MatZeroEntries(M1);
+    MatZeroEntries(M0);
 
     // Assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
@@ -761,17 +793,17 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M1, bool add_g) {
         for(ii = 0; ii < W->nDofsJ; ii++) {
             inds2k[ii] = inds[ii] + kk*W->nDofsJ;
         }
-        MatSetValues(M1, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
         // assemble the second basis function
         for(ii = 0; ii < W->nDofsJ; ii++) {
             inds2k[ii] = inds[ii] + (kk+1)*W->nDofsJ;
         }
-        MatSetValues(M1, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
     }
-    MatAssemblyBegin(M1, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M1, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(M0, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M0, MAT_FINAL_ASSEMBLY);
 
     Free2D(Q->nDofsI, Q0);
     Free2D(W->nDofsJ, Wt);
