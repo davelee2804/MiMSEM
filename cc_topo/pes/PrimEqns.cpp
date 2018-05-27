@@ -273,7 +273,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
     VecAXPY(*Fu, 1.0, dp);
 */
     grad(exner, &dExner, lev);
-    F->assemble(theta_k_l, lev, false);
+    F->assemble(theta_k_l, NULL, lev, false);
     MatMult(F->M, dExner, dp);
     VecAXPY(*Fu, 1.0, dp);
 
@@ -337,7 +337,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds2 = topo->elInds2_l(ex, ey);
 
-            VertFlux(ex, ey, pi, Mp);
+            VertFlux(ex, ey, pi, NULL, Mp);
             MatMult(Mp, uv[ey*topo->nElsX+ex], Mpu);
             // strong form vertical divergence
             MatMult(V10, Mpu, Dv);
@@ -371,7 +371,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
         VecScatterEnd(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
 
         // add the horiztonal fluxes
-        F->assemble(pl, kk, true);
+        F->assemble(pl, NULL, kk, true);
         M1->assemble(kk);
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fi);
@@ -383,6 +383,102 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     VecDestroy(&pu);
     VecDestroy(&Fi);
     VecDestroy(&Dh);
+}
+
+/*
+compute the temperature equation right hand side for all levels
+*/
+void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
+    int ii, kk, ex, ey, n2, *inds2;
+    Vec Mtu, Dv;
+    Vec pl, pu, Fi, Dh;
+    Vec theta_k, theta_k_l;
+    Mat Mt, M0;
+    PetscScalar* dArray, *fArray;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Mtu);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
+
+    // allocate the RHS vectors at each level
+    Ft = new Vec*[geom->nk];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Ft[kk]);
+        VecZeroEntries(*Ft[kk]);
+    }
+
+    // compute the vertical mass fluxes (piecewise linear in the vertical)
+    MatCreate(MPI_COMM_SELF, &M0);
+    MatSetType(M0, MATSEQAIJ);
+    MatSetSizes(M0, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
+    MatSeqAIJSetPreallocation(M0, topo->elOrd*topo->elOrd, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &Mt);
+    MatSetType(Mt, MATSEQAIJ);
+    MatSetSizes(Mt, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSeqAIJSetPreallocation(Mt, topo->elOrd*topo->elOrd, PETSC_NULL);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds2 = topo->elInds2_l(ex, ey);
+
+            VertFlux(ex, ey, pi, theta, Mt);
+            MatMult(Mt, uv[ey*topo->nElsX+ex], Mtu);
+            // strong form vertical divergence
+            MatMult(V10, Mtu, Dv);
+
+            // copy the vertical contribution to the divergence into the
+            // horiztonal vectors
+            VecGetArray(Dv, &dArray);
+            for(kk = 0; kk < geom->nk; kk++) {
+                VecGetArray(*Ft[kk], &fArray);
+                for(ii = 0; ii < n2; ii++) {
+                    fArray[inds2[ii]] += dArray[kk*n2+ii];
+                }
+                VecRestoreArray(*Ft[kk], &fArray);
+            }
+            VecRestoreArray(Dv, &dArray);
+        }
+    }
+    VecDestroy(&Mtu);
+    VecDestroy(&Dv);
+    MatDestroy(&M0);
+    MatDestroy(&Mt);
+
+    // compute the horiztonal mass fluxes
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &pl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k_l);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Dh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_k);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecScatterBegin(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
+
+        VecZeroEntries(theta_k);
+        VecAXPY(theta_k, 0.5, theta[kk]);
+        VecAXPY(theta_k, 0.5, theta[kk+1]);
+        VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+
+        // add the horiztonal fluxes
+        F->assemble(pl, theta_k_l, kk, true);
+        M1->assemble(kk);
+        MatMult(F->M, uh[kk], pu);
+        KSPSolve(ksp1, pu, Fi);
+        MatMult(EtoF->E21, Fi, Dh);
+        VecAXPY(*Ft[kk], 1.0, Dh);
+    }
+
+    VecDestroy(&pl);
+    VecDestroy(&pu);
+    VecDestroy(&Fi);
+    VecDestroy(&Dh);
+    VecDestroy(&theta_k);
+    VecDestroy(&theta_k_l);
 }
 
 /*
@@ -804,10 +900,10 @@ void PrimEqns::VerticalKE(int ex, int ey, Vec* kh, Vec* kv) {
 /*
 derive the vertical mass flux
 */
-void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp) {
+void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
     int ii, kk, ei, mp1, mp12;
     int* inds;
-    double det, rho;
+    double det, rho, temp1, temp2;
     int inds2k[99];
     Wii* Q = new Wii(node->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(edge);
@@ -816,7 +912,7 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp) {
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    PetscScalar* pArray;
+    PetscScalar *pArray, *t1Array, *t2Array;
 
     inds  = topo->elInds2_g(ex, ey);
     mp1   = quad->n + 1;
@@ -831,6 +927,10 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp) {
         ei = ey*topo->nElsX + ex;
         
         VecGetArray(pi[kk], &pArray);
+        if(ti) {
+            VecGetArray(ti[kk], &t1Array);
+            VecGetArray(ti[kk+1], &t2Array);
+        }
 
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -842,8 +942,18 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp) {
             // multiply by the vertical determinant for the vertical integral,
             // then divide by the vertical determinant to rescale the piecewise
             // constant density, so do nothing.
+
+            if(ti) {
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t1Array, &temp1);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t2Array, &temp2);
+                Q0[ii][ii] *= 0.5*(temp1 + temp2);
+            }
         }
         VecRestoreArray(pi[kk], &pArray);
+        if(ti) {
+            VecRestoreArray(ti[kk], &t1Array);
+            VecRestoreArray(ti[kk+1], &t2Array);
+        }
 
         // assemble the piecewise constant mass matrix for level k
         Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
