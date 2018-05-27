@@ -329,9 +329,15 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
 }
 
 void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
-    int ex, ey, n2, ei;
+    int ex, ey, ei, ii, kk, n2;
+    int* inds2;
+    Vec exner_v, de1, de2, de3;
     Mat A, B, G, DG;
+    PC pc;
+    KSP kspCol;
+    PetscScalar *evArray, *ehArray;
 
+    DG = NULL;
     n2 = topo->elOrd*topo->elOrd;
 
     // vertical velocity is computer per element, so matrices are local to this processor
@@ -356,20 +362,68 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
         VecZeroEntries(*fw[ei]);
     }
 
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &de1);
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &de2);
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &de3);
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &exner_v);
+
+    KSPCreate(MPI_COMM_SELF, &kspCol);
+    KSPSetOperators(kspCol, B, B);
+    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspCol, KSPGMRES);
+    KSPGetPC(kspCol,&pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    KSPSetOptionsPrefix(kspCol,"kspVert_");
+    KSPSetFromOptions(kspCol);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            AssembleConst(ex, ey, A);
-            AssembleLinear(ex, ey, B, true);
+            ei = ey*topo->nElsX + ex;
+            inds2 = topo->elInds2_l(ex, ey);
 
-            MatMatMult(V10, G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DG);
-            MatAXPY(B, +1.0, DG, SAME_NONZERO_PATTERN); //TODO check this pattern is ok
+            // add in the kinetic energy gradient
+            MatMult(V01, Kv[ei], *fw[ei]);
+
+            // add in the pressure gradient            
+            VecGetArray(exner_v, &evArray);
+            for(kk = 0; kk < geom->nk; kk++) {
+                VecGetArray(exner[kk], &ehArray);
+                for(ii = 0; ii < n2; ii++) {
+                    evArray[kk*n2+ii] = ehArray[inds2[ii]];
+                }
+                VecRestoreArray(exner[kk], &ehArray);
+            }
+            VecRestoreArray(exner_v, &evArray);
+
+            VecZeroEntries(de1);
+            VecZeroEntries(de2);
+            VecZeroEntries(de3);
+            AssembleConst(ex, ey, A);
+            MatMult(A, exner_v, de1);
+            MatMult(V01, de1, de2);
+            KSPSolve(kspCol, de2, de3);
+
+            //AssembleLinear(ex, ey, B, true);
+
+            //if(!DG) {
+            //    MatMatMult(V10, G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DG);
+            //} else {
+            //    MatMatMult(V10, G, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DG);
+            //}
+            //MatAXPY(B, +1.0, DG, SAME_NONZERO_PATTERN); //TODO check this pattern is ok
         }
     }
 
+    VecDestroy(&exner_v);
+    VecDestroy(&de1);
+    VecDestroy(&de2);
+    VecDestroy(&de3);
     MatDestroy(&A);
     MatDestroy(&B);
     MatDestroy(&G);
     MatDestroy(&DG);
+    KSPDestroy(&kspCol);
 }
 
 /*
