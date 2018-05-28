@@ -6,6 +6,7 @@ class PrimEqns {
         double grav;
         double omega;
         double del2;
+        double vert_visc;
         bool do_visc;
         int step;
         GaussLobatto* quad;
@@ -37,7 +38,8 @@ class PrimEqns {
         void laplacian(Vec u, Vec* ddu, int lev);                   // laplacian operator via helmholtz decomposition
         void AssembleConst(int ex, int ey, Mat M0);                 // piecewise constant (in vertical) mass matrix
         void AssembleLinear(int ex, int ey, Mat M1, bool add_g);    // piecewise linear (in vertical) mass matrix
-        void VerticalKE(int ex, int ey, Vec* kh, Vec* kv);          // kinetic energy vertical vector
+        void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M1);
+        void AssembleVertOps(int ex, int ey, Mat* M0);
         void VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp);    // vertical mass flux matrix
         void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp);
         void tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft);
