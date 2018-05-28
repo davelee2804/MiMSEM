@@ -39,7 +39,6 @@ class PrimEqns {
         void AssembleConst(int ex, int ey, Mat M0);                 // piecewise constant (in vertical) mass matrix
         void AssembleLinear(int ex, int ey, Mat M1, bool add_g);    // piecewise linear (in vertical) mass matrix
         void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M1);
-        void AssembleVertOps(int ex, int ey, Mat* M0);
         void VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp);    // vertical mass flux matrix
         void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp);
         void tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft);
@@ -47,5 +46,6 @@ class PrimEqns {
         void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, Vec *Fu);
         void progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec exner_i, Vec* exner_f, int lev);
         void UpdateKEVert(Vec ke, int lev);
+        void VertConstMatInv(int ex, int ey, Mat M1inv);
         void solve_RK2(Vec wi, Vec di, Vec hi, Vec wf, Vec df, Vec hf, double dt, bool save);
 };

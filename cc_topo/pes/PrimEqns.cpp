@@ -826,7 +826,7 @@ horizotnal and constant basis functions in the vertical
 */
 void PrimEqns::AssembleConst(int ex, int ey, Mat M1) {
     int ii, kk, ei, mp12;
-    int* inds, *inds0;
+    int *inds0;
     double det;
     int inds2k[99];
     Wii* Q = new Wii(node->q, geom);
@@ -837,8 +837,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat M1) {
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
-    inds  = topo->elInds2_g(ex, ey);
-    inds0 = topo->elInds0_g(ex, ey);
+    inds0 = topo->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
     MatZeroEntries(M1);
@@ -865,7 +864,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat M1) {
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
         for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = inds[ii] + kk*W->nDofsJ;
+            inds2k[ii] = ii + kk*W->nDofsJ;
         }
         MatSetValues(M1, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
     }
@@ -887,7 +886,7 @@ horizotnal and linear basis functions in the vertical
 */
 void PrimEqns::AssembleLinear(int ex, int ey, Mat M0, bool add_g) {
     int ii, kk, ei, mp12;
-    int* inds, *inds0;
+    int *inds0;
     double det;
     int inds2k[99];
     Wii* Q = new Wii(node->q, geom);
@@ -898,8 +897,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M0, bool add_g) {
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
-    inds  = topo->elInds2_g(ex, ey);
-    inds0 = topo->elInds0_g(ex, ey);
+    inds0 = topo->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
     MatZeroEntries(M0);
@@ -929,13 +927,13 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M0, bool add_g) {
 
         // assemble the first basis function
         for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = inds[ii] + kk*W->nDofsJ;
+            inds2k[ii] = ii + kk*W->nDofsJ;
         }
         MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
         // assemble the second basis function
         for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = inds[ii] + (kk+1)*W->nDofsJ;
+            inds2k[ii] = ii + (kk+1)*W->nDofsJ;
         }
         MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
@@ -954,7 +952,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M0, bool add_g) {
 
 void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M0) {
     int ii, kk, ei, mp1, mp12;
-    int* inds, *inds0;
+    int *inds0;
     double det, t1, t2;
     int inds2k[99];
     Wii* Q = new Wii(node->q, geom);
@@ -967,8 +965,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M0) {
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *t1Array, *t2Array;
 
-    inds  = topo->elInds2_g(ex, ey);
-    inds0 = topo->elInds0_g(ex, ey);
+    inds0 = topo->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
@@ -1007,7 +1004,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M0) {
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
         for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = inds[ii] + kk*W->nDofsJ;
+            inds2k[ii] = ii + kk*W->nDofsJ;
         }
         MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
@@ -1017,7 +1014,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M0) {
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
         for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = inds[ii] + (kk+1)*W->nDofsJ;
+            inds2k[ii] = ii + (kk+1)*W->nDofsJ;
         }
         MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
@@ -1035,6 +1032,59 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M0) {
     delete W;
 }
 
+void PrimEqns::VertConstMatInv(int ex, int ey, Mat M1inv) {
+    int ii, kk, ei, mp1, mp12;
+    int* inds0 = topo->elInds0_l(ex, ey);
+    int rows[99];
+    double det;
+    Wii* Q = new Wii(edge->l->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* Aflat = new double[W->nDofsJ*W->nDofsJ];
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+    ei = ey*topo->nElsX + ex;
+
+    MatZeroEntries(M1inv);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+       // incorporate the jacobian transformation for each element
+       Q->assemble(ex, ey);
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Qaa[ii][ii] = Q->A[ii][ii]/det/det;
+            Qaa[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
+        }
+
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Inv(WtQW, WtQWinv, topo->elOrd);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, Aflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(M1inv, W->nDofsJ, rows, W->nDofsJ, rows, Aflat, ADD_VALUES);
+    }
+
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQWinv);
+    delete W;
+    delete Q;
+    delete[] Aflat;
+}
+
+#if 0
 void PrimEqns::AssembleVertOps(int ex, int ey, Mat* M0) {
     int n2 = topo->elOrd*topo->elOrd;
     Mat M1, L, DM0, M1inv, M10;
@@ -1087,7 +1137,6 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat* M0) {
     MatDestroy(&L);
 }
 
-#if 0
 /*
 vertical gravity forcing gradient term (to be assembled 
 into the left hand side as an implicit term)
