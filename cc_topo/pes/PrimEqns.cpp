@@ -806,8 +806,8 @@ void PrimEqns::vertOps() {
 
     MatCreate(MPI_COMM_WORLD, &V10);
     MatSetType(V10, MATSEQAIJ);
-    //MatSetSizes(V10, geom->nk*n2, geom->nk*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
-    MatSetSizes(V10, geom->nk*n2, geom->nk*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    //MatSetSizes(V10, (geom->nk+0)*n2, (geom->nk+1)*n2, (geom->nk+0)*n2, (geom->nk+1)*n2);
+    MatSetSizes(V10, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(V10, 2, PETSC_NULL);
 
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1233,9 +1233,8 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat* M0) {
 
     MatCreate(MPI_COMM_SELF, &M10);
     MatSetType(M10, MATSEQAIJ);
-    //TODO: check the preallocation interface
-    //MatSetSizes(M10, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
-    MatSetSizes(M10, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    //MatSetSizes(M10, (geom->nk+0)*n2, (geom->nk+1)*n2, (geom->nk+0)*n2, (geom->nk+1)*n2);
+    MatSetSizes(M10, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(M10, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     AssembleLinear(ex, ey, *M0, false);
@@ -1260,25 +1259,73 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat* M0) {
 
 void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner) {
     int ii, kk;
-    Vec **Hu1, **Vu1;
+    Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, *velx_h, *rho_h, *theta_h;
 
-    Hu1 = new Vec*[geom->nk];
-    Vu1 = NULL;
+    Hu1 = new Vec[geom->nk];
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+    velx_h  = new Vec[geom->nk];
+    rho_h   = new Vec[geom->nk];
+    theta_h = new Vec[geom->nk];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_h[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_h[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h[kk]);
+    }
 
     // construct the right hand side terms for the first substep
+    // note: do horiztonal rhs first as this assembles the kinetic energy
+    // operator for use in the vertical rhs
     for(kk = 0; kk < geom->nk; kk++) {
-        horizMomRHS(velx[kk], velz, theta, exner[kk], kk, Hu1[kk]);
+        horizMomRHS(velx[kk], velz, theta, exner[kk], kk, &Hu1[kk]);
     }
-    vertMomRHS(velx, velz, theta, exner, Vu1);
+    vertMomRHS(velx, velz, theta, exner, &Vu1);
+
+    massRHS(velx, velz, rho, &Fp1);
+    tempRHS(velx, velz, rho, theta, &Ft1);
+
+    // solve for the half step values
+    for(kk = 0; kk < geom->nk; kk++) {
+        // horizontal momentum
+        VecZeroEntries(bu);
+        VecCopy(velx[kk], bu);
+        VecAXPY(bu, -dt, Hu1[kk]);
+        M1->assemble(kk);
+        KSPSolve(ksp1, bu, velx_h[kk]);
+
+        // density
+        VecZeroEntries(rho_h[kk]);
+        VecCopy(rho[kk], rho_h[kk]);
+        VecAXPY(rho_h[kk], -dt, Fp1[kk]);
+
+        // potential temperature
+        VecZeroEntries(theta_h[kk]);
+        VecCopy(theta[kk], theta_h[kk]);
+        VecAXPY(theta_h[kk], -dt, Ft1[kk]);
+    }
+
+    // exner pressure
+
 
     for(kk = 0; kk < geom->nk; kk++) {
-        VecDestroy(Hu1[kk]);
+        VecDestroy(&Hu1[kk]);
+        VecDestroy(&Fp1[kk]);
+        VecDestroy(&Ft1[kk]);
+        VecDestroy(&velx_h[kk]);
+        VecDestroy(&rho_h[kk]);
+        VecDestroy(&theta_h[kk]);
     }
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecDestroy(Vu1[kk]);
+        VecDestroy(&Vu1[kk]);
     }
     delete[] Hu1;
     delete[] Vu1;
+    delete[] Fp1;
+    delete[] Ft1;
+    delete[] velx_h;
+    delete[] rho_h;
+    delete[] theta_h;
+    VecDestroy(&bu);
 }
 
 #if 0
