@@ -348,12 +348,14 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
 
     MatCreate(MPI_COMM_SELF, &B);
     MatSetType(B, MATSEQAIJ);
-    MatSetSizes(B, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    //MatSetSizes(B, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSetSizes(B, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(B, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     *fw = new Vec[topo->nElsX*topo->nElsX];
     for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*topo->n2, fw[ei]);
+        //VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*topo->n2, fw[ei]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, fw[ei]);
         VecZeroEntries(*fw[ei]);
     }
 
@@ -437,8 +439,10 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
 
     n2 = topo->elOrd*topo->elOrd;
 
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Mpu);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Fv);
+    //VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Mpu);
+    //VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Fv);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
     // allocate the RHS vectors at each level
@@ -456,7 +460,8 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
 
     MatCreate(MPI_COMM_SELF, &Mp);
     MatSetType(Mp, MATSEQAIJ);
-    MatSetSizes(Mp, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    //MatSetSizes(Mp, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSetSizes(Mp, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(Mp, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     KSPCreate(MPI_COMM_SELF, &kspCol);
@@ -542,8 +547,10 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
 
     n2 = topo->elOrd*topo->elOrd;
 
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Mtu);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Fv);
+    //VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Mtu);
+    //VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Fv);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mtu);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
     // allocate the RHS vectors at each level
@@ -561,7 +568,8 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
 
     MatCreate(MPI_COMM_SELF, &Mt);
     MatSetType(Mt, MATSEQAIJ);
-    MatSetSizes(Mt, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    //MatSetSizes(Mt, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSetSizes(Mt, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(Mt, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     KSPCreate(MPI_COMM_SELF, &kspCol);
@@ -798,16 +806,30 @@ void PrimEqns::vertOps() {
 
     MatCreate(MPI_COMM_WORLD, &V10);
     MatSetType(V10, MATSEQAIJ);
-    MatSetSizes(V10, geom->nk*n2, geom->nk*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    //MatSetSizes(V10, geom->nk*n2, geom->nk*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSetSizes(V10, geom->nk*n2, geom->nk*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(V10, 2, PETSC_NULL);
 
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < n2; ii++) {
             rows[0] = kk*n2 + ii;
-            cols[0] = kk*n2 + ii;
-            cols[1] = (kk+1)*n2 + ii;
+            //cols[0] = (kk+0)*n2 + ii;
+            //cols[1] = (kk+1)*n2 + ii;
+            //MatSetValues(V10, 1, rows, 2, cols, vals, INSERT_VALUES);
 
-            MatSetValues(V10, 1, rows, 2, cols, vals, ADD_VALUES);
+            if(kk > 0 && kk < geom->nk - 1) {
+                cols[0] = (kk-1)*n2 + ii;
+                cols[1] = (kk+0)*n2 + ii;
+                MatSetValues(V10, 1, rows, 2, cols, vals, INSERT_VALUES);
+            }
+            else if(kk == 0) { // bottom level
+                cols[0] = ii;
+                MatSetValues(V10, 1, rows, 1, cols, &vals[1], INSERT_VALUES);
+            }
+            else {             // top level
+                cols[0] = (kk-1)*n2 + ii;
+                MatSetValues(V10, 1, rows, 1, cols, &vals[0], INSERT_VALUES);
+            }
         }
     }
     MatAssemblyBegin(V10, MAT_FINAL_ASSEMBLY);
@@ -926,17 +948,22 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M0, bool add_g) {
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
         // assemble the first basis function
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = ii + kk*W->nDofsJ;
+        if(kk > 0) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                //inds2k[ii] = ii + kk*W->nDofsJ;
+                inds2k[ii] = ii + (kk-1)*W->nDofsJ;
+            }
+            MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
         }
-        MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
         // assemble the second basis function
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = ii + (kk+1)*W->nDofsJ;
+        if(kk < geom->nk - 1) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                //inds2k[ii] = ii + (kk+1)*W->nDofsJ;
+                inds2k[ii] = ii + (kk+0)*W->nDofsJ;
+            }
+            MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
         }
-        MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-
     }
     MatAssemblyBegin(M0, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M0, MAT_FINAL_ASSEMBLY);
@@ -999,25 +1026,30 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M0) {
         VecRestoreArray(theta[kk+1], &t2Array);
 
         // assemble the first basis function
-        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QB, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+        if(kk > 0) {
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QB, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = ii + kk*W->nDofsJ;
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                //inds2k[ii] = ii + kk*W->nDofsJ;
+                inds2k[ii] = ii + (kk-1)*W->nDofsJ;
+            }
+            MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
         }
-        MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
         // assemble the second basis function
-        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QT, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+        if(kk < geom->nk - 1) {
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QT, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = ii + (kk+1)*W->nDofsJ;
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                //inds2k[ii] = ii + (kk+1)*W->nDofsJ;
+                inds2k[ii] = ii + (kk+0)*W->nDofsJ;
+            }
+            MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
         }
-        MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-
     }
     MatAssemblyBegin(M0, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M0, MAT_FINAL_ASSEMBLY);
@@ -1084,16 +1116,103 @@ void PrimEqns::VertConstMatInv(int ex, int ey, Mat M1inv) {
     delete[] Aflat;
 }
 
-#if 0
+/*
+derive the vertical mass flux
+*/
+void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
+    int ii, kk, ei, mp1, mp12;
+    int* inds;
+    double det, rho, temp1, temp2;
+    int inds2k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar *pArray, *t1Array, *t2Array;
+
+    inds  = topo->elInds2_g(ex, ey);
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    MatZeroEntries(Mp);
+
+    // assemble the matrices
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        Q->assemble(ex, ey);
+        ei = ey*topo->nElsX + ex;
+        
+        VecGetArray(pi[kk], &pArray);
+        if(ti) {
+            VecGetArray(ti[kk], &t1Array);
+            VecGetArray(ti[kk+1], &t2Array);
+        }
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]/det/det;
+
+            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &rho);
+            Q0[ii][ii] *= rho;
+
+            // multiply by the vertical determinant for the vertical integral,
+            // then divide by the vertical determinant to rescale the piecewise
+            // constant density, so do nothing.
+
+            if(ti) {
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t1Array, &temp1);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t2Array, &temp2);
+                Q0[ii][ii] *= 0.5*(temp1 + temp2);
+            }
+        }
+        VecRestoreArray(pi[kk], &pArray);
+        if(ti) {
+            VecRestoreArray(ti[kk], &t1Array);
+            VecRestoreArray(ti[kk+1], &t2Array);
+        }
+
+        // assemble the piecewise constant mass matrix for level k
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        // assemble the first basis function
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = inds[ii] + kk*W->nDofsJ;
+        }
+        MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+
+        // assemble the second basis function
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = inds[ii] + (kk+1)*W->nDofsJ;
+        }
+        MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+
+    }
+    MatAssemblyBegin(Mp, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(Mp, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}
+
 void PrimEqns::AssembleVertOps(int ex, int ey, Mat* M0) {
     int n2 = topo->elOrd*topo->elOrd;
     Mat M1, L, DM0, M1inv, M10;
 
-    DM0 = NULL;
-
     MatCreate(MPI_COMM_SELF, M0);
     MatSetType(*M0, MATSEQAIJ);
-    MatSetSizes(*M0, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    //MatSetSizes(*M0, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSetSizes(*M0, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(*M0, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &M1);
@@ -1108,35 +1227,61 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat* M0) {
 
     MatCreate(MPI_COMM_SELF, &L);
     MatSetType(L, MATSEQAIJ);
-    MatSetSizes(L, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    //MatSetSizes(L, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSetSizes(L, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(L, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &M10);
     MatSetType(M10, MATSEQAIJ);
     //TODO: check the preallocation interface
-    MatSetSizes(M10, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    //MatSetSizes(M10, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSetSizes(M10, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(M10, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     AssembleLinear(ex, ey, *M0, false);
     AssembleConst(ex, ey, M1);
-    if(!DM0) {
-        MatMatMult(V01, *M0, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DM0);
-    } else {
-        MatMatMult(V01, *M0, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DM0);
-    }
-    //TODO: get the inverse of the M1 matrix (locally on this processor)
+    MatMatMult(V01, *M0, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DM0);
+
+    // get the inverse of the M1 matrix (locally on this processor)
+    VertConstMatInv(ex, ey, M1inv);
 
     MatMatMult(M1inv, DM0, MAT_REUSE_MATRIX, PETSC_DEFAULT, &M10);
     MatMatMult(V10, M10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &L);
 
+    // assemble the piecewise linear mass matrix (with gravity)
     AssembleLinear(ex, ey, *M0, true);
-    //MatAXPY(*M0, vert_visc, L);
+    MatAXPY(*M0, vert_visc, L, SAME_NONZERO_PATTERN);
 
     MatDestroy(&M1);
     MatDestroy(&M1inv);
+    MatDestroy(&M10);
     MatDestroy(&L);
 }
 
+void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner) {
+    int ii, kk;
+    Vec **Hu1, **Vu1;
+
+    Hu1 = new Vec*[geom->nk];
+    Vu1 = NULL;
+
+    // construct the right hand side terms for the first substep
+    for(kk = 0; kk < geom->nk; kk++) {
+        horizMomRHS(velx[kk], velz, theta, exner[kk], kk, Hu1[kk]);
+    }
+    vertMomRHS(velx, velz, theta, exner, Vu1);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecDestroy(Hu1[kk]);
+    }
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecDestroy(Vu1[kk]);
+    }
+    delete[] Hu1;
+    delete[] Vu1;
+}
+
+#if 0
 /*
 vertical gravity forcing gradient term (to be assembled 
 into the left hand side as an implicit term)
@@ -1250,92 +1395,3 @@ void PrimEqns::VerticalKE(int ex, int ey, Vec* kh, Vec* kv) {
     VecRestoreArray(*kv, &kvArray);
 }
 #endif
-
-/*
-derive the vertical mass flux
-*/
-void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
-    int ii, kk, ei, mp1, mp12;
-    int* inds;
-    double det, rho, temp1, temp2;
-    int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    PetscScalar *pArray, *t1Array, *t2Array;
-
-    inds  = topo->elInds2_g(ex, ey);
-    mp1   = quad->n + 1;
-    mp12  = mp1*mp1;
-
-    MatZeroEntries(Mp);
-
-    // assemble the matrices
-    for(kk = 0; kk < geom->nk; kk++) {
-        // build the 2D mass matrix
-        Q->assemble(ex, ey);
-        ei = ey*topo->nElsX + ex;
-        
-        VecGetArray(pi[kk], &pArray);
-        if(ti) {
-            VecGetArray(ti[kk], &t1Array);
-            VecGetArray(ti[kk+1], &t2Array);
-        }
-
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]/det/det;
-
-            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &rho);
-            Q0[ii][ii] *= rho;
-
-            // multiply by the vertical determinant for the vertical integral,
-            // then divide by the vertical determinant to rescale the piecewise
-            // constant density, so do nothing.
-
-            if(ti) {
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t1Array, &temp1);
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t2Array, &temp2);
-                Q0[ii][ii] *= 0.5*(temp1 + temp2);
-            }
-        }
-        VecRestoreArray(pi[kk], &pArray);
-        if(ti) {
-            VecRestoreArray(ti[kk], &t1Array);
-            VecRestoreArray(ti[kk+1], &t2Array);
-        }
-
-        // assemble the piecewise constant mass matrix for level k
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
-        // assemble the first basis function
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = inds[ii] + kk*W->nDofsJ;
-        }
-        MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-
-        // assemble the second basis function
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = inds[ii] + (kk+1)*W->nDofsJ;
-        }
-        MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-
-    }
-    MatAssemblyBegin(Mp, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(Mp, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
-}
