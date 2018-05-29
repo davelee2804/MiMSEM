@@ -1259,7 +1259,7 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat* M0) {
 
 void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner) {
     int ii, kk;
-    Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, *velx_h, *rho_h, *theta_h;
+    Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, *velx_h, *rho_h, *theta_h, *exner_h;
 
     Hu1 = new Vec[geom->nk];
 
@@ -1267,6 +1267,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner) 
     velx_h  = new Vec[geom->nk];
     rho_h   = new Vec[geom->nk];
     theta_h = new Vec[geom->nk];
+    exner_h = new Vec[geom->nk];
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_h[kk]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_h[kk]);
@@ -1302,10 +1303,12 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner) 
         VecZeroEntries(theta_h[kk]);
         VecCopy(theta[kk], theta_h[kk]);
         VecAXPY(theta_h[kk], -dt, Ft1[kk]);
+
+        // exner pressure
+        progExner(rho[kk], rho_h[kk], theta, theta_h, exner[kk], &exner_h[kk], kk);
     }
 
-    // exner pressure
-
+    // construct right hand side terms for the second substep
 
     for(kk = 0; kk < geom->nk; kk++) {
         VecDestroy(&Hu1[kk]);
@@ -1314,6 +1317,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner) 
         VecDestroy(&velx_h[kk]);
         VecDestroy(&rho_h[kk]);
         VecDestroy(&theta_h[kk]);
+        VecDestroy(&exner_h[kk]);
     }
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&Vu1[kk]);
@@ -1325,6 +1329,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner) 
     delete[] velx_h;
     delete[] rho_h;
     delete[] theta_h;
+    delete[] exner_h;
     VecDestroy(&bu);
 }
 
