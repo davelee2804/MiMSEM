@@ -23,6 +23,8 @@ class PrimEqns {
         Uhmat* F;
         WtQUmat* K;
         Vec fg;                                      // coriolis vector (global)
+        Vec theta_b;                                 // bottom potential temperature bc
+        Vec theta_t;                                 // top potential temperature bc
         Vec* Kv;                                     // kinetic energy vector for each horiztonal element
         Mat E01M1;
         Mat E12M2;
@@ -38,13 +40,15 @@ class PrimEqns {
         void laplacian(Vec u, Vec* ddu, int lev);                   // laplacian operator via helmholtz decomposition
         void AssembleConst(int ex, int ey, Mat M0);                 // piecewise constant (in vertical) mass matrix
         void AssembleLinear(int ex, int ey, Mat M1, bool add_g);    // piecewise linear (in vertical) mass matrix
-        void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M1);
+        void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A);
+        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
         void AssembleVertOps(int ex, int ey, Mat M0);
         void VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp);    // vertical mass flux matrix
         void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp);
         void tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft);
         void vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw);
         void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, Vec *Fu);
+        void diagTheta(Vec* rho, Vec* rt, Vec** theta);
         void progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec exner_i, Vec* exner_f, int lev);
         void UpdateKEVert(Vec ke, int lev);
         void VertConstMatInv(int ex, int ey, Mat M1inv);

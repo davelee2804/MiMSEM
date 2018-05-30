@@ -101,6 +101,9 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetOptionsPrefix(ksp2,"2_");
     KSPSetFromOptions(ksp2);
 
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_b);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_t);
+
     Kv = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &Kv[ii]);
@@ -164,6 +167,8 @@ PrimEqns::~PrimEqns() {
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);
     VecDestroy(&fg);
+    VecDestroy(&theta_b);
+    VecDestroy(&theta_t);
 
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&Kv[ii]);
@@ -405,7 +410,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     int ii, kk, ex, ey, n2, *inds2;
     Vec Mpu, Fv, Dv;
     Vec pl, pu, Fi, Dh;
-    Mat Mp, M0;
+    Mat Mp, B;
     PC pc;
     KSP kspCol;
     PetscScalar* dArray, *fArray;
@@ -426,10 +431,10 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     }
 
     // compute the vertical mass fluxes (piecewise linear in the vertical)
-    MatCreate(MPI_COMM_SELF, &M0);
-    MatSetType(M0, MATSEQAIJ);
-    MatSetSizes(M0, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(M0, topo->elOrd*topo->elOrd, PETSC_NULL);
+    MatCreate(MPI_COMM_SELF, &B);
+    MatSetType(B, MATSEQAIJ);
+    MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
+    MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &Mp);
     MatSetType(Mp, MATSEQAIJ);
@@ -438,7 +443,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     MatSeqAIJSetPreallocation(Mp, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     KSPCreate(MPI_COMM_SELF, &kspCol);
-    KSPSetOperators(kspCol, M0, M0);
+    KSPSetOperators(kspCol, B, B);
     KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(kspCol, KSPGMRES);
     KSPGetPC(kspCol,&pc);
@@ -453,7 +458,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
 
             VertFlux(ex, ey, pi, NULL, Mp);
             MatMult(Mp, uv[ey*topo->nElsX+ex], Mpu);
-            AssembleLinear(ex, ey, M0, false);
+            AssembleLinear(ex, ey, B, false);
             KSPSolve(kspCol, Mpu, Fv);
             // strong form vertical divergence
             MatMult(V10, Fv, Dv);
@@ -474,7 +479,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     VecDestroy(&Mpu);
     VecDestroy(&Fv);
     VecDestroy(&Dv);
-    MatDestroy(&M0);
+    MatDestroy(&B);
     MatDestroy(&Mp);
     KSPDestroy(&kspCol);
 
@@ -513,7 +518,7 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     Vec Mtu, Fv, Dv;
     Vec pl, pu, Fi, Dh;
     Vec theta_k, theta_k_l;
-    Mat Mt, M0;
+    Mat Mt, B;
     PC pc;
     KSP kspCol;
     PetscScalar* dArray, *fArray;
@@ -534,10 +539,10 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     }
 
     // compute the vertical mass fluxes (piecewise linear in the vertical)
-    MatCreate(MPI_COMM_SELF, &M0);
-    MatSetType(M0, MATSEQAIJ);
-    MatSetSizes(M0, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(M0, topo->elOrd*topo->elOrd, PETSC_NULL);
+    MatCreate(MPI_COMM_SELF, &B);
+    MatSetType(B, MATSEQAIJ);
+    MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
+    MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &Mt);
     MatSetType(Mt, MATSEQAIJ);
@@ -546,7 +551,7 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     MatSeqAIJSetPreallocation(Mt, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     KSPCreate(MPI_COMM_SELF, &kspCol);
-    KSPSetOperators(kspCol, M0, M0);
+    KSPSetOperators(kspCol, B, B);
     KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(kspCol, KSPGMRES);
     KSPGetPC(kspCol,&pc);
@@ -561,7 +566,7 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
 
             VertFlux(ex, ey, pi, theta, Mt);
             MatMult(Mt, uv[ey*topo->nElsX+ex], Mtu);
-            AssembleLinear(ex, ey, M0, false);
+            AssembleLinear(ex, ey, B, false);
             KSPSolve(kspCol, Mtu, Fv);
             // strong form vertical divergence
             MatMult(V10, Fv, Dv);
@@ -581,7 +586,7 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     }
     VecDestroy(&Mtu);
     VecDestroy(&Dv);
-    MatDestroy(&M0);
+    MatDestroy(&B);
     MatDestroy(&Mt);
     KSPDestroy(&kspCol);
 
@@ -621,6 +626,45 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
 }
 
 /*
+diagnose theta from rho X theta (with boundary condition)
+*/
+void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec** theta) {
+    int ex, ey, n2;
+    Mat A;
+    PC pc;
+    KSP kspCol;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    *theta = new Vec[topo->nElsX*topo->nElsX];
+
+    MatCreate(MPI_COMM_SELF, &A);
+    MatSetType(A, MATSEQAIJ);
+    MatSetSizes(A, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(A, n2, PETSC_NULL);
+
+    KSPCreate(MPI_COMM_SELF, &kspCol);
+    KSPSetOperators(kspCol, A, A);
+    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspCol, KSPGMRES);
+    KSPGetPC(kspCol, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    KSPSetOptionsPrefix(kspCol,"kspVert_");
+    KSPSetFromOptions(kspCol);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            AssembleLinearWithRho(ex, ey, rho, A);
+        }
+    }
+
+    MatDestroy(&A);
+    KSPDestroy(&kspCol);
+}
+
+
+/*
 prognose the exner pressure
 */
 void PrimEqns::progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec exner_i, Vec* exner_f, int lev) {
@@ -641,7 +685,7 @@ void PrimEqns::progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec e
     KSPGetPC(kspE,&pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
-    KSPSetOptionsPrefix(kspE,"exner_");
+    KSPSetOptionsPrefix(kspE, "exner_");
     KSPSetFromOptions(kspE);
 
     // assemble the right hand side
@@ -819,7 +863,7 @@ void PrimEqns::vertOps() {
 assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and constant basis functions in the vertical
 */
-void PrimEqns::AssembleConst(int ex, int ey, Mat M1) {
+void PrimEqns::AssembleConst(int ex, int ey, Mat B) {
     int ii, kk, ei, mp12;
     int *inds0;
     double det;
@@ -835,7 +879,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat M1) {
     inds0 = topo->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
-    MatZeroEntries(M1);
+    MatZeroEntries(B);
 
     // assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
@@ -861,10 +905,10 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat M1) {
         for(ii = 0; ii < W->nDofsJ; ii++) {
             inds2k[ii] = ii + kk*W->nDofsJ;
         }
-        MatSetValues(M1, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
     }
-    MatAssemblyBegin(M1, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M1, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
 
     Free2D(Q->nDofsI, Q0);
     Free2D(W->nDofsJ, Wt);
@@ -879,7 +923,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat M1) {
 Assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and linear basis functions in the vertical
 */
-void PrimEqns::AssembleLinear(int ex, int ey, Mat M0, bool add_g) {
+void PrimEqns::AssembleLinear(int ex, int ey, Mat A, bool add_g) {
     int ii, kk, ei, mp12;
     int *inds0;
     double det;
@@ -895,7 +939,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M0, bool add_g) {
     inds0 = topo->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
-    MatZeroEntries(M0);
+    MatZeroEntries(A);
 
     // Assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
@@ -926,7 +970,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M0, bool add_g) {
                 //inds2k[ii] = ii + kk*W->nDofsJ;
                 inds2k[ii] = ii + (kk-1)*W->nDofsJ;
             }
-            MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
         }
 
         // assemble the second basis function
@@ -935,11 +979,11 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M0, bool add_g) {
                 //inds2k[ii] = ii + (kk+1)*W->nDofsJ;
                 inds2k[ii] = ii + (kk+0)*W->nDofsJ;
             }
-            MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
         }
     }
-    MatAssemblyBegin(M0, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M0, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
 
     Free2D(Q->nDofsI, Q0);
     Free2D(W->nDofsJ, Wt);
@@ -950,7 +994,78 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat M0, bool add_g) {
     delete W;
 }
 
-void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M0) {
+void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
+    int ii, kk, ei, mp1, mp12;
+    double det, rk;
+    int inds2k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar *rArray;
+
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    MatZeroEntries(A);
+
+    // Assemble the matrices
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        Q->assemble(ex, ey);
+        ei = ey*topo->nElsX + ex;
+        
+        VecGetArray(rho[kk], &rArray);
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]/det/det;
+
+            // multuply by the vertical determinant to integrate, then
+            // divide piecewise constant density by the vertical determinant,
+            // so these cancel
+            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
+            Q0[ii][ii] *= rk;
+        }
+        VecRestoreArray(rho[kk], &rArray);
+
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        // assemble the first basis function
+        if(kk > 0) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                inds2k[ii] = ii + (kk-1)*W->nDofsJ;
+            }
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        }
+
+        // assemble the second basis function
+        if(kk < geom->nk - 1) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                inds2k[ii] = ii + (kk+0)*W->nDofsJ;
+            }
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}
+
+void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A) {
     int ii, kk, ei, mp1, mp12;
     int *inds0;
     double det, t1, t2;
@@ -971,7 +1086,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M0) {
 
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
-    MatZeroEntries(M0);
+    MatZeroEntries(A);
 
     // Assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1008,7 +1123,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M0) {
                 //inds2k[ii] = ii + kk*W->nDofsJ;
                 inds2k[ii] = ii + (kk-1)*W->nDofsJ;
             }
-            MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
         }
 
         // assemble the second basis function
@@ -1021,11 +1136,11 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M0) {
                 //inds2k[ii] = ii + (kk+1)*W->nDofsJ;
                 inds2k[ii] = ii + (kk+0)*W->nDofsJ;
             }
-            MatSetValues(M0, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
         }
     }
-    MatAssemblyBegin(M0, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M0, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
 
     Free2D(Q->nDofsI, QB);
     Free2D(Q->nDofsI, QT);
@@ -1037,7 +1152,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat M0) {
     delete W;
 }
 
-void PrimEqns::VertConstMatInv(int ex, int ey, Mat M1inv) {
+void PrimEqns::VertConstMatInv(int ex, int ey, Mat Binv) {
     int ii, kk, ei, mp1, mp12;
     int* inds0 = topo->elInds0_l(ex, ey);
     int rows[99];
@@ -1055,7 +1170,7 @@ void PrimEqns::VertConstMatInv(int ex, int ey, Mat M1inv) {
     mp12 = mp1*mp1;
     ei = ey*topo->nElsX + ex;
 
-    MatZeroEntries(M1inv);
+    MatZeroEntries(Binv);
 
     for(kk = 0; kk < geom->nk; kk++) {
        // incorporate the jacobian transformation for each element
@@ -1076,7 +1191,7 @@ void PrimEqns::VertConstMatInv(int ex, int ey, Mat M1inv) {
         for(ii = 0; ii < W->nDofsJ; ii++) {
             rows[ii] = ii + kk*W->nDofsJ;
         }
-        MatSetValues(M1inv, W->nDofsJ, rows, W->nDofsJ, rows, Aflat, ADD_VALUES);
+        MatSetValues(Binv, W->nDofsJ, rows, W->nDofsJ, rows, Aflat, ADD_VALUES);
     }
 
     Free2D(Q->nDofsI, Qaa);
@@ -1178,49 +1293,49 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
     delete W;
 }
 
-void PrimEqns::AssembleVertOps(int ex, int ey, Mat M0) {
+void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
     int n2 = topo->elOrd*topo->elOrd;
-    Mat M1, L, DM0, M1inv, M10;
+    Mat B, L, DA, Binv, BA;
 
-    MatCreate(MPI_COMM_SELF, &M1);
-    MatSetType(M1, MATSEQAIJ);
-    MatSetSizes(M1, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(M1, topo->elOrd*topo->elOrd, PETSC_NULL);
+    MatCreate(MPI_COMM_SELF, &B);
+    MatSetType(B, MATSEQAIJ);
+    MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
+    MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
-    MatCreate(MPI_COMM_SELF, &M1inv);
-    MatSetType(M1inv, MATSEQAIJ);
-    MatSetSizes(M1inv, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(M1inv, topo->elOrd*topo->elOrd, PETSC_NULL);
+    MatCreate(MPI_COMM_SELF, &Binv);
+    MatSetType(Binv, MATSEQAIJ);
+    MatSetSizes(Binv, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
+    MatSeqAIJSetPreallocation(Binv, n2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &L);
     MatSetType(L, MATSEQAIJ);
     //MatSetSizes(L, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
     MatSetSizes(L, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(L, topo->elOrd*topo->elOrd, PETSC_NULL);
+    MatSeqAIJSetPreallocation(L, n2, PETSC_NULL);
 
-    MatCreate(MPI_COMM_SELF, &M10);
-    MatSetType(M10, MATSEQAIJ);
-    //MatSetSizes(M10, (geom->nk+0)*n2, (geom->nk+1)*n2, (geom->nk+0)*n2, (geom->nk+1)*n2);
-    MatSetSizes(M10, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(M10, topo->elOrd*topo->elOrd, PETSC_NULL);
+    MatCreate(MPI_COMM_SELF, &BA);
+    MatSetType(BA, MATSEQAIJ);
+    //MatSetSizes(BA, (geom->nk+0)*n2, (geom->nk+1)*n2, (geom->nk+0)*n2, (geom->nk+1)*n2);
+    MatSetSizes(BA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(BA, n2, PETSC_NULL);
 
-    AssembleLinear(ex, ey, M0, false);
-    AssembleConst(ex, ey, M1);
-    MatMatMult(V01, M0, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DM0);
+    AssembleLinear(ex, ey, A, false);
+    AssembleConst(ex, ey, B);
+    MatMatMult(V01, A, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DA);
 
-    // get the inverse of the M1 matrix (locally on this processor)
-    VertConstMatInv(ex, ey, M1inv);
+    // get the inverse of the B matrix (locally on this processor)
+    VertConstMatInv(ex, ey, Binv);
 
-    MatMatMult(M1inv, DM0, MAT_REUSE_MATRIX, PETSC_DEFAULT, &M10);
-    MatMatMult(V10, M10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &L);
+    MatMatMult(Binv, DA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &BA);
+    MatMatMult(V10, BA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &L);
 
     // assemble the piecewise linear mass matrix (with gravity)
-    AssembleLinear(ex, ey, M0, true);
-    MatAXPY(M0, vert_visc, L, SAME_NONZERO_PATTERN);
+    AssembleLinear(ex, ey, A, true);
+    MatAXPY(A, vert_visc, L, SAME_NONZERO_PATTERN);
 
-    MatDestroy(&M1);
-    MatDestroy(&M1inv);
-    MatDestroy(&M10);
+    MatDestroy(&B);
+    MatDestroy(&Binv);
+    MatDestroy(&BA);
     MatDestroy(&L);
 }
 
@@ -1229,7 +1344,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, 
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *theta_h, *exner_h, bu, bw, wi;
     Vec *Hu2, *Vu2, *Fp2, *Ft2, *rho_i, *theta_i, *exner_i, exner_f;
-    Mat M0;
+    Mat A;
     PC pc;
     KSP kspCol;
 
@@ -1261,14 +1376,14 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, 
         VecCopy(exner[kk], exner_i[kk]);
     }
 
-    MatCreate(MPI_COMM_SELF, &M0);
-    MatSetType(M0, MATSEQAIJ);
-    //MatSetSizes(M0, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
-    MatSetSizes(M0, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(M0, topo->elOrd*topo->elOrd, PETSC_NULL);
+    MatCreate(MPI_COMM_SELF, &A);
+    MatSetType(A, MATSEQAIJ);
+    //MatSetSizes(A, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSetSizes(A, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(A, n2, PETSC_NULL);
 
     KSPCreate(MPI_COMM_SELF, &kspCol);
-    KSPSetOperators(kspCol, M0, M0);
+    KSPSetOperators(kspCol, A, A);
     KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(kspCol, KSPGMRES);
     KSPGetPC(kspCol,&pc);
@@ -1316,7 +1431,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, 
             ii = ey*topo->nElsX + ex;
             VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, &velz_h[ii]);
 
-            AssembleVertOps(ex, ey, M0);
+            AssembleVertOps(ex, ey, A);
             VecZeroEntries(bw);
             VecCopy(velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
@@ -1365,7 +1480,20 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, 
         VecDestroy(&exner_f);
     }
 
-    // TODO: solve for the vertical velocity
+    // solve for the vertical velocity
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ii = ey*topo->nElsX + ex;
+
+            AssembleVertOps(ex, ey, A);
+            VecZeroEntries(bw);
+            VecCopy(velz[ii], bw);
+            VecAXPY(bw, -0.5*dt, Vu1[ii]);
+            VecAXPY(bw, -0.5*dt, Vu2[ii]);
+            VecZeroEntries(velz[ii]);
+            KSPSolve(kspCol, bw, velz[ii]);
+        }
+    }
 
     // write output
     if(save) {
@@ -1427,7 +1555,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, 
     delete[] velz_h;
     VecDestroy(&bw);
     VecDestroy(&bu);
-    MatDestroy(&M0);
+    MatDestroy(&A);
     KSPDestroy(&kspCol);
 }
 
