@@ -156,33 +156,6 @@ void PrimEqns::coriolis() {
     VecDestroy(&PtQfxg);
 }
 
-// RK2 time integrator
-void PrimEqns::solve_RK2(Vec wi, Vec di, Vec hi, Vec wf, Vec df, Vec hf, double dt, bool save) {
-    int rank;
-    char fieldname[20];
-
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    /*** half step ***/
-    if(!rank) cout << "half step..." << endl;
-
-    /*** full step ***/
-    if(!rank) cout << "full step..." << endl;
-
-    if(!rank) cout << "...done." << endl;
-
-    // write fields
-    if(save) {
-        step++;
-        sprintf(fieldname, "vorticity");
-        geom->write0(wf, fieldname, step);
-        sprintf(fieldname, "divergence");
-        geom->write1(df, fieldname, step);
-        sprintf(fieldname, "pressure");
-        geom->write2(hf, fieldname, step);
-    }
-}
-
 PrimEqns::~PrimEqns() {
     int ii;
 
@@ -360,8 +333,8 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
     }
 
     VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &de1);
-    VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &de2);
-    VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &de3);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, &de2);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, &de3);
     VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &dp);
     VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &exner_v);
 
@@ -1205,15 +1178,9 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
     delete W;
 }
 
-void PrimEqns::AssembleVertOps(int ex, int ey, Mat* M0) {
+void PrimEqns::AssembleVertOps(int ex, int ey, Mat M0) {
     int n2 = topo->elOrd*topo->elOrd;
     Mat M1, L, DM0, M1inv, M10;
-
-    MatCreate(MPI_COMM_SELF, M0);
-    MatSetType(*M0, MATSEQAIJ);
-    //MatSetSizes(*M0, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
-    MatSetSizes(*M0, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(*M0, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &M1);
     MatSetType(M1, MATSEQAIJ);
@@ -1237,9 +1204,9 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat* M0) {
     MatSetSizes(M10, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(M10, topo->elOrd*topo->elOrd, PETSC_NULL);
 
-    AssembleLinear(ex, ey, *M0, false);
+    AssembleLinear(ex, ey, M0, false);
     AssembleConst(ex, ey, M1);
-    MatMatMult(V01, *M0, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DM0);
+    MatMatMult(V01, M0, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DM0);
 
     // get the inverse of the M1 matrix (locally on this processor)
     VertConstMatInv(ex, ey, M1inv);
@@ -1248,8 +1215,8 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat* M0) {
     MatMatMult(V10, M10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &L);
 
     // assemble the piecewise linear mass matrix (with gravity)
-    AssembleLinear(ex, ey, *M0, true);
-    MatAXPY(*M0, vert_visc, L, SAME_NONZERO_PATTERN);
+    AssembleLinear(ex, ey, M0, true);
+    MatAXPY(M0, vert_visc, L, SAME_NONZERO_PATTERN);
 
     MatDestroy(&M1);
     MatDestroy(&M1inv);
@@ -1257,22 +1224,58 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat* M0) {
     MatDestroy(&L);
 }
 
-void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner) {
-    int ii, kk;
-    Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, *velx_h, *rho_h, *theta_h, *exner_h;
+void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, bool save) {
+    int ii, kk, ex, ey, n2;
+    char fieldname[100];
+    Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *theta_h, *exner_h, bu, bw, wi;
+    Vec *Hu2, *Vu2, *Fp2, *Ft2, *rho_i, *theta_i, *exner_i, exner_f;
+    Mat M0;
+    PC pc;
+    KSP kspCol;
+
+    n2 = topo->elOrd*topo->elOrd;
 
     Hu1 = new Vec[geom->nk];
+    Hu2 = new Vec[geom->nk];
 
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, &bw);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
     velx_h  = new Vec[geom->nk];
     rho_h   = new Vec[geom->nk];
     theta_h = new Vec[geom->nk];
     exner_h = new Vec[geom->nk];
+    rho_i   = new Vec[geom->nk];
+    theta_i = new Vec[geom->nk];
+    exner_i = new Vec[geom->nk];
+    velz_h  = new Vec[topo->nElsX*topo->nElsX];
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_h[kk]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_h[kk]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_i[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_i[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner_i[kk]);
+        // temporary vectors for use in exner pressure prognosis
+        VecCopy(rho[kk],   rho_i[kk]);
+        VecCopy(theta[kk], theta_i[kk]);
+        VecCopy(exner[kk], exner_i[kk]);
     }
+
+    MatCreate(MPI_COMM_SELF, &M0);
+    MatSetType(M0, MATSEQAIJ);
+    //MatSetSizes(M0, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
+    MatSetSizes(M0, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(M0, topo->elOrd*topo->elOrd, PETSC_NULL);
+
+    KSPCreate(MPI_COMM_SELF, &kspCol);
+    KSPSetOperators(kspCol, M0, M0);
+    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspCol, KSPGMRES);
+    KSPGetPC(kspCol,&pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    KSPSetOptionsPrefix(kspCol,"kspVert_");
+    KSPSetFromOptions(kspCol);
 
     // construct the right hand side terms for the first substep
     // note: do horiztonal rhs first as this assembles the kinetic energy
@@ -1281,7 +1284,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner) 
         horizMomRHS(velx[kk], velz, theta, exner[kk], kk, &Hu1[kk]);
     }
     vertMomRHS(velx, velz, theta, exner, &Vu1);
-
     massRHS(velx, velz, rho, &Fp1);
     tempRHS(velx, velz, rho, theta, &Ft1);
 
@@ -1308,29 +1310,125 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner) 
         progExner(rho[kk], rho_h[kk], theta, theta_h, exner[kk], &exner_h[kk], kk);
     }
 
-    // construct right hand side terms for the second substep
+    // solve for the vertical velocity
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ii = ey*topo->nElsX + ex;
+            VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, &velz_h[ii]);
 
+            AssembleVertOps(ex, ey, M0);
+            VecZeroEntries(bw);
+            VecCopy(velz[ii], bw);
+            VecAXPY(bw, -dt, Vu1[ii]);
+            KSPSolve(kspCol, bw, velz_h[ii]);
+        }
+    }
+
+    // construct right hand side terms for the second substep
+    for(kk = 0; kk < geom->nk; kk++) {
+        horizMomRHS(velx_h[kk], velz_h, theta_h, exner_h[kk], kk, &Hu2[kk]);
+    }
+    vertMomRHS(velx_h, velz_h, theta_h, exner_h, &Vu2);
+    massRHS(velx_h, velz_h, rho_h, &Fp2);
+    tempRHS(velx_h, velz_h, rho_h, theta_h, &Ft2);
+
+    // solve for the full step values
+    for(kk = 0; kk < geom->nk; kk++) {
+        // horizontal momentum
+        VecZeroEntries(bu);
+        VecCopy(velx[kk], bu);
+        VecAXPY(bu, -0.5*dt, Hu1[kk]);
+        VecAXPY(bu, -0.5*dt, Hu2[kk]);
+        M1->assemble(kk);
+        VecZeroEntries(velx[kk]);
+        KSPSolve(ksp1, bu, velx[kk]);
+
+        // density
+        VecAXPY(rho[kk], -0.5*dt, Fp1[kk]);
+        VecAXPY(rho[kk], -0.5*dt, Fp2[kk]);
+
+        // potential temperature
+        VecAXPY(theta[kk], -0.5*dt, Ft1[kk]);
+        VecAXPY(theta[kk], -0.5*dt, Ft2[kk]);
+
+        // exner pressure (second order)
+        if(kk == 0) {
+            VecScale(theta_i[kk], 0.5);
+            VecAXPY(theta_i[kk], 0.5, theta_h[kk]);
+        }
+        VecScale(rho_i[kk],   0.5);
+        VecScale(exner_i[kk], 0.5);
+        VecAXPY(rho_i[kk],   0.5, rho_h[kk]);
+        VecAXPY(exner_i[kk], 0.5, exner_h[kk]);
+        progExner(rho_i[kk], rho[kk], theta_i, theta, exner_i[kk], &exner_f, kk);
+        VecCopy(exner_f, exner[kk]);
+        VecDestroy(&exner_f);
+    }
+
+    // TODO: solve for the vertical velocity
+
+    // write output
+    if(save) {
+        step++;
+        for(kk = 0; kk < geom->nk; kk++) {
+            curl(velx[kk], &wi, kk, false);
+
+            sprintf(fieldname, "vorticity_%.3u", kk);
+            geom->write0(wi, fieldname, step);
+            sprintf(fieldname, "velocity_%.3u",  kk);
+            geom->write1(velx[kk], fieldname, step);
+            sprintf(fieldname, "density_%.3u",  kk);
+            geom->write2(rho[kk], fieldname, step);
+            sprintf(fieldname, "theta_%.3u",  kk);
+            geom->write2(theta[kk], fieldname, step);
+            sprintf(fieldname, "exner_%.3u",  kk);
+            geom->write2(exner[kk], fieldname, step);
+
+            VecDestroy(&wi);
+        }
+    }
+
+    // deallocate
     for(kk = 0; kk < geom->nk; kk++) {
         VecDestroy(&Hu1[kk]);
         VecDestroy(&Fp1[kk]);
         VecDestroy(&Ft1[kk]);
+        VecDestroy(&Hu2[kk]);
+        VecDestroy(&Fp2[kk]);
+        VecDestroy(&Ft2[kk]);
         VecDestroy(&velx_h[kk]);
         VecDestroy(&rho_h[kk]);
         VecDestroy(&theta_h[kk]);
         VecDestroy(&exner_h[kk]);
+        VecDestroy(&rho_i[kk]);
+        VecDestroy(&theta_i[kk]);
+        VecDestroy(&exner_i[kk]);
     }
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecDestroy(&Vu1[kk]);
+        VecDestroy(&Vu1[ii]);
+        VecDestroy(&Vu2[ii]);
+        VecDestroy(&velz_h[ii]);
     }
     delete[] Hu1;
     delete[] Vu1;
     delete[] Fp1;
     delete[] Ft1;
+    delete[] Hu2;
+    delete[] Vu2;
+    delete[] Fp2;
+    delete[] Ft2;
     delete[] velx_h;
     delete[] rho_h;
     delete[] theta_h;
     delete[] exner_h;
+    delete[] rho_i;
+    delete[] theta_i;
+    delete[] exner_i;
+    delete[] velz_h;
+    VecDestroy(&bw);
     VecDestroy(&bu);
+    MatDestroy(&M0);
+    KSPDestroy(&kspCol);
 }
 
 #if 0
