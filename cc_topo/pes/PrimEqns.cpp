@@ -804,6 +804,44 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec** theta) {
 /*
 prognose the exner pressure
 */
+void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev) {
+    Vec rt_l, rhs;
+    PC pc;
+    KSP kspE;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rt_l);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, exner_f);
+
+    KSPCreate(MPI_COMM_WORLD, &kspE);
+    KSPSetOperators(kspE, F->M, F->M);
+    KSPSetTolerances(kspE, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspE, KSPGMRES);
+    KSPGetPC(kspE,&pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
+    KSPSetOptionsPrefix(kspE, "exner_");
+    KSPSetFromOptions(kspE);
+
+    // assemble the right hand side
+    VecScatterBegin(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
+
+    F->assemble(rt_l, NULL, lev, true);
+    MatMult(F->M, exner_i, rhs);
+
+    // assemble the nonlinear operator
+    VecScatterBegin(topo->gtol_2, rt_f, rt_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, rt_f, rt_l, INSERT_VALUES, SCATTER_FORWARD);
+
+    F->assemble(rt_l, NULL, lev, true);
+    KSPSolve(kspE, rhs, *exner_f);
+
+    VecDestroy(&rt_l);
+    VecDestroy(&rhs);
+    KSPDestroy(&kspE);
+}
+#if 0
 void PrimEqns::progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec exner_i, Vec* exner_f, int lev) {
     Vec rho_l, theta_k, theta_k_l, rhs;
     PC pc;
@@ -857,6 +895,7 @@ void PrimEqns::progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec e
     VecDestroy(&rhs);
     KSPDestroy(&kspE);
 }
+#endif
 
 /*
 Take the weak form gradient of a 2 form scalar field as a 1 form vector field
@@ -1544,6 +1583,224 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
     MatDestroy(&L);
 }
 
+// note: rho X theta must include the theta boundary conditions
+void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
+    int ii, kk, ex, ey, n2;
+    char fieldname[100];
+    Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *rt_h, *exner_h, bu, bw, wi;
+    Vec *Hu2, *Vu2, *Fp2, *Ft2, *rho_i, *rt_i, *exner_i, exner_f, *theta;
+    Mat A;
+    PC pc;
+    KSP kspCol;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    Hu1 = new Vec[geom->nk];
+    Hu2 = new Vec[geom->nk];
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, &bw);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+    velx_h  = new Vec[geom->nk];
+    rho_h   = new Vec[geom->nk];
+    rt_h    = new Vec[geom->nk];
+    exner_h = new Vec[geom->nk];
+    rho_i   = new Vec[geom->nk];
+    rt_i    = new Vec[geom->nk];
+    exner_i = new Vec[geom->nk];
+    velz_h  = new Vec[topo->nElsX*topo->nElsX];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_h[kk] );
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_h[kk]  );
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt_h[kk]   );
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_i[kk]  );
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt_i[kk]   );
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner_i[kk]);
+        // temporary vectors for use in exner pressure prognosis
+        VecCopy(rho[kk]  , rho_i[kk]  );
+        VecCopy(rt[kk]   , rt_i[kk]   );
+        VecCopy(exner[kk], exner_i[kk]);
+    }
+
+    MatCreate(MPI_COMM_SELF, &A);
+    MatSetType(A, MATSEQAIJ);
+    MatSetSizes(A, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(A, n2, PETSC_NULL);
+
+    KSPCreate(MPI_COMM_SELF, &kspCol);
+    KSPSetOperators(kspCol, A, A);
+    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspCol, KSPGMRES);
+    KSPGetPC(kspCol,&pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    KSPSetOptionsPrefix(kspCol,"kspVert_");
+    KSPSetFromOptions(kspCol);
+
+    // construct the right hand side terms for the first substep
+    // note: do horiztonal rhs first as this assembles the kinetic energy
+    // operator for use in the vertical rhs
+    diagTheta(rho, rt, &theta);
+    for(kk = 0; kk < geom->nk; kk++) {
+        horizMomRHS(velx[kk], velz, theta, exner[kk], kk, &Hu1[kk]);
+    }
+    vertMomRHS(velx, velz, theta, exner, &Vu1);
+    massRHS(velx, velz, rho, &Fp1);
+    massRHS(velx, velz, rt,  &Ft1);
+
+    // solve for the half step values
+    for(kk = 0; kk < geom->nk; kk++) {
+        // horizontal momentum
+        VecZeroEntries(bu);
+        VecCopy(velx[kk], bu);
+        VecAXPY(bu, -dt, Hu1[kk]);
+        M1->assemble(kk);
+        KSPSolve(ksp1, bu, velx_h[kk]);
+
+        // density
+        VecZeroEntries(rho_h[kk]);
+        VecCopy(rho_i[kk], rho_h[kk]);
+        VecAXPY(rho_h[kk], -dt, Fp1[kk]);
+
+        // potential temperature
+        VecZeroEntries(rt_h[kk]);
+        VecCopy(rt_i[kk], rt_h[kk]);
+        VecAXPY(rt_h[kk], -dt, Ft1[kk]);
+
+        // exner pressure
+        progExner(rt_i[kk], rt_h[kk], exner[kk], &exner_h[kk], kk);
+    }
+
+    // solve for the vertical velocity
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ii = ey*topo->nElsX + ex;
+            VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, &velz_h[ii]);
+
+            AssembleVertOps(ex, ey, A);
+            VecZeroEntries(bw);
+            VecCopy(velz[ii], bw);
+            VecAXPY(bw, -dt, Vu1[ii]);
+            KSPSolve(kspCol, bw, velz_h[ii]);
+        }
+    }
+
+    // construct right hand side terms for the second substep
+    diagTheta(rho_h, rt_h, &theta);
+    for(kk = 0; kk < geom->nk; kk++) {
+        horizMomRHS(velx_h[kk], velz_h, theta, exner_h[kk], kk, &Hu2[kk]);
+    }
+    vertMomRHS(velx_h, velz_h, theta, exner_h, &Vu2);
+    massRHS(velx_h, velz_h, rho_h, &Fp2);
+    massRHS(velx_h, velz_h, rt_h,  &Ft2);
+
+    // solve for the full step values
+    for(kk = 0; kk < geom->nk; kk++) {
+        // horizontal momentum
+        VecZeroEntries(bu);
+        VecCopy(velx[kk], bu);
+        VecAXPY(bu, -0.5*dt, Hu1[kk]);
+        VecAXPY(bu, -0.5*dt, Hu2[kk]);
+        M1->assemble(kk);
+        VecZeroEntries(velx[kk]);
+        KSPSolve(ksp1, bu, velx[kk]);
+
+        // density
+        VecAXPY(rho[kk], -0.5*dt, Fp1[kk]);
+        VecAXPY(rho[kk], -0.5*dt, Fp2[kk]);
+
+        // potential temperature
+        VecAXPY(rt[kk], -0.5*dt, Ft1[kk]);
+        VecAXPY(rt[kk], -0.5*dt, Ft2[kk]);
+
+        // exner pressure (second order)
+        VecScale(rt_i[kk]   , 0.5);
+        VecScale(exner_i[kk], 0.5);
+        VecAXPY(rt_i[kk]   , 0.5, rt_h[kk]   );
+        VecAXPY(exner_i[kk], 0.5, exner_h[kk]);
+        progExner(rt_i[kk], rt[kk], exner_i[kk], &exner_f, kk);
+        VecCopy(exner_f, exner[kk]);
+        VecDestroy(&exner_f);
+    }
+
+    // solve for the vertical velocity
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ii = ey*topo->nElsX + ex;
+
+            AssembleVertOps(ex, ey, A);
+            VecZeroEntries(bw);
+            VecCopy(velz[ii], bw);
+            VecAXPY(bw, -0.5*dt, Vu1[ii]);
+            VecAXPY(bw, -0.5*dt, Vu2[ii]);
+            VecZeroEntries(velz[ii]);
+            KSPSolve(kspCol, bw, velz[ii]);
+        }
+    }
+
+    // write output
+    if(save) {
+        step++;
+        for(kk = 0; kk < geom->nk; kk++) {
+            curl(velx[kk], &wi, kk, false);
+
+            sprintf(fieldname, "vorticity_%.3u", kk);
+            geom->write0(wi, fieldname, step);
+            sprintf(fieldname, "velocity_%.3u",  kk);
+            geom->write1(velx[kk], fieldname, step);
+            sprintf(fieldname, "density_%.3u",  kk);
+            geom->write2(rho[kk], fieldname, step);
+            sprintf(fieldname, "rho_theta_%.3u",  kk);
+            geom->write2(rt[kk], fieldname, step);
+            sprintf(fieldname, "exner_%.3u",  kk);
+            geom->write2(exner[kk], fieldname, step);
+
+            VecDestroy(&wi);
+        }
+    }
+
+    // deallocate
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecDestroy(&Hu1[kk]);
+        VecDestroy(&Fp1[kk]);
+        VecDestroy(&Ft1[kk]);
+        VecDestroy(&Hu2[kk]);
+        VecDestroy(&Fp2[kk]);
+        VecDestroy(&Ft2[kk]);
+        VecDestroy(&velx_h[kk]);
+        VecDestroy(&rho_h[kk]);
+        VecDestroy(&rt_h[kk]);
+        VecDestroy(&exner_h[kk]);
+        VecDestroy(&rho_i[kk]);
+        VecDestroy(&rt_i[kk]);
+        VecDestroy(&exner_i[kk]);
+    }
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecDestroy(&Vu1[ii]);
+        VecDestroy(&Vu2[ii]);
+        VecDestroy(&velz_h[ii]);
+    }
+    delete[] Hu1;
+    delete[] Vu1;
+    delete[] Fp1;
+    delete[] Ft1;
+    delete[] Hu2;
+    delete[] Vu2;
+    delete[] Fp2;
+    delete[] Ft2;
+    delete[] velx_h;
+    delete[] rho_h;
+    delete[] rt_h;
+    delete[] exner_h;
+    delete[] rho_i;
+    delete[] rt_i;
+    delete[] exner_i;
+    delete[] velz_h;
+    VecDestroy(&bw);
+    VecDestroy(&bu);
+    MatDestroy(&A);
+    KSPDestroy(&kspCol);
+}
+#if 0
 void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, bool save) {
     int ii, kk, ex, ey, n2;
     char fieldname[100];
@@ -1673,8 +1930,10 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, 
 
         // exner pressure (second order)
         if(kk == 0) {
-            VecScale(theta_i[kk], 0.5);
-            VecAXPY(theta_i[kk], 0.5, theta_h[kk]);
+            for(ii = 0; ii < geom->nk; ii++) {
+                VecScale(theta_i[ii], 0.5);
+                VecAXPY(theta_i[ii], 0.5, theta_h[ii]);
+            }
         }
         VecScale(rho_i[kk],   0.5);
         VecScale(exner_i[kk], 0.5);
@@ -1763,6 +2022,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, 
     MatDestroy(&A);
     KSPDestroy(&kspCol);
 }
+#endif
 
 void PrimEqns::VertToHoriz2(int ex, int ey, Vec pv, Vec* ph) {
     int ii, kk, n2;

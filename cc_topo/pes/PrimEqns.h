@@ -51,7 +51,7 @@ class PrimEqns {
         void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, Vec *Fu);
         void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta);
         void diagTheta(Vec* rho, Vec* rt, Vec** theta);
-        void progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec exner_i, Vec* exner_f, int lev);
+        void progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev);
         void UpdateKEVert(Vec ke, int lev);
         void VertConstMatInv(int ex, int ey, Mat M1inv);
         void VertToHoriz2(int ex, int ey, Vec pv, Vec* ph);
