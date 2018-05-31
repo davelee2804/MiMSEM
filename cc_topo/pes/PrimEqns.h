@@ -38,8 +38,9 @@ class PrimEqns {
         void grad(Vec phi, Vec* u, int lev);                        // weak form grad operator
         void curl(Vec u, Vec* w, int lev, bool add_f);              // weak form curl operator
         void laplacian(Vec u, Vec* ddu, int lev);                   // laplacian operator via helmholtz decomposition
-        void AssembleConst(int ex, int ey, Mat M0);                 // piecewise constant (in vertical) mass matrix
-        void AssembleLinear(int ex, int ey, Mat M1, bool add_g);    // piecewise linear (in vertical) mass matrix
+        void AssembleConst(int ex, int ey, Mat A);                 // piecewise constant (in vertical) mass matrix
+        void AssembleLinear(int ex, int ey, Mat B, bool add_g);    // piecewise linear (in vertical) mass matrix
+        void AssembleLinCon(int ex, int ey, Mat AB);
         void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A);
         void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
         void AssembleVertOps(int ex, int ey, Mat M0);
@@ -52,5 +53,7 @@ class PrimEqns {
         void progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec exner_i, Vec* exner_f, int lev);
         void UpdateKEVert(Vec ke, int lev);
         void VertConstMatInv(int ex, int ey, Mat M1inv);
+        void VertToHoriz2(int ex, int ey, Vec pv, Vec* ph);
+        void HorizToVert2(int ex, int ey, Vec* ph, Vec pv);
         void SolveRK2(Vec* velx, Vec* velw, Vec* rho, Vec* theta, Vec* exner, bool save);
 };
