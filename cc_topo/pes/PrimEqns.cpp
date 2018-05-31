@@ -625,11 +625,122 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
 }
 
 /*
+Assemble the boundary condition vector for rho(t) X theta(0)
+*/
+void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
+    int* inds2 = topo->elInds2_l(ex, ey);
+    int ii, ei, mp1, mp12, n2;
+    double det, rk;
+    int inds2k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar *rArray, *vArray, *hArray;
+    Vec theta_o;
+
+    ei    = ey*topo->nElsX + ex;
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+    n2    = topo->elOrd*topo->elOrd;
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &theta_o);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, bTheta);
+
+    MatZeroEntries(A);
+
+    // top boundary
+    Q->assemble(ex, ey);
+        
+    VecGetArray(rho[0], &rArray);
+    for(ii = 0; ii < mp12; ii++) {
+        det = geom->det[ei][ii];
+        Q0[ii][ii] = Q->A[ii][ii]/det/det;
+
+        // multuply by the vertical determinant to integrate, then
+        // divide piecewise constant density by the vertical determinant,
+        // so these cancel
+        geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
+        Q0[ii][ii] *= rk;
+    }
+    VecRestoreArray(rho[0], &rArray);
+
+    Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+    for(ii = 0; ii < W->nDofsJ; ii++) {
+        inds2k[ii] = ii + 0*W->nDofsJ;
+    }
+    MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+
+    // bottom boundary
+    Q->assemble(ex, ey);
+        
+    VecGetArray(rho[geom->nk-1], &rArray);
+    for(ii = 0; ii < mp12; ii++) {
+        det = geom->det[ei][ii];
+        Q0[ii][ii] = Q->A[ii][ii]/det/det;
+
+        // multuply by the vertical determinant to integrate, then
+        // divide piecewise constant density by the vertical determinant,
+        // so these cancel
+        geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
+        Q0[ii][ii] *= rk;
+    }
+    VecRestoreArray(rho[geom->nk-1], &rArray);
+
+    Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+    for(ii = 0; ii < W->nDofsJ; ii++) {
+        inds2k[ii] = ii + (geom->nk-1)*W->nDofsJ;
+    }
+    MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+
+    // assemble the theta bc vector
+    VecGetArray(theta_o, &vArray);
+    // top
+    VecGetArray(theta_t, &hArray);
+    for(ii = 0; ii < n2; ii++) {
+        vArray[ii] = hArray[inds2[ii]];
+    }
+    VecRestoreArray(theta_t, &hArray);
+    // bottom
+    VecGetArray(theta_b, &hArray);
+    for(ii = 0; ii < n2; ii++) {
+        vArray[(geom->nk-1)*n2+ii] = hArray[inds2[ii]];
+    }
+    VecRestoreArray(theta_b, &hArray);
+    VecRestoreArray(theta_o, &vArray);
+
+    MatMult(A, theta_o, *bTheta);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+    VecDestroy(&theta_o);
+}
+
+/*
 diagnose theta from rho X theta (with boundary condition)
 */
 void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec** theta) {
     int ex, ey, n2, kk;
-    Vec rtv, frt, theta_v;
+    Vec rtv, frt, theta_v, bcs;
     Mat A, AB;
     PC pc;
     KSP kspCol;
@@ -671,11 +782,14 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec** theta) {
             AssembleLinCon(ex, ey, AB);
 
             // construct horiztonal rho theta field
-            // TODO: remove boundary conditions
             HorizToVert2(ex, ey, rt, rtv);
             MatMult(AB, rtv, frt);
+            // assemble in the bcs
+            thetaBCVec(ex, ey, A, rho, &bcs);
+            VecAXPY(frt, -1.0, bcs);
             KSPSolve(kspCol, frt, theta_v);
             VertToHoriz2(ex, ey, theta_v, *theta);
+            VecDestroy(&bcs);
         }
     }
 
