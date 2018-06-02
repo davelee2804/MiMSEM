@@ -22,6 +22,7 @@
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
 #define GRAVITY 9.80616
+#define OMEGA 7.29212e-5
 
 using namespace std;
 
@@ -33,8 +34,8 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     topo = _topo;
     geom = _geom;
 
-    grav = 9.80616*(RAD_SPHERE/RAD_EARTH);
-    omega = 7.292e-5;
+    grav = GRAVITY*(RAD_SPHERE/RAD_EARTH);
+    omega = OMEGA;
     del2 = viscosity();
     do_visc = true;
     vert_visc = 1.0; //TODO

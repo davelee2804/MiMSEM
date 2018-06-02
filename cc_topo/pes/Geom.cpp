@@ -19,7 +19,7 @@ using std::string;
 //#define WITH_HDF5
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
-#define MAX_HEIGHT 50000.0
+#define MAX_HEIGHT 50000.0//TODO: find from IC
 
 Geom::Geom(int _pi, Topo* _topo, int _nk) {
     int ii, jj;
