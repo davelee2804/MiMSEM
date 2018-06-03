@@ -19,7 +19,6 @@ using std::string;
 //#define WITH_HDF5
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
-#define MAX_HEIGHT 50000.0//TODO: find from IC
 
 Geom::Geom(int _pi, Topo* _topo, int _nk) {
     int ii, jj;
@@ -541,10 +540,10 @@ void Geom::initJacobians() {
     }
 }
 
-
 void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
     int ii, jj;
     double zo;
+    double max_height = fl(x[0], nk);//TODO: assumes x[0] is at the sea surface, fix later
 
     topog = new double[topo->nDofs0G];
     for(ii = 0; ii < topo->nDofs0G; ii++) {
@@ -555,8 +554,8 @@ void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
     for(ii = 0; ii < nk + 1; ii++) {
         levs[ii] = new double[topo->nDofs0G];
         for(jj = 0; jj < topo->nDofs0G; jj++) {
-            zo = fl(((double)ii)/nk);
-            levs[ii][jj] = (MAX_HEIGHT - topog[jj])*zo + topog[jj];
+            zo = fl(x[jj], ii);
+            levs[ii][jj] = (max_height - topog[jj])*zo + topog[jj];
         }
     }
     thick = new double*[nk];

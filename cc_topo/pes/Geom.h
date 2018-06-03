@@ -1,5 +1,5 @@
 typedef double (TopogFunc) (double* xi);
-typedef double (LevelFunc) (double xi);
+typedef double (LevelFunc) (double* xi, int ki);
 
 class Geom {
     public:

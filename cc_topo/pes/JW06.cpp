@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 
 #include <cmath>
 
@@ -49,15 +50,21 @@ double t_bar(double eta) {
 
 // hybrid coordinate coefficients, A and B derived from:
 //     Lauritzen, Jablonowski, Taylor and Nair, JAMES, 2010
-double z_from_eta(int ki) {
+double z_from_eta(double* x, int ki) {
     int ii;
-    double pi, pj, ph, dp, temp, rho, eta_h, dz, z;
+    double pi, pj, ph, dp, temp, rho, eta_h, dz, z = 0.0;
+    double Ai[27] = {0.002194067,0.004895209,0.009882418,0.01805201,0.02983724,0.04462334,0.06160587,0.07851243,0.07731271,
+                     0.07590131, 0.07424086, 0.07228744, 0.06998933,0.06728574,0.06410509,0.06036322,0.05596111,0.05078225,
+                     0.04468960, 0.03752191, 0.02908949, 0.02084739,0.01334443,0.00708499,0.00252136,0.0,       0.0       };
+    double Bi[27] = {0.0,        0.0,        0.0,        0.0,       0.0,       0.0,       0.0,       0.0,       0.01505309,
+                     0.03276228, 0.05359622, 0.07810627, 0.1069411, 0.1408637, 0.1807720, 0.2277220, 0.2829562, 0.3479364,
+                     0.4243822,  0.5143168,  0.6201202,  0.7235355, 0.8176768, 0.8962153, 0.9534761, 0.9851122, 1.0       };
 
-    z = 0.0;
+    if(ki == NK) return z;
 
-    for(ii = 25; ii >= ki; ii--) {
-        pi    = A[ii+1]*P0 + B[ii+1]*P0;
-        pj    = A[ii+0]*P0 + B[ii+0]*P0;
+    for(ii = NK - 1; ii >= ki; ii--) {
+        pi    = Ai[ii+1]*P0 + Bi[ii+1]*P0;
+        pj    = Ai[ii+0]*P0 + Bi[ii+0]*P0;
         ph    = 0.5*(pi + pj);
         dp    = fabs(pi - pj);
         eta_h = ph/P0;
@@ -68,6 +75,10 @@ double z_from_eta(int ki) {
     }
 
     return z;
+}
+
+double f_topog(double* x) {
+    return 0.0;
 }
 
 // initial condition given by:
@@ -103,20 +114,22 @@ double t_init(double* x, int ki) {
 }
 
 int main(int argc, char** argv) {
-    int size, rank, step;
+    int size, rank, step, ii, ki;
     static char help[] = "petsc";
     double dt = 120.0;
     double vort_0, mass_0, ener_0;
-    char fieldname[50];
+    double vort_n, mass_n, ener_n;
+    char fieldname[50], filename[50];
     bool dump;
     int startStep = atoi(argv[1]);
     int nSteps = 5040;
     int dumpEvery = 30;
+    ofstream file;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
     PrimEqns* pe;
-    Vec wi, ui, hi, uf, hf;
+    Vec wi, *velx, *velz, *rho, *rt, *exner;
     PetscViewer viewer;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
@@ -132,47 +145,100 @@ int main(int argc, char** argv) {
     pe   = new PrimEqns(topo, geom, dt);
     pe->step = startStep;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uf);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hf);
+    // initialise the z coordinate layer heights
+    geom->initTopog(f_topog, z_from_eta);
 
-    if(startStep == 0) {
-        //sw->init1(ui, u_init, v_init);
-        //sw->init2(hi, h_init);
-
-        sprintf(fieldname,"velocity");
-        geom->write1(ui,fieldname,0);
-        sprintf(fieldname,"pressure");
-        geom->write2(hi,fieldname,0);
-    } else {
-        sprintf(fieldname, "output/pressure_%.4u.vec", startStep);
-        PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
-        VecLoad(hi, viewer);
-        PetscViewerDestroy(&viewer);
-
-        sprintf(fieldname, "output/velocity_%.4u.vec", startStep);
-        PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
-        VecLoad(ui, viewer);
-        PetscViewerDestroy(&viewer);
+    velx  = new Vec[NK];
+    rho   = new Vec[NK];
+    rt    = new Vec[NK];
+    exner = new Vec[NK];
+    velz  = new Vec[topo->nElsX*topo->nElsX];
+    for(ki = 0; ki < NK; ki++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx[ki] );
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho[ki]  );
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner[ki]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt[ki]);
+    }
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->nElsX*topo->nElsX, &velz[ii]);
     }
 
-    pe->curl(ui, &wi, 0, false);
-    vort_0 = sw->int0(wi);
-    mass_0 = sw->int2(hi);
-    ener_0 = sw->intE(ui, hi);
-    VecDestroy(&wi);
+    if(startStep == 0) {
+        for(ki = 0; ki < NK; ki++) {
+            sprintf(fieldname,"velocity_x_%.3u", ki);
+            geom->write1(velx[ki],fieldname,0);
+            sprintf(fieldname,"density_%.3u", ki);
+            geom->write2(rho[ki],fieldname,0);
+            sprintf(fieldname,"exner_%.3u", ki);
+            geom->write2(exner[ki],fieldname,0);
+            sprintf(fieldname,"rt_%.3u", ki);
+            geom->write2(rt[ki],fieldname,0);
+        }
+        for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            sprintf(fieldname,"velocity_z_%.4u", ii);
+            geom->write1(velz[ii],fieldname,0);
+        }
+    } else {
+        for(ki = 0; ki < NK; ki++) {
+            sprintf(fieldname, "output/density_%.3u_%.4u.vec", ki, startStep);
+            PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+            VecLoad(rho[ki], viewer);
+            PetscViewerDestroy(&viewer);
+
+            sprintf(fieldname, "output/velocity_x_%.3u_%.4u.vec", ki, startStep);
+            PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+            VecLoad(velx[ki], viewer);
+            PetscViewerDestroy(&viewer);
+
+            sprintf(fieldname, "output/exner_%.3u_%.4u.vec", ki, startStep);
+            PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+            VecLoad(exner[ki], viewer);
+            PetscViewerDestroy(&viewer);
+
+            sprintf(fieldname, "output/rt_%.3u_%.4u.vec", ki, startStep);
+            PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+            VecLoad(rt[ki], viewer);
+            PetscViewerDestroy(&viewer);
+        }
+        for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            sprintf(fieldname, "output/velocity_z_%.4u_%.4u.vec", ki, startStep);
+            PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+            VecLoad(velz[ii], viewer);
+            PetscViewerDestroy(&viewer);
+        }
+    }
+
+    vort_0 = mass_0 = ener_0 = 0.0;
+    for(ki = 0; ki < NK; ki++) {
+        pe->curl(velx[ki], &wi, 0, false);
+        vort_0 += sw->int0(wi);
+        mass_0 += sw->int2(rho[ki]);
+        ener_0 += sw->intE(velx[ki], rho[ki]);
+        VecDestroy(&wi);
+    }
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        sw->solve_RK2_SS(ui, hi, uf, hf, dt, dump);
-        VecCopy(uf,ui);
-        VecCopy(hf,hi);
+        pe->SolveRK2(velx, velz, rho, rt, exner, dump);
         if(dump) {
-            sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
+            vort_n = mass_n = ener_n = 0.0;
+            for(ki = 0; ki < NK; ki++) {
+                pe->curl(velx[ki], &wi, 0, false);
+                vort_n += sw->int0(wi);
+                mass_n += sw->int2(rho[ki]);
+                ener_n += sw->intE(velx[ki], rho[ki]);
+                VecDestroy(&wi);
+
+                sprintf(filename, "output/conservation.dat");
+                file.open(filename, ios::out | ios::app);
+                file << (step*dt)/60.0/60.0/24.0 << "\t" << (mass_n-mass_0)/mass_0 
+                                                 << "\t" << (vort_n-vort_0) 
+                                                 << "\t" << (ener_n-ener_0)/ener_0 << endl;
+                file.close();
+            }
         }
     }
 
@@ -181,10 +247,20 @@ int main(int argc, char** argv) {
     delete sw;
     delete pe;
 
-    VecDestroy(&ui);
-    VecDestroy(&uf);
-    VecDestroy(&hi);
-    VecDestroy(&hf);
+    for(ki = 0; ki < NK; ki++) {
+        VecDestroy(&velx[ki] );
+        VecDestroy(&rho[ki]  );
+        VecDestroy(&rt[ki]   );
+        VecDestroy(&exner[ki]);
+    }
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecDestroy(&velz[ki] );
+    }
+    delete[] velx;
+    delete[] rho;
+    delete[] exner;
+    delete[] rt;
+    delete[] velz;
 
     PetscFinalize();
 
