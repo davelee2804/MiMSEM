@@ -88,6 +88,17 @@ Geom::Geom(int _pi, Topo* _topo, int _nk) {
     }
 
     initJacobians();
+
+    // initialise vertical level arrays
+    topog = new double[topo->n0];
+    levs = new double*[nk+1];
+    for(ii = 0; ii < nk + 1; ii++) {
+        levs[ii] = new double[topo->n0];
+    }
+    thick = new double*[nk];
+    for(ii = 0; ii < nk; ii++) {
+        thick[ii] = new double[topo->n0];
+    }
 }
 
 Geom::~Geom() {
@@ -545,14 +556,11 @@ void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
     double zo;
     double max_height = fl(x[0], nk);//TODO: assumes x[0] is at the sea surface, fix later
 
-    topog = new double[topo->n0];
     for(ii = 0; ii < topo->n0; ii++) {
         topog[ii] = ft(x[ii]);
     }
 
-    levs = new double*[nk+1];
     for(ii = 0; ii < nk + 1; ii++) {
-        levs[ii] = new double[topo->n0];
         for(jj = 0; jj < topo->n0; jj++) {
             if(fl) {
                 zo = fl(x[jj], ii);
@@ -563,9 +571,7 @@ void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
             }
         }
     }
-    thick = new double*[nk];
     for(ii = 0; ii < nk; ii++) {
-        thick[ii] = new double[topo->n0];
         for(jj = 0; jj < topo->n0; jj++) {
             if(fl) {
                 thick[ii][jj] = levs[ii][jj+1] - levs[ii][jj];
