@@ -36,9 +36,9 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
 
     grav = GRAVITY*(RAD_SPHERE/RAD_EARTH);
     omega = OMEGA;
-    del2 = viscosity();
     do_visc = true;
-    vert_visc = 1.0; //TODO
+    del2 = viscosity();
+    vert_visc = viscosity_vert();
     step = 0;
 
     quad = new GaussLobatto(topo->elOrd);
@@ -118,6 +118,24 @@ double PrimEqns::viscosity() {
     double del4 = 0.072*pow(dx,3.2);
 
     return -sqrt(del4);
+}
+
+double PrimEqns::viscosity_vert() {
+    int ii, kk;
+    double dzMinG, dzMin = 1.0e+6;
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < topo->n0; ii++) {
+            if(geom->thick[kk][ii] < dzMin) {
+                dzMin = geom->thick[kk][ii];
+            }
+        }
+    }
+
+    MPI_Allreduce(&dzMin, &dzMinG, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+
+    return dzMinG*dzMinG/8.0;//TODO
+
 }
 
 // project coriolis term onto 0 forms
@@ -2062,3 +2080,151 @@ void PrimEqns::HorizToVert2(int ex, int ey, Vec* ph, Vec pv) {
     }
     VecRestoreArray(pv, &vArray);
 }
+
+void PrimEqns::init0(Vec* q, ICfunc3D* func) {
+    int ex, ey, ii, kk, mp1, mp12;
+    int* inds0;
+    PtQmat* PQ = new PtQmat(topo, geom, node);
+    PetscScalar *bArray;
+    Vec bl, bg, PQb;
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PQb);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecZeroEntries(bg);
+        VecGetArray(bl, &bArray);
+
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                inds0 = topo->elInds0_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    bArray[inds0[ii]] = func(geom->x[inds0[ii]], kk);
+                }
+            }
+        }
+        VecRestoreArray(bl, &bArray);
+        VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+        MatMult(PQ->M, bg, PQb);
+        VecPointwiseDivide(q[kk], PQb, m0->vg);
+    }
+
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&PQb);
+    delete PQ;
+}
+
+void PrimEqns::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
+    int ex, ey, ii, kk, mp1, mp12;
+    int *inds0, *loc02;
+    UtQmat* UQ = new UtQmat(topo, geom, node, edge);
+    PetscScalar *bArray;
+    Vec bl, bg, UQb;
+    IS isl, isg;
+    VecScatter scat;
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    loc02 = new int[2*topo->n0];
+    VecCreateSeq(MPI_COMM_SELF, 2*topo->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, 2*topo->n0l, 2*topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &UQb);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecZeroEntries(bg);
+        VecGetArray(bl, &bArray);
+
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                inds0 = topo->elInds0_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    bArray[2*inds0[ii]+0] = func_x(geom->x[inds0[ii]], kk);
+                    bArray[2*inds0[ii]+1] = func_y(geom->x[inds0[ii]], kk);
+                }
+            }
+        }
+        VecRestoreArray(bl, &bArray);
+
+        // create a new vec scatter object to handle vector quantity on nodes
+        for(ii = 0; ii < topo->n0; ii++) {
+            loc02[2*ii+0] = 2*topo->loc0[ii]+0;
+            loc02[2*ii+1] = 2*topo->loc0[ii]+1;
+        }
+        ISCreateStride(MPI_COMM_WORLD, 2*topo->n0, 0, 1, &isl);
+        ISCreateGeneral(MPI_COMM_WORLD, 2*topo->n0, loc02, PETSC_COPY_VALUES, &isg);
+        VecScatterCreate(bg, isg, bl, isl, &scat);
+        VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+        MatMult(UQ->M, bg, UQb);
+        KSPSolve(ksp1, UQb, u[kk]);
+    }
+
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&UQb);
+    ISDestroy(&isl);
+    ISDestroy(&isg);
+    VecScatterDestroy(&scat);
+    delete UQ;
+    delete[] loc02;
+}
+
+void PrimEqns::init2(Vec* h, ICfunc3D* func) {
+    int ex, ey, ii, kk, mp1, mp12;
+    int *inds0;
+    PetscScalar *bArray;
+    KSP ksp2;
+    Vec bl, bg, WQb;
+    WtQmat* WQ = new WtQmat(topo, geom, edge);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecZeroEntries(bg);
+        VecGetArray(bl, &bArray);
+
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                inds0 = topo->elInds0_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    bArray[inds0[ii]] = func(geom->x[inds0[ii]], kk);
+                }
+            }
+        }
+        VecRestoreArray(bl, &bArray);
+        VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+        MatMult(WQ->M, bg, WQb);
+
+        KSPCreate(MPI_COMM_WORLD, &ksp2);
+        KSPSetOperators(ksp2, M2->M, M2->M);
+        KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+        KSPSetType(ksp2, KSPGMRES);
+        KSPSetOptionsPrefix(ksp2,"init2_");
+        KSPSetFromOptions(ksp2);
+        KSPSolve(ksp2, WQb, h[kk]);
+    }
+
+    delete WQ;
+    KSPDestroy(&ksp2);
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&WQb);
+}
+
+

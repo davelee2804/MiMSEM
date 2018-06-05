@@ -1,3 +1,5 @@
+typedef double (ICfunc3D) (double* xi, int ki);
+
 class PrimEqns {
     public:
         PrimEqns(Topo* _topo, Geom* _geom, double _dt);
@@ -33,6 +35,7 @@ class PrimEqns {
         KSP ksp1;
         KSP ksp2;
         double viscosity();
+        double viscosity_vert();
         void coriolis();
         void vertOps();
         void grad(Vec phi, Vec* u, int lev);                        // weak form grad operator
@@ -57,4 +60,7 @@ class PrimEqns {
         void VertToHoriz2(int ex, int ey, Vec pv, Vec* ph);
         void HorizToVert2(int ex, int ey, Vec* ph, Vec pv);
         void SolveRK2(Vec* velx, Vec* velw, Vec* rho, Vec* theta, Vec* exner, bool save);
+        void init0(Vec* q, ICfunc3D* func);
+        void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
+        void init2(Vec* p, ICfunc3D* func);
 };

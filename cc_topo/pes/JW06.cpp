@@ -88,7 +88,7 @@ double f_topog(double* x) {
 double u_init(double* x, int ki) {
     double phi     = asin(x[2]/RAD_EARTH);
     double theta   = atan2(x[1], x[0]);
-    double eta     = 0.5*(A[ki+0] + B[ki+0] + A[ki+1] + B[ki+1]);//TODO: check this, A abd B arrays go down not up
+    double eta     = 0.5*(A[NK-ki] + B[NK-ki] + A[NK-ki-1] + B[NK-ki-1]);
     double eta_v   = 0.5*(eta - ETA_0)*M_PI;
     double us      = U0*pow(cos(eta_v), 1.5)*sin(2.0*phi)*sin(2.0*phi);
     double theta_c = 1.0*M_PI/9.0;
@@ -105,7 +105,7 @@ double v_init(double* x, int ki) {
 
 double t_init(double* x, int ki) {
     double phi     = asin(x[2]/RAD_EARTH);
-    double eta     = 0.5*(A[ki+0] + B[ki+0] + A[ki+1] + B[ki+1]);//TODO: check this, A abd B arrays go down not up
+    double eta     = 0.5*(A[NK-ki] + B[NK-ki] + A[NK-ki-1] + B[NK-ki-1]);//compile warning??
     double eta_v   = 0.5*(eta - ETA_0)*M_PI;
     double t_avg   = t_bar(eta);
     double a       = 10.0/63.0 - 2.0*pow(sin(phi), 6.0)*(cos(phi)*cos(phi) + 1.0/3.0);
@@ -119,8 +119,8 @@ double rho_init(double* x, int ki) {
     double tb  = t_init(x, ki    );
     double tt  = t_init(x, ki + 1);
     double th  = 0.5*(tb + tt);
-    double pb  = A[ki+0]*P0 + B[ki+0]*P0;//TODO: check this, A abd B arrays go down not up
-    double pt  = A[ki+1]*P0 + B[ki+1]*P0;//TODO: check this, A abd B arrays go down not up
+    double pb  = A[NK-ki]*P0 + B[NK-ki]*P0;
+    double pt  = A[NK-ki-1]*P0 + B[NK-ki-1]*P0;
     double ph  = 0.5*(pb + pt);
     double rho = ph/RD/th;
 
@@ -132,7 +132,8 @@ double theta_init(double* x, int ki) {
     double Ac    = 10.0/63.0 - 2.0*pow(phi, 6.0)*(cos(phi)*cos(phi) + 1.0/3.0);
     double Bc    = RAD_EARTH*OMEGA*(1.6*pow(phi, 3.0)*(sin(phi)*sin(phi) + 2.0/3.0) - 0.25*M_PI);
     double temp  = t_init(x, ki);
-    double eta   = 0.5*(A[ki+0] + B[ki+0] + A[ki+1] + B[ki+1]);//TODO: check this, A abd B arrays go down not up
+    //double eta   = 0.5*(A[NK-ki] + B[NK-ki] + A[NK-ki-1] + B[NK-ki-1]);
+    double eta   = A[NK-ki] + B[NK-ki];
     double eta_v = 0.5*(eta - ETA_0)*M_PI;
     double pres  = eta*P0;
     double theta = (temp + 0.75*eta*M_PI*U0/RD*sin(eta_v)*sqrt(cos(eta_v))*(2.0*U0*Ac*pow(cos(eta_v), 1.5) + Bc))/pres;
@@ -141,10 +142,25 @@ double theta_init(double* x, int ki) {
 }
 
 double rt_init(double* x, int ki) {
-    double theta = theta_init(x, ki);
-    double rho   = rho_init(x, ki);
+    double theta_t = theta_init(x, ki + 0);
+    double theta_b = theta_init(x, ki + 1);//TODO: check this
+    double rho     = rho_init(x, ki);
 
-    return rho*theta;
+    return 0.5*rho*(theta_b + theta_t);
+}
+
+double exner_init(double* x, int ki) {
+    double pres = 0.5*(A[NK-ki] + B[NK-ki] + A[NK-ki-1] + B[NK-ki-1])*P0;
+
+    return CP*pow(pres/P0, RD/CP);//TODO: use c_p here??
+}
+
+double theta_t_init(double* x) {
+    return theta_init(x, 0);
+}
+
+double theta_b_init(double* x) {
+    return theta_init(x, NK);
 }
 
 void LoadVecs(Vec* vecs, int nk, char* fieldname, int step) {
@@ -209,9 +225,19 @@ int main(int argc, char** argv) {
     }
     for(ii = 0; ii < n2; ii++) {
         VecCreateSeq(MPI_COMM_SELF, (NK-1)*topo->elOrd*topo->elOrd, &velz[ii]);
+        VecZeroEntries(velz[ii]);
     }
 
+    // initialise the potential temperature top and bottom boundary conditions
+    sw->init2(pe->theta_b, theta_b_init);
+    sw->init2(pe->theta_t, theta_t_init);
+
     if(startStep == 0) {
+        pe->init1(velx, u_init, v_init);
+        pe->init2(rho, rho_init);
+        pe->init2(exner, exner_init);
+        pe->init2(rt, rt_init);
+
         for(ki = 0; ki < NK; ki++) {
             sprintf(fieldname,"velocity_x_%.3u", ki);
             geom->write1(velx[ki],fieldname,0);

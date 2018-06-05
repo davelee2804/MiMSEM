@@ -545,23 +545,23 @@ void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
     double zo;
     double max_height = fl(x[0], nk);//TODO: assumes x[0] is at the sea surface, fix later
 
-    topog = new double[topo->nDofs0G];
-    for(ii = 0; ii < topo->nDofs0G; ii++) {
+    topog = new double[topo->n0];
+    for(ii = 0; ii < topo->n0; ii++) {
         topog[ii] = ft(x[ii]);
     }
 
     levs = new double*[nk+1];
     for(ii = 0; ii < nk + 1; ii++) {
-        levs[ii] = new double[topo->nDofs0G];
-        for(jj = 0; jj < topo->nDofs0G; jj++) {
+        levs[ii] = new double[topo->n0];
+        for(jj = 0; jj < topo->n0; jj++) {
             zo = fl(x[jj], ii);
             levs[ii][jj] = (max_height - topog[jj])*zo + topog[jj];
         }
     }
     thick = new double*[nk];
     for(ii = 0; ii < nk; ii++) {
-        thick[ii] = new double[topo->nDofs0G];
-        for(jj = 0; jj < topo->nDofs0G; jj++) {
+        thick[ii] = new double[topo->n0];
+        for(jj = 0; jj < topo->n0; jj++) {
             thick[ii][jj] = levs[ii][jj+1] - levs[ii][jj];
         }
     }
