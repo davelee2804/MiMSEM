@@ -2166,6 +2166,7 @@ void PrimEqns::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
         VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
+        M1->assemble(kk);
         MatMult(UQ->M, bg, UQb);
         KSPSolve(ksp1, UQb, u[kk]);
     }
@@ -2184,7 +2185,6 @@ void PrimEqns::init2(Vec* h, ICfunc3D* func) {
     int ex, ey, ii, kk, mp1, mp12;
     int *inds0;
     PetscScalar *bArray;
-    KSP ksp2;
     Vec bl, bg, WQb;
     WtQmat* WQ = new WtQmat(topo, geom, edge);
 
@@ -2211,22 +2211,54 @@ void PrimEqns::init2(Vec* h, ICfunc3D* func) {
         VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
+        M2->assemble(kk);
         MatMult(WQ->M, bg, WQb);
 
-        KSPCreate(MPI_COMM_WORLD, &ksp2);
-        KSPSetOperators(ksp2, M2->M, M2->M);
-        KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-        KSPSetType(ksp2, KSPGMRES);
-        KSPSetOptionsPrefix(ksp2,"init2_");
-        KSPSetFromOptions(ksp2);
         KSPSolve(ksp2, WQb, h[kk]);
     }
 
     delete WQ;
-    KSPDestroy(&ksp2);
     VecDestroy(&bl);
     VecDestroy(&bg);
     VecDestroy(&WQb);
 }
 
+void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
+    int ex, ey, ii, mp1, mp12;
+    int *inds0;
+    PetscScalar *bArray;
+    Vec bl, bg, WQb;
+    WtQmat* WQ = new WtQmat(topo, geom, edge);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
+    VecZeroEntries(bg);
+
+    VecGetArray(bl, &bArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                bArray[inds0[ii]] = func(geom->x[inds0[ii]], 0);
+            }
+        }
+    }
+    VecRestoreArray(bl, &bArray);
+    VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+    M2->assemble(0);
+    MatMult(WQ->M, bg, WQb);
+    KSPSolve(ksp2, WQb, theta);
+
+    delete WQ;
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&WQb);
+}
 

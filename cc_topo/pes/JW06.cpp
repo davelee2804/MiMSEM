@@ -58,8 +58,8 @@ double t_bar(double eta) {
 double z_from_eta(double* x, int ki) {
     int ii;
     double pi, pj, ph, dp, temp, rho, eta_h, dz, z = 0.0;
-double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
-double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
+    double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
+    double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
 //    double Ai[27] = {0.002194067,0.004895209,0.009882418,0.01805201,0.02983724,0.04462334,0.06160587,0.07851243,0.07731271,
 //                     0.07590131, 0.07424086, 0.07228744, 0.06998933,0.06728574,0.06410509,0.06036322,0.05596111,0.05078225,
 //                     0.04468960, 0.03752191, 0.02908949, 0.02084739,0.01334443,0.00708499,0.00252136,0.0,       0.0       };
@@ -91,10 +91,10 @@ double f_topog(double* x) {
 // initial condition given by:
 //     Jablonowski and Williamson, QJRMS, 2006
 double u_init(double* x, int ki) {
-double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
-double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
     double phi     = asin(x[2]/RAD_EARTH);
     double theta   = atan2(x[1], x[0]);
+    double Ai[5]   = {0.00,0.00,0.00,0.00,0.00};
+    double Bi[5]   = {0.00,0.25,0.50,0.75,1.00};
     double eta     = 0.5*(Ai[NK-ki] + Bi[NK-ki] + Ai[NK-ki-1] + Bi[NK-ki-1]);
     double eta_v   = 0.5*(eta - ETA_0)*M_PI;
     double us      = U0*pow(cos(eta_v), 1.5)*sin(2.0*phi)*sin(2.0*phi);
@@ -112,8 +112,8 @@ double v_init(double* x, int ki) {
 
 double t_init(double* x, int ki) {
     double phi     = asin(x[2]/RAD_EARTH);
-double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
-double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
+    double Ai[5]   = {0.00,0.00,0.00,0.00,0.00};
+    double Bi[5]   = {0.00,0.25,0.50,0.75,1.00};
     //double eta     = 0.5*(Ai[NK-ki] + Bi[NK-ki] + Ai[NK-ki-1] + Bi[NK-ki-1]);//compile warning??
     double eta     = 0.5*(Ai[NK-ki] + Bi[NK-ki] + Ai[NK-ki-1] + Bi[NK-ki-1]);
     double eta_v   = 0.5*(eta - ETA_0)*M_PI;
@@ -129,8 +129,8 @@ double rho_init(double* x, int ki) {
     double tb  = t_init(x, ki    );
     double tt  = t_init(x, ki + 1);
     double th  = 0.5*(tb + tt);
-double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
-double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
+    double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
+    double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
     double pb  = Ai[NK-ki]*P0 + Bi[NK-ki]*P0;
     double pt  = Ai[NK-ki-1]*P0 + Bi[NK-ki-1]*P0;
     double ph  = 0.5*(pb + pt);
@@ -145,8 +145,8 @@ double theta_init(double* x, int ki) {
     double Bc    = RAD_EARTH*OMEGA*(1.6*pow(phi, 3.0)*(sin(phi)*sin(phi) + 2.0/3.0) - 0.25*M_PI);
     double temp  = t_init(x, ki);
     //double eta   = 0.5*(A[NK-ki] + B[NK-ki] + A[NK-ki-1] + B[NK-ki-1]);
-double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
-double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
+    double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
+    double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
     double eta   = Ai[NK-ki] + Bi[NK-ki];
     double eta_v = 0.5*(eta - ETA_0)*M_PI;
     double pres  = eta*P0;
@@ -164,18 +164,18 @@ double rt_init(double* x, int ki) {
 }
 
 double exner_init(double* x, int ki) {
-double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
-double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
+    double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
+    double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
     double pres = 0.5*(Ai[NK-ki] + Bi[NK-ki] + Ai[NK-ki-1] + Bi[NK-ki-1])*P0;
 
     return CP*pow(pres/P0, RD/CP);//TODO: use c_p here??
 }
 
-double theta_t_init(double* x) {
+double theta_t_init(double* x, int ki) {
     return theta_init(x, 0);
 }
 
-double theta_b_init(double* x) {
+double theta_b_init(double* x, int ki) {
     return theta_init(x, NK);
 }
 
@@ -206,7 +206,6 @@ int main(int argc, char** argv) {
     ofstream file;
     Topo* topo;
     Geom* geom;
-    SWEqn* sw;
     PrimEqns* pe;
     Vec wi, *velx, *velz, *rho, *rt, *exner;
 
@@ -219,7 +218,6 @@ int main(int argc, char** argv) {
 
     topo = new Topo(rank);
     geom = new Geom(rank, topo, NK);
-    sw   = new SWEqn(topo, geom);
     pe   = new PrimEqns(topo, geom, dt);
     pe->step = startStep;
 
@@ -245,8 +243,12 @@ int main(int argc, char** argv) {
     }
 
     // initialise the potential temperature top and bottom boundary conditions
-    sw->init2(pe->theta_b, theta_b_init);
-    sw->init2(pe->theta_t, theta_t_init);
+    // these are 2d fields at the top and bottom, so re-set the thicknesses to
+    // unity before initialising, then reset to correct values afterwards
+    geom->initTopog(f_topog, NULL);
+    pe->initTheta(pe->theta_b, theta_b_init);
+    pe->initTheta(pe->theta_t, theta_t_init);
+    geom->initTopog(f_topog, z_from_eta);
 
     if(startStep == 0) {
         pe->init1(velx, u_init, v_init);
@@ -281,14 +283,14 @@ int main(int argc, char** argv) {
         LoadVecs(velz , n2, fieldname, startStep);
     }
 
-    vort_0 = mass_0 = ener_0 = 0.0;
-    for(ki = 0; ki < NK; ki++) {
-        pe->curl(velx[ki], &wi, 0, false);
-        vort_0 += sw->int0(wi);
-        mass_0 += sw->int2(rho[ki]);
-        ener_0 += sw->intE(velx[ki], rho[ki]);
-        VecDestroy(&wi);
-    }
+    //vort_0 = mass_0 = ener_0 = 0.0;
+    //for(ki = 0; ki < NK; ki++) {
+    //    pe->curl(velx[ki], &wi, 0, false);
+    //    vort_0 += sw->int0(wi);
+    //    mass_0 += sw->int2(rho[ki]);
+    //    ener_0 += sw->intE(velx[ki], rho[ki]);
+    //    VecDestroy(&wi);
+    //}
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
@@ -297,21 +299,21 @@ int main(int argc, char** argv) {
         dump = (step%dumpEvery == 0) ? true : false;
         pe->SolveRK2(velx, velz, rho, rt, exner, dump);
         if(dump) {
-            vort_n = mass_n = ener_n = 0.0;
-            for(ki = 0; ki < NK; ki++) {
-                pe->curl(velx[ki], &wi, 0, false);
-                vort_n += sw->int0(wi);
-                mass_n += sw->int2(rho[ki]);
-                ener_n += sw->intE(velx[ki], rho[ki]);
-                VecDestroy(&wi);
+            //vort_n = mass_n = ener_n = 0.0;
+            //for(ki = 0; ki < NK; ki++) {
+                //pe->curl(velx[ki], &wi, 0, false);
+                //vort_n += sw->int0(wi);
+                //mass_n += sw->int2(rho[ki]);
+                //ener_n += sw->intE(velx[ki], rho[ki]);
+                //VecDestroy(&wi);
 
-                sprintf(filename, "output/conservation.dat");
-                file.open(filename, ios::out | ios::app);
-                file << (step*dt)/60.0/60.0/24.0 << "\t" << (mass_n-mass_0)/mass_0 
-                                                 << "\t" << (vort_n-vort_0) 
-                                                 << "\t" << (ener_n-ener_0)/ener_0 << endl;
-                file.close();
-            }
+                //sprintf(filename, "output/conservation.dat");
+                //file.open(filename, ios::out | ios::app);
+                //file << (step*dt)/60.0/60.0/24.0 << "\t" << (mass_n-mass_0)/mass_0 
+                //                                 << "\t" << (vort_n-vort_0) 
+                //                                 << "\t" << (ener_n-ener_0)/ener_0 << endl;
+                //file.close();
+            //}
 
             for(ki = 0; ki < NK; ki++) {
                 sprintf(fieldname,"velocity_x_%.3u", ki);
@@ -332,7 +334,6 @@ int main(int argc, char** argv) {
 
     delete topo;
     delete geom;
-    delete sw;
     delete pe;
 
     for(ki = 0; ki < NK; ki++) {

@@ -63,4 +63,5 @@ class PrimEqns {
         void init0(Vec* q, ICfunc3D* func);
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* p, ICfunc3D* func);
+        void initTheta(Vec theta, ICfunc3D* func);
 };

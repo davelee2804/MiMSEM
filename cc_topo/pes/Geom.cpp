@@ -554,15 +554,25 @@ void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
     for(ii = 0; ii < nk + 1; ii++) {
         levs[ii] = new double[topo->n0];
         for(jj = 0; jj < topo->n0; jj++) {
-            zo = fl(x[jj], ii);
-            levs[ii][jj] = (max_height - topog[jj])*zo + topog[jj];
+            if(fl) {
+                zo = fl(x[jj], ii);
+                levs[ii][jj] = (max_height - topog[jj])*zo + topog[jj];
+            }
+            else {
+                levs[ii][jj] = 2.0;
+            }
         }
     }
     thick = new double*[nk];
     for(ii = 0; ii < nk; ii++) {
         thick[ii] = new double[topo->n0];
         for(jj = 0; jj < topo->n0; jj++) {
-            thick[ii][jj] = levs[ii][jj+1] - levs[ii][jj];
+            if(fl) {
+                thick[ii][jj] = levs[ii][jj+1] - levs[ii][jj];
+            }
+            else {
+                thick[ii][jj] = 2.0;//TODO check this
+            }
         }
     }
 }
