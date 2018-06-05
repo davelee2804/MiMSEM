@@ -1,6 +1,9 @@
 #include <cmath>
+#include <iostream>
 
 #include "LinAlg.h"
+
+using namespace std;
 
 // Allocate 2D array
 double** Alloc2D(int ni, int nj) {
@@ -123,6 +126,7 @@ void Tran_IP(int ni, int nj, double** A, double** B) {
     }
 }
 
+#if 0
 #define SWAP(a,b) {temp=(a);(a)=(b);(b)=temp;}
 // Matrix inverse into supplied matrix
 int Inv( double** A, double** Ainv, int n ) {
@@ -188,6 +192,67 @@ int Inv( double** A, double** Ainv, int n ) {
     delete[] indxc; delete[] indxr; delete[] ipiv;
 
     return error;
+}
+#endif
+
+/* Gauss-Jordan matrix inverse routine - see Numerical Recipes in C, 2nd Ed.section 2.1 for details */
+#define SWAP(a,b) {temp=(a);(a)=(b);(b)=temp;}
+#define I(p,q,N) \
+        p*N + q
+
+void Inv( double* A, double* Ainv, int n ) {
+    int *indxc, *indxr, *ipiv;
+    int i, j, k, l, irow = 0, icol = 0, ll;
+    double big, dum, pivinv, temp;
+
+    indxc = new int[n]; indxr = new int[n]; ipiv  = new int[n];
+
+    for( i = 0; i < n*n; i++ ) { Ainv[i] = A[i]; }
+    for( j = 0; j< n; j++ ) { ipiv[j] = 0; }
+    for( i = 0; i < n; i++ ) {
+        big = 0.0;
+        for( j = 0; j < n; j++ ) {
+            if( ipiv[j] != 1 ) {
+                for( k = 0; k < n; k++ ) {
+                    if( ipiv[k] == 0 ) {
+                        if( fabs(Ainv[I(j,k,n)]) >= big ) {
+                            big = fabs(Ainv[I(j,k,n)]);
+                            irow = j;
+                            icol = k;
+                        }
+                    }
+                    else if( ipiv[k] > 1 ) { cout << "Matrix inverse error! - singular matrix (1)\n"; }
+                }
+            }
+        }
+        ++(ipiv[icol]);
+        if( irow != icol ) {
+            for( l = 0; l < n; l++ ) {
+                SWAP( Ainv[I(irow,l,n)], Ainv[I(icol,l,n)] );
+            }
+        }
+        indxr[i] = irow;
+        indxc[i] = icol;
+        if( fabs(Ainv[I(icol,icol,n)]) < 1.0e-12 ) { cout << "Matrix inverse error! - singular matrix (2)\n"; }
+        pivinv = 1.0/Ainv[I(icol,icol,n)];
+        Ainv[I(icol,icol,n)] = 1.0;
+        for( l = 0; l < n; l++ ) { Ainv[I(icol,l,n)] *= pivinv; }
+        for( ll = 0; ll < n; ll++ ) {
+            if( ll != icol ) {
+                dum = Ainv[I(ll,icol,n)];
+                Ainv[I(ll,icol,n)] = 0.0;
+                for( l = 0; l < n; l++ ) { Ainv[I(ll,l,n)] -= Ainv[I(icol,l,n)]*dum; }
+            }
+        }
+    }
+    for( l = n-1; l >= 0; l-- ) {
+        if( indxr[l] != indxc[l] ) {
+            for( k = 0; k < n; k++ ) {
+                SWAP( Ainv[I(k,indxr[l],n)], Ainv[I(k,indxc[l],n)] );
+            }
+        }
+    }
+    delete[] indxc; delete[] indxr; delete[] ipiv;
 }
 
 double Determinant(double **a,int n)

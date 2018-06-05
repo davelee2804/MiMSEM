@@ -1427,6 +1427,7 @@ void PrimEqns::VertConstMatInv(int ex, int ey, Mat Binv) {
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* Aflat = new double[W->nDofsJ*W->nDofsJ];
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
@@ -1447,8 +1448,8 @@ void PrimEqns::VertConstMatInv(int ex, int ey, Mat Binv) {
         Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Inv(WtQW, WtQWinv, topo->elOrd);
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, Aflat);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+        Inv(WtQWflat, Aflat, topo->elOrd);
 
         for(ii = 0; ii < W->nDofsJ; ii++) {
             rows[ii] = ii + kk*W->nDofsJ;
@@ -1464,6 +1465,7 @@ void PrimEqns::VertConstMatInv(int ex, int ey, Mat Binv) {
     delete W;
     delete Q;
     delete[] Aflat;
+    delete[] WtQWflat;
 }
 
 /*
