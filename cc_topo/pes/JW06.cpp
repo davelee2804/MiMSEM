@@ -218,13 +218,12 @@ int main(int argc, char** argv) {
 
     topo = new Topo(rank);
     geom = new Geom(rank, topo, NK);
+    // initialise the z coordinate layer heights
+    geom->initTopog(f_topog, z_from_eta);
     pe   = new PrimEqns(topo, geom, dt);
     pe->step = startStep;
 
     n2 = topo->nElsX*topo->nElsX;
-
-    // initialise the z coordinate layer heights
-    geom->initTopog(f_topog, z_from_eta);
 
     velx  = new Vec[NK];
     rho   = new Vec[NK];

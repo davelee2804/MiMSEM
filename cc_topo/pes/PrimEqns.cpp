@@ -1016,7 +1016,7 @@ void PrimEqns::vertOps() {
     
     n2 = topo->elOrd*topo->elOrd;
 
-    MatCreate(MPI_COMM_WORLD, &V10);
+    MatCreate(MPI_COMM_SELF, &V10);
     MatSetType(V10, MATSEQAIJ);
     //MatSetSizes(V10, (geom->nk+0)*n2, (geom->nk+1)*n2, (geom->nk+0)*n2, (geom->nk+1)*n2);
     MatSetSizes(V10, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
