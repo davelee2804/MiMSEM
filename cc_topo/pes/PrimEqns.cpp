@@ -692,7 +692,8 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
     Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
     for(ii = 0; ii < W->nDofsJ; ii++) {
-        inds2k[ii] = ii + (geom->nk-1)*W->nDofsJ;
+        //inds2k[ii] = ii + (geom->nk-1)*W->nDofsJ;
+        inds2k[ii] = ii + (geom->nk-2)*W->nDofsJ;
     }
     MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
@@ -710,7 +711,8 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
     // bottom
     VecGetArray(theta_b, &hArray);
     for(ii = 0; ii < n2; ii++) {
-        vArray[(geom->nk-1)*n2+ii] = hArray[inds2[ii]];
+        //vArray[(geom->nk-1)*n2+ii] = hArray[inds2[ii]];
+        vArray[(geom->nk-2)*n2+ii] = hArray[inds2[ii]];
     }
     VecRestoreArray(theta_b, &hArray);
     VecRestoreArray(theta_o, &vArray);
@@ -757,7 +759,7 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec** theta) {
     MatCreate(MPI_COMM_SELF, &AB);
     MatSetType(AB, MATSEQAIJ);
     MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
-    MatSeqAIJSetPreallocation(AB, n2, PETSC_NULL);
+    MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
 
     KSPCreate(MPI_COMM_SELF, &kspCol);
     KSPSetOperators(kspCol, A, A);
