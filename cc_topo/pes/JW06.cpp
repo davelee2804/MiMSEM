@@ -196,9 +196,9 @@ int main(int argc, char** argv) {
     int size, rank, step, ii, ki, n2;
     static char help[] = "petsc";
     double dt = 120.0;
-    double vort_0, mass_0, ener_0;
-    double vort_n, mass_n, ener_n;
-    char fieldname[50], filename[50];
+    //double vort_0, mass_0, ener_0;
+    //double vort_n, mass_n, ener_n;
+    char fieldname[50];//, filename[50];
     bool dump;
     int startStep = atoi(argv[1]);
     int nSteps = 5040;
@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
     Topo* topo;
     Geom* geom;
     PrimEqns* pe;
-    Vec wi, *velx, *velz, *rho, *rt, *exner;
+    Vec *velx, *velz, *rho, *rt, *exner;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 

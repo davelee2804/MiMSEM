@@ -88,7 +88,7 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     KSPGetPC(ksp1,&pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
-    KSPSetOptionsPrefix(ksp1,"1_");
+    KSPSetOptionsPrefix(ksp1,"ksp1_");
     KSPSetFromOptions(ksp1);
 
     // initialize the 2 form linear solver
@@ -99,7 +99,7 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     KSPGetPC(ksp2,&pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
-    KSPSetOptionsPrefix(ksp2,"2_");
+    KSPSetOptionsPrefix(ksp2,"ksp2_");
     KSPSetFromOptions(ksp2);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_b);
@@ -327,13 +327,11 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
 }
 
 void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
-    int ex, ey, ei, ii, kk, n2;
-    int* inds2;
+    int ex, ey, ei, n2;
     Vec exner_v, de1, de2, de3, dp;
     Mat A, B;
     PC pc;
     KSP kspCol;
-    PetscScalar *evArray, *ehArray;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -345,13 +343,11 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
 
     MatCreate(MPI_COMM_SELF, &B);
     MatSetType(B, MATSEQAIJ);
-    //MatSetSizes(B, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
     MatSetSizes(B, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(B, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     *fw = new Vec[topo->nElsX*topo->nElsX];
     for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-        //VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*topo->n2, fw[ei]);
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, fw[ei]);
         VecZeroEntries(*fw[ei]);
     }
@@ -375,21 +371,13 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds2 = topo->elInds2_l(ex, ey);
 
             // add in the kinetic energy gradient
             MatMult(V01, Kv[ei], *fw[ei]);
 
-            // add in the pressure gradient            
-            VecGetArray(exner_v, &evArray);
-            for(kk = 0; kk < geom->nk; kk++) {
-                VecGetArray(exner[kk], &ehArray);
-                for(ii = 0; ii < n2; ii++) {
-                    evArray[kk*n2+ii] = ehArray[inds2[ii]];
-                }
-                VecRestoreArray(exner[kk], &ehArray);
-            }
-            VecRestoreArray(exner_v, &evArray);
+            // add in the pressure gradient
+            VecZeroEntries(exner_v);
+            HorizToVert2(ex, ey, exner, exner_v);
 
             VecZeroEntries(de1);
             VecZeroEntries(de2);
@@ -436,8 +424,6 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
 
     n2 = topo->elOrd*topo->elOrd;
 
-    //VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Mpu);
-    //VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Fv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
@@ -457,7 +443,6 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
 
     MatCreate(MPI_COMM_SELF, &Mp);
     MatSetType(Mp, MATSEQAIJ);
-    //MatSetSizes(Mp, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
     MatSetSizes(Mp, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(Mp, topo->elOrd*topo->elOrd, PETSC_NULL);
 
@@ -544,8 +529,6 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
 
     n2 = topo->elOrd*topo->elOrd;
 
-    //VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Mtu);
-    //VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &Fv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mtu);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
@@ -565,7 +548,6 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
 
     MatCreate(MPI_COMM_SELF, &Mt);
     MatSetType(Mt, MATSEQAIJ);
-    //MatSetSizes(Mt, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
     MatSetSizes(Mt, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(Mt, topo->elOrd*topo->elOrd, PETSC_NULL);
 
@@ -590,15 +572,6 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
 
             // copy the vertical contribution to the divergence into the
             // horiztonal vectors
-            //VecGetArray(Dv, &dArray);
-            //for(kk = 0; kk < geom->nk; kk++) {
-            //    VecGetArray(*Ft[kk], &fArray);
-            //    for(ii = 0; ii < n2; ii++) {
-            //        fArray[inds2[ii]] += dArray[kk*n2+ii];
-            //    }
-            //    VecRestoreArray(*Ft[kk], &fArray);
-            //}
-            //VecRestoreArray(Dv, &dArray);
             VertToHoriz2(ex, ey, Dv, *Ft);
         }
     }
@@ -769,6 +742,7 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec** theta) {
     *theta = new Vec[geom->nk-1];
     for(kk = 0; kk < geom->nk - 1; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, theta[kk]);
+        VecZeroEntries(*theta[kk]);
     }
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rtv);
@@ -1018,7 +992,6 @@ void PrimEqns::vertOps() {
 
     MatCreate(MPI_COMM_SELF, &V10);
     MatSetType(V10, MATSEQAIJ);
-    //MatSetSizes(V10, (geom->nk+0)*n2, (geom->nk+1)*n2, (geom->nk+0)*n2, (geom->nk+1)*n2);
     MatSetSizes(V10, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(V10, 2, PETSC_NULL);
 
