@@ -179,14 +179,19 @@ double theta_b_init(double* x, int ki) {
     return theta_init(x, NK);
 }
 
-void LoadVecs(Vec* vecs, int nk, char* fieldname, int step) {
+void LoadVecs(Vec* vecs, int nk, char* fieldname, int step, bool para) {
     int ki;
     char filename[100];
     PetscViewer viewer;
 
     for(ki = 0; ki < NK; ki++) {
         sprintf(filename, "output/%s_%.4u_%.4u.vec", fieldname, ki, step);
-        PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+        if(para) {
+            PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+        }
+        else {
+            PetscViewerBinaryOpen(PETSC_COMM_SELF, fieldname, FILE_MODE_READ, &viewer);
+        }
         VecLoad(vecs[ki], viewer);
         PetscViewerDestroy(&viewer);
     }
@@ -208,6 +213,7 @@ int main(int argc, char** argv) {
     Geom* geom;
     PrimEqns* pe;
     Vec *velx, *velz, *rho, *rt, *exner;
+    PetscViewer viewer;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 
@@ -232,9 +238,9 @@ int main(int argc, char** argv) {
     velz  = new Vec[n2];
     for(ki = 0; ki < NK; ki++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx[ki] );
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho[ki]  );
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho[ki]  );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner[ki]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt[ki]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt[ki]   );
     }
     for(ii = 0; ii < n2; ii++) {
         VecCreateSeq(MPI_COMM_SELF, (NK-1)*topo->elOrd*topo->elOrd, &velz[ii]);
@@ -266,20 +272,22 @@ int main(int argc, char** argv) {
             geom->write2(rt[ki],fieldname,0);
         }
         for(ii = 0; ii < n2; ii++) {
-            sprintf(fieldname,"velocity_z_%.4u", ii);
-            geom->write1(velz[ii],fieldname,0);
+            sprintf(fieldname, "output/velocity_z_%.4u_%.4u.vec", ii, 0);
+            PetscViewerBinaryOpen(MPI_COMM_SELF, fieldname, FILE_MODE_WRITE, &viewer);
+            VecView(velz[ii], viewer);
+            PetscViewerDestroy(&viewer);
         }
     } else {
         sprintf(fieldname,"density");
-        LoadVecs(rho  , NK, fieldname, startStep);
+        LoadVecs(rho  , NK, fieldname, startStep, true );
         sprintf(fieldname,"velocity_x");
-        LoadVecs(velx , NK, fieldname, startStep);
+        LoadVecs(velx , NK, fieldname, startStep, true );
         sprintf(fieldname,"exner");
-        LoadVecs(exner, NK, fieldname, startStep);
+        LoadVecs(exner, NK, fieldname, startStep, true );
         sprintf(fieldname,"rhoTheta");
-        LoadVecs(rt   , NK, fieldname, startStep);
+        LoadVecs(rt   , NK, fieldname, startStep, true );
         sprintf(fieldname,"velociyt_z");
-        LoadVecs(velz , n2, fieldname, startStep);
+        LoadVecs(velz , n2, fieldname, startStep, false);
     }
 
     //vort_0 = mass_0 = ener_0 = 0.0;

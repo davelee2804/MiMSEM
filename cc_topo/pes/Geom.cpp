@@ -554,7 +554,7 @@ void Geom::initJacobians() {
 void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
     int ii, jj;
     double zo;
-    double max_height = fl(x[0], nk);//TODO: assumes x[0] is at the sea surface, fix later
+    double max_height = (fl) ? fl(x[0], nk) : 1.0;//TODO: assumes x[0] is at the sea surface, fix later
 
     for(ii = 0; ii < topo->n0; ii++) {
         topog[ii] = ft(x[ii]);
