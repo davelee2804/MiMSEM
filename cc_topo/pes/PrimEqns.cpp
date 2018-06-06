@@ -572,7 +572,7 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
 
             // copy the vertical contribution to the divergence into the
             // horiztonal vectors
-            VertToHoriz2(ex, ey, Dv, *Ft);
+            VertToHoriz2(ex, ey, geom->nk, Dv, *Ft);
         }
     }
     VecDestroy(&Mtu);
@@ -732,7 +732,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
 /*
 diagnose theta from rho X theta (with boundary condition)
 */
-void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec** theta) {
+void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     int ex, ey, n2, kk;
     Vec rtv, frt, theta_v, bcs;
     Mat A, AB;
@@ -741,10 +741,8 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec** theta) {
 
     n2 = topo->elOrd*topo->elOrd;
 
-    *theta = new Vec[geom->nk-1];
     for(kk = 0; kk < geom->nk - 1; kk++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, theta[kk]);
-        VecZeroEntries(*theta[kk]);
+        VecZeroEntries(theta[kk]);
     }
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rtv);
@@ -783,7 +781,7 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec** theta) {
             thetaBCVec(ex, ey, A, rho, &bcs);
             VecAXPY(frt, -1.0, bcs);
             KSPSolve(kspCol, frt, theta_v);
-            VertToHoriz2(ex, ey, theta_v, *theta);
+            VertToHoriz2(ex, ey, geom->nk-1, theta_v, theta);
             VecDestroy(&bcs);
         }
     }
@@ -1604,6 +1602,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rt_i    = new Vec[geom->nk];
     exner_i = new Vec[geom->nk];
     velz_h  = new Vec[topo->nElsX*topo->nElsX];
+    theta   = new Vec[geom->nk-1];
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_h[kk] );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_h[kk]  );
@@ -1615,6 +1614,9 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecCopy(rho[kk]  , rho_i[kk]  );
         VecCopy(rt[kk]   , rt_i[kk]   );
         VecCopy(exner[kk], exner_i[kk]);
+    }
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta[kk]);
     }
 
     MatCreate(MPI_COMM_SELF, &A);
@@ -1635,7 +1637,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // construct the right hand side terms for the first substep
     // note: do horiztonal rhs first as this assembles the kinetic energy
     // operator for use in the vertical rhs
-    diagTheta(rho, rt, &theta);
+    diagTheta(rho, rt, theta);
     for(kk = 0; kk < geom->nk; kk++) {
         horizMomRHS(velx[kk], velz, theta, exner[kk], kk, &Hu1[kk]);
     }
@@ -1681,7 +1683,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     }
 
     // construct right hand side terms for the second substep
-    diagTheta(rho_h, rt_h, &theta);
+    diagTheta(rho_h, rt_h, theta);
     for(kk = 0; kk < geom->nk; kk++) {
         horizMomRHS(velx_h[kk], velz_h, theta, exner_h[kk], kk, &Hu2[kk]);
     }
@@ -1770,6 +1772,9 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecDestroy(&rt_i[kk]);
         VecDestroy(&exner_i[kk]);
     }
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        VecDestroy(&theta[kk]);
+    }
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&Vu1[ii]);
         VecDestroy(&Vu2[ii]);
@@ -1791,6 +1796,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete[] rt_i;
     delete[] exner_i;
     delete[] velz_h;
+    delete[] theta;
     VecDestroy(&bw);
     VecDestroy(&bu);
     MatDestroy(&A);
@@ -2020,7 +2026,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, 
 }
 #endif
 
-void PrimEqns::VertToHoriz2(int ex, int ey, Vec pv, Vec* ph) {
+void PrimEqns::VertToHoriz2(int ex, int ey, int nk, Vec pv, Vec* ph) {
     int ii, kk, n2;
     int* inds2 = topo->elInds2_l(ex, ey);
     PetscScalar *hArray, *vArray;
@@ -2028,7 +2034,7 @@ void PrimEqns::VertToHoriz2(int ex, int ey, Vec pv, Vec* ph) {
     n2 = topo->elOrd*topo->elOrd;
 
     VecGetArray(pv, &vArray);
-    for(kk = 0; kk < geom->nk; kk++) {
+    for(kk = 0; kk < nk; kk++) {
         VecGetArray(ph[kk], &hArray);
         for(ii = 0; ii < n2; ii++) {
             hArray[inds2[ii]] += vArray[kk*n2+ii];
