@@ -107,7 +107,7 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
 
     Kv = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &Kv[ii]);
+        VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->elOrd*topo->elOrd, &Kv[ii]);
     }
 }
 
@@ -326,7 +326,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
     }
 }
 
-void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
+void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
     int ex, ey, ei, n2;
     Vec exner_v, de1, de2, de3, dp;
     Mat A, B;
@@ -346,17 +346,11 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
     MatSetSizes(B, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(B, topo->elOrd*topo->elOrd, PETSC_NULL);
 
-    *fw = new Vec[topo->nElsX*topo->nElsX];
-    for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, fw[ei]);
-        VecZeroEntries(*fw[ei]);
-    }
-
-    VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &de1);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, &de2);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, &de3);
-    VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &dp);
-    VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n2, &exner_v);
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &de1);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &de2);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &de3);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &dp);
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &exner_v);
 
     KSPCreate(MPI_COMM_SELF, &kspCol);
     KSPSetOperators(kspCol, B, B);
@@ -373,7 +367,7 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
             ei = ey*topo->nElsX + ex;
 
             // add in the kinetic energy gradient
-            MatMult(V01, Kv[ei], *fw[ei]);
+            MatMult(V01, Kv[ei], fw[ei]);
 
             // add in the pressure gradient
             VecZeroEntries(exner_v);
@@ -385,6 +379,7 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
             AssembleConst(ex, ey, A);
             MatMult(A, exner_v, de1);
             MatMult(V01, de1, de2);
+            AssembleLinear(ex, ey, B, false);//TODO: skip this and just solve with B(theta)?? on LHS
             KSPSolve(kspCol, de2, de3);
 
             // interpolate the potential temperature onto the piecewise linear
@@ -392,7 +387,7 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec **fw) {
             // the exner pressure
             AssembleLinearWithTheta(ex, ey, theta, B);
             MatMult(B, de3, dp);
-            VecAXPY(*fw[ei], 1.0, dp);
+            VecAXPY(fw[ei], 1.0, dp);
 
             // TODO: add in horizontal vorticity terms
         }
@@ -413,7 +408,7 @@ compute the continuity equation right hand side for all levels
 uh: horiztonal velocity by vertical level
 uv: vertical velocity by horiztonal element
 */
-void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
+void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     int ii, kk, ex, ey, n2, *inds2;
     Vec Mpu, Fv, Dv;
     Vec pl, pu, Fi, Dh;
@@ -427,13 +422,6 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
-
-    // allocate the RHS vectors at each level
-    Fp = new Vec*[geom->nk];
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Fp[kk]);
-        VecZeroEntries(*Fp[kk]);
-    }
 
     // compute the vertical mass fluxes (piecewise linear in the vertical)
     MatCreate(MPI_COMM_SELF, &B);
@@ -471,11 +459,11 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
             // horiztonal vectors
             VecGetArray(Dv, &dArray);
             for(kk = 0; kk < geom->nk; kk++) {
-                VecGetArray(*Fp[kk], &fArray);
+                VecGetArray(Fp[kk], &fArray);
                 for(ii = 0; ii < n2; ii++) {
                     fArray[inds2[ii]] += dArray[kk*n2+ii];
                 }
-                VecRestoreArray(*Fp[kk], &fArray);
+                VecRestoreArray(Fp[kk], &fArray);
             }
             VecRestoreArray(Dv, &dArray);
         }
@@ -503,7 +491,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec **Fp) {
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fi);
         MatMult(EtoF->E21, Fi, Dh);
-        VecAXPY(*Fp[kk], 1.0, Dh);
+        VecAXPY(Fp[kk], 1.0, Dh);
     }
 
     VecDestroy(&pl);
@@ -572,7 +560,7 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
 
             // copy the vertical contribution to the divergence into the
             // horiztonal vectors
-            VertToHoriz2(ex, ey, geom->nk, Dv, *Ft);
+            VertToHoriz2(ex, ey, 0, geom->nk, Dv, *Ft);
         }
     }
     VecDestroy(&Mtu);
@@ -781,7 +769,7 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
             thetaBCVec(ex, ey, A, rho, &bcs);
             VecAXPY(frt, -1.0, bcs);
             KSPSolve(kspCol, frt, theta_v);
-            VertToHoriz2(ex, ey, geom->nk-1, theta_v, theta);
+            VertToHoriz2(ex, ey, 1, geom->nk, theta_v, theta);
             VecDestroy(&bcs);
         }
     }
@@ -1507,10 +1495,11 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
         // assemble the first basis function
+        // TODO: exclude top and bottom boundaries
         for(ii = 0; ii < W->nDofsJ; ii++) {
             inds2k[ii] = inds[ii] + kk*W->nDofsJ;
         }
-        MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);//TODO
 
         // assemble the second basis function
         for(ii = 0; ii < W->nDofsJ; ii++) {
@@ -1547,13 +1536,11 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
 
     MatCreate(MPI_COMM_SELF, &L);
     MatSetType(L, MATSEQAIJ);
-    //MatSetSizes(L, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2, (geom->nk+1)*n2);
     MatSetSizes(L, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(L, n2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &BA);
     MatSetType(BA, MATSEQAIJ);
-    //MatSetSizes(BA, (geom->nk+0)*n2, (geom->nk+1)*n2, (geom->nk+0)*n2, (geom->nk+1)*n2);
     MatSetSizes(BA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(BA, n2, PETSC_NULL);
 
@@ -1592,7 +1579,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     Hu1 = new Vec[geom->nk];
     Hu2 = new Vec[geom->nk];
 
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, &bw);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &bw);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
     velx_h  = new Vec[geom->nk];
     rho_h   = new Vec[geom->nk];
@@ -1602,7 +1589,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rt_i    = new Vec[geom->nk];
     exner_i = new Vec[geom->nk];
     velz_h  = new Vec[topo->nElsX*topo->nElsX];
-    theta   = new Vec[geom->nk-1];
+    theta   = new Vec[geom->nk+1];
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_h[kk] );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_h[kk]  );
@@ -1615,8 +1602,37 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecCopy(rt[kk]   , rt_i[kk]   );
         VecCopy(exner[kk], exner_i[kk]);
     }
-    for(kk = 0; kk < geom->nk-1; kk++) {
+    // create vectors for the potential temperature at the internal layer interfaces
+    for(kk = 1; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta[kk]);
+    }
+    // set the top and bottom potential temperature bcs
+    theta[0]        = theta_b;
+    theta[geom->nk] = theta_t;
+
+    Vu1 = new Vec[topo->nElsX*topo->nElsX];
+    Vu2 = new Vec[topo->nElsX*topo->nElsX];
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu1[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu2[ii]);
+        VecZeroEntries(Vu1[ii]);
+        VecZeroEntries(Vu2[ii]);
+    }
+
+    // continuity and temperature equation rhs vectors
+    Fp1 = new Vec[geom->nk];
+    Ft1 = new Vec[geom->nk];
+    Fp2 = new Vec[geom->nk];
+    Ft2 = new Vec[geom->nk];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Fp1[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ft1[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Fp2[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ft2[kk]);
+        VecZeroEntries(Fp1[kk]);
+        VecZeroEntries(Ft1[kk]);
+        VecZeroEntries(Fp2[kk]);
+        VecZeroEntries(Ft2[kk]);
     }
 
     MatCreate(MPI_COMM_SELF, &A);
@@ -1641,9 +1657,9 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     for(kk = 0; kk < geom->nk; kk++) {
         horizMomRHS(velx[kk], velz, theta, exner[kk], kk, &Hu1[kk]);
     }
-    vertMomRHS(velx, velz, theta, exner, &Vu1);
-    massRHS(velx, velz, rho, &Fp1);
-    massRHS(velx, velz, rt,  &Ft1);
+    vertMomRHS(velx, velz, theta, exner, Vu1);
+    massRHS(velx, velz, rho, Fp1);
+    massRHS(velx, velz, rt,  Ft1);
 
     // solve for the half step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1687,9 +1703,9 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     for(kk = 0; kk < geom->nk; kk++) {
         horizMomRHS(velx_h[kk], velz_h, theta, exner_h[kk], kk, &Hu2[kk]);
     }
-    vertMomRHS(velx_h, velz_h, theta, exner_h, &Vu2);
-    massRHS(velx_h, velz_h, rho_h, &Fp2);
-    massRHS(velx_h, velz_h, rt_h,  &Ft2);
+    vertMomRHS(velx_h, velz_h, theta, exner_h, Vu2);
+    massRHS(velx_h, velz_h, rho_h, Fp2);
+    massRHS(velx_h, velz_h, rt_h,  Ft2);
 
     // solve for the full step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1772,7 +1788,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecDestroy(&rt_i[kk]);
         VecDestroy(&exner_i[kk]);
     }
-    for(kk = 0; kk < geom->nk-1; kk++) {
+    for(kk = 1; kk < geom->nk; kk++) {
         VecDestroy(&theta[kk]);
     }
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
@@ -2026,7 +2042,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, 
 }
 #endif
 
-void PrimEqns::VertToHoriz2(int ex, int ey, int nk, Vec pv, Vec* ph) {
+void PrimEqns::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph) {
     int ii, kk, n2;
     int* inds2 = topo->elInds2_l(ex, ey);
     PetscScalar *hArray, *vArray;
@@ -2034,7 +2050,7 @@ void PrimEqns::VertToHoriz2(int ex, int ey, int nk, Vec pv, Vec* ph) {
     n2 = topo->elOrd*topo->elOrd;
 
     VecGetArray(pv, &vArray);
-    for(kk = 0; kk < nk; kk++) {
+    for(kk = ki; kk < kf; kk++) {
         VecGetArray(ph[kk], &hArray);
         for(ii = 0; ii < n2; ii++) {
             hArray[inds2[ii]] += vArray[kk*n2+ii];
