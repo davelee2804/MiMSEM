@@ -409,13 +409,12 @@ uh: horiztonal velocity by vertical level
 uv: vertical velocity by horiztonal element
 */
 void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
-    int ii, kk, ex, ey, n2, *inds2;
+    int kk, ex, ey, n2;
     Vec Mpu, Fv, Dv;
     Vec pl, pu, Fi, Dh;
     Mat Mp, B;
     PC pc;
     KSP kspCol;
-    PetscScalar* dArray, *fArray;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -446,26 +445,16 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds2 = topo->elInds2_l(ex, ey);
-
             VertFlux(ex, ey, pi, NULL, Mp);
             MatMult(Mp, uv[ey*topo->nElsX+ex], Mpu);
             AssembleLinear(ex, ey, B, false);
-            KSPSolve(kspCol, Mpu, Fv);
+            KSPSolve(kspCol, Mpu, Fv);//TODO
             // strong form vertical divergence
             MatMult(V10, Fv, Dv);
 
             // copy the vertical contribution to the divergence into the
             // horiztonal vectors
-            VecGetArray(Dv, &dArray);
-            for(kk = 0; kk < geom->nk; kk++) {
-                VecGetArray(Fp[kk], &fArray);
-                for(ii = 0; ii < n2; ii++) {
-                    fArray[inds2[ii]] += dArray[kk*n2+ii];
-                }
-                VecRestoreArray(Fp[kk], &fArray);
-            }
-            VecRestoreArray(Dv, &dArray);
+            VertToHoriz2(ex, ey, 0, geom->nk, Dv, Fp);
         }
     }
     VecDestroy(&Mpu);
@@ -954,7 +943,7 @@ void PrimEqns::laplacian(Vec ui, Vec* ddu, int lev) {
 
     // add rotational and divergent components
     VecCopy(GDu, *ddu);
-    VecAXPY(*ddu, +1.0, RCu); // TODO: check sign here
+    VecAXPY(*ddu, +1.0, RCu);
 
     VecScale(*ddu, del2);
 
@@ -1435,7 +1424,6 @@ TODO: only need a single piecewise constant field, may be either rho or rho X th
 */
 void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
     int ii, kk, ei, mp1, mp12;
-    int* inds;
     double det, rho, temp1, temp2;
     int inds2k[99];
     Wii* Q = new Wii(node->q, geom);
@@ -1447,7 +1435,6 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *pArray, *t1Array, *t2Array;
 
-    inds  = topo->elInds2_g(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
@@ -1494,19 +1481,21 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
-        // assemble the first basis function
-        // TODO: exclude top and bottom boundaries
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = inds[ii] + kk*W->nDofsJ;
+        // assemble the first basis function (exclude bottom boundary)
+        if(kk > 0) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                inds2k[ii] = ii + (kk-1)*W->nDofsJ;
+            }
+            MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
         }
-        MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);//TODO
 
-        // assemble the second basis function
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = inds[ii] + (kk+1)*W->nDofsJ;
+        // assemble the second basis function (exclude top boundary)
+        if(kk < geom->nk - 1) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                inds2k[ii] = ii + (kk+0)*W->nDofsJ;
+            }
+            MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
         }
-        MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-
     }
     MatAssemblyBegin(Mp, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(Mp, MAT_FINAL_ASSEMBLY);
