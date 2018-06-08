@@ -1112,7 +1112,6 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat A, bool add_g) {
         // assemble the first basis function
         if(kk > 0) {
             for(ii = 0; ii < W->nDofsJ; ii++) {
-                //inds2k[ii] = ii + kk*W->nDofsJ;
                 inds2k[ii] = ii + (kk-1)*W->nDofsJ;
             }
             MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
@@ -1121,7 +1120,6 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat A, bool add_g) {
         // assemble the second basis function
         if(kk < geom->nk - 1) {
             for(ii = 0; ii < W->nDofsJ; ii++) {
-                //inds2k[ii] = ii + (kk+1)*W->nDofsJ;
                 inds2k[ii] = ii + (kk+0)*W->nDofsJ;
             }
             MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
@@ -1332,7 +1330,6 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A) {
             Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
             for(ii = 0; ii < W->nDofsJ; ii++) {
-                //inds2k[ii] = ii + kk*W->nDofsJ;
                 inds2k[ii] = ii + (kk-1)*W->nDofsJ;
             }
             MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
@@ -1345,7 +1342,6 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A) {
             Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
             for(ii = 0; ii < W->nDofsJ; ii++) {
-                //inds2k[ii] = ii + (kk+1)*W->nDofsJ;
                 inds2k[ii] = ii + (kk+0)*W->nDofsJ;
             }
             MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);

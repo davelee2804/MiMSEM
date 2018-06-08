@@ -56,8 +56,8 @@ double t_bar(double eta) {
 // hybrid coordinate coefficients, A and B derived from:
 //     Lauritzen, Jablonowski, Taylor and Nair, JAMES, 2010
 double z_from_eta(double* x, int ki) {
-    int ii;
-    double pi, pj, ph, dp, temp, rho, eta_h, dz, z = 0.0;
+    int kk;
+    double pt, pb, ph, dp, temp, rho, eta_h, dz, z = 0.0;
     double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
     double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
 //    double Ai[27] = {0.002194067,0.004895209,0.009882418,0.01805201,0.02983724,0.04462334,0.06160587,0.07851243,0.07731271,
@@ -67,20 +67,19 @@ double z_from_eta(double* x, int ki) {
 //                     0.03276228, 0.05359622, 0.07810627, 0.1069411, 0.1408637, 0.1807720, 0.2277220, 0.2829562, 0.3479364,
 //                     0.4243822,  0.5143168,  0.6201202,  0.7235355, 0.8176768, 0.8962153, 0.9534761, 0.9851122, 1.0       };
 
-    if(ki == NK) return z;
+    if(ki == 0) return z;
 
-    for(ii = NK - 1; ii >= ki; ii--) {
-        pi    = Ai[ii+1]*P0 + Bi[ii+1]*P0;
-        pj    = Ai[ii+0]*P0 + Bi[ii+0]*P0;
-        ph    = 0.5*(pi + pj);
-        dp    = fabs(pi - pj);
+    for(kk = 0; kk < ki; kk++) {
+        pt    = Ai[NK-kk-1]*P0 + Bi[NK-kk-1]*P0;
+        pb    = Ai[NK-kk+0]*P0 + Bi[NK-kk+0]*P0;
+        ph    = 0.5*(pt + pb);
+        dp    = pb - pt;
         eta_h = ph/P0;
         temp  = t_bar(eta_h);
         rho   = ph/RD/temp;
         dz    = dp/rho/GRAVITY;
         z    += dz;
     }
-
     return z;
 }
 
