@@ -57,7 +57,6 @@ class PrimEqns {
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
         void progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev);
         void UpdateKEVert(Vec ke, int lev);
-        void VertConstMatInv(int ex, int ey, Mat M1inv);
         void VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph);
         void HorizToVert2(int ex, int ey, Vec* ph, Vec pv);
         void SolveRK2(Vec* velx, Vec* velw, Vec* rho, Vec* theta, Vec* exner, bool save);

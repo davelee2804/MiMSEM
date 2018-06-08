@@ -812,61 +812,6 @@ void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev)
     VecDestroy(&rhs);
     KSPDestroy(&kspE);
 }
-#if 0
-void PrimEqns::progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec exner_i, Vec* exner_f, int lev) {
-    Vec rho_l, theta_k, theta_k_l, rhs;
-    PC pc;
-    KSP kspE;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rho_l);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k_l);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_k);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, exner_f);
-
-    KSPCreate(MPI_COMM_WORLD, &kspE);
-    KSPSetOperators(kspE, F->M, F->M);
-    KSPSetTolerances(kspE, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(kspE, KSPGMRES);
-    KSPGetPC(kspE, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
-    KSPSetOptionsPrefix(kspE, "exner_");
-    KSPSetFromOptions(kspE);
-
-    // assemble the right hand side
-    VecZeroEntries(theta_k);
-    VecAXPY(theta_k, 0.5, theta_i[lev]);
-    VecAXPY(theta_k, 0.5, theta_i[lev+1]);
-
-    VecScatterBegin(topo->gtol_2, rho_i, rho_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, rho_i, rho_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
-
-    F->assemble(rho_l, theta_k_l, lev, true);
-    MatMult(F->M, exner_i, rhs);
-
-    // assemble the nonlinear operator
-    VecZeroEntries(theta_k);
-    VecAXPY(theta_k, 0.5, theta_f[lev]);
-    VecAXPY(theta_k, 0.5, theta_f[lev+1]);
-
-    VecScatterBegin(topo->gtol_2, rho_f, rho_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, rho_f, rho_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
-
-    F->assemble(rho_l, theta_k_l, lev, true);
-    KSPSolve(kspE, rhs, *exner_f);
-
-    VecDestroy(&rho_l);
-    VecDestroy(&theta_k_l);
-    VecDestroy(&theta_k);
-    VecDestroy(&rhs);
-    KSPDestroy(&kspE);
-}
-#endif
 
 /*
 Take the weak form gradient of a 2 form scalar field as a 1 form vector field
@@ -976,9 +921,6 @@ void PrimEqns::vertOps() {
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < n2; ii++) {
             rows[0] = kk*n2 + ii;
-            //cols[0] = (kk+0)*n2 + ii;
-            //cols[1] = (kk+1)*n2 + ii;
-            //MatSetValues(V10, 1, rows, 2, cols, vals, INSERT_VALUES);
 
             if(kk > 0 && kk < geom->nk - 1) {
                 cols[0] = (kk-1)*n2 + ii;
@@ -1361,60 +1303,6 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A) {
     delete W;
 }
 
-void PrimEqns::VertConstMatInv(int ex, int ey, Mat Binv) {
-    int ii, kk, ei, mp1, mp12;
-    int* inds0 = topo->elInds0_l(ex, ey);
-    int rows[99];
-    double det;
-    Wii* Q = new Wii(edge->l->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* Aflat = new double[W->nDofsJ*W->nDofsJ];
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-
-    mp1 = quad->n + 1;
-    mp12 = mp1*mp1;
-    ei = ey*topo->nElsX + ex;
-
-    MatZeroEntries(Binv);
-
-    for(kk = 0; kk < geom->nk; kk++) {
-       // incorporate the jacobian transformation for each element
-       Q->assemble(ex, ey);
-
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Qaa[ii][ii] = Q->A[ii][ii]/det/det;
-            Qaa[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
-        }
-
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-        Inv(WtQWflat, Aflat, topo->elOrd);
-
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            rows[ii] = ii + kk*W->nDofsJ;
-        }
-        MatSetValues(Binv, W->nDofsJ, rows, W->nDofsJ, rows, Aflat, ADD_VALUES);
-    }
-
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    Free2D(W->nDofsJ, WtQWinv);
-    delete W;
-    delete Q;
-    delete[] Aflat;
-    delete[] WtQWflat;
-}
-
 /*
 derive the vertical mass flux
 TODO: only need a single piecewise constant field, may be either rho or rho X theta
@@ -1508,45 +1396,28 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
 
 void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
     int n2 = topo->elOrd*topo->elOrd;
-    Mat B, L, DA, Binv, BA;
+    Mat B, L, BD, GBD;
 
     MatCreate(MPI_COMM_SELF, &B);
     MatSetType(B, MATSEQAIJ);
     MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
     MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
-    MatCreate(MPI_COMM_SELF, &Binv);
-    MatSetType(Binv, MATSEQAIJ);
-    MatSetSizes(Binv, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(Binv, n2, PETSC_NULL);
-
-    MatCreate(MPI_COMM_SELF, &L);
-    MatSetType(L, MATSEQAIJ);
-    MatSetSizes(L, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(L, n2, PETSC_NULL);
-
-    MatCreate(MPI_COMM_SELF, &BA);
-    MatSetType(BA, MATSEQAIJ);
-    MatSetSizes(BA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(BA, n2, PETSC_NULL);
-
     AssembleLinear(ex, ey, A, false);
     AssembleConst(ex, ey, B);
-    MatMatMult(V01, A, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DA);
 
-    // get the inverse of the B matrix (locally on this processor)
-    VertConstMatInv(ex, ey, Binv);
-
-    MatMatMult(Binv, DA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &BA);
-    MatMatMult(V10, BA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &L);
+    // construct the laplacian mixing operator
+    MatMatMult(B, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &BD);
+    MatMatMult(V01, BD, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GBD);
+    MatMatMult(A, GBD, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &L);
 
     // assemble the piecewise linear mass matrix (with gravity)
     AssembleLinear(ex, ey, A, true);
-    MatAXPY(A, vert_visc, L, SAME_NONZERO_PATTERN);
+    MatAXPY(A, vert_visc, L, DIFFERENT_NONZERO_PATTERN);//TODO: check the sign on the viscosity
 
     MatDestroy(&B);
-    MatDestroy(&Binv);
-    MatDestroy(&BA);
+    MatDestroy(&BD);
+    MatDestroy(&GBD);
     MatDestroy(&L);
 }
 
@@ -1599,8 +1470,9 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     Vu1 = new Vec[topo->nElsX*topo->nElsX];
     Vu2 = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu1[ii]);
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu2[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &velz_h[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu1[ii]   );
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu2[ii]   );
         VecZeroEntries(Vu1[ii]);
         VecZeroEntries(Vu2[ii]);
     }
@@ -1674,7 +1546,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
-            VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->n2, &velz_h[ii]);
 
             AssembleVertOps(ex, ey, A);
             VecZeroEntries(bw);
@@ -1804,6 +1675,336 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     MatDestroy(&A);
     KSPDestroy(&kspCol);
 }
+
+void PrimEqns::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph) {
+    int ii, kk, n2;
+    int* inds2 = topo->elInds2_l(ex, ey);
+    PetscScalar *hArray, *vArray;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    VecGetArray(pv, &vArray);
+    for(kk = ki; kk < kf; kk++) {
+        VecGetArray(ph[kk], &hArray);
+        for(ii = 0; ii < n2; ii++) {
+            hArray[inds2[ii]] += vArray[kk*n2+ii];
+        }
+        VecRestoreArray(ph[kk], &hArray);
+    }
+    VecRestoreArray(pv, &vArray);
+}
+
+void PrimEqns::HorizToVert2(int ex, int ey, Vec* ph, Vec pv) {
+    int ii, kk, n2;
+    int* inds2 = topo->elInds2_l(ex, ey);
+    PetscScalar *hArray, *vArray;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    VecZeroEntries(pv);
+
+    VecGetArray(pv, &vArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecGetArray(ph[kk], &hArray);
+        for(ii = 0; ii < n2; ii++) {
+            vArray[kk*n2+ii] += hArray[inds2[ii]];
+        }
+        VecRestoreArray(ph[kk], &hArray);
+    }
+    VecRestoreArray(pv, &vArray);
+}
+
+void PrimEqns::init0(Vec* q, ICfunc3D* func) {
+    int ex, ey, ii, kk, mp1, mp12;
+    int* inds0;
+    PtQmat* PQ = new PtQmat(topo, geom, node);
+    PetscScalar *bArray;
+    Vec bl, bg, PQb;
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PQb);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecZeroEntries(bg);
+        VecGetArray(bl, &bArray);
+
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                inds0 = topo->elInds0_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    bArray[inds0[ii]] = func(geom->x[inds0[ii]], kk);
+                }
+            }
+        }
+        VecRestoreArray(bl, &bArray);
+        VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+        MatMult(PQ->M, bg, PQb);
+        VecPointwiseDivide(q[kk], PQb, m0->vg);
+    }
+
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&PQb);
+    delete PQ;
+}
+
+void PrimEqns::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
+    int ex, ey, ii, kk, mp1, mp12;
+    int *inds0, *loc02;
+    UtQmat* UQ = new UtQmat(topo, geom, node, edge);
+    PetscScalar *bArray;
+    Vec bl, bg, UQb;
+    IS isl, isg;
+    VecScatter scat;
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    loc02 = new int[2*topo->n0];
+    VecCreateSeq(MPI_COMM_SELF, 2*topo->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, 2*topo->n0l, 2*topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &UQb);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecZeroEntries(bg);
+        VecGetArray(bl, &bArray);
+
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                inds0 = topo->elInds0_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    bArray[2*inds0[ii]+0] = func_x(geom->x[inds0[ii]], kk);
+                    bArray[2*inds0[ii]+1] = func_y(geom->x[inds0[ii]], kk);
+                }
+            }
+        }
+        VecRestoreArray(bl, &bArray);
+
+        // create a new vec scatter object to handle vector quantity on nodes
+        for(ii = 0; ii < topo->n0; ii++) {
+            loc02[2*ii+0] = 2*topo->loc0[ii]+0;
+            loc02[2*ii+1] = 2*topo->loc0[ii]+1;
+        }
+        ISCreateStride(MPI_COMM_WORLD, 2*topo->n0, 0, 1, &isl);
+        ISCreateGeneral(MPI_COMM_WORLD, 2*topo->n0, loc02, PETSC_COPY_VALUES, &isg);
+        VecScatterCreate(bg, isg, bl, isl, &scat);
+        VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+        M1->assemble(kk);
+        MatMult(UQ->M, bg, UQb);
+        KSPSolve(ksp1, UQb, u[kk]);
+    }
+
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&UQb);
+    ISDestroy(&isl);
+    ISDestroy(&isg);
+    VecScatterDestroy(&scat);
+    delete UQ;
+    delete[] loc02;
+}
+
+void PrimEqns::init2(Vec* h, ICfunc3D* func) {
+    int ex, ey, ii, kk, mp1, mp12;
+    int *inds0;
+    PetscScalar *bArray;
+    Vec bl, bg, WQb;
+    WtQmat* WQ = new WtQmat(topo, geom, edge);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecZeroEntries(bg);
+        VecGetArray(bl, &bArray);
+
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                inds0 = topo->elInds0_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    bArray[inds0[ii]] = func(geom->x[inds0[ii]], kk);
+                }
+            }
+        }
+        VecRestoreArray(bl, &bArray);
+        VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+        M2->assemble(kk);
+        MatMult(WQ->M, bg, WQb);
+
+        KSPSolve(ksp2, WQb, h[kk]);
+    }
+
+    delete WQ;
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&WQb);
+}
+
+void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
+    int ex, ey, ii, mp1, mp12;
+    int *inds0;
+    PetscScalar *bArray;
+    Vec bl, bg, WQb;
+    WtQmat* WQ = new WtQmat(topo, geom, edge);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
+    VecZeroEntries(bg);
+
+    VecGetArray(bl, &bArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                bArray[inds0[ii]] = func(geom->x[inds0[ii]], 0);
+            }
+        }
+    }
+    VecRestoreArray(bl, &bArray);
+    VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+    M2->assemble(0);
+    MatMult(WQ->M, bg, WQb);
+    KSPSolve(ksp2, WQb, theta);
+
+    delete WQ;
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&WQb);
+}
+
+#if 0
+void PrimEqns::VertConstMatInv(int ex, int ey, Mat Binv) {
+    int ii, kk, ei, mp1, mp12;
+    int* inds0 = topo->elInds0_l(ex, ey);
+    int rows[99];
+    double det;
+    Wii* Q = new Wii(edge->l->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* Aflat = new double[W->nDofsJ*W->nDofsJ];
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+    ei = ey*topo->nElsX + ex;
+
+    MatZeroEntries(Binv);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+       // incorporate the jacobian transformation for each element
+       Q->assemble(ex, ey);
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Qaa[ii][ii] = Q->A[ii][ii]/det/det;
+            Qaa[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
+        }
+
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+        Inv(WtQWflat, Aflat, topo->elOrd);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(Binv, W->nDofsJ, rows, W->nDofsJ, rows, Aflat, ADD_VALUES);
+    }
+
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQWinv);
+    delete W;
+    delete Q;
+    delete[] Aflat;
+    delete[] WtQWflat;
+}
+#endif
+
+#if 0
+void PrimEqns::progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec exner_i, Vec* exner_f, int lev) {
+    Vec rho_l, theta_k, theta_k_l, rhs;
+    PC pc;
+    KSP kspE;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rho_l);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k_l);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_k);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, exner_f);
+
+    KSPCreate(MPI_COMM_WORLD, &kspE);
+    KSPSetOperators(kspE, F->M, F->M);
+    KSPSetTolerances(kspE, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspE, KSPGMRES);
+    KSPGetPC(kspE, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
+    KSPSetOptionsPrefix(kspE, "exner_");
+    KSPSetFromOptions(kspE);
+
+    // assemble the right hand side
+    VecZeroEntries(theta_k);
+    VecAXPY(theta_k, 0.5, theta_i[lev]);
+    VecAXPY(theta_k, 0.5, theta_i[lev+1]);
+
+    VecScatterBegin(topo->gtol_2, rho_i, rho_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, rho_i, rho_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+
+    F->assemble(rho_l, theta_k_l, lev, true);
+    MatMult(F->M, exner_i, rhs);
+
+    // assemble the nonlinear operator
+    VecZeroEntries(theta_k);
+    VecAXPY(theta_k, 0.5, theta_f[lev]);
+    VecAXPY(theta_k, 0.5, theta_f[lev+1]);
+
+    VecScatterBegin(topo->gtol_2, rho_f, rho_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, rho_f, rho_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+
+    F->assemble(rho_l, theta_k_l, lev, true);
+    KSPSolve(kspE, rhs, *exner_f);
+
+    VecDestroy(&rho_l);
+    VecDestroy(&theta_k_l);
+    VecDestroy(&theta_k);
+    VecDestroy(&rhs);
+    KSPDestroy(&kspE);
+}
+#endif
+
 #if 0
 void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, bool save) {
     int ii, kk, ex, ey, n2;
@@ -2027,221 +2228,3 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, 
     KSPDestroy(&kspCol);
 }
 #endif
-
-void PrimEqns::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph) {
-    int ii, kk, n2;
-    int* inds2 = topo->elInds2_l(ex, ey);
-    PetscScalar *hArray, *vArray;
-
-    n2 = topo->elOrd*topo->elOrd;
-
-    VecGetArray(pv, &vArray);
-    for(kk = ki; kk < kf; kk++) {
-        VecGetArray(ph[kk], &hArray);
-        for(ii = 0; ii < n2; ii++) {
-            hArray[inds2[ii]] += vArray[kk*n2+ii];
-        }
-        VecRestoreArray(ph[kk], &hArray);
-    }
-    VecRestoreArray(pv, &vArray);
-}
-
-void PrimEqns::HorizToVert2(int ex, int ey, Vec* ph, Vec pv) {
-    int ii, kk, n2;
-    int* inds2 = topo->elInds2_l(ex, ey);
-    PetscScalar *hArray, *vArray;
-
-    n2 = topo->elOrd*topo->elOrd;
-
-    VecZeroEntries(pv);
-
-    VecGetArray(pv, &vArray);
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecGetArray(ph[kk], &hArray);
-        for(ii = 0; ii < n2; ii++) {
-            vArray[kk*n2+ii] += hArray[inds2[ii]];
-        }
-        VecRestoreArray(ph[kk], &hArray);
-    }
-    VecRestoreArray(pv, &vArray);
-}
-
-void PrimEqns::init0(Vec* q, ICfunc3D* func) {
-    int ex, ey, ii, kk, mp1, mp12;
-    int* inds0;
-    PtQmat* PQ = new PtQmat(topo, geom, node);
-    PetscScalar *bArray;
-    Vec bl, bg, PQb;
-
-    mp1 = quad->n + 1;
-    mp12 = mp1*mp1;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PQb);
-
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecZeroEntries(bg);
-        VecGetArray(bl, &bArray);
-
-        for(ey = 0; ey < topo->nElsX; ey++) {
-            for(ex = 0; ex < topo->nElsX; ex++) {
-                inds0 = topo->elInds0_l(ex, ey);
-                for(ii = 0; ii < mp12; ii++) {
-                    bArray[inds0[ii]] = func(geom->x[inds0[ii]], kk);
-                }
-            }
-        }
-        VecRestoreArray(bl, &bArray);
-        VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-        VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-
-        MatMult(PQ->M, bg, PQb);
-        VecPointwiseDivide(q[kk], PQb, m0->vg);
-    }
-
-    VecDestroy(&bl);
-    VecDestroy(&bg);
-    VecDestroy(&PQb);
-    delete PQ;
-}
-
-void PrimEqns::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
-    int ex, ey, ii, kk, mp1, mp12;
-    int *inds0, *loc02;
-    UtQmat* UQ = new UtQmat(topo, geom, node, edge);
-    PetscScalar *bArray;
-    Vec bl, bg, UQb;
-    IS isl, isg;
-    VecScatter scat;
-
-    mp1 = quad->n + 1;
-    mp12 = mp1*mp1;
-
-    loc02 = new int[2*topo->n0];
-    VecCreateSeq(MPI_COMM_SELF, 2*topo->n0, &bl);
-    VecCreateMPI(MPI_COMM_WORLD, 2*topo->n0l, 2*topo->nDofs0G, &bg);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &UQb);
-
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecZeroEntries(bg);
-        VecGetArray(bl, &bArray);
-
-        for(ey = 0; ey < topo->nElsX; ey++) {
-            for(ex = 0; ex < topo->nElsX; ex++) {
-                inds0 = topo->elInds0_l(ex, ey);
-                for(ii = 0; ii < mp12; ii++) {
-                    bArray[2*inds0[ii]+0] = func_x(geom->x[inds0[ii]], kk);
-                    bArray[2*inds0[ii]+1] = func_y(geom->x[inds0[ii]], kk);
-                }
-            }
-        }
-        VecRestoreArray(bl, &bArray);
-
-        // create a new vec scatter object to handle vector quantity on nodes
-        for(ii = 0; ii < topo->n0; ii++) {
-            loc02[2*ii+0] = 2*topo->loc0[ii]+0;
-            loc02[2*ii+1] = 2*topo->loc0[ii]+1;
-        }
-        ISCreateStride(MPI_COMM_WORLD, 2*topo->n0, 0, 1, &isl);
-        ISCreateGeneral(MPI_COMM_WORLD, 2*topo->n0, loc02, PETSC_COPY_VALUES, &isg);
-        VecScatterCreate(bg, isg, bl, isl, &scat);
-        VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-        VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-
-        M1->assemble(kk);
-        MatMult(UQ->M, bg, UQb);
-        KSPSolve(ksp1, UQb, u[kk]);
-    }
-
-    VecDestroy(&bl);
-    VecDestroy(&bg);
-    VecDestroy(&UQb);
-    ISDestroy(&isl);
-    ISDestroy(&isg);
-    VecScatterDestroy(&scat);
-    delete UQ;
-    delete[] loc02;
-}
-
-void PrimEqns::init2(Vec* h, ICfunc3D* func) {
-    int ex, ey, ii, kk, mp1, mp12;
-    int *inds0;
-    PetscScalar *bArray;
-    Vec bl, bg, WQb;
-    WtQmat* WQ = new WtQmat(topo, geom, edge);
-
-    mp1 = quad->n + 1;
-    mp12 = mp1*mp1;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
-
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecZeroEntries(bg);
-        VecGetArray(bl, &bArray);
-
-        for(ey = 0; ey < topo->nElsX; ey++) {
-            for(ex = 0; ex < topo->nElsX; ex++) {
-                inds0 = topo->elInds0_l(ex, ey);
-                for(ii = 0; ii < mp12; ii++) {
-                    bArray[inds0[ii]] = func(geom->x[inds0[ii]], kk);
-                }
-            }
-        }
-        VecRestoreArray(bl, &bArray);
-        VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-        VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-
-        M2->assemble(kk);
-        MatMult(WQ->M, bg, WQb);
-
-        KSPSolve(ksp2, WQb, h[kk]);
-    }
-
-    delete WQ;
-    VecDestroy(&bl);
-    VecDestroy(&bg);
-    VecDestroy(&WQb);
-}
-
-void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
-    int ex, ey, ii, mp1, mp12;
-    int *inds0;
-    PetscScalar *bArray;
-    Vec bl, bg, WQb;
-    WtQmat* WQ = new WtQmat(topo, geom, edge);
-
-    mp1 = quad->n + 1;
-    mp12 = mp1*mp1;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
-    VecZeroEntries(bg);
-
-    VecGetArray(bl, &bArray);
-
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
-            for(ii = 0; ii < mp12; ii++) {
-                bArray[inds0[ii]] = func(geom->x[inds0[ii]], 0);
-            }
-        }
-    }
-    VecRestoreArray(bl, &bArray);
-    VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-
-    M2->assemble(0);
-    MatMult(WQ->M, bg, WQb);
-    KSPSolve(ksp2, WQb, theta);
-
-    delete WQ;
-    VecDestroy(&bl);
-    VecDestroy(&bg);
-    VecDestroy(&WQb);
-}
-
