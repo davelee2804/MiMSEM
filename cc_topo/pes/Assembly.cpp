@@ -1103,9 +1103,9 @@ Whmat::Whmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     delete W;
 }
 
-void Whmat::assemble(Vec theta, int lev) {
+void Whmat::assemble(Vec rho, int lev) {
     int ex, ey, ei, mp1, mp12, ii, *inds, *inds0;
-    double det, tq;
+    double det, p;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
     double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
@@ -1113,14 +1113,14 @@ void Whmat::assemble(Vec theta, int lev) {
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    PetscScalar* tArray;
+    PetscScalar* pArray;
 
     MatZeroEntries(M);
 
     mp1 = e->l->q->n + 1;
     mp12 = mp1*mp1;
 
-    VecGetArray(theta, &tArray);
+    VecGetArray(rho, &pArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds = topo->elInds2_g(ex, ey);
@@ -1132,9 +1132,11 @@ void Whmat::assemble(Vec theta, int lev) {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
 
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, tArray, &tq);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &p);
+                // density is piecewise constant in the vertical
+                p *= 2.0/geom->thick[lev][inds0[ii]];
 
-                Qaa[ii][ii] = tq*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii]  = p*Q->A[ii][ii]/det/det;
                 Qaa[ii][ii] *= 2.0/geom->thick[lev][inds0[ii]];
             }
 
@@ -1147,7 +1149,7 @@ void Whmat::assemble(Vec theta, int lev) {
             MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
         }
     }
-    VecRestoreArray(theta, &tArray);
+    VecRestoreArray(rho, &pArray);
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);

@@ -72,7 +72,7 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
 
     // potential temperature projection operator
     //T = new UtQWmat(topo, geom, node, edge);
-    //T = new Whmat(topo, geom, edge);
+    T = new Whmat(topo, geom, edge);
 
     // coriolis vector (projected onto 0 forms)
     coriolis();
@@ -85,7 +85,7 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetOperators(ksp1, M1->M, M1->M);
     KSPSetTolerances(ksp1, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp1, KSPGMRES);
-    KSPGetPC(ksp1,&pc);
+    KSPGetPC(ksp1, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
     KSPSetOptionsPrefix(ksp1,"ksp1_");
@@ -96,7 +96,7 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetOperators(ksp2, M2->M, M2->M);
     KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp2, KSPGMRES);
-    KSPGetPC(ksp2,&pc);
+    KSPGetPC(ksp2, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
     KSPSetOptionsPrefix(ksp2,"ksp2_");
@@ -207,7 +207,7 @@ PrimEqns::~PrimEqns() {
     delete R;
     delete F;
     delete K;
-    //delete T;
+    delete T;
 
     delete edge;
     delete node;
@@ -356,7 +356,7 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
     KSPSetOperators(kspCol, B, B);
     KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol,&pc);
+    KSPGetPC(kspCol, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, n2, NULL);
     KSPSetOptionsPrefix(kspCol,"kspVert_");
@@ -425,7 +425,8 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     // compute the vertical mass fluxes (piecewise linear in the vertical)
     MatCreate(MPI_COMM_SELF, &B);
     MatSetType(B, MATSEQAIJ);
-    MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
+    //MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
+    MatSetSizes(B, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &Mp);
@@ -437,7 +438,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     KSPSetOperators(kspCol, B, B);
     KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol,&pc);
+    KSPGetPC(kspCol, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, n2, NULL);
     KSPSetOptionsPrefix(kspCol,"kspCol_");
@@ -448,7 +449,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
             VertFlux(ex, ey, pi, NULL, Mp);
             MatMult(Mp, uv[ey*topo->nElsX+ex], Mpu);
             AssembleLinear(ex, ey, B, false);
-            KSPSolve(kspCol, Mpu, Fv);//TODO
+            KSPSolve(kspCol, Mpu, Fv);
             // strong form vertical divergence
             MatMult(V10, Fv, Dv);
 
@@ -532,7 +533,7 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     KSPSetOperators(kspCol, B, B);
     KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol,&pc);
+    KSPGetPC(kspCol, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, n2, NULL);
     KSPSetOptionsPrefix(kspCol,"kspCol_");
@@ -784,10 +785,10 @@ void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev)
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, exner_f);
 
     KSPCreate(MPI_COMM_WORLD, &kspE);
-    KSPSetOperators(kspE, F->M, F->M);
+    KSPSetOperators(kspE, T->M, T->M);
     KSPSetTolerances(kspE, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(kspE, KSPGMRES);
-    KSPGetPC(kspE,&pc);
+    KSPGetPC(kspE, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
     KSPSetOptionsPrefix(kspE, "exner_");
@@ -797,8 +798,8 @@ void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev)
     VecScatterBegin(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
 
-    F->assemble(rt_l, NULL, lev, true);
-    MatMult(F->M, exner_i, rhs);
+    T->assemble(rt_l, lev);
+    MatMult(T->M, exner_i, rhs);
 
     // assemble the nonlinear operator
     VecScatterBegin(topo->gtol_2, rt_f, rt_l, INSERT_VALUES, SCATTER_FORWARD);
@@ -827,7 +828,7 @@ void PrimEqns::progExner(Vec rho_i, Vec rho_f, Vec* theta_i, Vec* theta_f, Vec e
     KSPSetOperators(kspE, F->M, F->M);
     KSPSetTolerances(kspE, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(kspE, KSPGMRES);
-    KSPGetPC(kspE,&pc);
+    KSPGetPC(kspE, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
     KSPSetOptionsPrefix(kspE, "exner_");
@@ -1081,6 +1082,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat A, bool add_g) {
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
+    ei = ey*topo->nElsX + ex;
     inds0 = topo->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
@@ -1090,7 +1092,6 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat A, bool add_g) {
     for(kk = 0; kk < geom->nk; kk++) {
         // build the 2D mass matrix
         Q->assemble(ex, ey);
-        ei = ey*topo->nElsX + ex;
         
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -1629,7 +1630,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     KSPSetOperators(kspCol, A, A);
     KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol,&pc);
+    KSPGetPC(kspCol, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, n2, NULL);
     KSPSetOptionsPrefix(kspCol,"kspVert_");
@@ -1851,7 +1852,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* theta, Vec* exner, 
     KSPSetOperators(kspCol, A, A);
     KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol,&pc);
+    KSPGetPC(kspCol, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, n2, NULL);
     KSPSetOptionsPrefix(kspCol,"kspVert_");

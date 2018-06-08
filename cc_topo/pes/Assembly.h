@@ -199,6 +199,6 @@ class Whmat {
         Geom* geom;
         LagrangeEdge* e;
         Mat M;
-        void assemble(Vec theta, int lev);
+        void assemble(Vec rho, int lev);//rho is piecewise constant in the vertical
 };
 

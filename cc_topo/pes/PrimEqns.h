@@ -24,6 +24,7 @@ class PrimEqns {
         RotMat* R;
         Uhmat* F;
         WtQUmat* K;
+        Whmat* T;
         Vec fg;                                      // coriolis vector (global)
         Vec theta_b;                                 // bottom potential temperature bc
         Vec theta_t;                                 // top potential temperature bc
