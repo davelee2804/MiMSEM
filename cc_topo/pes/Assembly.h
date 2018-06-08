@@ -165,6 +165,17 @@ class E21mat {
         Mat E12;
 };
 
+class Whmat {
+    public:
+        Whmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~Whmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(Vec rho, int lev);//rho is piecewise constant in the vertical
+};
+
 /*class UtQWmat {
     public:
         UtQWmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
@@ -190,15 +201,3 @@ class E21mat {
         Wii* Q;
         void assemble(int lev);
 };*/
-
-class Whmat {
-    public:
-        Whmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~Whmat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        Mat M;
-        void assemble(Vec rho, int lev);//rho is piecewise constant in the vertical
-};
-

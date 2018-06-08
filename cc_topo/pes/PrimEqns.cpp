@@ -131,10 +131,9 @@ double PrimEqns::viscosity_vert() {
             }
         }
     }
-
     MPI_Allreduce(&dzMin, &dzMinG, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
 
-    return dzMinG*dzMinG/8.0;//TODO
+    return dzMinG*dzMinG/6.0;//TODO
 
 }
 
@@ -1413,7 +1412,7 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
 
     // assemble the piecewise linear mass matrix (with gravity)
     AssembleLinear(ex, ey, A, true);
-    MatAXPY(A, vert_visc, L, DIFFERENT_NONZERO_PATTERN);//TODO: check the sign on the viscosity
+    MatAXPY(A, -vert_visc, L, DIFFERENT_NONZERO_PATTERN);//TODO: check the sign on the viscosity
 
     MatDestroy(&B);
     MatDestroy(&BD);
