@@ -65,7 +65,7 @@ void Umat::assemble(int lev) {
             Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_g(ex, ey);
+            inds_0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -174,7 +174,7 @@ void Wmat::assemble(int lev) {
             Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_g(ex, ey);
+            inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 Qaa[ii][ii] = Q->A[ii][ii]/det/det;
@@ -262,7 +262,7 @@ void Uhmat::assemble(Vec h2, Vec t2, int lev, bool const_vert) {
             Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_g(ex, ey);
+            inds_0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -384,7 +384,7 @@ void Pvec::assemble(int lev) {
             // incorporate the jacobian transformation for each element
             Q->assemble(ex, ey);
 
-            inds_g = topo->elInds0_g(ex, ey);
+            inds_g = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < np12; ii++) {
                 entries[ii] = Q->A[ii][ii];
 
@@ -684,7 +684,7 @@ void WtQUmat::assemble(Vec u1, Vec* w1, int lev) {
             Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_g(ex, ey);
+            inds_0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -808,7 +808,7 @@ void RotMat::assemble(Vec q0, int lev) {
             Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_g(ex, ey);
+            inds_0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -1031,7 +1031,7 @@ void Whmat::assemble(Vec rho, int lev) {
             Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_g(ex, ey);
+            inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
 
