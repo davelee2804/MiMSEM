@@ -130,8 +130,7 @@ double t_init(double* x, int ki) {
     double Bi[15] = {0.05034551, 0.10365252, 0.16189536, 0.22606120, 0.29615005, 
                 0.37413623, 0.45705824, 0.54392892, 0.63376111, 0.72260612, 
                 0.80651530, 0.88153998, 0.94274432, 0.98519250, 1.00000000};
-    //double eta     = 0.5*(Ai[NK-ki] + Bi[NK-ki] + Ai[NK-ki-1] + Bi[NK-ki-1]);//compile warning??
-    double eta     = 0.5*(Ai[NK-ki] + Bi[NK-ki] + Ai[NK-ki-1] + Bi[NK-ki-1]);
+    double eta     = Ai[NK-ki] + Bi[NK-ki]; // temperature is defined at the half levels
     double eta_v   = 0.5*(eta - ETA_0)*M_PI;
     double t_avg   = t_bar(eta);
     double a       = 10.0/63.0 - 2.0*pow(sin(phi), 6.0)*(cos(phi)*cos(phi) + 1.0/3.0);
@@ -170,7 +169,7 @@ double theta_init(double* x, int ki) {
     double Bi[15] = {0.05034551, 0.10365252, 0.16189536, 0.22606120, 0.29615005, 
                 0.37413623, 0.45705824, 0.54392892, 0.63376111, 0.72260612, 
                 0.80651530, 0.88153998, 0.94274432, 0.98519250, 1.00000000};
-    double eta   = Ai[NK-ki] + Bi[NK-ki];// theta is defined at the layer interfaces
+    double eta   = Ai[NK-ki] + Bi[NK-ki]; // theta is defined at the layer interfaces
     double eta_v = 0.5*(eta - ETA_0)*M_PI;
     double pres  = eta*P0;
     double theta = (temp + 0.75*eta*M_PI*U0/RD*sin(eta_v)*sqrt(cos(eta_v))*(2.0*U0*Ac*pow(cos(eta_v), 1.5) + Bc))/pres;
@@ -347,21 +346,6 @@ int main(int argc, char** argv) {
                 //                                 << "\t" << (vort_n-vort_0) 
                 //                                 << "\t" << (ener_n-ener_0)/ener_0 << endl;
                 //file.close();
-            //}
-
-            //for(ki = 0; ki < NK; ki++) {
-                //sprintf(fieldname,"velocity_x_%.3u", ki);
-                //geom->write1(velx[ki],fieldname,step/dumpEvery);
-                //sprintf(fieldname,"density_%.3u", ki);
-                //geom->write2(rho[ki],fieldname,step/dumpEvery);
-                //sprintf(fieldname,"exner_%.3u", ki);
-                //geom->write2(exner[ki],fieldname,step/dumpEvery);
-                //sprintf(fieldname,"rhoTheta_%.3u", ki);
-                //geom->write2(rt[ki],fieldname,step/dumpEvery);
-            //}
-            //for(ii = 0; ii < n2; ii++) {
-                //sprintf(fieldname,"velocity_z_%.4u", ii);
-                //geom->write1(velz[ii],fieldname,step/dumpEvery);
             //}
         //}
     }
