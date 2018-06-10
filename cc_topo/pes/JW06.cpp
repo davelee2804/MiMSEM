@@ -332,7 +332,7 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         pe->SolveRK2(velx, velz, rho, rt, exner, dump);
-        if(dump) {
+        //if(dump) {
             //vort_n = mass_n = ener_n = 0.0;
             //for(ki = 0; ki < NK; ki++) {
                 //pe->curl(velx[ki], &wi, 0, false);
@@ -349,21 +349,21 @@ int main(int argc, char** argv) {
                 //file.close();
             //}
 
-            for(ki = 0; ki < NK; ki++) {
-                sprintf(fieldname,"velocity_x_%.3u", ki);
-                geom->write1(velx[ki],fieldname,step/dumpEvery);
-                sprintf(fieldname,"density_%.3u", ki);
-                geom->write2(rho[ki],fieldname,step/dumpEvery);
-                sprintf(fieldname,"exner_%.3u", ki);
-                geom->write2(exner[ki],fieldname,step/dumpEvery);
-                sprintf(fieldname,"rhoTheta_%.3u", ki);
-                geom->write2(rt[ki],fieldname,step/dumpEvery);
-            }
-            for(ii = 0; ii < n2; ii++) {
-                sprintf(fieldname,"velocity_z_%.4u", ii);
-                geom->write1(velz[ii],fieldname,step/dumpEvery);
-            }
-        }
+            //for(ki = 0; ki < NK; ki++) {
+                //sprintf(fieldname,"velocity_x_%.3u", ki);
+                //geom->write1(velx[ki],fieldname,step/dumpEvery);
+                //sprintf(fieldname,"density_%.3u", ki);
+                //geom->write2(rho[ki],fieldname,step/dumpEvery);
+                //sprintf(fieldname,"exner_%.3u", ki);
+                //geom->write2(exner[ki],fieldname,step/dumpEvery);
+                //sprintf(fieldname,"rhoTheta_%.3u", ki);
+                //geom->write2(rt[ki],fieldname,step/dumpEvery);
+            //}
+            //for(ii = 0; ii < n2; ii++) {
+                //sprintf(fieldname,"velocity_z_%.4u", ii);
+                //geom->write1(velz[ii],fieldname,step/dumpEvery);
+            //}
+        //}
     }
 
     delete topo;

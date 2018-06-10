@@ -1645,6 +1645,9 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
 
             VecDestroy(&wi);
         }
+
+        sprintf(fieldname, "velVert");
+        geom->writeSerial(velz, fieldname, topo->nElsX*topo->nElsX, step);
     }
 
     // deallocate
