@@ -214,10 +214,15 @@ PrimEqns::~PrimEqns() {
 }
 
 void PrimEqns::UpdateKEVert(Vec ke, int lev) {
-    int ex, ey, n2, ii;
-    int* inds2;
+    int ex, ey, n2, ii, jj;
+    int *inds2, *inds0;
     Vec kl;
     PetscScalar *khArray, *kvArray;
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double fg[99], zi[99];
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -225,14 +230,31 @@ void PrimEqns::UpdateKEVert(Vec ke, int lev) {
     VecScatterBegin(topo->gtol_2, ke, kl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, ke, kl, INSERT_VALUES, SCATTER_FORWARD);
 
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
     VecGetArray(kl, &khArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = topo->elInds0_l(ex, ey);
             inds2 = topo->elInds2_l(ex, ey);
+
+            // add in the vertical gravity term
+            Q->assemble(ex, ey);
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q->A, WtQ);
+
+            for(ii = 0; ii < Q->nDofsI; ii++) {
+                zi[ii] = 0.5*(geom->levs[lev+0][inds0[ii]] + geom->levs[lev+1][inds0[ii]])*GRAVITY;
+            }
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                fg[ii] = 0.0;
+                for(jj = 0; jj < Q->nDofsI; jj++) {
+                    fg[ii] += WtQ[ii][jj]*zi[jj];
+                }
+            }
 
             VecGetArray(Kv[ey*topo->nElsX + ex], &kvArray);
             for(ii = 0; ii < n2; ii++) {
-                kvArray[lev*n2+ii] = khArray[inds2[ii]];
+                kvArray[lev*n2+ii] = khArray[inds2[ii]] + fg[ii];
             }
             VecRestoreArray(Kv[ey*topo->nElsX + ex], &kvArray);
         }
@@ -240,6 +262,10 @@ void PrimEqns::UpdateKEVert(Vec ke, int lev) {
     VecRestoreArray(ke, &khArray);
 
     VecDestroy(&kl);
+    delete Q;
+    delete W;
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
 }
 
 /*
@@ -378,7 +404,7 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             AssembleConst(ex, ey, A);
             MatMult(A, exner_v, de1);
             MatMult(V01, de1, de2);
-            AssembleLinear(ex, ey, B, false);//TODO: skip this and just solve with B(theta)?? on LHS
+            AssembleLinear(ex, ey, B);//TODO: skip this and just solve with B(theta)?? on LHS
             KSPSolve(kspCol, de2, de3);
 
             // interpolate the potential temperature onto the piecewise linear
@@ -447,7 +473,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             VertFlux(ex, ey, pi, NULL, Mp);
             MatMult(Mp, uv[ey*topo->nElsX+ex], Mpu);
-            AssembleLinear(ex, ey, B, false);
+            AssembleLinear(ex, ey, B);
             KSPSolve(kspCol, Mpu, Fv);
             // strong form vertical divergence
             MatMult(V10, Fv, Dv);
@@ -542,7 +568,7 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             VertFlux(ex, ey, pi, theta, Mt);
             MatMult(Mt, uv[ey*topo->nElsX+ex], Mtu);
-            AssembleLinear(ex, ey, B, false);
+            AssembleLinear(ex, ey, B);
             KSPSolve(kspCol, Mtu, Fv);
             // strong form vertical divergence
             MatMult(V10, Fv, Dv);
@@ -1010,7 +1036,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat B) {
 Assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and linear basis functions in the vertical
 */
-void PrimEqns::AssembleLinear(int ex, int ey, Mat A, bool add_g) {
+void PrimEqns::AssembleLinear(int ex, int ey, Mat A) {
     int ii, kk, ei, mp12;
     int *inds0;
     double det;
@@ -1040,10 +1066,6 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat A, bool add_g) {
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
-
-            if(add_g) {
-                Q0[ii][ii] *= (1.0 + dt*GRAVITY);
-            }
         }
 
         Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -1395,28 +1417,25 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
 
 void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
     int n2 = topo->elOrd*topo->elOrd;
-    Mat B, L, BD, GBD;
+    Mat B, L, BD;
 
     MatCreate(MPI_COMM_SELF, &B);
     MatSetType(B, MATSEQAIJ);
     MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
     MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
-    AssembleLinear(ex, ey, A, false);
+    AssembleLinear(ex, ey, A);
     AssembleConst(ex, ey, B);
 
     // construct the laplacian mixing operator
     MatMatMult(B, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &BD);
-    MatMatMult(V01, BD, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GBD);
-    MatMatMult(A, GBD, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &L);
+    MatMatMult(V01, BD, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &L);
 
     // assemble the piecewise linear mass matrix (with gravity)
-    AssembleLinear(ex, ey, A, true);
     MatAXPY(A, -vert_visc, L, DIFFERENT_NONZERO_PATTERN);//TODO: check the sign on the viscosity
 
     MatDestroy(&B);
     MatDestroy(&BD);
-    MatDestroy(&GBD);
     MatDestroy(&L);
 }
 
