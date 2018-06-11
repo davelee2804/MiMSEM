@@ -151,7 +151,7 @@ Wmat::Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     delete W;
 }
 
-void Wmat::assemble(int lev) {
+void Wmat::assemble(int lev, double scale) {
     int ex, ey, ei, mp1, mp12, ii, *inds, *inds0;
     double det;
     Wii* Q = new Wii(e->l->q, geom);
@@ -179,7 +179,7 @@ void Wmat::assemble(int lev) {
                 det = geom->det[ei][ii];
                 Qaa[ii][ii] = Q->A[ii][ii]/det/det;
 
-                Qaa[ii][ii] *= 2.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii][ii] *= scale*2.0/geom->thick[lev][inds0[ii]];
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);

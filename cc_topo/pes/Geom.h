@@ -24,9 +24,9 @@ class Geom {
         void interp2_l(int ex, int ey, int px, int py, double* vec, double* val);
         void interp1_g(int ex, int ey, int px, int py, double* vec, double* val);
         void interp2_g(int ex, int ey, int px, int py, double* vec, double* val);
-        void write0(Vec q, char* fieldname, int tstep);
-        void write1(Vec u, char* fieldname, int tstep);
-        void write2(Vec h, char* fieldname, int tstep);
+        void write0(Vec q, char* fieldname, int tstep, int kk);
+        void write1(Vec u, char* fieldname, int tstep, int kk);
+        void write2(Vec h, char* fieldname, int tstep, int kk);
         void writeSerial(Vec* vecs, char* fieldname, int nv, int tstep);
         void initJacobians();
         void updateGlobalCoords();

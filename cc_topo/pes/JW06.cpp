@@ -150,7 +150,7 @@ double rho_init(double* x, int ki) {
     double Bi[15] = {0.05034551, 0.10365252, 0.16189536, 0.22606120, 0.29615005, 
                 0.37413623, 0.45705824, 0.54392892, 0.63376111, 0.72260612, 
                 0.80651530, 0.88153998, 0.94274432, 0.98519250, 1.00000000};
-    double pb  = Ai[NK-ki]*P0 + Bi[NK-ki]*P0;
+    double pb  = Ai[NK-ki+0]*P0 + Bi[NK-ki+0]*P0;
     double pt  = Ai[NK-ki-1]*P0 + Bi[NK-ki-1]*P0;
     double ph  = 0.5*(pb + pt);
     double rho = ph/RD/th;
@@ -283,19 +283,19 @@ int main(int argc, char** argv) {
 
     if(startStep == 0) {
         pe->init1(velx, u_init, v_init);
-        pe->init2(rho, rho_init);
+        pe->init2(rho,   rho_init  );
         pe->init2(exner, exner_init);
-        pe->init2(rt, rt_init);
+        pe->init2(rt,    rt_init   );
 
         for(ki = 0; ki < NK; ki++) {
-            sprintf(fieldname,"velocity_x_%.3u", ki);
-            geom->write1(velx[ki],fieldname,0);
-            sprintf(fieldname,"density_%.3u", ki);
-            geom->write2(rho[ki],fieldname,0);
-            sprintf(fieldname,"exner_%.3u", ki);
-            geom->write2(exner[ki],fieldname,0);
-            sprintf(fieldname,"rhoTheta_%.3u", ki);
-            geom->write2(rt[ki],fieldname,0);
+            sprintf(fieldname,"velocity_x");
+            geom->write1(velx[ki],fieldname,0,ki);
+            sprintf(fieldname,"density");
+            geom->write2(rho[ki],fieldname,0,ki);
+            sprintf(fieldname,"exner");
+            geom->write2(exner[ki],fieldname,0,ki);
+            sprintf(fieldname,"rhoTheta");
+            geom->write2(rt[ki],fieldname,0,ki);
         }
         for(ii = 0; ii < n2; ii++) {
             sprintf(fieldname, "output/velocity_z_%.4u_%.4u.vec", ii, 0);

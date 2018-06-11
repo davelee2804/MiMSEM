@@ -842,12 +842,13 @@ void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev)
 Take the weak form gradient of a 2 form scalar field as a 1 form vector field
 */
 void PrimEqns::grad(Vec phi, Vec* u, int lev) {
+    double scale = 1.0e8;
     Vec dPhi;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dPhi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, u);
 
-    M2->assemble(lev);
+    M2->assemble(lev, scale);
     if(!E12M2) {
         MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
     } else {
@@ -856,6 +857,7 @@ void PrimEqns::grad(Vec phi, Vec* u, int lev) {
 
     VecZeroEntries(dPhi);
     MatMult(E12M2, phi, dPhi);
+    VecScale(dPhi, scale);
     KSPSolve(ksp1, dPhi, *u);
 
     VecDestroy(&dPhi);
@@ -1632,16 +1634,16 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         for(kk = 0; kk < geom->nk; kk++) {
             curl(velx[kk], &wi, kk, false);
 
-            sprintf(fieldname, "vorticity_%.3u", kk);
-            geom->write0(wi, fieldname, step);
-            sprintf(fieldname, "velocity_%.3u",  kk);
-            geom->write1(velx[kk], fieldname, step);
-            sprintf(fieldname, "density_%.3u",  kk);
-            geom->write2(rho[kk], fieldname, step);
-            sprintf(fieldname, "rho_theta_%.3u",  kk);
-            geom->write2(rt[kk], fieldname, step);
-            sprintf(fieldname, "exner_%.3u",  kk);
-            geom->write2(exner[kk], fieldname, step);
+            sprintf(fieldname, "vorticity");
+            geom->write0(wi, fieldname, step, kk);
+            sprintf(fieldname, "velocity");
+            geom->write1(velx[kk], fieldname, step, kk);
+            sprintf(fieldname, "density");
+            geom->write2(rho[kk], fieldname, step, kk);
+            sprintf(fieldname, "rhoTheta");
+            geom->write2(rt[kk], fieldname, step, kk);
+            sprintf(fieldname, "exner");
+            geom->write2(exner[kk], fieldname, step, kk);
 
             VecDestroy(&wi);
         }
@@ -1836,6 +1838,7 @@ void PrimEqns::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
 void PrimEqns::init2(Vec* h, ICfunc3D* func) {
     int ex, ey, ii, kk, mp1, mp12;
     int *inds0;
+    double scale = 1.0e8;
     PetscScalar *bArray;
     Vec bl, bg, WQb;
     WtQmat* WQ = new WtQmat(topo, geom, edge);
@@ -1848,6 +1851,7 @@ void PrimEqns::init2(Vec* h, ICfunc3D* func) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
 
     for(kk = 0; kk < geom->nk; kk++) {
+        VecZeroEntries(bl);
         VecZeroEntries(bg);
         VecGetArray(bl, &bArray);
 
@@ -1863,9 +1867,9 @@ void PrimEqns::init2(Vec* h, ICfunc3D* func) {
         VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-        M2->assemble(kk);
         MatMult(WQ->M, bg, WQb);
-
+        VecScale(WQb, scale);     // have to rescale the M2 operator as the metric terms scale
+        M2->assemble(kk,scale);   // this down to machine precision, so rescale the rhs as well
         KSPSolve(ksp2, WQb, h[kk]);
     }
 
@@ -1904,7 +1908,7 @@ void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
     VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-    M2->assemble(0);
+    M2->assemble(0, 1.0);
     MatMult(WQ->M, bg, WQb);
     KSPSolve(ksp2, WQb, theta);
 

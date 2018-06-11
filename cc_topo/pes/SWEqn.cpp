@@ -286,11 +286,11 @@ void SWEqn::solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
         diagnose_w(uf, &wf, false);
 
         sprintf(fieldname, "vorticity");
-        geom->write0(wf, fieldname, step);
+        geom->write0(wf, fieldname, step, 0);
         sprintf(fieldname, "velocity");
-        geom->write1(uf, fieldname, step);
+        geom->write1(uf, fieldname, step, 0);
         sprintf(fieldname, "pressure");
-        geom->write2(hf, fieldname, step);
+        geom->write2(hf, fieldname, step, 0);
 
         VecDestroy(&wf);
     }

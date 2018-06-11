@@ -293,7 +293,7 @@ void Geom::interp2_g(int ex, int ey, int px, int py, double* vec, double* val) {
     val[0] = val_l[0]/dj;
 }
 
-void Geom::write0(Vec q, char* fieldname, int tstep) {
+void Geom::write0(Vec q, char* fieldname, int tstep, int lev) {
     int ex, ey, ii, jj, mp1, mp12;
     int* inds0;
     char filename[100];
@@ -320,6 +320,9 @@ void Geom::write0(Vec q, char* fieldname, int tstep) {
             for(ii = 0; ii < mp12; ii++) {
                 jj = inds0[ii];
                 qxArray[jj] = qArray[jj];
+                // assume piecewise constant in the vertical, so rescale by
+                // the vertical determinant inverse
+                qxArray[jj] *= 2.0/thick[lev][jj];
             }
         }
     }
@@ -330,10 +333,10 @@ void Geom::write0(Vec q, char* fieldname, int tstep) {
     VecScatterEnd(topo->gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
 
 #ifdef WITH_HDF5
-    sprintf(filename, "output/%s_%.4u.h5", fieldname, tstep);
+    sprintf(filename, "output/%s_%.3u_%.4u.h5", fieldname, lev, tstep);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
 #else
-    sprintf(filename, "output/%s_%.4u.dat", fieldname, tstep);
+    sprintf(filename, "output/%s_%.3u_%.4u.dat", fieldname, lev, tstep);
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecView(qxg, viewer);
@@ -344,7 +347,7 @@ void Geom::write0(Vec q, char* fieldname, int tstep) {
     VecDestroy(&qxg);
 }
 
-void Geom::write1(Vec u, char* fieldname, int tstep) {
+void Geom::write1(Vec u, char* fieldname, int tstep, int lev) {
     int ex, ey, ii, mp1, mp12;
     int *inds0;
     char filename[100];
@@ -378,6 +381,10 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
 
                 uxArray[inds0[ii]] = val[0];
                 vxArray[inds0[ii]] = val[1];
+                // assume piecewise constant in the vertical, so rescale by
+                // the vertical determinant inverse
+                uxArray[inds0[ii]] *= 2.0/thick[lev][inds0[ii]];
+                vxArray[inds0[ii]] *= 2.0/thick[lev][inds0[ii]];
             }
         }
     }
@@ -387,10 +394,10 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
 
     // scatter and write the zonal components
 #ifdef WITH_HDF5
-    sprintf(filename, "output/%s_x_%.4u.h5", fieldname, tstep);
+    sprintf(filename, "output/%s_x_%.3u_%.4u.h5", fieldname, lev, tstep);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
 #else
-    sprintf(filename, "output/%s_x_%.4u.dat", fieldname, tstep);
+    sprintf(filename, "output/%s_x_%.3u_%.4u.dat", fieldname, lev, tstep);
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecZeroEntries(uxg);
@@ -426,7 +433,7 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
 }
 
 // interpolate 2 form field to quadrature points
-void Geom::write2(Vec h, char* fieldname, int tstep) {
+void Geom::write2(Vec h, char* fieldname, int tstep, int lev) {
     int ex, ey, ii, mp1, mp12;
     int *inds0;
     char filename[100];
@@ -458,6 +465,9 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
                 interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &val);
 
                 hxArray[inds0[ii]] = val;
+                // assume piecewise constant in the vertical, so rescale by
+                // the vertical determinant inverse
+                hxArray[inds0[ii]] *= 2.0/thick[lev][inds0[ii]];
             }
         }
     }
@@ -468,10 +478,10 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     VecScatterEnd(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
 
 #ifdef WITH_HDF5
-    sprintf(filename, "output/%s_%.4u.h5", fieldname, tstep);
+    sprintf(filename, "output/%s_%.3u_%.4u.h5", fieldname, lev, tstep);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
 #else
-    sprintf(filename, "output/%s_%.4u.dat", fieldname, tstep);
+    sprintf(filename, "output/%s_%.3u_%.4u.dat", fieldname, lev, tstep);
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecView(hxg, viewer);
