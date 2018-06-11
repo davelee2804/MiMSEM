@@ -161,7 +161,7 @@ double rho_init(double* x, int ki) {
 double theta_init(double* x, int ki) {
     double phi   = asin(x[2]/RAD_EARTH);
     double Ac    = 10.0/63.0 - 2.0*pow(phi, 6.0)*(cos(phi)*cos(phi) + 1.0/3.0);
-    double Bc    = RAD_EARTH*OMEGA*(1.6*pow(phi, 3.0)*(sin(phi)*sin(phi) + 2.0/3.0) - 0.25*M_PI);
+    double Bc    = RAD_EARTH*OMEGA*(1.6*pow(cos(phi), 3.0)*(sin(phi)*sin(phi) + 2.0/3.0) - 0.25*M_PI);
     double temp  = t_init(x, ki);
     //double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
     //double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
@@ -179,7 +179,7 @@ double theta_init(double* x, int ki) {
 
 double rt_init(double* x, int ki) {
     double theta_t = theta_init(x, ki + 0);
-    double theta_b = theta_init(x, ki + 1);//TODO: check this
+    double theta_b = theta_init(x, ki + 1);
     double rho     = rho_init(x, ki);
 
     return 0.5*rho*(theta_b + theta_t);
@@ -194,7 +194,7 @@ double exner_init(double* x, int ki) {
                 0.80651530, 0.88153998, 0.94274432, 0.98519250, 1.00000000};
     double pres = 0.5*(Ai[NK-ki] + Bi[NK-ki] + Ai[NK-ki-1] + Bi[NK-ki-1])*P0;
 
-    return CP*pow(pres/P0, RD/CP);//TODO: use c_p here??
+    return CP*pow(pres/P0, RD/CP); // scaling by c_p
 }
 
 double theta_t_init(double* x, int ki) {
@@ -288,7 +288,7 @@ int main(int argc, char** argv) {
         pe->init2(rt,    rt_init   );
 
         for(ki = 0; ki < NK; ki++) {
-            sprintf(fieldname,"velocity_x");
+            sprintf(fieldname,"velocity_h");
             geom->write1(velx[ki],fieldname,0,ki);
             sprintf(fieldname,"density");
             geom->write2(rho[ki],fieldname,0,ki);
@@ -306,7 +306,7 @@ int main(int argc, char** argv) {
     } else {
         sprintf(fieldname,"density");
         LoadVecs(rho  , NK, fieldname, startStep, true );
-        sprintf(fieldname,"velocity_x");
+        sprintf(fieldname,"velocity_h");
         LoadVecs(velx , NK, fieldname, startStep, true );
         sprintf(fieldname,"exner");
         LoadVecs(exner, NK, fieldname, startStep, true );

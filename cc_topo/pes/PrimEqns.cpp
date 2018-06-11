@@ -1636,7 +1636,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
 
             sprintf(fieldname, "vorticity");
             geom->write0(wi, fieldname, step, kk);
-            sprintf(fieldname, "velocity");
+            sprintf(fieldname, "velocity_h");
             geom->write1(velx[kk], fieldname, step, kk);
             sprintf(fieldname, "density");
             geom->write2(rho[kk], fieldname, step, kk);

@@ -408,10 +408,10 @@ void Geom::write1(Vec u, char* fieldname, int tstep, int lev) {
 
     // scatter and write the meridional components
 #ifdef WITH_HDF5
-    sprintf(filename, "output/%s_y_%.4u.h5", fieldname, tstep);
+    sprintf(filename, "output/%s_y_%.3u_%.4u.h5", fieldname, lev, tstep);
     PetscViewerHDF5Open(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
 #else
-    sprintf(filename, "output/%s_y_%.4u.dat", fieldname, tstep);
+    sprintf(filename, "output/%s_y_%.3u_%.4u.dat", fieldname, lev, tstep);
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecZeroEntries(uxg);
