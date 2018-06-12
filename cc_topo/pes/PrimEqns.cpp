@@ -414,17 +414,16 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             VecZeroEntries(de1);
             VecZeroEntries(de2);
             VecZeroEntries(de3);
-            AssembleConst(ex, ey, VB);
+            AssembleConst(ex, ey, VB, scale);
             MatMult(VB, exner_v, de1);
             MatMult(V01, de1, de2);
             AssembleLinear(ex, ey, VA, scale);//TODO: skip this and just solve with B(theta)?? on LHS
-            VecScale(de2, scale);
             KSPSolve(kspColA, de2, de3);
 
             // interpolate the potential temperature onto the piecewise linear
             // vertical mass matrix and multiply by the weak form vertical gradient of
             // the exner pressure
-            AssembleLinearWithTheta(ex, ey, theta, VA);
+            AssembleLinearWithTheta(ex, ey, theta, VA);//TODO scale then unscale?
             MatMult(VA, de3, dp);
             VecAXPY(fw[ei], 1.0, dp);
 
@@ -449,7 +448,6 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     double scale = 1.0e8;
     Vec Mpu, Fv, Dv;
     Vec pl, pu, Fi, Dh;
-    Mat Mp;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -457,18 +455,12 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
-    MatCreate(MPI_COMM_SELF, &Mp);
-    MatSetType(Mp, MATSEQAIJ);
-    MatSetSizes(Mp, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(Mp, topo->elOrd*topo->elOrd, PETSC_NULL);
-
     // compute the vertical mass fluxes (piecewise linear in the vertical)
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            VertFlux(ex, ey, pi, NULL, Mp);
-            MatMult(Mp, uv[ey*topo->nElsX+ex], Mpu);
+            VertFlux(ex, ey, pi, NULL, VA, scale);
+            MatMult(VA, uv[ey*topo->nElsX+ex], Mpu);
             AssembleLinear(ex, ey, VA, scale);
-            VecScale(Mpu, scale);
             KSPSolve(kspColA, Mpu, Fv);
             // strong form vertical divergence
             MatMult(V10, Fv, Dv);
@@ -481,7 +473,6 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     VecDestroy(&Mpu);
     VecDestroy(&Fv);
     VecDestroy(&Dv);
-    MatDestroy(&Mp);
 
     // compute the horiztonal mass fluxes
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &pl);
@@ -848,7 +839,7 @@ void PrimEqns::vertOps() {
 assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and constant basis functions in the vertical
 */
-void PrimEqns::AssembleConst(int ex, int ey, Mat B) {
+void PrimEqns::AssembleConst(int ex, int ey, Mat B, double scale) {
     int ii, kk, ei, mp12;
     int *inds0;
     double det;
@@ -878,7 +869,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat B) {
             // for constant field we multiply by the vertical jacobian determinant when integrating, 
             // then divide by the vertical jacobian for both the trial and the test functions
             // vertical determinant is dz/2
-            Q0[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
+            Q0[ii][ii] *= scale*2.0/geom->thick[kk][inds0[ii]];
         }
 
         // assemble the piecewise constant mass matrix for level k
@@ -1200,7 +1191,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A) {
 derive the vertical mass flux
 TODO: only need a single piecewise constant field, may be either rho or rho X theta
 */
-void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
+void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale) {
     int ii, kk, ei, mp1, mp12;
     double det, rho, temp1, temp2;
     int inds2k[99];
@@ -1232,7 +1223,8 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
 
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]/det/det;
+            //Q0[ii][ii] = Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
 
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &rho);
             Q0[ii][ii] *= rho;
@@ -1287,7 +1279,7 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
     delete W;
 }
 
-void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
+void PrimEqns::AssembleVertOps(int ex, int ey, Mat A, double scale) {
     int n2 = topo->elOrd*topo->elOrd;
     Mat B, L, BD;
 
@@ -1296,8 +1288,8 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
     MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
     MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
-    AssembleLinear(ex, ey, A, 1.0);
-    AssembleConst(ex, ey, B);
+    AssembleLinear(ex, ey, A, scale);
+    AssembleConst(ex, ey, B, scale);
 
     // construct the laplacian mixing operator
     MatMatMult(B, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &BD);
@@ -1314,6 +1306,7 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
 // note: rho X theta must include the theta boundary conditions
 void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int ii, kk, ex, ey, n2;
+    double scale = 1.0e8;
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *rt_h, *exner_h, bu, bw, wi;
     Vec *Hu2, *Vu2, *Fp2, *Ft2, *rho_i, *rt_i, *exner_i, exner_f, *theta;
@@ -1419,10 +1412,11 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
 
-            AssembleVertOps(ex, ey, VA);
+            AssembleVertOps(ex, ey, VA, scale);
             VecZeroEntries(bw);
             VecCopy(velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
+            VecScale(bw, scale);
             KSPSolve(kspColA, bw, velz_h[ii]);
         }
     }
@@ -1470,11 +1464,12 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
 
-            AssembleVertOps(ex, ey, VA);
+            AssembleVertOps(ex, ey, VA, scale);
             VecZeroEntries(bw);
             VecCopy(velz[ii], bw);
             VecAXPY(bw, -0.5*dt, Vu1[ii]);
             VecAXPY(bw, -0.5*dt, Vu2[ii]);
+            VecScale(bw, scale);
             VecZeroEntries(velz[ii]);
             KSPSolve(kspColA, bw, velz[ii]);
         }
@@ -1718,8 +1713,8 @@ void PrimEqns::init2(Vec* h, ICfunc3D* func) {
         VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
         MatMult(WQ->M, bg, WQb);
-        VecScale(WQb, scale);     // have to rescale the M2 operator as the metric terms scale
-        M2->assemble(kk,scale);   // this down to machine precision, so rescale the rhs as well
+        VecScale(WQb, scale);      // have to rescale the M2 operator as the metric terms scale
+        M2->assemble(kk, scale);   // this down to machine precision, so rescale the rhs as well
         KSPSolve(ksp2, WQb, h[kk]);
     }
 
