@@ -33,8 +33,8 @@ class PrimEqns {
         Mat E12M2;
         Mat V01;                                     // vertical divergence operator
         Mat V10;                                     // vertical gradient operator
-        Mat VA;                                      // single column mass matrix: \gamma\otimes linear
-        Mat VB;                                      // single column mass matrix: \gamma\otimes constant
+        Mat VA;
+        Mat VB;
         KSP ksp1;
         KSP ksp2;
         KSP kspColA;
@@ -43,17 +43,18 @@ class PrimEqns {
         double viscosity_vert();
         void coriolis();
         void vertOps();
-        void grad(Vec phi, Vec* u, int lev);                        // weak form grad operator
-        void curl(Vec u, Vec* w, int lev, bool add_f);              // weak form curl operator
-        void laplacian(Vec u, Vec* ddu, int lev);                   // laplacian operator via helmholtz decomposition
-        void AssembleConst(int ex, int ey, Mat A, double scale);    // piecewise constant (in vertical) mass matrix
-        void AssembleLinear(int ex, int ey, Mat B, double scale);   // piecewise linear (in vertical) mass matrix
-        void AssembleLinCon(int ex, int ey, Mat AB, double scale);
-        void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A, double scale);
-        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double scale);
-        void AssembleVertOps(int ex, int ey, Mat M0, double scale);
-        void VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale); // vertical mass flux matrix
+        void grad(Vec phi, Vec* u, int lev);             // weak form grad operator
+        void curl(Vec u, Vec* w, int lev, bool add_f);   // weak form curl operator
+        void laplacian(Vec u, Vec* ddu, int lev);        // laplacian operator via helmholtz decomposition
+        void AssembleConst(int ex, int ey, Mat A);       // piecewise constant (in vertical) mass matrix
+        void AssembleLinear(int ex, int ey, Mat B);      // piecewise linear (in vertical) mass matrix
+        void AssembleLinCon(int ex, int ey, Mat AB);
+        void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A);
+        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
+        void AssembleVertOps(int ex, int ey, Mat M0);
+        void VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp);    // vertical mass flux matrix
         void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp);
+        void tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft);
         void vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec *fw);
         void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, Vec *Fu);
         void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta);

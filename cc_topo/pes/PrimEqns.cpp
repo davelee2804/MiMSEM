@@ -389,11 +389,11 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
 
 void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
     int ex, ey, ei, n2;
-    double scale = 1.0e8;
     Vec exner_v, de1, de2, de3, dp;
 
     n2 = topo->elOrd*topo->elOrd;
 
+    // vertical velocity is computer per element, so matrices are local to this processor
     VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &de1);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &de2);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &de3);
@@ -414,18 +414,18 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             VecZeroEntries(de1);
             VecZeroEntries(de2);
             VecZeroEntries(de3);
-            AssembleConst(ex, ey, VB, scale);
+            AssembleConst(ex, ey, VB);
             MatMult(VB, exner_v, de1);
             MatMult(V01, de1, de2);
-            AssembleLinear(ex, ey, VA, scale);//TODO: skip this and just solve with B(theta)?? on LHS
+            AssembleLinear(ex, ey, VA);//TODO: skip this and just solve with B(theta)?? on LHS
             KSPSolve(kspColA, de2, de3);
 
             // interpolate the potential temperature onto the piecewise linear
             // vertical mass matrix and multiply by the weak form vertical gradient of
             // the exner pressure
-            AssembleLinearWithTheta(ex, ey, theta, VA, scale);// scale then unscale?
+            AssembleLinearWithTheta(ex, ey, theta, VA);
             MatMult(VA, de3, dp);
-            VecAXPY(fw[ei], 1.0/scale, dp);
+            VecAXPY(fw[ei], 1.0, dp);
 
             // TODO: add in horizontal vorticity terms
         }
@@ -445,7 +445,6 @@ uv: vertical velocity by horiztonal element
 */
 void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     int kk, ex, ey, n2;
-    double scale = 1.0e8;
     Vec Mpu, Fv, Dv;
     Vec pl, pu, Fi, Dh;
 
@@ -458,9 +457,9 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     // compute the vertical mass fluxes (piecewise linear in the vertical)
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            VertFlux(ex, ey, pi, NULL, VA, scale);
+            VertFlux(ex, ey, pi, NULL, VA);
             MatMult(VA, uv[ey*topo->nElsX+ex], Mpu);
-            AssembleLinear(ex, ey, VA, scale);
+            AssembleLinear(ex, ey, VA);
             KSPSolve(kspColA, Mpu, Fv);
             // strong form vertical divergence
             MatMult(V10, Fv, Dv);
@@ -617,9 +616,10 @@ diagnose theta from rho X theta (with boundary condition)
 */
 void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     int ex, ey, n2, kk;
-    double scale = 1.0e8;
     Vec rtv, frt, theta_v, bcs;
-    Mat AB;
+    Mat A, AB;
+    PC pc;
+    KSP kspCol;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -631,23 +631,38 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &frt);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &theta_v);
 
+    MatCreate(MPI_COMM_SELF, &A);
+    MatSetType(A, MATSEQAIJ);
+    MatSetSizes(A, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(A, n2, PETSC_NULL);
+
     MatCreate(MPI_COMM_SELF, &AB);
     MatSetType(AB, MATSEQAIJ);
     MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
     MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
 
+    KSPCreate(MPI_COMM_SELF, &kspCol);
+    KSPSetOperators(kspCol, A, A);
+    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspCol, KSPGMRES);
+    KSPGetPC(kspCol, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    KSPSetOptionsPrefix(kspCol,"kspVert_");
+    KSPSetFromOptions(kspCol);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            AssembleLinearWithRho(ex, ey, rho, VA, scale);
-            AssembleLinCon(ex, ey, AB, scale);
+            AssembleLinearWithRho(ex, ey, rho, A);
+            AssembleLinCon(ex, ey, AB);
 
             // construct horiztonal rho theta field
             HorizToVert2(ex, ey, rt, rtv);
             MatMult(AB, rtv, frt);
             // assemble in the bcs
-            thetaBCVec(ex, ey, VA, rho, &bcs);
+            thetaBCVec(ex, ey, A, rho, &bcs);
             VecAXPY(frt, -1.0, bcs);
-            KSPSolve(kspColA, frt, theta_v);
+            KSPSolve(kspCol, frt, theta_v);
             VertToHoriz2(ex, ey, 1, geom->nk, theta_v, theta);
             VecDestroy(&bcs);
         }
@@ -656,7 +671,9 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     VecDestroy(&rtv);
     VecDestroy(&frt);
     VecDestroy(&theta_v);
+    MatDestroy(&A);
     MatDestroy(&AB);
+    KSPDestroy(&kspCol);
 }
 
 /*
@@ -840,7 +857,7 @@ void PrimEqns::vertOps() {
 assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and constant basis functions in the vertical
 */
-void PrimEqns::AssembleConst(int ex, int ey, Mat B, double scale) {
+void PrimEqns::AssembleConst(int ex, int ey, Mat B) {
     int ii, kk, ei, mp12;
     int *inds0;
     double det;
@@ -870,7 +887,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat B, double scale) {
             // for constant field we multiply by the vertical jacobian determinant when integrating, 
             // then divide by the vertical jacobian for both the trial and the test functions
             // vertical determinant is dz/2
-            Q0[ii][ii] *= scale*2.0/geom->thick[kk][inds0[ii]];
+            Q0[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
         }
 
         // assemble the piecewise constant mass matrix for level k
@@ -900,7 +917,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat B, double scale) {
 Assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and linear basis functions in the vertical
 */
-void PrimEqns::AssembleLinear(int ex, int ey, Mat A, double scale) {
+void PrimEqns::AssembleLinear(int ex, int ey, Mat A) {
     int ii, kk, ei, mp12;
     int *inds0;
     double det;
@@ -929,7 +946,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat A, double scale) {
             Q0[ii][ii] = Q->A[ii][ii]/det/det;
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
-            Q0[ii][ii] *= scale*geom->thick[kk][inds0[ii]]/2.0;
+            Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
         }
 
         Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -965,7 +982,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat A, double scale) {
     delete W;
 }
 
-void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB, double scale) {
+void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB) {
     int ii, kk, ei, mp12;
     double det;
     int rows[99], cols[99];
@@ -989,7 +1006,7 @@ void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB, double scale) {
         
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = Q->A[ii][ii]/det/det;
 
             // multiply by the vertical jacobian, then scale the piecewise constant 
             // basis by the vertical jacobian, so do nothing 
@@ -1032,7 +1049,7 @@ void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB, double scale) {
     delete W;
 }
 
-void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double scale) {
+void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
     int ii, kk, ei, mp1, mp12;
     double det, rk;
     int inds2k[99];
@@ -1061,7 +1078,7 @@ void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double sca
         VecGetArray(rho[kk], &rArray);
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = Q->A[ii][ii]/det/det;
 
             // multuply by the vertical determinant to integrate, then
             // divide piecewise constant density by the vertical determinant,
@@ -1103,7 +1120,7 @@ void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double sca
     delete W;
 }
 
-void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A, double scale) {
+void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A) {
     int ii, kk, ei, mp1, mp12;
     int *inds0;
     double det, t1, t2;
@@ -1136,7 +1153,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A, double
         VecGetArray(theta[kk+1], &t2Array);
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            QB[ii][ii] = scale*Q->A[ii][ii]/det/det;
+            QB[ii][ii] = Q->A[ii][ii]/det/det;
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             QB[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
@@ -1192,7 +1209,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A, double
 derive the vertical mass flux
 TODO: only need a single piecewise constant field, may be either rho or rho X theta
 */
-void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale) {
+void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
     int ii, kk, ei, mp1, mp12;
     double det, rho, temp1, temp2;
     int inds2k[99];
@@ -1224,8 +1241,7 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale) 
 
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            //Q0[ii][ii] = Q->A[ii][ii]/det/det;
-            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = Q->A[ii][ii]/det/det;
 
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &rho);
             Q0[ii][ii] *= rho;
@@ -1280,7 +1296,7 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale) 
     delete W;
 }
 
-void PrimEqns::AssembleVertOps(int ex, int ey, Mat A, double scale) {
+void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
     int n2 = topo->elOrd*topo->elOrd;
     Mat B, L, BD;
 
@@ -1289,8 +1305,8 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A, double scale) {
     MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
     MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
-    AssembleLinear(ex, ey, A, scale);
-    AssembleConst(ex, ey, B, scale);
+    AssembleLinear(ex, ey, A);
+    AssembleConst(ex, ey, B);
 
     // construct the laplacian mixing operator
     MatMatMult(B, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &BD);
@@ -1307,7 +1323,6 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A, double scale) {
 // note: rho X theta must include the theta boundary conditions
 void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int ii, kk, ex, ey, n2;
-    double scale = 1.0e8;
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *rt_h, *exner_h, bu, bw, wi;
     Vec *Hu2, *Vu2, *Fp2, *Ft2, *rho_i, *rt_i, *exner_i, exner_f, *theta;
@@ -1413,11 +1428,10 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
 
-            AssembleVertOps(ex, ey, VA, scale);
+            AssembleVertOps(ex, ey, VA);
             VecZeroEntries(bw);
             VecCopy(velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
-            VecScale(bw, scale);
             KSPSolve(kspColA, bw, velz_h[ii]);
         }
     }
@@ -1465,12 +1479,11 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
 
-            AssembleVertOps(ex, ey, VA, scale);
+            AssembleVertOps(ex, ey, VA);
             VecZeroEntries(bw);
             VecCopy(velz[ii], bw);
             VecAXPY(bw, -0.5*dt, Vu1[ii]);
             VecAXPY(bw, -0.5*dt, Vu2[ii]);
-            VecScale(bw, scale);
             VecZeroEntries(velz[ii]);
             KSPSolve(kspColA, bw, velz[ii]);
         }
@@ -1714,8 +1727,8 @@ void PrimEqns::init2(Vec* h, ICfunc3D* func) {
         VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
         MatMult(WQ->M, bg, WQb);
-        VecScale(WQb, scale);      // have to rescale the M2 operator as the metric terms scale
-        M2->assemble(kk, scale);   // this down to machine precision, so rescale the rhs as well
+        VecScale(WQb, scale);     // have to rescale the M2 operator as the metric terms scale
+        M2->assemble(kk,scale);   // this down to machine precision, so rescale the rhs as well
         KSPSolve(ksp2, WQb, h[kk]);
     }
 
@@ -1773,7 +1786,6 @@ TODO: this routine may be deprecated if rho X theta is passed in as a single fie
 */
 void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
     int kk, ex, ey, n2;
-    double scale = 1.0e8;
     Vec Mtu, Fv, Dv;
     Vec pl, pu, Fi, Dh;
     Vec theta_k, theta_k_l;
@@ -1819,8 +1831,7 @@ void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             VertFlux(ex, ey, pi, theta, Mt);
             MatMult(Mt, uv[ey*topo->nElsX+ex], Mtu);
-            AssembleLinear(ex, ey, B, scale);
-            VecScale(Mtu, scale);
+            AssembleLinear(ex, ey, B);
             KSPSolve(kspCol, Mtu, Fv);
             // strong form vertical divergence
             MatMult(V10, Fv, Dv);
