@@ -27,7 +27,7 @@
 using namespace std;
 
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
-    int ii;
+    int ii, n2;
     PC pc;
 
     dt = _dt;
@@ -109,6 +109,38 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->elOrd*topo->elOrd, &Kv[ii]);
     }
+
+    // initialise the single column mass matrices and solvers
+    n2 = topo->elOrd*topo->elOrd;
+
+    MatCreate(MPI_COMM_SELF, &VA);
+    MatSetType(VA, MATSEQAIJ);
+    MatSetSizes(VA, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(VA, topo->elOrd*topo->elOrd, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &VB);
+    MatSetType(VB, MATSEQAIJ);
+    MatSetSizes(VB, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
+    MatSeqAIJSetPreallocation(VB, topo->elOrd*topo->elOrd, PETSC_NULL);
+
+    KSPCreate(MPI_COMM_SELF, &kspColA);
+    KSPSetOperators(kspColA, VA, VA);
+    KSPSetTolerances(kspColA, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspColA, KSPGMRES);
+    KSPGetPC(kspColA, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    KSPSetOptionsPrefix(kspColA, "kspColA_");
+    KSPSetFromOptions(kspColA);
+
+    KSPCreate(MPI_COMM_SELF, &kspColB);
+    KSPSetOperators(kspColB, VB, VB);
+    KSPSetTolerances(kspColB, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspColB, KSPGMRES);
+    KSPGetPC(kspColB, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    KSPSetOptionsPrefix(kspColB, "kspColB_");
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -195,6 +227,10 @@ PrimEqns::~PrimEqns() {
 
     MatDestroy(&V01);
     MatDestroy(&V10);
+    MatDestroy(&VA);
+    MatDestroy(&VB);
+    KSPDestroy(&kspColA);
+    KSPDestroy(&kspColB);
 
     delete m0;
     delete M1;
@@ -353,39 +389,16 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
 
 void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
     int ex, ey, ei, n2;
+    double scale = 1.0e8;
     Vec exner_v, de1, de2, de3, dp;
-    Mat A, B;
-    PC pc;
-    KSP kspCol;
 
     n2 = topo->elOrd*topo->elOrd;
-
-    // vertical velocity is computer per element, so matrices are local to this processor
-    MatCreate(MPI_COMM_SELF, &A);
-    MatSetType(A, MATSEQAIJ);
-    MatSetSizes(A, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(A, topo->elOrd*topo->elOrd, PETSC_NULL);
-
-    MatCreate(MPI_COMM_SELF, &B);
-    MatSetType(B, MATSEQAIJ);
-    MatSetSizes(B, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(B, topo->elOrd*topo->elOrd, PETSC_NULL);
 
     VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &de1);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &de2);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &de3);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &dp);
     VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &exner_v);
-
-    KSPCreate(MPI_COMM_SELF, &kspCol);
-    KSPSetOperators(kspCol, B, B);
-    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, n2, NULL);
-    KSPSetOptionsPrefix(kspCol,"kspVert_");
-    KSPSetFromOptions(kspCol);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -401,17 +414,18 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             VecZeroEntries(de1);
             VecZeroEntries(de2);
             VecZeroEntries(de3);
-            AssembleConst(ex, ey, A);
-            MatMult(A, exner_v, de1);
+            AssembleConst(ex, ey, VB);
+            MatMult(VB, exner_v, de1);
             MatMult(V01, de1, de2);
-            AssembleLinear(ex, ey, B);//TODO: skip this and just solve with B(theta)?? on LHS
-            KSPSolve(kspCol, de2, de3);
+            AssembleLinear(ex, ey, VA, scale);//TODO: skip this and just solve with B(theta)?? on LHS
+            VecScale(de2, scale);
+            KSPSolve(kspColA, de2, de3);
 
             // interpolate the potential temperature onto the piecewise linear
             // vertical mass matrix and multiply by the weak form vertical gradient of
             // the exner pressure
-            AssembleLinearWithTheta(ex, ey, theta, B);
-            MatMult(B, de3, dp);
+            AssembleLinearWithTheta(ex, ey, theta, VA);
+            MatMult(VA, de3, dp);
             VecAXPY(fw[ei], 1.0, dp);
 
             // TODO: add in horizontal vorticity terms
@@ -423,9 +437,6 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
     VecDestroy(&de2);
     VecDestroy(&de3);
     VecDestroy(&dp);
-    MatDestroy(&A);
-    MatDestroy(&B);
-    KSPDestroy(&kspCol);
 }
 
 /*
@@ -435,11 +446,10 @@ uv: vertical velocity by horiztonal element
 */
 void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     int kk, ex, ey, n2;
+    double scale = 1.0e8;
     Vec Mpu, Fv, Dv;
     Vec pl, pu, Fi, Dh;
-    Mat Mp, B;
-    PC pc;
-    KSP kspCol;
+    Mat Mp;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -447,34 +457,19 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
-    // compute the vertical mass fluxes (piecewise linear in the vertical)
-    MatCreate(MPI_COMM_SELF, &B);
-    MatSetType(B, MATSEQAIJ);
-    //MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSetSizes(B, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
-
     MatCreate(MPI_COMM_SELF, &Mp);
     MatSetType(Mp, MATSEQAIJ);
     MatSetSizes(Mp, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(Mp, topo->elOrd*topo->elOrd, PETSC_NULL);
 
-    KSPCreate(MPI_COMM_SELF, &kspCol);
-    KSPSetOperators(kspCol, B, B);
-    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, n2, NULL);
-    KSPSetOptionsPrefix(kspCol,"kspCol_");
-    KSPSetFromOptions(kspCol);
-
+    // compute the vertical mass fluxes (piecewise linear in the vertical)
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             VertFlux(ex, ey, pi, NULL, Mp);
             MatMult(Mp, uv[ey*topo->nElsX+ex], Mpu);
-            AssembleLinear(ex, ey, B);
-            KSPSolve(kspCol, Mpu, Fv);
+            AssembleLinear(ex, ey, VA, scale);
+            VecScale(Mpu, scale);
+            KSPSolve(kspColA, Mpu, Fv);
             // strong form vertical divergence
             MatMult(V10, Fv, Dv);
 
@@ -486,9 +481,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     VecDestroy(&Mpu);
     VecDestroy(&Fv);
     VecDestroy(&Dv);
-    MatDestroy(&B);
     MatDestroy(&Mp);
-    KSPDestroy(&kspCol);
 
     // compute the horiztonal mass fluxes
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &pl);
@@ -513,110 +506,6 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     VecDestroy(&pu);
     VecDestroy(&Fi);
     VecDestroy(&Dh);
-}
-
-/*
-compute the temperature equation right hand side for all levels
-uh: horiztonal velocity by vertical level
-uv: vertical velocity by horiztonal element
-TODO: this routine may be deprecated if rho X theta is passed in as a single field
-*/
-void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
-    int kk, ex, ey, n2;
-    Vec Mtu, Fv, Dv;
-    Vec pl, pu, Fi, Dh;
-    Vec theta_k, theta_k_l;
-    Mat Mt, B;
-    PC pc;
-    KSP kspCol;
-
-    n2 = topo->elOrd*topo->elOrd;
-
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mtu);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
-
-    // allocate the RHS vectors at each level
-    Ft = new Vec*[geom->nk];
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Ft[kk]);
-        VecZeroEntries(*Ft[kk]);
-    }
-
-    // compute the vertical mass fluxes (piecewise linear in the vertical)
-    MatCreate(MPI_COMM_SELF, &B);
-    MatSetType(B, MATSEQAIJ);
-    MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
-
-    MatCreate(MPI_COMM_SELF, &Mt);
-    MatSetType(Mt, MATSEQAIJ);
-    MatSetSizes(Mt, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(Mt, topo->elOrd*topo->elOrd, PETSC_NULL);
-
-    KSPCreate(MPI_COMM_SELF, &kspCol);
-    KSPSetOperators(kspCol, B, B);
-    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, n2, NULL);
-    KSPSetOptionsPrefix(kspCol,"kspCol_");
-    KSPSetFromOptions(kspCol);
-
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            VertFlux(ex, ey, pi, theta, Mt);
-            MatMult(Mt, uv[ey*topo->nElsX+ex], Mtu);
-            AssembleLinear(ex, ey, B);
-            KSPSolve(kspCol, Mtu, Fv);
-            // strong form vertical divergence
-            MatMult(V10, Fv, Dv);
-
-            // copy the vertical contribution to the divergence into the
-            // horiztonal vectors
-            VertToHoriz2(ex, ey, 0, geom->nk, Dv, *Ft);
-        }
-    }
-    VecDestroy(&Mtu);
-    VecDestroy(&Dv);
-    MatDestroy(&B);
-    MatDestroy(&Mt);
-    KSPDestroy(&kspCol);
-
-    // compute the horiztonal mass fluxes
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &pl);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k_l);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Dh);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_k);
-
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecScatterBegin(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
-
-        VecZeroEntries(theta_k);
-        VecAXPY(theta_k, 0.5, theta[kk]);
-        VecAXPY(theta_k, 0.5, theta[kk+1]);
-        VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
-
-        // add the horiztonal fluxes
-        F->assemble(pl, theta_k_l, kk, true);
-        M1->assemble(kk);
-        MatMult(F->M, uh[kk], pu);
-        KSPSolve(ksp1, pu, Fi);
-        MatMult(EtoF->E21, Fi, Dh);
-        VecAXPY(*Ft[kk], 1.0, Dh);
-    }
-
-    VecDestroy(&pl);
-    VecDestroy(&pu);
-    VecDestroy(&Fi);
-    VecDestroy(&Dh);
-    VecDestroy(&theta_k);
-    VecDestroy(&theta_k_l);
 }
 
 /*
@@ -738,9 +627,7 @@ diagnose theta from rho X theta (with boundary condition)
 void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     int ex, ey, n2, kk;
     Vec rtv, frt, theta_v, bcs;
-    Mat A, AB;
-    PC pc;
-    KSP kspCol;
+    Mat AB;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -752,38 +639,23 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &frt);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &theta_v);
 
-    MatCreate(MPI_COMM_SELF, &A);
-    MatSetType(A, MATSEQAIJ);
-    MatSetSizes(A, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(A, n2, PETSC_NULL);
-
     MatCreate(MPI_COMM_SELF, &AB);
     MatSetType(AB, MATSEQAIJ);
     MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
     MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
 
-    KSPCreate(MPI_COMM_SELF, &kspCol);
-    KSPSetOperators(kspCol, A, A);
-    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, n2, NULL);
-    KSPSetOptionsPrefix(kspCol,"kspVert_");
-    KSPSetFromOptions(kspCol);
-
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            AssembleLinearWithRho(ex, ey, rho, A);
+            AssembleLinearWithRho(ex, ey, rho, VA);
             AssembleLinCon(ex, ey, AB);
 
             // construct horiztonal rho theta field
             HorizToVert2(ex, ey, rt, rtv);
             MatMult(AB, rtv, frt);
             // assemble in the bcs
-            thetaBCVec(ex, ey, A, rho, &bcs);
+            thetaBCVec(ex, ey, VA, rho, &bcs);
             VecAXPY(frt, -1.0, bcs);
-            KSPSolve(kspCol, frt, theta_v);
+            KSPSolve(kspColA, frt, theta_v);
             VertToHoriz2(ex, ey, 1, geom->nk, theta_v, theta);
             VecDestroy(&bcs);
         }
@@ -792,9 +664,7 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     VecDestroy(&rtv);
     VecDestroy(&frt);
     VecDestroy(&theta_v);
-    MatDestroy(&A);
     MatDestroy(&AB);
-    KSPDestroy(&kspCol);
 }
 
 /*
@@ -1038,7 +908,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat B) {
 Assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and linear basis functions in the vertical
 */
-void PrimEqns::AssembleLinear(int ex, int ey, Mat A) {
+void PrimEqns::AssembleLinear(int ex, int ey, Mat A, double scale) {
     int ii, kk, ei, mp12;
     int *inds0;
     double det;
@@ -1067,7 +937,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat A) {
             Q0[ii][ii] = Q->A[ii][ii]/det/det;
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
-            Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
+            Q0[ii][ii] *= scale*geom->thick[kk][inds0[ii]]/2.0;
         }
 
         Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -1426,7 +1296,7 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
     MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
     MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
-    AssembleLinear(ex, ey, A);
+    AssembleLinear(ex, ey, A, 1.0);
     AssembleConst(ex, ey, B);
 
     // construct the laplacian mixing operator
@@ -1447,9 +1317,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *rt_h, *exner_h, bu, bw, wi;
     Vec *Hu2, *Vu2, *Fp2, *Ft2, *rho_i, *rt_i, *exner_i, exner_f, *theta;
-    Mat A;
-    PC pc;
-    KSP kspCol;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -1513,21 +1380,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecZeroEntries(Ft2[kk]);
     }
 
-    MatCreate(MPI_COMM_SELF, &A);
-    MatSetType(A, MATSEQAIJ);
-    MatSetSizes(A, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(A, n2, PETSC_NULL);
-
-    KSPCreate(MPI_COMM_SELF, &kspCol);
-    KSPSetOperators(kspCol, A, A);
-    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, n2, NULL);
-    KSPSetOptionsPrefix(kspCol,"kspVert_");
-    KSPSetFromOptions(kspCol);
-
     // construct the right hand side terms for the first substep
     // note: do horiztonal rhs first as this assembles the kinetic energy
     // operator for use in the vertical rhs
@@ -1567,11 +1419,11 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
 
-            AssembleVertOps(ex, ey, A);
+            AssembleVertOps(ex, ey, VA);
             VecZeroEntries(bw);
             VecCopy(velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
-            KSPSolve(kspCol, bw, velz_h[ii]);
+            KSPSolve(kspColA, bw, velz_h[ii]);
         }
     }
 
@@ -1618,13 +1470,13 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
 
-            AssembleVertOps(ex, ey, A);
+            AssembleVertOps(ex, ey, VA);
             VecZeroEntries(bw);
             VecCopy(velz[ii], bw);
             VecAXPY(bw, -0.5*dt, Vu1[ii]);
             VecAXPY(bw, -0.5*dt, Vu2[ii]);
             VecZeroEntries(velz[ii]);
-            KSPSolve(kspCol, bw, velz[ii]);
+            KSPSolve(kspColA, bw, velz[ii]);
         }
     }
 
@@ -1695,8 +1547,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete[] theta;
     VecDestroy(&bw);
     VecDestroy(&bu);
-    MatDestroy(&A);
-    KSPDestroy(&kspCol);
 }
 
 void PrimEqns::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph) {
@@ -1917,6 +1767,114 @@ void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
     VecDestroy(&bg);
     VecDestroy(&WQb);
 }
+
+#if 0
+/*
+compute the temperature equation right hand side for all levels
+uh: horiztonal velocity by vertical level
+uv: vertical velocity by horiztonal element
+TODO: this routine may be deprecated if rho X theta is passed in as a single field
+*/
+void PrimEqns::tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft) {
+    int kk, ex, ey, n2;
+    double scale = 1.0e8;
+    Vec Mtu, Fv, Dv;
+    Vec pl, pu, Fi, Dh;
+    Vec theta_k, theta_k_l;
+    Mat Mt, B;
+    PC pc;
+    KSP kspCol;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mtu);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
+
+    // allocate the RHS vectors at each level
+    Ft = new Vec*[geom->nk];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Ft[kk]);
+        VecZeroEntries(*Ft[kk]);
+    }
+
+    // compute the vertical mass fluxes (piecewise linear in the vertical)
+    MatCreate(MPI_COMM_SELF, &B);
+    MatSetType(B, MATSEQAIJ);
+    MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
+    MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &Mt);
+    MatSetType(Mt, MATSEQAIJ);
+    MatSetSizes(Mt, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(Mt, topo->elOrd*topo->elOrd, PETSC_NULL);
+
+    KSPCreate(MPI_COMM_SELF, &kspCol);
+    KSPSetOperators(kspCol, B, B);
+    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspCol, KSPGMRES);
+    KSPGetPC(kspCol, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    KSPSetOptionsPrefix(kspCol,"kspCol_");
+    KSPSetFromOptions(kspCol);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            VertFlux(ex, ey, pi, theta, Mt);
+            MatMult(Mt, uv[ey*topo->nElsX+ex], Mtu);
+            AssembleLinear(ex, ey, B, scale);
+            VecScale(Mtu, scale);
+            KSPSolve(kspCol, Mtu, Fv);
+            // strong form vertical divergence
+            MatMult(V10, Fv, Dv);
+
+            // copy the vertical contribution to the divergence into the
+            // horiztonal vectors
+            VertToHoriz2(ex, ey, 0, geom->nk, Dv, *Ft);
+        }
+    }
+    VecDestroy(&Mtu);
+    VecDestroy(&Dv);
+    MatDestroy(&B);
+    MatDestroy(&Mt);
+    KSPDestroy(&kspCol);
+
+    // compute the horiztonal mass fluxes
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &pl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k_l);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Dh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_k);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecScatterBegin(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
+
+        VecZeroEntries(theta_k);
+        VecAXPY(theta_k, 0.5, theta[kk]);
+        VecAXPY(theta_k, 0.5, theta[kk+1]);
+        VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+
+        // add the horiztonal fluxes
+        F->assemble(pl, theta_k_l, kk, true);
+        M1->assemble(kk);
+        MatMult(F->M, uh[kk], pu);
+        KSPSolve(ksp1, pu, Fi);
+        MatMult(EtoF->E21, Fi, Dh);
+        VecAXPY(*Ft[kk], 1.0, Dh);
+    }
+
+    VecDestroy(&pl);
+    VecDestroy(&pu);
+    VecDestroy(&Fi);
+    VecDestroy(&Dh);
+    VecDestroy(&theta_k);
+    VecDestroy(&theta_k_l);
+}
+#endif
 
 #if 0
 void PrimEqns::VertConstMatInv(int ex, int ey, Mat Binv) {
