@@ -528,7 +528,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
 
     MatZeroEntries(A);
 
-    // top boundary
+    // bottom boundary
     Q->assemble(ex, ey);
         
     VecGetArray(rho[0], &rArray);
@@ -553,7 +553,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
     }
     MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
-    // bottom boundary
+    // top boundary
     Q->assemble(ex, ey);
         
     VecGetArray(rho[geom->nk-1], &rArray);
@@ -574,7 +574,6 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
     Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
     for(ii = 0; ii < W->nDofsJ; ii++) {
-        //inds2k[ii] = ii + (geom->nk-1)*W->nDofsJ;
         inds2k[ii] = ii + (geom->nk-2)*W->nDofsJ;
     }
     MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
@@ -584,19 +583,18 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
 
     // assemble the theta bc vector
     VecGetArray(theta_o, &vArray);
-    // top
-    VecGetArray(theta_t, &hArray);
-    for(ii = 0; ii < n2; ii++) {
-        vArray[ii] = hArray[inds2[ii]];
-    }
-    VecRestoreArray(theta_t, &hArray);
     // bottom
     VecGetArray(theta_b, &hArray);
     for(ii = 0; ii < n2; ii++) {
-        //vArray[(geom->nk-1)*n2+ii] = hArray[inds2[ii]];
-        vArray[(geom->nk-2)*n2+ii] = hArray[inds2[ii]];
+        vArray[ii] = hArray[inds2[ii]];
     }
     VecRestoreArray(theta_b, &hArray);
+    // top
+    VecGetArray(theta_t, &hArray);
+    for(ii = 0; ii < n2; ii++) {
+        vArray[(geom->nk-2)*n2+ii] = hArray[inds2[ii]];
+    }
+    VecRestoreArray(theta_t, &hArray);
     VecRestoreArray(theta_o, &vArray);
 
     MatMult(A, theta_o, *bTheta);
@@ -618,12 +616,11 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     int ex, ey, n2, kk;
     Vec rtv, frt, theta_v, bcs;
     Mat A, AB;
-    PC pc;
-    KSP kspCol;
 
     n2 = topo->elOrd*topo->elOrd;
 
-    for(kk = 0; kk < geom->nk - 1; kk++) {
+    // reset the potential temperature at the internal layer interfaces, not the boundaries
+    for(kk = 1; kk < geom->nk; kk++) {
         VecZeroEntries(theta[kk]);
     }
 
@@ -641,28 +638,19 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
     MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
 
-    KSPCreate(MPI_COMM_SELF, &kspCol);
-    KSPSetOperators(kspCol, A, A);
-    KSPSetTolerances(kspCol, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(kspCol, KSPGMRES);
-    KSPGetPC(kspCol, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, n2, NULL);
-    KSPSetOptionsPrefix(kspCol,"kspVert_");
-    KSPSetFromOptions(kspCol);
-
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            AssembleLinearWithRho(ex, ey, rho, A);
-            AssembleLinCon(ex, ey, AB);
-
             // construct horiztonal rho theta field
             HorizToVert2(ex, ey, rt, rtv);
+            AssembleLinCon(ex, ey, AB);
             MatMult(AB, rtv, frt);
+
             // assemble in the bcs
             thetaBCVec(ex, ey, A, rho, &bcs);
             VecAXPY(frt, -1.0, bcs);
-            KSPSolve(kspCol, frt, theta_v);
+
+            AssembleLinearWithRho(ex, ey, rho, VA);
+            KSPSolve(kspColA, frt, theta_v);
             VertToHoriz2(ex, ey, 1, geom->nk, theta_v, theta);
             VecDestroy(&bcs);
         }
@@ -673,7 +661,6 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     VecDestroy(&theta_v);
     MatDestroy(&A);
     MatDestroy(&AB);
-    KSPDestroy(&kspCol);
 }
 
 /*
