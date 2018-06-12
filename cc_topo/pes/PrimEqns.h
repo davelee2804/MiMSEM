@@ -48,9 +48,9 @@ class PrimEqns {
         void laplacian(Vec u, Vec* ddu, int lev);                   // laplacian operator via helmholtz decomposition
         void AssembleConst(int ex, int ey, Mat A, double scale);    // piecewise constant (in vertical) mass matrix
         void AssembleLinear(int ex, int ey, Mat B, double scale);   // piecewise linear (in vertical) mass matrix
-        void AssembleLinCon(int ex, int ey, Mat AB);
-        void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A);
-        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
+        void AssembleLinCon(int ex, int ey, Mat AB, double scale);
+        void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A, double scale);
+        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double scale);
         void AssembleVertOps(int ex, int ey, Mat M0, double scale);
         void VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale); // vertical mass flux matrix
         void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp);

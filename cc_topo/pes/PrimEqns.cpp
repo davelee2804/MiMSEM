@@ -423,9 +423,9 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             // interpolate the potential temperature onto the piecewise linear
             // vertical mass matrix and multiply by the weak form vertical gradient of
             // the exner pressure
-            AssembleLinearWithTheta(ex, ey, theta, VA);//TODO scale then unscale?
+            AssembleLinearWithTheta(ex, ey, theta, VA, scale);// scale then unscale?
             MatMult(VA, de3, dp);
-            VecAXPY(fw[ei], 1.0, dp);
+            VecAXPY(fw[ei], 1.0/scale, dp);
 
             // TODO: add in horizontal vorticity terms
         }
@@ -617,6 +617,7 @@ diagnose theta from rho X theta (with boundary condition)
 */
 void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     int ex, ey, n2, kk;
+    double scale = 1.0e8;
     Vec rtv, frt, theta_v, bcs;
     Mat AB;
 
@@ -637,8 +638,8 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            AssembleLinearWithRho(ex, ey, rho, VA);
-            AssembleLinCon(ex, ey, AB);
+            AssembleLinearWithRho(ex, ey, rho, VA, scale);
+            AssembleLinCon(ex, ey, AB, scale);
 
             // construct horiztonal rho theta field
             HorizToVert2(ex, ey, rt, rtv);
@@ -964,7 +965,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat A, double scale) {
     delete W;
 }
 
-void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB) {
+void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB, double scale) {
     int ii, kk, ei, mp12;
     double det;
     int rows[99], cols[99];
@@ -988,7 +989,7 @@ void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB) {
         
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
 
             // multiply by the vertical jacobian, then scale the piecewise constant 
             // basis by the vertical jacobian, so do nothing 
@@ -1031,7 +1032,7 @@ void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB) {
     delete W;
 }
 
-void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
+void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double scale) {
     int ii, kk, ei, mp1, mp12;
     double det, rk;
     int inds2k[99];
@@ -1060,7 +1061,7 @@ void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
         VecGetArray(rho[kk], &rArray);
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
 
             // multuply by the vertical determinant to integrate, then
             // divide piecewise constant density by the vertical determinant,
@@ -1102,7 +1103,7 @@ void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
     delete W;
 }
 
-void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A) {
+void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A, double scale) {
     int ii, kk, ei, mp1, mp12;
     int *inds0;
     double det, t1, t2;
@@ -1135,7 +1136,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A) {
         VecGetArray(theta[kk+1], &t2Array);
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            QB[ii][ii] = Q->A[ii][ii]/det/det;
+            QB[ii][ii] = scale*Q->A[ii][ii]/det/det;
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             QB[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
