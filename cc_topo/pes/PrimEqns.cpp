@@ -670,6 +670,7 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
 prognose the exner pressure
 */
 void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev) {
+    double scale = 1.0e8;
     Vec rt_l, rhs;
     PC pc;
     KSP kspE;
@@ -692,14 +693,14 @@ void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev)
     VecScatterBegin(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
 
-    T->assemble(rt_l, lev);
+    T->assemble(rt_l, lev, scale);
     MatMult(T->M, exner_i, rhs);
 
     // assemble the nonlinear operator
     VecScatterBegin(topo->gtol_2, rt_f, rt_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, rt_f, rt_l, INSERT_VALUES, SCATTER_FORWARD);
 
-    T->assemble(rt_l, lev);
+    T->assemble(rt_l, lev, scale);
     KSPSolve(kspE, rhs, *exner_f);
 
     VecDestroy(&rt_l);

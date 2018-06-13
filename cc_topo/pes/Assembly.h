@@ -173,7 +173,7 @@ class Whmat {
         Geom* geom;
         LagrangeEdge* e;
         Mat M;
-        void assemble(Vec rho, int lev);//rho is piecewise constant in the vertical
+        void assemble(Vec rho, int lev, double scale); // rho is piecewise constant in the vertical
 };
 
 /*class UtQWmat {

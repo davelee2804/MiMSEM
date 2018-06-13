@@ -1006,7 +1006,7 @@ Whmat::Whmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     delete W;
 }
 
-void Whmat::assemble(Vec rho, int lev) {
+void Whmat::assemble(Vec rho, int lev, double scale) {
     int ex, ey, ei, mp1, mp12, ii, *inds, *inds0;
     double det, p;
     Wii* Q = new Wii(e->l->q, geom);
@@ -1039,7 +1039,7 @@ void Whmat::assemble(Vec rho, int lev) {
                 // density is piecewise constant in the vertical
                 p *= 2.0/geom->thick[lev][inds0[ii]];
 
-                Qaa[ii][ii]  = p*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii]  = p*scale*Q->A[ii][ii]/det/det;
                 Qaa[ii][ii] *= 2.0/geom->thick[lev][inds0[ii]];
             }
 
