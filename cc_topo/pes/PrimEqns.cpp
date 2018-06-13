@@ -446,6 +446,7 @@ uv: vertical velocity by horiztonal element
 */
 void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     int kk, ex, ey, n2;
+    double scale = 1.0e8;
     Vec Mpu, Fv, Dv;
     Vec pl, pu, Fi, Dh;
 
@@ -458,9 +459,9 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
     // compute the vertical mass fluxes (piecewise linear in the vertical)
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            VertFlux(ex, ey, pi, NULL, VA);
+            VertFlux(ex, ey, pi, NULL, VA, scale);
             MatMult(VA, uv[ey*topo->nElsX+ex], Mpu);
-            AssembleLinear(ex, ey, VA, 1.0);
+            AssembleLinear(ex, ey, VA, scale);
             KSPSolve(kspColA, Mpu, Fv);
             // strong form vertical divergence
             MatMult(V10, Fv, Dv);
@@ -1198,7 +1199,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A, double
 derive the vertical mass flux
 TODO: only need a single piecewise constant field, may be either rho or rho X theta
 */
-void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
+void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale) {
     int ii, kk, ei, mp1, mp12;
     double det, rho, temp1, temp2;
     int inds2k[99];
@@ -1230,7 +1231,7 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp) {
 
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
 
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &rho);
             Q0[ii][ii] *= rho;
