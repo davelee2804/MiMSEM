@@ -1286,7 +1286,7 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale) 
     delete W;
 }
 
-void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
+void PrimEqns::AssembleVertOps(int ex, int ey, Mat A, double scale) {
     int n2 = topo->elOrd*topo->elOrd;
     Mat B, L, BD;
 
@@ -1295,8 +1295,8 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
     MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
     MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
-    AssembleLinear(ex, ey, A, 1.0);
-    AssembleConst(ex, ey, B, 1.0);
+    AssembleLinear(ex, ey, A, scale);
+    AssembleConst(ex, ey, B, scale);
 
     // construct the laplacian mixing operator
     MatMatMult(B, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &BD);
@@ -1313,6 +1313,7 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A) {
 // note: rho X theta must include the theta boundary conditions
 void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int ii, kk, ex, ey, n2;
+    double scale = 1.0e8;
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *rt_h, *exner_h, bu, bw, wi;
     Vec *Hu2, *Vu2, *Fp2, *Ft2, *rho_i, *rt_i, *exner_i, exner_f, *theta;
@@ -1396,7 +1397,8 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecZeroEntries(bu);
         VecCopy(velx[kk], bu);
         VecAXPY(bu, -dt, Hu1[kk]);
-        M1->assemble(kk, 1.0);
+        M1->assemble(kk, scale);
+        VecScale(bu, scale);
         KSPSolve(ksp1, bu, velx_h[kk]);
 
         // density
@@ -1418,10 +1420,11 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
 
-            AssembleVertOps(ex, ey, VA);
+            AssembleVertOps(ex, ey, VA, scale);
             VecZeroEntries(bw);
             VecCopy(velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
+            VecScale(bw, scale);
             KSPSolve(kspColA, bw, velz_h[ii]);
         }
     }
@@ -1442,8 +1445,9 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecCopy(velx[kk], bu);
         VecAXPY(bu, -0.5*dt, Hu1[kk]);
         VecAXPY(bu, -0.5*dt, Hu2[kk]);
-        M1->assemble(kk, 1.0);
+        M1->assemble(kk, scale);
         VecZeroEntries(velx[kk]);
+        VecScale(bu, scale);
         KSPSolve(ksp1, bu, velx[kk]);
 
         // density
@@ -1469,12 +1473,13 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
 
-            AssembleVertOps(ex, ey, VA);
+            AssembleVertOps(ex, ey, VA, scale);
             VecZeroEntries(bw);
             VecCopy(velz[ii], bw);
             VecAXPY(bw, -0.5*dt, Vu1[ii]);
             VecAXPY(bw, -0.5*dt, Vu2[ii]);
             VecZeroEntries(velz[ii]);
+            VecScale(bw, scale);
             KSPSolve(kspColA, bw, velz[ii]);
         }
     }
