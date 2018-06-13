@@ -48,16 +48,15 @@ class PrimEqns {
         void laplacian(Vec u, Vec* ddu, int lev);        // laplacian operator via helmholtz decomposition
         void AssembleConst(int ex, int ey, Mat A);       // piecewise constant (in vertical) mass matrix
         void AssembleLinear(int ex, int ey, Mat B);      // piecewise linear (in vertical) mass matrix
-        void AssembleLinCon(int ex, int ey, Mat AB);
+        void AssembleLinCon(int ex, int ey, Mat AB, double scale);
         void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A);
-        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
+        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double scale);
         void AssembleVertOps(int ex, int ey, Mat M0);
         void VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp);    // vertical mass flux matrix
         void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp);
-        void tempRHS(Vec* uh, Vec* uv, Vec* pi, Vec* theta, Vec **Ft);
         void vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec *fw);
         void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, Vec *Fu);
-        void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta);
+        void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double scale);
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
         void progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev);
         void UpdateKEVert(Vec ke, int lev);

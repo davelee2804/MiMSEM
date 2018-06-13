@@ -501,7 +501,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
 /*
 Assemble the boundary condition vector for rho(t) X theta(0)
 */
-void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
+void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double scale) {
     int* inds2 = topo->elInds2_l(ex, ey);
     int ii, ei, mp1, mp12, n2;
     double det, rk;
@@ -534,7 +534,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
     VecGetArray(rho[0], &rArray);
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
-        Q0[ii][ii] = Q->A[ii][ii]/det/det;
+        Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
 
         // multuply by the vertical determinant to integrate, then
         // divide piecewise constant density by the vertical determinant,
@@ -559,7 +559,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
     VecGetArray(rho[geom->nk-1], &rArray);
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
-        Q0[ii][ii] = Q->A[ii][ii]/det/det;
+        Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
 
         // multuply by the vertical determinant to integrate, then
         // divide piecewise constant density by the vertical determinant,
@@ -614,6 +614,7 @@ diagnose theta from rho X theta (with boundary condition)
 */
 void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     int ex, ey, n2, kk;
+    double scale = 1.0e8;
     Vec rtv, frt, theta_v, bcs;
     Mat A, AB;
 
@@ -642,14 +643,14 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // construct horiztonal rho theta field
             HorizToVert2(ex, ey, rt, rtv);
-            AssembleLinCon(ex, ey, AB);
+            AssembleLinCon(ex, ey, AB, scale);
             MatMult(AB, rtv, frt);
 
             // assemble in the bcs
-            thetaBCVec(ex, ey, A, rho, &bcs);
+            thetaBCVec(ex, ey, A, rho, &bcs, scale);
             VecAXPY(frt, -1.0, bcs);
 
-            AssembleLinearWithRho(ex, ey, rho, VA);
+            AssembleLinearWithRho(ex, ey, rho, VA, scale);
             KSPSolve(kspColA, frt, theta_v);
             VertToHoriz2(ex, ey, 1, geom->nk, theta_v, theta);
             VecDestroy(&bcs);
@@ -969,7 +970,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat A) {
     delete W;
 }
 
-void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB) {
+void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB, double scale) {
     int ii, kk, ei, mp12;
     double det;
     int rows[99], cols[99];
@@ -993,7 +994,7 @@ void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB) {
         
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
 
             // multiply by the vertical jacobian, then scale the piecewise constant 
             // basis by the vertical jacobian, so do nothing 
@@ -1036,7 +1037,7 @@ void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB) {
     delete W;
 }
 
-void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
+void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double scale) {
     int ii, kk, ei, mp1, mp12;
     double det, rk;
     int inds2k[99];
@@ -1065,7 +1066,7 @@ void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
         VecGetArray(rho[kk], &rArray);
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
 
             // multuply by the vertical determinant to integrate, then
             // divide piecewise constant density by the vertical determinant,
