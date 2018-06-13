@@ -32,7 +32,7 @@ Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     delete U;
 }
 
-void Umat::assemble(int lev) {
+void Umat::assemble(int lev, double scale) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_0;
     Wii* Q = new Wii(l->q, geom);
@@ -70,9 +70,9 @@ void Umat::assemble(int lev) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
-                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
-                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii] = scale*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
+                Qab[ii][ii] = scale*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
+                Qbb[ii][ii] = scale*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
 
                 // horiztonal velocity is piecewise constant in the vertical
                 Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];

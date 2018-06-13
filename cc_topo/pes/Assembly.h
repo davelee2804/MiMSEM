@@ -7,7 +7,7 @@ class Umat {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
-        void assemble(int lev);
+        void assemble(int lev, double scale);
 };
 
 class Wmat {

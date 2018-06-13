@@ -486,7 +486,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
 
         // add the horiztonal fluxes
         F->assemble(pl, NULL, kk, true);
-        M1->assemble(kk);
+        M1->assemble(kk, 1.0);
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fi);
         MatMult(EtoF->E21, Fi, Dh);
@@ -725,7 +725,7 @@ void PrimEqns::grad(Vec phi, Vec* u, int lev) {
 
     VecZeroEntries(dPhi);
     MatMult(E12M2, phi, dPhi);
-    VecScale(dPhi, scale);
+    M1->assemble(lev, scale);
     KSPSolve(ksp1, dPhi, *u);
 
     VecDestroy(&dPhi);
@@ -740,7 +740,7 @@ void PrimEqns::curl(Vec u, Vec* w, int lev, bool add_f) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &du);
 
-    M1->assemble(lev);
+    M1->assemble(lev, 1.0);
     if(!E01M1) {
         MatMatMult(NtoE->E01, M1->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E01M1);
     } else {
@@ -1395,7 +1395,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecZeroEntries(bu);
         VecCopy(velx[kk], bu);
         VecAXPY(bu, -dt, Hu1[kk]);
-        M1->assemble(kk);
+        M1->assemble(kk, 1.0);
         KSPSolve(ksp1, bu, velx_h[kk]);
 
         // density
@@ -1441,7 +1441,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecCopy(velx[kk], bu);
         VecAXPY(bu, -0.5*dt, Hu1[kk]);
         VecAXPY(bu, -0.5*dt, Hu2[kk]);
-        M1->assemble(kk);
+        M1->assemble(kk, 1.0);
         VecZeroEntries(velx[kk]);
         KSPSolve(ksp1, bu, velx[kk]);
 
@@ -1668,7 +1668,7 @@ void PrimEqns::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
         VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-        M1->assemble(kk);
+        M1->assemble(kk, 1.0);
         MatMult(UQ->M, bg, UQb);
         KSPSolve(ksp1, UQb, u[kk]);
     }
