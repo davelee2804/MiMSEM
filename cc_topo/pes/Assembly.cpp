@@ -1006,7 +1006,7 @@ Whmat::Whmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     delete W;
 }
 
-void Whmat::assemble(Vec rho, int lev, double scale) {
+void Whmat::assemble(Vec rho, int lev, bool vert_const, double scale) {
     int ex, ey, ei, mp1, mp12, ii, *inds, *inds0;
     double det, p;
     Wii* Q = new Wii(e->l->q, geom);
@@ -1040,7 +1040,9 @@ void Whmat::assemble(Vec rho, int lev, double scale) {
                 p *= 2.0/geom->thick[lev][inds0[ii]];
 
                 Qaa[ii][ii]  = p*scale*Q->A[ii][ii]/det/det;
-                Qaa[ii][ii] *= 2.0/geom->thick[lev][inds0[ii]];
+                if(vert_const) {
+                    Qaa[ii][ii] *= 2.0/geom->thick[lev][inds0[ii]];
+                }
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);

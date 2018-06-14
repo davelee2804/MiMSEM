@@ -311,6 +311,7 @@ each element
 */
 void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec *Fu) {
     Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u, theta_k, theta_k_l, dExner, dp;
+    double scale = 1.0e8;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
@@ -349,20 +350,20 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
     VecAXPY(theta_k, 0.5, theta[lev+1]);
     VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
-/*
-    T->assemble(theta_k_l, lev);
+
+    T->assemble(theta_k_l, lev, false, scale);
     if(!E12M2) {
         MatMatMult(EtoF->E12, T->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
     } else {
         MatMatMult(EtoF->E12, T->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &E12M2);
     }
     MatMult(E12M2, exner, dp);
-    VecAXPY(*Fu, 1.0, dp);
-*/
-    grad(exner, &dExner, lev);
-    F->assemble(theta_k_l, NULL, lev, false);
-    MatMult(F->M, dExner, dp);
-    VecAXPY(*Fu, 1.0, dp);
+    VecAXPY(*Fu, 1.0/scale, dp);
+
+    //grad(exner, &dExner, lev);
+    //F->assemble(theta_k_l, NULL, lev, false);
+    //MatMult(F->M, dExner, dp);
+    //VecAXPY(*Fu, 1.0, dp);
 
     // add in the biharmonic voscosity
     if(do_visc) {
@@ -412,20 +413,25 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             VecZeroEntries(exner_v);
             HorizToVert2(ex, ey, exner, exner_v);
 
-            VecZeroEntries(de1);
-            VecZeroEntries(de2);
-            VecZeroEntries(de3);
-            AssembleConst(ex, ey, VB, scale);
-            MatMult(VB, exner_v, de1);
-            MatMult(V01, de1, de2);
-            AssembleLinear(ex, ey, VA, scale);//TODO: skip this and just solve with B(theta)?? on LHS
-            KSPSolve(kspColA, de2, de3);
+            //VecZeroEntries(de1);
+            //VecZeroEntries(de2);
+            //VecZeroEntries(de3);
+            //AssembleConst(ex, ey, VB, scale);
+            //MatMult(VB, exner_v, de1);
+            //MatMult(V01, de1, de2);
+            //AssembleLinear(ex, ey, VA, scale);//TODO: skip this and just solve with B(theta)?? on LHS
+            //KSPSolve(kspColA, de2, de3);
 
             // interpolate the potential temperature onto the piecewise linear
             // vertical mass matrix and multiply by the weak form vertical gradient of
             // the exner pressure
-            AssembleLinearWithTheta(ex, ey, theta, VA, scale);
-            MatMult(VA, de3, dp);
+            //AssembleLinearWithTheta(ex, ey, theta, VA, scale);
+            //MatMult(VA, de3, dp);
+            //VecAXPY(fw[ei], 1.0/scale, dp);
+
+            AssembleConstWithTheta(ex, ey, theta, VB, scale); // scale then unscale
+            MatMult(VB, exner_v, de1);
+            MatMult(V01, de1, dp);
             VecAXPY(fw[ei], 1.0/scale, dp);
 
             // TODO: add in horizontal vorticity terms
@@ -693,14 +699,14 @@ void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev)
     VecScatterBegin(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
 
-    T->assemble(rt_l, lev, scale);
+    T->assemble(rt_l, lev, true, scale);
     MatMult(T->M, exner_i, rhs);
 
     // assemble the nonlinear operator
     VecScatterBegin(topo->gtol_2, rt_f, rt_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, rt_f, rt_l, INSERT_VALUES, SCATTER_FORWARD);
 
-    T->assemble(rt_l, lev, scale);
+    T->assemble(rt_l, lev, true, scale);
     KSPSolve(kspE, rhs, *exner_f);
 
     VecDestroy(&rt_l);
@@ -1139,7 +1145,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A, double
         // build the 2D mass matrix
         Q->assemble(ex, ey);
         ei = ey*topo->nElsX + ex;
-        
+
         VecGetArray(theta[kk+0], &t1Array);
         VecGetArray(theta[kk+1], &t2Array);
         for(ii = 0; ii < mp12; ii++) {
@@ -1188,6 +1194,71 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A, double
 
     Free2D(Q->nDofsI, QB);
     Free2D(Q->nDofsI, QT);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}
+
+void PrimEqns::AssembleConstWithTheta(int ex, int ey, Vec* theta, Mat A, double scale) {
+    int ii, kk, ei, mp1, mp12;
+    int *inds0;
+    double det, t1, t2;
+    int inds2k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar *t1Array, *t2Array;
+
+    inds0 = topo->elInds0_l(ex, ey);
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    MatZeroEntries(A);
+
+    // Assemble the matrices
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        Q->assemble(ex, ey);
+        ei = ey*topo->nElsX + ex;
+
+        VecGetArray(theta[kk+0], &t1Array);
+        VecGetArray(theta[kk+1], &t2Array);
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = scale*Q->A[ii][ii]/det/det;
+            // for linear field we multiply by the vertical jacobian determinant when integrating, 
+            // and do no other trasformations for the basis functions
+            Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
+
+            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t1Array, &t1);
+            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t2Array, &t2);
+            Q0[ii][ii] *= 0.5*(t1 + t2);
+        }
+        VecRestoreArray(theta[kk+0], &t1Array);
+        VecRestoreArray(theta[kk+1], &t2Array);
+
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+    }
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Q0);
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
