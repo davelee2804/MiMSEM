@@ -361,7 +361,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
     VecAXPY(*Fu, 1.0/scale, dp);
 
     //grad(exner, &dExner, lev);
-    //F->assemble(theta_k_l, NULL, lev, false);
+    //F->assemble(theta_k_l, lev, false, 1.0);
     //MatMult(F->M, dExner, dp);
     //VecAXPY(*Fu, 1.0, dp);
 
@@ -492,8 +492,8 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fp) {
         VecScatterEnd(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
 
         // add the horiztonal fluxes
-        F->assemble(pl, NULL, kk, true);
-        M1->assemble(kk, 1.0);
+        F->assemble(pl, kk, true, scale);
+        M1->assemble(kk, scale);
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fi);
         MatMult(EtoF->E21, Fi, Dh);

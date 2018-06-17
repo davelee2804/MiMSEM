@@ -241,20 +241,17 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
 }
 
-void Uhmat::assemble(Vec h2, Vec t2, int lev, bool const_vert) {
+void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
     int ex, ey, ei, mp1, mp12, ii;
     int *inds_x, *inds_y, *inds_0;
-    double hi, ti, det, **J;
-    PetscScalar *h2Array, *t2Array;
+    double hi, det, **J;
+    PetscScalar *h2Array;
 
     mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
     MatZeroEntries(M);
     VecGetArray(h2, &h2Array);
-    if(t2) {
-        VecGetArray(t2, &t2Array);
-    }
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -273,14 +270,9 @@ void Uhmat::assemble(Vec h2, Vec t2, int lev, bool const_vert) {
                     hi *= 2.0/geom->thick[lev][inds_0[ii]];
                 }
 
-                if(t2) {
-                    geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t2Array, &ti);
-                    hi *= ti;
-                }
-
-                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
-                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
-                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii] = scale*hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
+                Qab[ii][ii] = scale*hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
+                Qbb[ii][ii] = scale*hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
 
                 // horiztonal velocity is piecewise constant in the vertical
                 Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
@@ -319,9 +311,6 @@ void Uhmat::assemble(Vec h2, Vec t2, int lev, bool const_vert) {
         }
     }
     VecRestoreArray(h2, &h2Array);
-    if(t2) {
-        VecRestoreArray(t2, &t2Array);
-    }
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
