@@ -311,7 +311,6 @@ each element
 */
 void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec *Fu) {
     Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u, theta_k, theta_k_l, dExner, dp;
-    double scale = 1.0e8;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
@@ -351,19 +350,19 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
     VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
 
-    T->assemble(theta_k_l, lev, false, scale);
-    if(!E12M2) {
-        MatMatMult(EtoF->E12, T->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
-    } else {
-        MatMatMult(EtoF->E12, T->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &E12M2);
-    }
-    MatMult(E12M2, exner, dp);
-    VecAXPY(*Fu, 1.0/scale, dp);
+    //T->assemble(theta_k_l, lev, false, scale);
+    //if(!E12M2) {
+    //    MatMatMult(EtoF->E12, T->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
+    //} else {
+    //    MatMatMult(EtoF->E12, T->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &E12M2);
+    //}
+    //MatMult(E12M2, exner, dp);
+    //VecAXPY(*Fu, 1.0/scale, dp);
 
-    //grad(exner, &dExner, lev);
-    //F->assemble(theta_k_l, lev, false, 1.0);
-    //MatMult(F->M, dExner, dp);
-    //VecAXPY(*Fu, 1.0, dp);
+    grad(exner, &dExner, lev);
+    F->assemble(theta_k_l, lev, false, 1.0);
+    MatMult(F->M, dExner, dp);
+    VecAXPY(*Fu, 1.0, dp);
 
     // add in the biharmonic voscosity
     if(do_visc) {
@@ -413,26 +412,26 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             VecZeroEntries(exner_v);
             HorizToVert2(ex, ey, exner, exner_v);
 
-            //VecZeroEntries(de1);
-            //VecZeroEntries(de2);
-            //VecZeroEntries(de3);
-            //AssembleConst(ex, ey, VB, scale);
-            //MatMult(VB, exner_v, de1);
-            //MatMult(V01, de1, de2);
-            //AssembleLinear(ex, ey, VA, scale);//TODO: skip this and just solve with B(theta)?? on LHS
-            //KSPSolve(kspColA, de2, de3);
+            VecZeroEntries(de1);
+            VecZeroEntries(de2);
+            VecZeroEntries(de3);
+            AssembleConst(ex, ey, VB, scale);
+            MatMult(VB, exner_v, de1);
+            MatMult(V01, de1, de2);
+            AssembleLinear(ex, ey, VA, scale);//TODO: skip this and just solve with B(theta)?? on LHS
+            KSPSolve(kspColA, de2, de3);
 
             // interpolate the potential temperature onto the piecewise linear
             // vertical mass matrix and multiply by the weak form vertical gradient of
             // the exner pressure
-            //AssembleLinearWithTheta(ex, ey, theta, VA, scale);
-            //MatMult(VA, de3, dp);
-            //VecAXPY(fw[ei], 1.0/scale, dp);
-
-            AssembleConstWithTheta(ex, ey, theta, VB, scale); // scale then unscale
-            MatMult(VB, exner_v, de1);
-            MatMult(V01, de1, dp);
+            AssembleLinearWithTheta(ex, ey, theta, VA, scale);
+            MatMult(VA, de3, dp);
             VecAXPY(fw[ei], 1.0/scale, dp);
+
+            //AssembleConstWithTheta(ex, ey, theta, VB, scale); // scale then unscale
+            //MatMult(VB, exner_v, de1);
+            //MatMult(V01, de1, dp);
+            //VecAXPY(fw[ei], 1.0/scale, dp);
 
             // TODO: add in horizontal vorticity terms
         }

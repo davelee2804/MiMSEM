@@ -154,7 +154,7 @@ void SWEqn::diagnose_F(Vec u, Vec hl, Vec* hu) {
     Vec Fu;
 
     // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
-    F->assemble(hl, NULL, 0, true);
+    F->assemble(hl, 0, true, 1.0);
 
     // get the rhs vector
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fu);
@@ -179,7 +179,7 @@ void SWEqn::_massTend(Vec ui, Vec hi, Vec *Fh) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &hu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
 
-    F->assemble(hl, NULL, 0, true);
+    F->assemble(hl, 0, true, 1.0);
     MatMult(F->M, ui, hu);
     KSPSolve(ksp, hu, Fi);
     MatMult(EtoF->E21, Fi, *Fh);
