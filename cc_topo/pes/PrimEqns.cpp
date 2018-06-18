@@ -26,6 +26,9 @@
 
 using namespace std;
 
+#define ADD_IE
+#define ADD_GZ
+
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     int ii, n2;
     PC pc;
@@ -261,6 +264,7 @@ void PrimEqns::UpdateKEVert(Vec ke, int lev) {
     double fg[99], zi[99];
 
     n2 = topo->elOrd*topo->elOrd;
+    for(ii = 0; ii < 99; ii++) fg[ii] = 0.0;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &kl);
     VecScatterBegin(topo->gtol_2, ke, kl, INSERT_VALUES, SCATTER_FORWARD);
@@ -278,6 +282,7 @@ void PrimEqns::UpdateKEVert(Vec ke, int lev) {
             Q->assemble(ex, ey);
             Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q->A, WtQ);
 
+#ifdef ADD_GZ
             for(ii = 0; ii < Q->nDofsI; ii++) {
                 zi[ii] = 0.5*(geom->levs[lev+0][inds0[ii]] + geom->levs[lev+1][inds0[ii]])*GRAVITY;
             }
@@ -287,6 +292,7 @@ void PrimEqns::UpdateKEVert(Vec ke, int lev) {
                     fg[ii] += WtQ[ii][jj]*zi[jj];
                 }
             }
+#endif
 
             VecGetArray(Kv[ey*topo->nElsX + ex], &kvArray);
             for(ii = 0; ii < n2; ii++) {
@@ -344,6 +350,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
 
     // add the thermodynamic term (theta is in the same space as the vertical velocity)
     // project theta onto 1 forms
+#ifdef ADD_IE
     VecZeroEntries(theta_k);
     VecAXPY(theta_k, 0.5, theta[lev]);
     VecAXPY(theta_k, 0.5, theta[lev+1]);
@@ -363,6 +370,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
     F->assemble(theta_k_l, lev, false, 1.0);
     MatMult(F->M, dExner, dp);
     VecAXPY(*Fu, 1.0, dp);
+#endif
 
     // add in the biharmonic voscosity
     if(do_visc) {
@@ -377,7 +385,9 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, Vec 
     VecDestroy(&Ru);
     VecDestroy(&Ku);
     VecDestroy(&Mh);
+#ifdef ADD_IE
     VecDestroy(&dExner);
+#endif
     VecDestroy(&dp);
     VecDestroy(&theta_k);
     VecDestroy(&theta_k_l);
@@ -409,6 +419,7 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             MatMult(V01, Kv[ei], fw[ei]);
 
             // add in the pressure gradient
+#ifdef ADD_IE
             VecZeroEntries(exner_v);
             HorizToVert2(ex, ey, exner, exner_v);
 
@@ -432,6 +443,7 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             //MatMult(VB, exner_v, de1);
             //MatMult(V01, de1, dp);
             //VecAXPY(fw[ei], 1.0/scale, dp);
+#endif
 
             // TODO: add in horizontal vorticity terms
         }
@@ -465,7 +477,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
             ei = ey*topo->nElsX + ex;
             VecZeroEntries(Fv[ei]);
 
-            VertFlux(ex, ey, pi, NULL, VA, scale);
+            VertFlux(ex, ey, pi, VA, scale);
             MatMult(VA, uv[ei], Mpu);
             AssembleLinear(ex, ey, VA, scale);
             KSPSolve(kspColA, Mpu, Fv[ei]);
@@ -1270,9 +1282,9 @@ void PrimEqns::AssembleConstWithTheta(int ex, int ey, Vec* theta, Mat A, double 
 derive the vertical mass flux
 TODO: only need a single piecewise constant field, may be either rho or rho X theta
 */
-void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale) {
+void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp, double scale) {
     int ii, kk, ei, mp1, mp12;
-    double det, rho, temp1, temp2;
+    double det, rho;
     int inds2k[99];
     Wii* Q = new Wii(node->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(edge);
@@ -1281,25 +1293,21 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale) 
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    PetscScalar *pArray, *t1Array, *t2Array;
+    PetscScalar *pArray;
 
-    mp1   = quad->n + 1;
-    mp12  = mp1*mp1;
+    ei   = ey*topo->nElsX + ex;
+    mp1  = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    // build the 2D mass matrix
+    Q->assemble(ex, ey);
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
     MatZeroEntries(Mp);
 
     // assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
-        // build the 2D mass matrix
-        Q->assemble(ex, ey);
-        ei = ey*topo->nElsX + ex;
-        
         VecGetArray(pi[kk], &pArray);
-        if(ti) {
-            VecGetArray(ti[kk], &t1Array);
-            VecGetArray(ti[kk+1], &t2Array);
-        }
-
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
             Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
@@ -1310,21 +1318,10 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale) 
             // multiply by the vertical determinant for the vertical integral,
             // then divide by the vertical determinant to rescale the piecewise
             // constant density, so do nothing.
-
-            if(ti) {
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t1Array, &temp1);
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t2Array, &temp2);
-                Q0[ii][ii] *= 0.5*(temp1 + temp2);
-            }
         }
         VecRestoreArray(pi[kk], &pArray);
-        if(ti) {
-            VecRestoreArray(ti[kk], &t1Array);
-            VecRestoreArray(ti[kk+1], &t2Array);
-        }
 
         // assemble the piecewise constant mass matrix for level k
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
@@ -1702,20 +1699,22 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     // construct the right hand side terms for the first substep
     // note: do horiztonal rhs first as this assembles the kinetic energy
     // operator for use in the vertical rhs
-int rank;
-MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-if(!rank)cout<<"\tdiagnosing theta..."<<endl;
+//int rank;
+//MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+//if(!rank)cout<<"\tdiagnosing theta..."<<endl;
     diagTheta(rho, rt, theta);
-if(!rank)cout<<"\thorizontal momentum rhs..."<<endl;
+//if(!rank)cout<<"\thorizontal momentum rhs..."<<endl;
     for(kk = 0; kk < geom->nk; kk++) {
         horizMomRHS(velx[kk], velz, theta, exner[kk], kk, &Hu1[kk]);
     }
-if(!rank)cout<<"\tvertical momentum rhs..."<<endl;
+//if(!rank)cout<<"\tvertical momentum rhs..."<<endl;
     vertMomRHS(velx, velz, theta, exner, Vu1);
-if(!rank)cout<<"\tcontinuity eqn rhs..."<<endl;
+//if(!rank)cout<<"\tcontinuity eqn rhs..."<<endl;
     massRHS(velx, velz, rho, Fh, Fv, Fp1);
-if(!rank)cout<<"\tenergy eqn rhs..."<<endl;
+#ifdef ADD_IE
+//if(!rank)cout<<"\tenergy eqn rhs..."<<endl;
     massRHS(velx, velz, rt,  Gh, Gv, Ft1);
+#endif
 
     // solve for the half step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1725,7 +1724,7 @@ if(!rank)cout<<"\tenergy eqn rhs..."<<endl;
         VecAXPY(bu, -dt, Hu1[kk]);
         M1->assemble(kk, scale);
         VecScale(bu, scale);
-if(!rank)cout<<"\thorizontal momentum solve..."<<endl;
+//if(!rank)cout<<"\thorizontal momentum solve..."<<endl;
         KSPSolve(ksp1, bu, velx[kk]);
 
         // density
@@ -1733,20 +1732,22 @@ if(!rank)cout<<"\thorizontal momentum solve..."<<endl;
         VecCopy(rho_i[kk], rho[kk]);
         VecAXPY(rho[kk], -dt, Fp1[kk]);
 
+#ifdef ADD_IE
         // potential temperature
         VecZeroEntries(rt[kk]);
         VecCopy(rt_i[kk], rt[kk]);
         VecAXPY(rt[kk], -dt, Ft1[kk]);
 
         // exner pressure
-if(!rank)cout<<"\texner pressure solve..."<<endl;
+//if(!rank)cout<<"\texner pressure solve..."<<endl;
         progExner(rt_i[kk], rt[kk], exner[kk], &exner_f, kk);
         VecCopy(exner_f, exner[kk]);
         VecDestroy(&exner_f);
+#endif
     }
 
     // solve for the vertical velocity
-if(!rank)cout<<"\tvertical momentum solve..."<<endl;
+//if(!rank)cout<<"\tvertical momentum solve..."<<endl;
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;

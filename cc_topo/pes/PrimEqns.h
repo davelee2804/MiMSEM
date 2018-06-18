@@ -53,7 +53,7 @@ class PrimEqns {
         void AssembleConstWithTheta(int ex, int ey, Vec* theta, Mat A, double scale);
         void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double scale);
         void AssembleVertOps(int ex, int ey, Mat M0, double scale);
-        void VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale);    // vertical mass flux matrix
+        void VertFlux(int ex, int ey, Vec* pi, Mat Mp, double scale);    // vertical mass flux matrix
         void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp);
         void vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec *fw);
         void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, Vec *Fu);
