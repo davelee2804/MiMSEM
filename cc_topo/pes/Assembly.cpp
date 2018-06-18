@@ -70,9 +70,9 @@ void Umat::assemble(int lev, double scale) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii][ii] = scale*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
-                Qab[ii][ii] = scale*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
-                Qbb[ii][ii] = scale*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
                 Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
@@ -177,9 +177,9 @@ void Wmat::assemble(int lev, double scale) {
             inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Qaa[ii][ii] = Q->A[ii][ii]/det/det;
+                Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
 
-                Qaa[ii][ii] *= scale*2.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii][ii] *= 2.0/geom->thick[lev][inds0[ii]];
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -270,9 +270,9 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
                     hi *= 2.0/geom->thick[lev][inds_0[ii]];
                 }
 
-                Qaa[ii][ii] = scale*hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
-                Qab[ii][ii] = scale*hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
-                Qbb[ii][ii] = scale*hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
                 Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
@@ -1028,7 +1028,7 @@ void Whmat::assemble(Vec rho, int lev, bool vert_const, double scale) {
                 // density is piecewise constant in the vertical
                 p *= 2.0/geom->thick[lev][inds0[ii]];
 
-                Qaa[ii][ii]  = p*scale*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii]  = p*Q->A[ii][ii]*(scale/det/det);
                 if(vert_const) {
                     Qaa[ii][ii] *= 2.0/geom->thick[lev][inds0[ii]];
                 }

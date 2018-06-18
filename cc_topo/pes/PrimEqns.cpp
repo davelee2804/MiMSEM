@@ -541,7 +541,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double s
     VecGetArray(rho[0], &rArray);
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
-        Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
+        Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
 
         // multuply by the vertical determinant to integrate, then
         // divide piecewise constant density by the vertical determinant,
@@ -566,7 +566,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double s
     VecGetArray(rho[geom->nk-1], &rArray);
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
-        Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
+        Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
 
         // multuply by the vertical determinant to integrate, then
         // divide piecewise constant density by the vertical determinant,
@@ -879,7 +879,7 @@ void PrimEqns::AssembleConst(int ex, int ey, Mat B, double scale) {
         
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
             // for constant field we multiply by the vertical jacobian determinant when integrating, 
             // then divide by the vertical jacobian for both the trial and the test functions
             // vertical determinant is dz/2
@@ -939,7 +939,7 @@ void PrimEqns::AssembleLinear(int ex, int ey, Mat A, double scale) {
         
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii]  = scale*Q->A[ii][ii]/det/det;
+            Q0[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
@@ -1002,7 +1002,7 @@ void PrimEqns::AssembleLinCon(int ex, int ey, Mat AB, double scale) {
         
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
 
             // multiply by the vertical jacobian, then scale the piecewise constant 
             // basis by the vertical jacobian, so do nothing 
@@ -1074,7 +1074,7 @@ void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double sca
         VecGetArray(rho[kk], &rArray);
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
 
             // multuply by the vertical determinant to integrate, then
             // divide piecewise constant density by the vertical determinant,
@@ -1149,7 +1149,7 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A, double
         VecGetArray(theta[kk+1], &t2Array);
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            QB[ii][ii]  = scale*Q->A[ii][ii]/det/det;
+            QB[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             QB[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
@@ -1233,7 +1233,7 @@ void PrimEqns::AssembleConstWithTheta(int ex, int ey, Vec* theta, Mat A, double 
         VecGetArray(theta[kk+1], &t2Array);
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii]  = scale*Q->A[ii][ii]/det/det;
+            Q0[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
@@ -1302,7 +1302,7 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Vec* ti, Mat Mp, double scale) 
 
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = scale*Q->A[ii][ii]/det/det;
+            Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
 
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &rho);
             Q0[ii][ii] *= rho;
@@ -1632,6 +1632,184 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete[] rt_i;
     delete[] exner_i;
     delete[] velz_h;
+    delete[] theta;
+    delete[] Fh;
+    delete[] Gh;
+    delete[] Fv;
+    delete[] Gv;
+    VecDestroy(&bw);
+    VecDestroy(&bu);
+}
+
+void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
+    int ii, kk, ex, ey, n2;
+    double scale = 1.0e8;
+    char fieldname[100];
+    Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, bw, wi;
+    Vec *rho_i, *rt_i, *exner_i, exner_f, *theta, *Fh, *Fv, *Gh, *Gv;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    Hu1 = new Vec[geom->nk];
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &bw);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+    rho_i   = new Vec[geom->nk];
+    rt_i    = new Vec[geom->nk];
+    exner_i = new Vec[geom->nk];
+    theta   = new Vec[geom->nk+1];
+    Fh      = new Vec[geom->nk];
+    Gh      = new Vec[geom->nk];
+    Fv      = new Vec[topo->nElsX*topo->nElsX];
+    Gv      = new Vec[topo->nElsX*topo->nElsX];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_i[kk]  );
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt_i[kk]   );
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner_i[kk]);
+        // temporary vectors for use in exner pressure prognosis
+        VecCopy(rho[kk]  , rho_i[kk]  );
+        VecCopy(rt[kk]   , rt_i[kk]   );
+        VecCopy(exner[kk], exner_i[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Gh[kk]);
+    }
+    // create vectors for the potential temperature at the internal layer interfaces
+    for(kk = 1; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta[kk]);
+    }
+    // set the top and bottom potential temperature bcs
+    theta[0]        = theta_b;
+    theta[geom->nk] = theta_t;
+
+    Vu1 = new Vec[topo->nElsX*topo->nElsX];
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu1[ii]   );
+        VecZeroEntries(Vu1[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Gv[ii]);
+    }
+
+    // continuity and temperature equation rhs vectors
+    Fp1 = new Vec[geom->nk];
+    Ft1 = new Vec[geom->nk];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Fp1[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ft1[kk]);
+        VecZeroEntries(Fp1[kk]);
+        VecZeroEntries(Ft1[kk]);
+    }
+
+    // construct the right hand side terms for the first substep
+    // note: do horiztonal rhs first as this assembles the kinetic energy
+    // operator for use in the vertical rhs
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+if(!rank)cout<<"\tdiagnosing theta..."<<endl;
+    diagTheta(rho, rt, theta);
+if(!rank)cout<<"\thorizontal momentum rhs..."<<endl;
+    for(kk = 0; kk < geom->nk; kk++) {
+        horizMomRHS(velx[kk], velz, theta, exner[kk], kk, &Hu1[kk]);
+    }
+if(!rank)cout<<"\tvertical momentum rhs..."<<endl;
+    vertMomRHS(velx, velz, theta, exner, Vu1);
+if(!rank)cout<<"\tcontinuity eqn rhs..."<<endl;
+    massRHS(velx, velz, rho, Fh, Fv, Fp1);
+if(!rank)cout<<"\tenergy eqn rhs..."<<endl;
+    massRHS(velx, velz, rt,  Gh, Gv, Ft1);
+
+    // solve for the half step values
+    for(kk = 0; kk < geom->nk; kk++) {
+        // horizontal momentum
+        VecZeroEntries(bu);
+        VecCopy(velx[kk], bu);
+        VecAXPY(bu, -dt, Hu1[kk]);
+        M1->assemble(kk, scale);
+        VecScale(bu, scale);
+if(!rank)cout<<"\thorizontal momentum solve..."<<endl;
+        KSPSolve(ksp1, bu, velx[kk]);
+
+        // density
+        VecZeroEntries(rho[kk]);
+        VecCopy(rho_i[kk], rho[kk]);
+        VecAXPY(rho[kk], -dt, Fp1[kk]);
+
+        // potential temperature
+        VecZeroEntries(rt[kk]);
+        VecCopy(rt_i[kk], rt[kk]);
+        VecAXPY(rt[kk], -dt, Ft1[kk]);
+
+        // exner pressure
+if(!rank)cout<<"\texner pressure solve..."<<endl;
+        progExner(rt_i[kk], rt[kk], exner[kk], &exner_f, kk);
+        VecCopy(exner_f, exner[kk]);
+        VecDestroy(&exner_f);
+    }
+
+    // solve for the vertical velocity
+if(!rank)cout<<"\tvertical momentum solve..."<<endl;
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ii = ey*topo->nElsX + ex;
+
+            AssembleVertOps(ex, ey, VA, scale);
+            VecZeroEntries(bw);
+            VecCopy(velz[ii], bw);
+            VecAXPY(bw, -dt, Vu1[ii]);
+            VecScale(bw, scale);
+            KSPSolve(kspColA, bw, velz[ii]);
+        }
+    }
+
+    // write output
+    if(save) {
+        step++;
+        for(kk = 0; kk < geom->nk; kk++) {
+            curl(velx[kk], &wi, kk, false);
+
+            sprintf(fieldname, "vorticity");
+            geom->write0(wi, fieldname, step, kk);
+            sprintf(fieldname, "velocity_h");
+            geom->write1(velx[kk], fieldname, step, kk);
+            sprintf(fieldname, "density");
+            geom->write2(rho[kk], fieldname, step, kk);
+            sprintf(fieldname, "rhoTheta");
+            geom->write2(rt[kk], fieldname, step, kk);
+            sprintf(fieldname, "exner");
+            geom->write2(exner[kk], fieldname, step, kk);
+
+            VecDestroy(&wi);
+        }
+
+        sprintf(fieldname, "velVert");
+        geom->writeSerial(velz, fieldname, topo->nElsX*topo->nElsX, step);
+    }
+
+    // deallocate
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecDestroy(&Hu1[kk]);
+        VecDestroy(&Fp1[kk]);
+        VecDestroy(&Ft1[kk]);
+        VecDestroy(&rho_i[kk]);
+        VecDestroy(&rt_i[kk]);
+        VecDestroy(&exner_i[kk]);
+        VecDestroy(&Fh[kk]);
+        VecDestroy(&Gh[kk]);
+    }
+    for(kk = 1; kk < geom->nk; kk++) {
+        VecDestroy(&theta[kk]);
+    }
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecDestroy(&Vu1[ii]);
+        VecDestroy(&Fv[ii]);
+        VecDestroy(&Gv[ii]);
+    }
+    delete[] Hu1;
+    delete[] Vu1;
+    delete[] Fp1;
+    delete[] Ft1;
+    delete[] rho_i;
+    delete[] rt_i;
+    delete[] exner_i;
     delete[] theta;
     delete[] Fh;
     delete[] Gh;

@@ -63,6 +63,7 @@ class PrimEqns {
         void UpdateKEVert(Vec ke, int lev);
         void VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph);
         void HorizToVert2(int ex, int ey, Vec* ph, Vec pv);
+        void SolveEuler(Vec* velx, Vec* velw, Vec* rho, Vec* theta, Vec* exner, bool save);
         void SolveRK2(Vec* velx, Vec* velw, Vec* rho, Vec* theta, Vec* exner, bool save);
         void init0(Vec* q, ICfunc3D* func);
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
