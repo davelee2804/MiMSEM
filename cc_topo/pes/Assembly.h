@@ -120,7 +120,7 @@ class WtQUmat {
         M1y_j_xy_i* V;
         M2_j_xy_i* W;
         Wii* Q;
-        void assemble(Vec u1, Vec* w1, int lev);
+        void assemble(Vec u1, Vec* w1, int lev, double scale);
 };
 
 class RotMat {
@@ -144,7 +144,7 @@ class RotMat {
         M1x_j_xy_i* U;
         M1y_j_xy_i* V;
         Wii* Q;
-        void assemble(Vec q0, int lev);
+        void assemble(Vec q0, int lev, double scale);
 };
 
 class E10mat {

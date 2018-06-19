@@ -56,7 +56,7 @@ class PrimEqns {
         void VertFlux(int ex, int ey, Vec* pi, Mat Mp, double scale);    // vertical mass flux matrix
         void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp);
         void vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec *fw);
-        void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, Vec *Fu);
+        void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, double scale, Vec *Fu);
         void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double scale);
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
         void progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev);
