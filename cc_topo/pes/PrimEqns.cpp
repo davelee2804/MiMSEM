@@ -27,7 +27,7 @@
 using namespace std;
 
 #define ADD_IE
-#define ADD_GZ
+//#define ADD_GZ
 
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     int ii, n2;
@@ -114,7 +114,7 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     }
     Kh = new Vec[geom->nk];
     for(ii = 0; ii < geom->nk; ii++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Kh[ii]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Kh[ii]);
     }
 
     // initialise the single column mass matrices and solvers
@@ -231,10 +231,10 @@ PrimEqns::~PrimEqns() {
         VecDestroy(&Kv[ii]);
     }
     delete[] Kv;
-    for(ii = 0; ii < geom->nk; ii++) {
-        VecDestroy(&Kh[ii]);
-    }
-    delete[] Kh;
+    //for(ii = 0; ii < geom->nk; ii++) {
+    //    VecDestroy(&Kh[ii]);
+    //}
+    //delete[] Kh;
 
     MatDestroy(&V01);
     MatDestroy(&V10);
@@ -264,9 +264,9 @@ PrimEqns::~PrimEqns() {
 */
 void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     int ex, ey, ei, ii, jj, kk, mp1, mp12, n2, rows[99], cols[99], *inds0, *inds2;
-    double det, wb, wt, wi, gamma, zi[99], fg[99];
+    double det, wb, wt, wi, gamma, zi, fg;
     Mat BA;
-    Vec velx_l;
+    Vec velx_l, *Kh_l;
     Wii* Q = new Wii(node->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(edge);
     double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
@@ -281,6 +281,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     mp12 = mp1*mp1;
 
     // assemble the horiztonal operators
+    Kh_l = new Vec[geom->nk];
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &velx_l);
     for(kk = 0; kk < geom->nk; kk++) {
         VecZeroEntries(velx_l);
@@ -289,6 +290,8 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
         K->assemble(velx_l, kk, scale);
         VecZeroEntries(Kh[kk]);
         MatMult(K->M, velx[kk], Kh[kk]);
+
+        VecCreateSeq(MPI_COMM_SELF, topo->n2l, &Kh_l[kk]);
     }
     VecDestroy(&velx_l);
 
@@ -372,17 +375,13 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
                 }
                 Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
 
-                for(ii = 0; ii < Q->nDofsI; ii++) {
-                    zi[ii] = 0.5*(geom->levs[kk+0][inds0[ii]] + geom->levs[kk+1][inds0[ii]])*GRAVITY;
-                }
                 for(ii = 0; ii < W->nDofsJ; ii++) {
-                    fg[ii] = 0.0;
+                    fg = 0.0;
                     for(jj = 0; jj < Q->nDofsI; jj++) {
-                        fg[ii] += WtQ[ii][jj]*zi[jj];
+                        zi  = 0.5*(geom->levs[kk+0][inds0[jj]] + geom->levs[kk+1][inds0[jj]])*GRAVITY;
+                        fg += WtQ[ii][jj]*zi;
                     }
-                }
-                for(ii = 0; ii < W->nDofsJ; ii++) {
-                    wArray[kk*n2+ii] += fg[ii];
+                    wArray[kk*n2+ii] += fg;
                 }
             }
             VecRestoreArray(Kv[ei], &wArray);
@@ -392,7 +391,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
 
     // add the vertical contribution to the horiztonal vector
     for(kk = 0; kk < geom->nk; kk++) {
-        VecGetArray(Kh[kk], &khArray);
+        VecGetArray(Kh_l[kk], &khArray);
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei    = ey*topo->nElsX + ex;
@@ -406,7 +405,14 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
                 VecRestoreArray(Kv[ei], &kvArray);
             }
         }
-        VecRestoreArray(Kh[kk], &khArray);
+        VecRestoreArray(Kh_l[kk], &khArray);
+
+        VecZeroEntries(Kh[kk]);
+        VecScatterBegin(topo->gtol_2, Kh_l[kk], Kh[kk], ADD_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(topo->gtol_2, Kh_l[kk], Kh[kk], ADD_VALUES, SCATTER_REVERSE);
+
+        VecScatterBegin(topo->gtol_2, Kh[kk], Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(topo->gtol_2, Kh[kk], Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
     }
 
     // update the vertical vector with the horiztonal vector
@@ -418,12 +424,12 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
             VecGetArray(Kv[ei], &kvArray);
 
             for(kk = 0; kk < geom->nk; kk++) {
-                VecGetArray(Kh[kk], &khArray);
+                VecGetArray(Kh_l[kk], &khArray);
 
                 for(ii = 0; ii < n2; ii++) {
                     kvArray[kk*n2+ii] = khArray[inds2[ii]];
                 }
-                VecRestoreArray(Kh[kk], &khArray);
+                VecRestoreArray(Kh_l[kk], &khArray);
             }
             VecRestoreArray(Kv[ei], &kvArray);
         }
@@ -431,6 +437,10 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
 
     // TODO: scatter the horiztonal local vector to the global vector
 
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecDestroy(&Kh_l[kk]);
+    }
+    delete[] Kh_l;
     MatDestroy(&BA);
     Free2D(Q->nDofsI, Q0);
     Free2D(W->nDofsJ, Wt);
@@ -539,8 +549,6 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
     for(kk = 0; kk < geom->nk-1; kk++) {
         VecCreateSeq(MPI_COMM_SELF, topo->n1, &velx_l[kk]);
         VecScatterBegin(topo->gtol_1, ui[kk], velx_l[kk], INSERT_VALUES, SCATTER_FORWARD);
-    }
-    for(kk = 0; kk < geom->nk-1; kk++) {
         VecScatterEnd(topo->gtol_1, ui[kk], velx_l[kk], INSERT_VALUES, SCATTER_FORWARD);
     }
 
