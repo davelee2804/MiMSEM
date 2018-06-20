@@ -371,7 +371,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
             for(kk = 0; kk < geom->nk; kk++) {
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
-                    Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
+                    Q0[ii][ii] = Q->A[ii][ii]*(scale/det);
                 }
                 Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
 
