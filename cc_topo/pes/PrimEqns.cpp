@@ -410,6 +410,24 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     }
 
     // update the vertical vector with the horiztonal vector
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei    = ey*topo->nElsX + ex;
+            inds0 = topo->elInds0_l(ex, ey);
+            inds2 = topo->elInds2_l(ex, ey);
+            VecGetArray(Kv[ei], &kvArray);
+
+            for(kk = 0; kk < geom->nk; kk++) {
+                VecGetArray(Kh[kk], &khArray);
+
+                for(ii = 0; ii < n2; ii++) {
+                    kvArray[kk*n2+ii] = khArray[inds2[ii]];
+                }
+                VecRestoreArray(Kh[kk], &khArray);
+            }
+            VecRestoreArray(Kv[ei], &kvArray);
+        }
+    }
 
     // TODO: scatter the horiztonal local vector to the global vector
 
@@ -429,10 +447,9 @@ note that the vertical velocity, uv, is stored as a different vector for
 each element
 */
 void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, double scale, Vec *Fu) {
-    Vec wl, ul, wi, Ru, Ku, Mh, d2u, d4u, theta_k, theta_k_l, dExner, dp;
+    Vec wl, wi, Ru, Ku, Mh, d2u, d4u, theta_k, theta_k_l, dExner, dp;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k_l);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, Fu);
@@ -442,21 +459,14 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, doub
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_k);
 
-    VecZeroEntries(*Fu);
-
     curl(uh, &wi, lev, true);
-
     VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterBegin(topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
 
+    VecZeroEntries(*Fu);
     R->assemble(wl, lev, scale);
-    K->assemble(ul, lev, scale);
-
     MatMult(R->M, uh, Ru);
-    MatMult(K->M, uh, Ku);
-    MatMult(EtoF->E12, Ku, *Fu);
+    MatMult(EtoF->E12, Kh[lev], *Fu);
     VecAXPY(*Fu, 1.0, Ru);
 
     // must do horiztonal momentum rhs before vertical, so that that kinetic energy 
@@ -495,7 +505,6 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, doub
     }
 
     VecDestroy(&wl);
-    VecDestroy(&ul);
     VecDestroy(&wi);
     VecDestroy(&Ru);
     VecDestroy(&Ku);
@@ -540,10 +549,7 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             ei = ey*topo->nElsX + ex;
 
             // add in the kinetic energy gradient
-            // TODO: can't just use the Kv vector from the horiztonal, have to reassemble
-            // this using the vertical basis functions
             MatMult(V01, Kv[ei], fw[ei]);
-            //AssmbleKEOp(ex, ey, velx_l, BA, 1.0);
 
             // add in the pressure gradient
 #ifdef ADD_IE
