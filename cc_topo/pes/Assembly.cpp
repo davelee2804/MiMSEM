@@ -652,11 +652,11 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
 }
 
-void WtQUmat::assemble(Vec u1, Vec* w1, int lev, double scale) {
-    int ex, ey, ei, ii, jj, mp1, mp12;
+void WtQUmat::assemble(Vec u1, int lev, double scale) {
+    int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_2, *inds_0;
-    double det, **J, ux[2], wt, wb, wi, gamma;
-    PetscScalar *u1Array, *w1Array;
+    double det, **J, ux[2];
+    PetscScalar *u1Array;
 
     mp1 = l->n + 1;
     mp12 = mp1*mp1;
@@ -666,9 +666,6 @@ void WtQUmat::assemble(Vec u1, Vec* w1, int lev, double scale) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            // vertical velocities are stored as an array of column vectors
-            VecGetArray(w1[ey*topo->nElsX+ex], &w1Array);
-
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
 
@@ -686,24 +683,11 @@ void WtQUmat::assemble(Vec u1, Vec* w1, int lev, double scale) {
                 Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
                 Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
 
-                // add in the square of the vertical velocity at the layer top and bottom
-                wb = wt = 0.0;
-                for(jj = 0; jj < W->nDofsJ; jj++) {
-                    gamma = e->ejxi[ii%mp1][jj%topo->elOrd]*e->ejxi[ii/mp1][jj/topo->elOrd];
-                    wb += w1Array[(lev+0)*W->nDofsJ+jj]*gamma;
-                    wt += w1Array[(lev+1)*W->nDofsJ+jj]*gamma;
-                }
-                wi = 0.5*(wb + wt);
-
-                Qaa[ii][ii] += 0.5*wi*wi*Q->A[ii][ii]*(scale/det/det);
-                Qab[ii][ii] += 0.5*wi*wi*Q->A[ii][ii]*(scale/det/det);
-
                 // rescale by the inverse of the vertical determinant (piecewise 
                 // constant in the vertical)
                 Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
                 Qab[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
             }
-            VecRestoreArray(w1[ey*topo->nElsX+ex], &w1Array);
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
             Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQaa);

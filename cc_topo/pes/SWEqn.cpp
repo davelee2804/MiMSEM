@@ -207,7 +207,7 @@ void SWEqn::_momentumTend(Vec ui, Vec hi, Vec *Fu) {
     VecScatterEnd(topo->gtol_1, ui, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     R->assemble(wl, 0, 1.0);
-    K->assemble(ul, NULL, 0, 1.0);
+    K->assemble(ul, 0, 1.0);
 
     MatMult(R->M, ui, Ru);
     MatMult(K->M, ui, Ku);

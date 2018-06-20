@@ -28,7 +28,8 @@ class PrimEqns {
         Vec fg;                                      // coriolis vector (global)
         Vec theta_b;                                 // bottom potential temperature bc
         Vec theta_t;                                 // top potential temperature bc
-        Vec* Kv;                                     // kinetic energy vector for each horiztonal element
+        Vec* Kv;                                     // kinetic energy vector for each vertical column
+        Vec* Kh;                                     // kinetic energy vector for each horiztontal layer
         Mat E01M1;
         Mat E12M2;
         Mat V01;                                     // vertical divergence operator
@@ -60,7 +61,7 @@ class PrimEqns {
         void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double scale);
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
         void progExner(Vec rt_i, Vec rt_f, Vec exner_i, Vec* exner_f, int lev);
-        void UpdateKEVert(Vec ke, int lev);
+        void AssembleKEVecs(Vec* velx, Vec* velz, double scale);
         void VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph);
         void HorizToVert2(int ex, int ey, Vec* ph, Vec pv);
         void SolveEuler(Vec* velx, Vec* velw, Vec* rho, Vec* theta, Vec* exner, bool save);
