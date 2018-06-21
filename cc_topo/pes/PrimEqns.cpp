@@ -1606,7 +1606,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
 
         // density
         VecZeroEntries(rho_h[kk]);
-        VecCopy(rho[kk]  , rho_h[kk]   );
+        VecCopy(rho[kk], rho_h[kk]);
         VecAXPY(rho_h[kk], -dt, Fp1[kk]);
 
         // potential temperature
@@ -2022,6 +2022,7 @@ void PrimEqns::init0(Vec* q, ICfunc3D* func) {
 void PrimEqns::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
     int ex, ey, ii, kk, mp1, mp12;
     int *inds0, *loc02;
+    double scale = 1.0e8;
     UtQmat* UQ = new UtQmat(topo, geom, node, edge);
     PetscScalar *bArray;
     Vec bl, bg, UQb;
@@ -2062,8 +2063,9 @@ void PrimEqns::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
         VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-        M1->assemble(kk, 1.0);
+        M1->assemble(kk, scale);
         MatMult(UQ->M, bg, UQb);
+        VecScale(UQb, scale);
         KSPSolve(ksp1, UQb, u[kk]);
     }
 
@@ -2078,8 +2080,7 @@ void PrimEqns::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
 }
 
 void PrimEqns::init2(Vec* h, ICfunc3D* func) {
-    int ex, ey, ii, kk, mp1, mp12;
-    int *inds0;
+    int ex, ey, ii, kk, mp1, mp12, *inds0;
     double scale = 1.0e8;
     PetscScalar *bArray;
     Vec bl, bg, WQb;
@@ -2110,8 +2111,8 @@ void PrimEqns::init2(Vec* h, ICfunc3D* func) {
         VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
         MatMult(WQ->M, bg, WQb);
-        VecScale(WQb, scale);     // have to rescale the M2 operator as the metric terms scale
-        M2->assemble(kk,scale);   // this down to machine precision, so rescale the rhs as well
+        VecScale(WQb, scale);      // have to rescale the M2 operator as the metric terms scale
+        M2->assemble(kk, scale);   // this down to machine precision, so rescale the rhs as well
         KSPSolve(ksp2, WQb, h[kk]);
     }
 
@@ -2122,8 +2123,8 @@ void PrimEqns::init2(Vec* h, ICfunc3D* func) {
 }
 
 void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
-    int ex, ey, ii, mp1, mp12;
-    int *inds0;
+    int ex, ey, ii, mp1, mp12, *inds0;
+    double scale = 1.0e8;
     PetscScalar *bArray;
     Vec bl, bg, WQb;
     WtQmat* WQ = new WtQmat(topo, geom, edge);
@@ -2150,8 +2151,9 @@ void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
     VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-    M2->assemble(0, 1.0);
+    M2->assemble(0, scale);//TODO: should the layer thickness be ommitted here??
     MatMult(WQ->M, bg, WQb);
+    VecScale(WQb, scale);
     KSPSolve(ksp2, WQb, theta);
 
     delete WQ;
