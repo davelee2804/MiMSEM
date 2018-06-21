@@ -526,9 +526,9 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, doub
 }
 
 void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
-    int ex, ey, ei, n2, kk;
+    int ex, ey, ei, n2;
     double scale = 1.0e8;
-    Vec exner_v, de1, de2, de3, dp, *velx_l;
+    Vec exner_v, de1, de2, de3, dp;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -538,13 +538,6 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &de3);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &dp);
     VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &exner_v);
-
-    velx_l = new Vec[geom->nk-1];
-    for(kk = 0; kk < geom->nk-1; kk++) {
-        VecCreateSeq(MPI_COMM_SELF, topo->n1, &velx_l[kk]);
-        VecScatterBegin(topo->gtol_1, ui[kk], velx_l[kk], INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(topo->gtol_1, ui[kk], velx_l[kk], INSERT_VALUES, SCATTER_FORWARD);
-    }
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -589,10 +582,6 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
     VecDestroy(&de2);
     VecDestroy(&de3);
     VecDestroy(&dp);
-    for(kk = 0; kk < geom->nk-1; kk++) {
-        VecDestroy(&velx_l[kk]);
-    }
-    delete[] velx_l;
 }
 
 /*
@@ -1523,7 +1512,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     double scale = 1.0e8;
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *rt_h, *exner_h, bu, bw, wi;
-    Vec *Hu2, *Vu2, *Fp2, *Ft2, *rho_i, *rt_i, *exner_i, exner_f, *theta;
+    Vec *Hu2, *Vu2, *Fp2, *Ft2, *rt_i, *exner_i, exner_f, *theta;
     Vec *Fh, *Fv, *Gh, *Gv;
 
     n2 = topo->elOrd*topo->elOrd;
@@ -1536,7 +1525,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rho_h   = new Vec[geom->nk];
     rt_h    = new Vec[geom->nk];
     exner_h = new Vec[geom->nk];
-    rho_i   = new Vec[geom->nk];
     rt_i    = new Vec[geom->nk];
     exner_i = new Vec[geom->nk];
     velz_h  = new Vec[topo->nElsX*topo->nElsX];
@@ -1549,11 +1537,9 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_h[kk] );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_h[kk]  );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt_h[kk]   );
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_i[kk]  );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt_i[kk]   );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner_i[kk]);
         // temporary vectors for use in exner pressure prognosis
-        VecCopy(rho[kk]  , rho_i[kk]  );
         VecCopy(rt[kk]   , rt_i[kk]   );
         VecCopy(exner[kk], exner_i[kk]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh[kk]);
@@ -1620,7 +1606,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
 
         // density
         VecZeroEntries(rho_h[kk]);
-        VecCopy(rho_i[kk], rho_h[kk]);
+        VecCopy(rho[kk]  , rho_h[kk]   );
         VecAXPY(rho_h[kk], -dt, Fp1[kk]);
 
         // potential temperature
@@ -1739,7 +1725,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecDestroy(&rho_h[kk]);
         VecDestroy(&rt_h[kk]);
         VecDestroy(&exner_h[kk]);
-        VecDestroy(&rho_i[kk]);
         VecDestroy(&rt_i[kk]);
         VecDestroy(&exner_i[kk]);
         VecDestroy(&Fh[kk]);
@@ -1767,7 +1752,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete[] rho_h;
     delete[] rt_h;
     delete[] exner_h;
-    delete[] rho_i;
     delete[] rt_i;
     delete[] exner_i;
     delete[] velz_h;
@@ -1785,7 +1769,7 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     double scale = 1.0e8;
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, bw, wi;
-    Vec *rho_i, *rt_i, *exner_i, exner_f, *theta, *Fh, *Fv, *Gh, *Gv;
+    Vec *rt_i, *exner_i, exner_f, *theta, *Fh, *Fv, *Gh, *Gv;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -1794,7 +1778,6 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &bw);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
     Hu1     = new Vec[geom->nk];
-    rho_i   = new Vec[geom->nk];
     rt_i    = new Vec[geom->nk];
     exner_i = new Vec[geom->nk];
     theta   = new Vec[geom->nk+1];
@@ -1803,11 +1786,9 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     Fv      = new Vec[topo->nElsX*topo->nElsX];
     Gv      = new Vec[topo->nElsX*topo->nElsX];
     for(kk = 0; kk < geom->nk; kk++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_i[kk]  );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt_i[kk]   );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner_i[kk]);
         // temporary vectors for use in exner pressure prognosis
-        VecCopy(rho[kk]  , rho_i[kk]  );
         VecCopy(rt[kk]   , rt_i[kk]   );
         VecCopy(exner[kk], exner_i[kk]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh[kk]);
@@ -1874,14 +1855,10 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
         KSPSolve(ksp1, bu, velx[kk]);
 
         // density
-        VecZeroEntries(rho[kk]);
-        VecCopy(rho_i[kk], rho[kk]);
         VecAXPY(rho[kk], -dt, Fp1[kk]);
 
 #ifdef ADD_IE
         // potential temperature
-        VecZeroEntries(rt[kk]);
-        VecCopy(rt_i[kk], rt[kk]);
         VecAXPY(rt[kk], -dt, Ft1[kk]);
 
         // exner pressure
@@ -1936,7 +1913,6 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
         VecDestroy(&Hu1[kk]);
         VecDestroy(&Fp1[kk]);
         VecDestroy(&Ft1[kk]);
-        VecDestroy(&rho_i[kk]);
         VecDestroy(&rt_i[kk]);
         VecDestroy(&exner_i[kk]);
         VecDestroy(&Fh[kk]);
@@ -1954,7 +1930,6 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     delete[] Vu1;
     delete[] Fp1;
     delete[] Ft1;
-    delete[] rho_i;
     delete[] rt_i;
     delete[] exner_i;
     delete[] theta;
