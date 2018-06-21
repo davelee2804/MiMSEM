@@ -26,7 +26,7 @@
 
 using namespace std;
 
-#define ADD_IE
+//#define ADD_IE
 //#define ADD_GZ
 
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
@@ -274,7 +274,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    PetscScalar *wArray, *khArray, *kvArray;
+    PetscScalar *khArray, *kvArray;
 
     n2   = topo->elOrd*topo->elOrd;
     mp1  = quad->n + 1;
@@ -308,7 +308,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
             inds0 = topo->elInds0_l(ex, ey);
             MatZeroEntries(BA);
             ei = ey*topo->nElsX + ex;
-            VecGetArray(velz[ei], &wArray);
+            VecGetArray(velz[ei], &kvArray);
 
             // Assemble the matrices
             for(kk = 0; kk < geom->nk; kk++) {
@@ -326,8 +326,8 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
                     wb = wt = 0.0;
                     for(jj = 0; jj < n2; jj++) {
                         gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
-                        if(kk > 0)            wb += wArray[(kk-1)*n2+jj]*gamma;
-                        if(kk < geom->nk - 1) wt += wArray[(kk+0)*n2+jj]*gamma;
+                        if(kk > 0)            wb += kvArray[(kk-1)*n2+jj]*gamma;
+                        if(kk < geom->nk - 1) wt += kvArray[(kk+0)*n2+jj]*gamma;
                     }
                     wi = 0.5*(wb + wt);
 
@@ -360,32 +360,10 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
             }
             MatAssemblyBegin(BA, MAT_FINAL_ASSEMBLY);
             MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
-            VecRestoreArray(velz[ei], &wArray);
+            VecRestoreArray(velz[ei], &kvArray);
 
             VecZeroEntries(Kv[ei]);
             MatMult(BA, velz[ei], Kv[ei]);
-
-#ifdef ADD_GZ
-            // add in the vertical gravity vector
-            VecGetArray(Kv[ei], &wArray);
-            for(kk = 0; kk < geom->nk; kk++) {
-                for(ii = 0; ii < mp12; ii++) {
-                    det = geom->det[ei][ii];
-                    Q0[ii][ii] = Q->A[ii][ii]*(scale/det);
-                }
-                Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-
-                for(ii = 0; ii < W->nDofsJ; ii++) {
-                    fg = 0.0;
-                    for(jj = 0; jj < Q->nDofsI; jj++) {
-                        zi  = 0.5*(geom->levs[kk+0][inds0[jj]] + geom->levs[kk+1][inds0[jj]])*GRAVITY;
-                        fg += WtQ[ii][jj]*zi;
-                    }
-                    wArray[kk*n2+ii] += fg;
-                }
-            }
-            VecRestoreArray(Kv[ei], &wArray);
-#endif
         }
     }
 
@@ -425,12 +403,31 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
 
             for(kk = 0; kk < geom->nk; kk++) {
                 VecGetArray(Kh_l[kk], &khArray);
-
                 for(ii = 0; ii < n2; ii++) {
                     kvArray[kk*n2+ii] = khArray[inds2[ii]];
                 }
                 VecRestoreArray(Kh_l[kk], &khArray);
             }
+
+#ifdef ADD_GZ
+            // add in the vertical gravity vector
+            for(kk = 0; kk < geom->nk; kk++) {
+                for(ii = 0; ii < mp12; ii++) {
+                    det = geom->det[ei][ii];
+                    Q0[ii][ii] = Q->A[ii][ii]*(scale/det);
+                }
+                Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+
+                for(ii = 0; ii < W->nDofsJ; ii++) {
+                    fg = 0.0;
+                    for(jj = 0; jj < Q->nDofsI; jj++) {
+                        zi  = 0.5*(geom->levs[kk+0][inds0[jj]] + geom->levs[kk+1][inds0[jj]])*GRAVITY;
+                        fg += WtQ[ii][jj]*zi;
+                    }
+                    kvArray[kk*n2+ii] += fg;
+                }
+            }
+#endif
             VecRestoreArray(Kv[ei], &kvArray);
         }
     }
