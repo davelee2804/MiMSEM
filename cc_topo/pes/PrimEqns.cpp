@@ -26,7 +26,7 @@
 
 using namespace std;
 
-//#define ADD_IE
+#define ADD_IE
 //#define ADD_GZ
 
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
@@ -385,12 +385,8 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
         }
         VecRestoreArray(Kh_l[kk], &khArray);
 
-        VecZeroEntries(Kh[kk]);
-        VecScatterBegin(topo->gtol_2, Kh_l[kk], Kh[kk], ADD_VALUES, SCATTER_REVERSE);
-        VecScatterEnd(topo->gtol_2, Kh_l[kk], Kh[kk], ADD_VALUES, SCATTER_REVERSE);
-
-        VecScatterBegin(topo->gtol_2, Kh[kk], Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(topo->gtol_2, Kh[kk], Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterBegin(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
     }
 
     // update the vertical vector with the horiztonal vector
@@ -575,12 +571,12 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             // the exner pressure
             AssembleLinearWithTheta(ex, ey, theta, VA, scale);
             MatMult(VA, de3, dp);
-            VecAXPY(fw[ei], 1.0/scale, dp);
+            VecAXPY(fw[ei], 1.0, dp);
 
-            //AssembleConstWithTheta(ex, ey, theta, VB, scale); // scale then unscale
+            //AssembleConstWithTheta(ex, ey, theta, VB, scale);
             //MatMult(VB, exner_v, de1);
             //MatMult(V01, de1, dp);
-            //VecAXPY(fw[ei], 1.0/scale, dp);
+            //VecAXPY(fw[ei], 1.0, dp);
 #endif
 
             // TODO: add in horizontal vorticity terms
@@ -1505,7 +1501,7 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A, double scale) {
     MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
     MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
-    AssembleLinear(ex, ey, A, scale);
+    //AssembleLinear(ex, ey, A, scale);
     AssembleConst(ex, ey, B, scale);
 
     // construct the laplacian mixing operator
@@ -1640,11 +1636,11 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
 
-            AssembleVertOps(ex, ey, VA, scale);
             VecZeroEntries(bw);
-            VecCopy(velz[ii], bw);
+            AssembleLinear(ex, ey, VA, scale);
+            MatMult(VA, velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
-            VecScale(bw, scale);
+            AssembleVertOps(ex, ey, VA, scale);
             KSPSolve(kspColA, bw, velz_h[ii]);
         }
     }
@@ -1696,13 +1692,12 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
 
-            AssembleVertOps(ex, ey, VA, scale);
             VecZeroEntries(bw);
-            VecCopy(velz[ii], bw);
+            AssembleLinear(ex, ey, VA, scale);
+            MatMult(VA, velz[ii], bw);
             VecAXPY(bw, -0.5*dt, Vu1[ii]);
             VecAXPY(bw, -0.5*dt, Vu2[ii]);
-            VecZeroEntries(velz[ii]);
-            VecScale(bw, scale);
+            AssembleVertOps(ex, ey, VA, scale);
             KSPSolve(kspColA, bw, velz[ii]);
         }
     }
@@ -1902,11 +1897,11 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
 
-            AssembleVertOps(ex, ey, VA, scale);
             VecZeroEntries(bw);
-            VecCopy(velz[ii], bw);
+            AssembleLinear(ex, ey, VA, scale);
+            MatMult(VA, velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
-            VecScale(bw, scale);
+            AssembleVertOps(ex, ey, VA, scale);
             KSPSolve(kspColA, bw, velz[ii]);
         }
     }
