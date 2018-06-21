@@ -329,7 +329,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
                         if(kk > 0)            wb += kvArray[(kk-1)*n2+jj]*gamma;
                         if(kk < geom->nk - 1) wt += kvArray[(kk+0)*n2+jj]*gamma;
                     }
-                    wi = 0.5*(wb + wt);
+                    wi = 1.0*(wb + wt); // quadrature weights are both 1.0
 
                     Q0[ii][ii] *= wi;
                 }
@@ -417,7 +417,8 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
                 for(ii = 0; ii < W->nDofsJ; ii++) {
                     fg = 0.0;
                     for(jj = 0; jj < Q->nDofsI; jj++) {
-                        zi  = 0.5*(geom->levs[kk+0][inds0[jj]] + geom->levs[kk+1][inds0[jj]])*GRAVITY;
+                        // quadrature weights are both 1.0
+                        zi  = 1.0*(geom->levs[kk+0][inds0[jj]] + geom->levs[kk+1][inds0[jj]])*GRAVITY;
                         fg += WtQ[ii][jj]*zi;
                     }
                     kvArray[kk*n2+ii] += fg;
@@ -480,8 +481,8 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, doub
     // project theta onto 1 forms
 #ifdef ADD_IE
     VecZeroEntries(theta_k);
-    VecAXPY(theta_k, 0.5, theta[lev]);
-    VecAXPY(theta_k, 0.5, theta[lev+1]);
+    VecAXPY(theta_k, 1.0, theta[lev+0]); // quadrature weights
+    VecAXPY(theta_k, 1.0, theta[lev+1]); // are both 1.0
     VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
 
@@ -1390,7 +1391,7 @@ void PrimEqns::AssembleConstWithTheta(int ex, int ey, Vec* theta, Mat A, double 
 
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t1Array, &t1);
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t2Array, &t2);
-            Q0[ii][ii] *= 0.5*(t1 + t2);
+            Q0[ii][ii] *= 1.0*(t1 + t2); // quadrature weights are both 1.0
         }
         VecRestoreArray(theta[kk+0], &t1Array);
         VecRestoreArray(theta[kk+1], &t2Array);
