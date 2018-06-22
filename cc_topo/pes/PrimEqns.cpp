@@ -627,7 +627,6 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
 
     for(kk = 0; kk < geom->nk; kk++) {
         VecZeroEntries(Fh[kk]);
-
         VecScatterBegin(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
 
@@ -668,6 +667,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double s
     mp12  = mp1*mp1;
     n2    = topo->elOrd*topo->elOrd;
 
+    Q->assemble(ex, ey);
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &theta_o);
@@ -676,8 +676,6 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double s
     MatZeroEntries(A);
 
     // bottom boundary
-    Q->assemble(ex, ey);
-        
     VecGetArray(rho[0], &rArray);
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
@@ -701,8 +699,6 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double s
     MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
     // top boundary
-    Q->assemble(ex, ey);
-        
     VecGetArray(rho[geom->nk-1], &rArray);
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
@@ -1198,9 +1194,11 @@ void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double sca
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *rArray;
 
-    mp1   = quad->n + 1;
-    mp12  = mp1*mp1;
+    ei   = ey*topo->nElsX + ex;
+    mp1  = quad->n + 1;
+    mp12 = mp1*mp1;
 
+    Q->assemble(ex, ey);
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
     MatZeroEntries(A);
@@ -1208,9 +1206,6 @@ void PrimEqns::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double sca
     // Assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
         // build the 2D mass matrix
-        Q->assemble(ex, ey);
-        ei = ey*topo->nElsX + ex;
-        
         VecGetArray(rho[kk], &rArray);
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -1482,7 +1477,7 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp, double scale) {
     delete W;
 }
 
-void PrimEqns::AssembleVertOps(int ex, int ey, Mat A, double scale) {
+void PrimEqns::AssembleVertLaplacian(int ex, int ey, Mat A, double scale) {
     int n2 = topo->elOrd*topo->elOrd;
     Mat B, L, BD;
 
@@ -1491,7 +1486,6 @@ void PrimEqns::AssembleVertOps(int ex, int ey, Mat A, double scale) {
     MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
     MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
 
-    //AssembleLinear(ex, ey, A, scale);
     AssembleConst(ex, ey, B, scale);
 
     // construct the laplacian mixing operator
@@ -1627,7 +1621,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
             AssembleLinear(ex, ey, VA, scale);
             MatMult(VA, velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
-            AssembleVertOps(ex, ey, VA, scale);
+            AssembleVertLaplacian(ex, ey, VA, scale);
             KSPSolve(kspColA, bw, velz_h[ii]);
         }
     }
@@ -1684,7 +1678,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
             MatMult(VA, velz[ii], bw);
             VecAXPY(bw, -0.5*dt, Vu1[ii]);
             VecAXPY(bw, -0.5*dt, Vu2[ii]);
-            AssembleVertOps(ex, ey, VA, scale);
+            AssembleVertLaplacian(ex, ey, VA, scale);
             KSPSolve(kspColA, bw, velz[ii]);
         }
     }
@@ -1879,7 +1873,7 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
             AssembleLinear(ex, ey, VA, scale);
             MatMult(VA, velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
-            AssembleVertOps(ex, ey, VA, scale);
+            AssembleVertLaplacian(ex, ey, VA, scale);
             KSPSolve(kspColA, bw, velz[ii]);
         }
     }
@@ -2151,8 +2145,8 @@ void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
     VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-    M2->assemble(0, scale);//TODO: should the layer thickness be ommitted here??
-    MatMult(WQ->M, bg, WQb);
+    M2->assemble(0, scale);   // note: layer thickness must be set to 2.0 for all layers 
+    MatMult(WQ->M, bg, WQb);  //       before M2 matrix is assembled to initialise theta
     VecScale(WQb, scale);
     KSPSolve(ksp2, WQb, theta);
 
