@@ -48,9 +48,6 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
 
-    E01M1 = NULL;
-    E12M2 = NULL;
-
     // 0 form lumped mass matrix (vector)
     m0 = new Pvec(topo, geom, node);
 
@@ -221,8 +218,6 @@ PrimEqns::~PrimEqns() {
 
     KSPDestroy(&ksp1);
     KSPDestroy(&ksp2);
-    MatDestroy(&E01M1);
-    MatDestroy(&E12M2);
     VecDestroy(&fg);
     VecDestroy(&theta_b);
     VecDestroy(&theta_t);
@@ -483,15 +478,6 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, doub
     VecAXPY(theta_k, 1.0, theta[lev+1]); // are both 1.0
     VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
-
-    //T->assemble(theta_k_l, lev, false, scale);
-    //if(!E12M2) {
-    //    MatMatMult(EtoF->E12, T->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
-    //} else {
-    //    MatMatMult(EtoF->E12, T->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &E12M2);
-    //}
-    //MatMult(E12M2, exner, dp);
-    //VecAXPY(*Fu, 1.0/scale, dp);
 
     grad(exner, &dExner, lev);
     F->assemble(theta_k_l, lev, false, scale);
@@ -854,27 +840,7 @@ Take the weak form gradient of a 2 form scalar field as a 1 form vector field
 */
 void PrimEqns::grad(Vec phi, Vec* u, int lev) {
     double scale = 1.0e8;
-/*
-    Vec dPhi;
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dPhi);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, u);
-
-    M2->assemble(lev, scale);
-    if(!E12M2) {
-        MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E12M2);
-    } else {
-        MatMatMult(EtoF->E12, M2->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &E12M2);
-    }
-
-    VecZeroEntries(dPhi);
-    MatMult(E12M2, phi, dPhi);
-    M1->assemble(lev, scale);
-    KSPSolve(ksp1, dPhi, *u);
-
-    VecDestroy(&dPhi);
-*/
-    Vec Mphi, dPhi, dMphi;
+    Vec Mphi, dMphi;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, u);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mphi);
@@ -896,29 +862,6 @@ Take the weak form curl of a 1 form vector field as a 1 form vector field
 */
 void PrimEqns::curl(Vec u, Vec* w, int lev, bool add_f) {
     double scale = 1.0e8;
-/*
-	Vec du;
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &du);
-
-    M1->assemble(lev, 1.0);
-    if(!E01M1) {
-        MatMatMult(NtoE->E01, M1->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &E01M1);
-    } else {
-        MatMatMult(NtoE->E01, M1->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &E01M1);
-    }
-
-    VecZeroEntries(du);
-    MatMult(E01M1, u, du);
-    VecPointwiseDivide(*w, du, m0->vg);
-
-    // add the coliolis term
-    if(add_f) {
-        VecAYPX(*w, 1.0, fg);
-    }
-    VecDestroy(&du);
-*/
     Vec Mu, dMu;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
@@ -940,20 +883,18 @@ void PrimEqns::curl(Vec u, Vec* w, int lev, bool add_f) {
 }
 
 void PrimEqns::laplacian(Vec ui, Vec* ddu, int lev) {
-    Vec Du, Cu, RCu, GDu, MDu, dMDu;
+    Vec Du, Cu, RCu;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, ddu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &RCu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMDu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Du);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &MDu);
 
     /*** divergent component ***/
     // div (strong form)
     MatMult(EtoF->E21, ui, Du);
 
     // grad (weak form)
-    grad(Du, &GDu, lev);
+    grad(Du, ddu, lev);
 
     /*** rotational component ***/
     // curl (weak form)
@@ -963,17 +904,12 @@ void PrimEqns::laplacian(Vec ui, Vec* ddu, int lev) {
     MatMult(NtoE->E10, Cu, RCu);
 
     // add rotational and divergent components
-    VecCopy(GDu, *ddu);
     VecAXPY(*ddu, +1.0, RCu);
-
     VecScale(*ddu, del2);
 
     VecDestroy(&Cu);
-    VecDestroy(&GDu);
     VecDestroy(&RCu);
-    VecDestroy(&dMDu);
     VecDestroy(&Du);
-    VecDestroy(&MDu);
 }
 
 /*
