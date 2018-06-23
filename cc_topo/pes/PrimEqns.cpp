@@ -20,14 +20,14 @@
 
 #define RAD_EARTH 6371220.0
 #define RAD_SPHERE 6371220.0
-//#define RAD_SPHERE 1.0
 #define GRAVITY 9.80616
 #define OMEGA 7.29212e-5
 
 using namespace std;
 
-#define ADD_IE
+//#define ADD_IE
 //#define ADD_GZ
+//#define ADD_WZ
 
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     int ii, n2;
@@ -368,6 +368,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     }
 
     // add the vertical contribution to the horiztonal vector
+#ifdef ADD_WZ
     for(kk = 0; kk < geom->nk; kk++) {
         VecGetArray(Kh_l[kk], &khArray);
         for(ey = 0; ey < topo->nElsX; ey++) {
@@ -388,6 +389,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
         VecScatterBegin(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
     }
+#endif
 
     // update the vertical vector with the horiztonal vector
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -473,10 +475,6 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, doub
     MatMult(EtoF->E12, Kh[lev], *Fu);
     VecAXPY(*Fu, 1.0, Ru);
 
-    // must do horiztonal momentum rhs before vertical, so that that kinetic energy 
-    // can be added to the vertical vectors
-    //UpdateKEVert(Ku, lev);
-
     // add the thermodynamic term (theta is in the same space as the vertical velocity)
     // project theta onto 1 forms
 #ifdef ADD_IE
@@ -502,6 +500,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, doub
 #endif
 
     // add in the biharmonic voscosity
+    // TODO: this is causing problems at the moment...
     if(do_visc) {
         laplacian(uh, &d2u, lev);
         laplacian(d2u, &d4u, lev);
@@ -572,7 +571,6 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             //MatMult(V01, de1, dp);
             //VecAXPY(fw[ei], 1.0, dp);
 #endif
-
             // TODO: add in horizontal vorticity terms
         }
     }
@@ -600,6 +598,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
     // compute the vertical mass fluxes (piecewise linear in the vertical)
+#ifdef ADD_WZ
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -617,6 +616,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
             VertToHoriz2(ex, ey, 0, geom->nk, Dv, Fp);
         }
     }
+#endif
     VecDestroy(&Mpu);
     VecDestroy(&Dv);
 
@@ -854,6 +854,7 @@ Take the weak form gradient of a 2 form scalar field as a 1 form vector field
 */
 void PrimEqns::grad(Vec phi, Vec* u, int lev) {
     double scale = 1.0e8;
+/*
     Vec dPhi;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dPhi);
@@ -872,12 +873,30 @@ void PrimEqns::grad(Vec phi, Vec* u, int lev) {
     KSPSolve(ksp1, dPhi, *u);
 
     VecDestroy(&dPhi);
+*/
+    Vec Mphi, dPhi, dMphi;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, u);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mphi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMphi);
+
+    M1->assemble(lev, scale);
+    M2->assemble(lev, scale);
+
+    MatMult(M2->M, phi, Mphi);
+    MatMult(EtoF->E12, Mphi, dMphi);
+    KSPSolve(ksp1, dMphi, *u);
+
+    VecDestroy(&Mphi);
+    VecDestroy(&dMphi);
 }
 
 /*
 Take the weak form curl of a 1 form vector field as a 1 form vector field
 */
 void PrimEqns::curl(Vec u, Vec* w, int lev, bool add_f) {
+    double scale = 1.0e8;
+/*
 	Vec du;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
@@ -899,6 +918,25 @@ void PrimEqns::curl(Vec u, Vec* w, int lev, bool add_f) {
         VecAYPX(*w, 1.0, fg);
     }
     VecDestroy(&du);
+*/
+    Vec Mu, dMu;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &dMu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
+
+    M1->assemble(lev, scale);
+    MatMult(M1->M, u, Mu);
+    MatMult(NtoE->E01, Mu, dMu);
+    VecPointwiseDivide(*w, dMu, m0->vg);
+    VecScale(*w, 1.0/scale);
+
+    // add the coliolis term
+    if(add_f) {
+        VecAYPX(*w, 1.0, fg);
+    }
+    VecDestroy(&Mu);
+    VecDestroy(&dMu);
 }
 
 void PrimEqns::laplacian(Vec ui, Vec* ddu, int lev) {
@@ -906,7 +944,6 @@ void PrimEqns::laplacian(Vec ui, Vec* ddu, int lev) {
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, ddu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &RCu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &GDu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMDu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Du);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &MDu);
@@ -932,8 +969,8 @@ void PrimEqns::laplacian(Vec ui, Vec* ddu, int lev) {
     VecScale(*ddu, del2);
 
     VecDestroy(&Cu);
-    VecDestroy(&RCu);
     VecDestroy(&GDu);
+    VecDestroy(&RCu);
     VecDestroy(&dMDu);
     VecDestroy(&Du);
     VecDestroy(&MDu);
@@ -1798,10 +1835,10 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
 
     Vu1 = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu1[ii]   );
-        VecZeroEntries(Vu1[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu1[ii]);
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv[ii]);
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Gv[ii]);
+        VecZeroEntries(Vu1[ii]);
     }
 
     // continuity and temperature equation rhs vectors
