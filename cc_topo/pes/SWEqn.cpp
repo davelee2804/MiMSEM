@@ -45,9 +45,12 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     // 1 form mass matrix
     M1 = new Umat(topo, geom, node, edge);
+    M1->assemble(0, 1.0, false);
 
     // 2 form mass matrix
     M2 = new Wmat(topo, geom, edge);
+    M2->assemble(0, 1.0, false);
+
 
     // incidence matrices
     NtoE = new E10mat(topo);

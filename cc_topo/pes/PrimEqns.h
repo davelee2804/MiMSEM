@@ -25,13 +25,11 @@ class PrimEqns {
         Uhmat* F;
         WtQUmat* K;
         Whmat* T;
-        Vec fg;                                      // coriolis vector (global)
+        Vec* fg;                                     // coriolis vector (global)
         Vec theta_b;                                 // bottom potential temperature bc
         Vec theta_t;                                 // top potential temperature bc
         Vec* Kv;                                     // kinetic energy vector for each vertical column
         Vec* Kh;                                     // kinetic energy vector for each horiztontal layer
-        Mat E01M1;
-        Mat E12M2;
         Mat V01;                                     // vertical divergence operator
         Mat V10;                                     // vertical gradient operator
         Mat VA;
@@ -39,7 +37,6 @@ class PrimEqns {
         KSP ksp1;
         KSP ksp2;
         KSP kspColA;
-        KSP kspColB;
         double viscosity();
         double viscosity_vert();
         void coriolis();

@@ -7,7 +7,7 @@ class Umat {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
-        void assemble(int lev, double scale);
+        void assemble(int lev, double scale, bool vert_det);
 };
 
 class Wmat {
@@ -18,7 +18,7 @@ class Wmat {
         Geom* geom;
         LagrangeEdge* e;
         Mat M;
-        void assemble(int lev, double scale);
+        void assemble(int lev, double scale, bool vert_det);
 };
 
 class Uhmat {
@@ -61,7 +61,7 @@ class Pvec {
         PetscScalar* entries;
         Vec vl;
         Vec vg;
-        void assemble(int lev);
+        void assemble(int lev, double scale, bool vert_det);
 };
 
 class WtQmat {

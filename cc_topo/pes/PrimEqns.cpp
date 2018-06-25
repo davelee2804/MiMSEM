@@ -88,7 +88,7 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     KSPGetPC(ksp1, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
-    KSPSetOptionsPrefix(ksp1,"ksp1_");
+    KSPSetOptionsPrefix(ksp1, "ksp1_");
     KSPSetFromOptions(ksp1);
 
     // initialize the 2 form linear solver
@@ -99,7 +99,7 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     KSPGetPC(ksp2, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
-    KSPSetOptionsPrefix(ksp2,"ksp2_");
+    KSPSetOptionsPrefix(ksp2, "ksp2_");
     KSPSetFromOptions(ksp2);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_b);
@@ -136,15 +136,6 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     PCBJacobiSetTotalBlocks(pc, n2, NULL);
     KSPSetOptionsPrefix(kspColA, "kspColA_");
     KSPSetFromOptions(kspColA);
-
-    KSPCreate(MPI_COMM_SELF, &kspColB);
-    KSPSetOperators(kspColB, VB, VB);
-    KSPSetTolerances(kspColB, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(kspColB, KSPGMRES);
-    KSPGetPC(kspColB, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, n2, NULL);
-    KSPSetOptionsPrefix(kspColB, "kspColB_");
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -176,14 +167,14 @@ double PrimEqns::viscosity_vert() {
 // project coriolis term onto 0 forms
 // assumes diagonal 0 form mass matrix
 void PrimEqns::coriolis() {
-    int ii;
+    int ii, kk;
     PtQmat* PtQ = new PtQmat(topo, geom, node);
     PetscScalar *fArray;
     Vec fl, fxl, fxg, PtQfxg;
 
     // initialise the coriolis vector (local and global)
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fg);
+    fg = new Vec[geom->nk];
 
     // evaluate the coriolis term at nodes
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &fxl);
@@ -204,7 +195,11 @@ void PrimEqns::coriolis() {
     VecZeroEntries(PtQfxg);
     MatMult(PtQ->M, fxg, PtQfxg);
     // diagonal mass matrix as vector
-    VecPointwiseDivide(fg, PtQfxg, m0->vg);
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fg[kk]);
+        m0->assemble(kk, 1.0, true);
+        VecPointwiseDivide(fg[kk], PtQfxg, m0->vg);
+    }
     
     delete PtQ;
     VecDestroy(&fl);
@@ -218,10 +213,13 @@ PrimEqns::~PrimEqns() {
 
     KSPDestroy(&ksp1);
     KSPDestroy(&ksp2);
-    VecDestroy(&fg);
     VecDestroy(&theta_b);
     VecDestroy(&theta_t);
 
+    //for(ii = 0; ii < geom->nk; ii++) {
+    //    VecDestroy(&fg[ii]);
+    //}
+    //delete[] fg;
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&Kv[ii]);
     }
@@ -236,7 +234,6 @@ PrimEqns::~PrimEqns() {
     MatDestroy(&VA);
     MatDestroy(&VB);
     KSPDestroy(&kspColA);
-    KSPDestroy(&kspColB);
 
     delete m0;
     delete M1;
@@ -465,7 +462,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, doub
     VecScatterEnd(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
 
     VecZeroEntries(*Fu);
-    R->assemble(wl, lev, scale);
+    R->assemble(wl, lev, scale); // TODO: this operator causing problems (vorticity??)
     MatMult(R->M, uh, Ru);
     MatMult(EtoF->E12, Kh[lev], *Fu);
     VecAXPY(*Fu, 1.0, Ru);
@@ -618,7 +615,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
 
         // add the horiztonal fluxes
         F->assemble(pl, kk, true, scale);
-        M1->assemble(kk, scale);
+        M1->assemble(kk, scale, true);
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fh[kk]);
         MatMult(EtoF->E21, Fh[kk], Dh);
@@ -846,8 +843,8 @@ void PrimEqns::grad(Vec phi, Vec* u, int lev) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mphi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMphi);
 
-    M1->assemble(lev, scale);
-    M2->assemble(lev, scale);
+    M1->assemble(lev, scale, true); //TODO: vertical scaling of this operator causes problems??
+    M2->assemble(lev, scale, true);
 
     MatMult(M2->M, phi, Mphi);
     MatMult(EtoF->E12, Mphi, dMphi);
@@ -868,15 +865,16 @@ void PrimEqns::curl(Vec u, Vec* w, int lev, bool add_f) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &dMu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
 
-    M1->assemble(lev, scale);
+    m0->assemble(lev, scale, false);
+    M1->assemble(lev, scale, false);
     MatMult(M1->M, u, Mu);
     MatMult(NtoE->E01, Mu, dMu);
     VecPointwiseDivide(*w, dMu, m0->vg);
-    VecScale(*w, 1.0/scale);
+    VecScale(*w, 1.0);
 
     // add the coliolis term
     if(add_f) {
-        VecAYPX(*w, 1.0, fg);
+        VecAYPX(*w, 1.0, fg[lev]);
     }
     VecDestroy(&Mu);
     VecDestroy(&dMu);
@@ -1565,7 +1563,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // solve for the half step values
     for(kk = 0; kk < geom->nk; kk++) {
         // horizontal momentum
-        M1->assemble(kk, scale);
+        M1->assemble(kk, scale, true);
         VecZeroEntries(bu);
         MatMult(M1->M, velx[kk], bu);
         VecAXPY(bu, -dt, Hu1[kk]);
@@ -1615,7 +1613,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // solve for the full step values
     for(kk = 0; kk < geom->nk; kk++) {
         // horizontal momentum
-        M1->assemble(kk, scale);
+        M1->assemble(kk, scale, true);
         VecZeroEntries(bu);
         MatMult(M1->M, velx[kk], bu);
         VecAXPY(bu, -0.5*dt, Hu1[kk]);
@@ -1813,7 +1811,7 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     // solve for the half step values
     for(kk = 0; kk < geom->nk; kk++) {
         // horizontal momentum
-        M1->assemble(kk, scale);
+        M1->assemble(kk, scale, true);
         VecZeroEntries(bu);
         MatMult(M1->M, velx[kk], bu);
         VecAXPY(bu, -dt, Hu1[kk]);
@@ -1976,6 +1974,7 @@ void PrimEqns::init0(Vec* q, ICfunc3D* func) {
         VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
+        m0->assemble(kk, 1.0, true);
         MatMult(PQ->M, bg, PQb);
         VecPointwiseDivide(q[kk], PQb, m0->vg);
     }
@@ -2030,7 +2029,7 @@ void PrimEqns::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
         VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-        M1->assemble(kk, scale);
+        M1->assemble(kk, scale, true);
         MatMult(UQ->M, bg, UQb);
         VecScale(UQb, scale);
         KSPSolve(ksp1, UQb, u[kk]);
@@ -2078,8 +2077,8 @@ void PrimEqns::init2(Vec* h, ICfunc3D* func) {
         VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
         MatMult(WQ->M, bg, WQb);
-        VecScale(WQb, scale);      // have to rescale the M2 operator as the metric terms scale
-        M2->assemble(kk, scale);   // this down to machine precision, so rescale the rhs as well
+        VecScale(WQb, scale);          // have to rescale the M2 operator as the metric terms scale
+        M2->assemble(kk, scale, true); // this down to machine precision, so rescale the rhs as well
         KSPSolve(ksp2, WQb, h[kk]);
     }
 
@@ -2118,8 +2117,8 @@ void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
     VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-    M2->assemble(0, scale);   // note: layer thickness must be set to 2.0 for all layers 
-    MatMult(WQ->M, bg, WQb);  //       before M2 matrix is assembled to initialise theta
+    M2->assemble(0, scale, true); // note: layer thickness must be set to 2.0 for all layers 
+    MatMult(WQ->M, bg, WQb);      //       before M2 matrix is assembled to initialise theta
     VecScale(WQb, scale);
     KSPSolve(ksp2, WQb, theta);
 
