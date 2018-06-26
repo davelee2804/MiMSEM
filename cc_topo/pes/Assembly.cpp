@@ -56,7 +56,7 @@ void Umat::assemble(int lev, double scale, bool vert_det) {
 
     MatZeroEntries(M);
 
-    mp1 = l->n + 1;
+    mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
     for(ey = 0; ey < topo->nElsX; ey++) {

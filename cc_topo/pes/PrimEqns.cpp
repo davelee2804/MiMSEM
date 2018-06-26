@@ -26,8 +26,8 @@
 using namespace std;
 
 //#define ADD_IE
-//#define ADD_GZ
-//#define ADD_WZ
+#define ADD_GZ
+#define ADD_WZ
 
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     int ii, n2;
@@ -267,6 +267,8 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *khArray, *kvArray;
+    WtQmat* WQ = new WtQmat(topo, geom, edge);
+    Vec zq, zw;
 
     n2   = topo->elOrd*topo->elOrd;
     mp1  = quad->n + 1;
@@ -389,8 +391,8 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
             ei    = ey*topo->nElsX + ex;
             inds0 = topo->elInds0_l(ex, ey);
             inds2 = topo->elInds2_l(ex, ey);
-            VecGetArray(Kv[ei], &kvArray);
 
+            VecGetArray(Kv[ei], &kvArray);
             for(kk = 0; kk < geom->nk; kk++) {
                 VecGetArray(Kh_l[kk], &khArray);
                 for(ii = 0; ii < n2; ii++) {
@@ -398,30 +400,41 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
                 }
                 VecRestoreArray(Kh_l[kk], &khArray);
             }
-
-#ifdef ADD_GZ
-            // add in the vertical gravity vector
-            for(kk = 0; kk < geom->nk; kk++) {
-                for(ii = 0; ii < mp12; ii++) {
-                    det = geom->det[ei][ii];
-                    Q0[ii][ii] = Q->A[ii][ii]*(scale/det);
-                }
-                Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-
-                for(ii = 0; ii < W->nDofsJ; ii++) {
-                    fg = 0.0;
-                    for(jj = 0; jj < Q->nDofsI; jj++) {
-                        // quadrature weights are both 1.0
-                        zi  = 1.0*(geom->levs[kk+0][inds0[jj]] + geom->levs[kk+1][inds0[jj]])*GRAVITY;
-                        fg += WtQ[ii][jj]*zi;
-                    }
-                    kvArray[kk*n2+ii] += fg;
-                }
-            }
-#endif
             VecRestoreArray(Kv[ei], &kvArray);
         }
     }
+
+#ifdef ADD_GZ
+    // add in the vertical gravity vector
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &zq);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &zw);
+    for(kk = 0; kk < geom->nk; kk++) {
+        // quadrature weights are both 1.0
+        zi = 1.0*(geom->levs[kk+0][inds0[jj]] + geom->levs[kk+1][inds0[jj]])*GRAVITY;
+        VecSet(zq, zi);
+        MatMult(WQ->M, zq, zw);
+
+        VecScatterBegin(topo->gtol_2, zw, Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(topo->gtol_2, zw, Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+
+        VecGetArray(Kh_l[kk], &khArray);
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                ei    = ey*topo->nElsX + ex;
+                inds2 = topo->elInds2_l(ex, ey);
+
+                VecGetArray(Kv[ei], &kvArray);
+                for(ii = 0; ii < n2; ii++) {
+                    kvArray[kk*n2+ii] += khArray[inds2[ii]];
+                }
+                VecRestoreArray(Kv[ei], &kvArray);
+            }
+        }
+        VecRestoreArray(Kh_l[kk], &khArray);
+    }
+    VecDestroy(&zq);
+    VecDestroy(&zw);
+#endif
 
     // TODO: scatter the horiztonal local vector to the global vector
 
@@ -437,6 +450,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     delete[] WtQWflat;
     delete Q;
     delete W;
+    delete WQ;
 }
 
 /*
@@ -487,7 +501,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, doub
     if(do_visc) {
         laplacian(uh, &d2u, lev);
         laplacian(d2u, &d4u, lev);
-        VecAXPY(*Fu, scale, d4u);
+        //VecAXPY(*Fu, scale, d4u);
     }
 
     VecDestroy(&wl);
@@ -865,8 +879,8 @@ void PrimEqns::curl(Vec u, Vec* w, int lev, bool add_f) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &dMu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
 
-    m0->assemble(lev, scale, false);
-    M1->assemble(lev, scale, false);
+    m0->assemble(lev, scale, true);
+    M1->assemble(lev, scale, true);
     MatMult(M1->M, u, Mu);
     MatMult(NtoE->E01, Mu, dMu);
     VecPointwiseDivide(*w, dMu, m0->vg);
