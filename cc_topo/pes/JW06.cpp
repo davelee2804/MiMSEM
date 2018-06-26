@@ -232,8 +232,8 @@ int main(int argc, char** argv) {
     bool dump;
     int startStep = atoi(argv[1]);
     double dt = 80.0;    // for 16x3rd order elements
-    int nSteps = 10800;  // 10 days
-    int dumpEvery = 270; // 6 hours
+    int nSteps = 2;//10800;  // 10 days
+    int dumpEvery = 1;//270; // 6 hours
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -330,7 +330,8 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->SolveRK2(velx, velz, rho, rt, exner, dump);
+        //pe->SolveRK2(velx, velz, rho, rt, exner, dump);
+        pe->SolveEuler(velx, velz, rho, rt, exner, dump);
         //if(dump) {
             //vort_n = mass_n = ener_n = 0.0;
             //for(ki = 0; ki < NK; ki++) {
@@ -361,7 +362,7 @@ int main(int argc, char** argv) {
         VecDestroy(&exner[ki]);
     }
     for(ii = 0; ii < n2; ii++) {
-        VecDestroy(&velz[ki] );
+        VecDestroy(&velz[ii]);
     }
     delete[] velx;
     delete[] rho;
