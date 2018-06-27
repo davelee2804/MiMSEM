@@ -26,8 +26,8 @@
 using namespace std;
 
 //#define ADD_IE
-#define ADD_GZ
-#define ADD_WZ
+//#define ADD_GZ
+//#define ADD_WZ
 
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     int ii, n2;
@@ -218,16 +218,14 @@ PrimEqns::~PrimEqns() {
 
     //for(ii = 0; ii < geom->nk; ii++) {
     //    VecDestroy(&fg[ii]);
+    //    VecDestroy(&Kh[ii]);
     //}
     //delete[] fg;
+    //delete[] Kh;
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&Kv[ii]);
     }
     delete[] Kv;
-    //for(ii = 0; ii < geom->nk; ii++) {
-    //    VecDestroy(&Kh[ii]);
-    //}
-    //delete[] Kh;
 
     MatDestroy(&V01);
     MatDestroy(&V10);
@@ -255,8 +253,8 @@ PrimEqns::~PrimEqns() {
 /*
 */
 void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
-    int ex, ey, ei, ii, jj, kk, mp1, mp12, n2, rows[99], cols[99], *inds0, *inds2;
-    double det, wb, wt, wi, gamma, zi, fg;
+    int ex, ey, ei, ii, jj, kk, mp1, mp12, n2, rows[99], cols[99], *inds0;
+    double det, wb, wt, wi, gamma, zi;
     Mat BA;
     Vec velx_l, *Kh_l;
     Wii* Q = new Wii(node->q, geom);
@@ -266,9 +264,9 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    PetscScalar *khArray, *kvArray;
+    PetscScalar *kvArray, *zqArray;
     WtQmat* WQ = new WtQmat(topo, geom, edge);
-    Vec zq, zw;
+    Vec zq, zw, zql;
 
     n2   = topo->elOrd*topo->elOrd;
     mp1  = quad->n + 1;
@@ -286,6 +284,8 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
         MatMult(K->M, velx[kk], Kh[kk]);
 
         VecCreateSeq(MPI_COMM_SELF, topo->n2l, &Kh_l[kk]);
+        VecScatterBegin(topo->gtol_2, Kh[kk], Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(topo->gtol_2, Kh[kk], Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
     }
     VecDestroy(&velx_l);
 
@@ -299,7 +299,6 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
             MatZeroEntries(BA);
             ei = ey*topo->nElsX + ex;
             VecGetArray(velz[ei], &kvArray);
@@ -363,23 +362,14 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
 
     // add the vertical contribution to the horiztonal vector
 #ifdef ADD_WZ
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecGetArray(Kh_l[kk], &khArray);
-        for(ey = 0; ey < topo->nElsX; ey++) {
-            for(ex = 0; ex < topo->nElsX; ex++) {
-                ei    = ey*topo->nElsX + ex;
-                inds0 = topo->elInds0_l(ex, ey);
-                inds2 = topo->elInds2_l(ex, ey);
-
-                VecGetArray(Kv[ei], &kvArray);
-                for(ii = 0; ii < n2; ii++) {
-                    khArray[inds2[ii]] += kvArray[kk*n2+ii];
-                }
-                VecRestoreArray(Kv[ei], &kvArray);
-            }
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            VertToHoriz2(ex, ey, 0, geom->nk, Kv[ei], Kh_l);
         }
-        VecRestoreArray(Kh_l[kk], &khArray);
+    }
 
+    for(kk = 0; kk < geom->nk; kk++) {
         VecScatterBegin(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
     }
@@ -388,19 +378,9 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     // update the vertical vector with the horiztonal vector
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            ei    = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
-            inds2 = topo->elInds2_l(ex, ey);
-
-            VecGetArray(Kv[ei], &kvArray);
-            for(kk = 0; kk < geom->nk; kk++) {
-                VecGetArray(Kh_l[kk], &khArray);
-                for(ii = 0; ii < n2; ii++) {
-                    kvArray[kk*n2+ii] = khArray[inds2[ii]];
-                }
-                VecRestoreArray(Kh_l[kk], &khArray);
-            }
-            VecRestoreArray(Kv[ei], &kvArray);
+            ei = ey*topo->nElsX + ex;
+            VecZeroEntries(Kv[ei]);
+            HorizToVert2(ex, ey, Kh_l, Kv[ei]);
         }
     }
 
@@ -408,35 +388,40 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     // add in the vertical gravity vector
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &zq);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &zw);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &zql);
     for(kk = 0; kk < geom->nk; kk++) {
-        // quadrature weights are both 1.0
-        zi = 1.0*(geom->levs[kk+0][inds0[jj]] + geom->levs[kk+1][inds0[jj]])*GRAVITY;
-        VecSet(zq, zi);
-        MatMult(WQ->M, zq, zw);
-
-        VecScatterBegin(topo->gtol_2, zw, Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(topo->gtol_2, zw, Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
-
-        VecGetArray(Kh_l[kk], &khArray);
+        VecGetArray(zql, &zqArray);
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
-                ei    = ey*topo->nElsX + ex;
-                inds2 = topo->elInds2_l(ex, ey);
-
-                VecGetArray(Kv[ei], &kvArray);
-                for(ii = 0; ii < n2; ii++) {
-                    kvArray[kk*n2+ii] += khArray[inds2[ii]];
+                inds0 = topo->elInds0_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    // quadrature weights are both 1.0
+                    zi = 1.0*(geom->levs[kk+0][inds0[ii]] + geom->levs[kk+1][inds0[ii]])*GRAVITY;
+                    zqArray[inds0[ii]] = scale*zi;
                 }
-                VecRestoreArray(Kv[ei], &kvArray);
             }
         }
-        VecRestoreArray(Kh_l[kk], &khArray);
+        VecRestoreArray(zql, &zqArray);
+        VecScatterBegin(topo->gtol_0, zql, zq, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(topo->gtol_0, zql, zq, INSERT_VALUES, SCATTER_REVERSE);
+        MatMult(WQ->M, zq, zw);
+
+        VecZeroEntries(Kh_l[kk]);
+        VecScatterBegin(topo->gtol_2, zw, Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(topo->gtol_2, zw, Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
     }
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            HorizToVert2(ex, ey, Kh_l, Kv[ei]);
+        }
+    }
+
     VecDestroy(&zq);
     VecDestroy(&zw);
+    VecDestroy(&zql);
 #endif
-
-    // TODO: scatter the horiztonal local vector to the global vector
 
     for(kk = 0; kk < geom->nk; kk++) {
         VecDestroy(&Kh_l[kk]);
@@ -458,18 +443,16 @@ compute the right hand side for the momentum equation for a given level
 note that the vertical velocity, uv, is stored as a different vector for 
 each element
 */
-void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, double scale, Vec *Fu) {
-    Vec wl, wi, Ru, Ku, Mh, d2u, d4u, theta_k, theta_k_l, dExner, dp;
+void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta_l, Vec exner, int lev, double scale, Vec *Fu) {
+    Vec wl, wi, Ru, Ku, Mh, d2u, d4u, theta_k, dExner, dp;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k_l);
-
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, Fu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ru);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ku);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mh);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_k);
 
     curl(uh, &wi, lev, true);
     VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
@@ -485,15 +468,14 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, doub
     // project theta onto 1 forms
 #ifdef ADD_IE
     VecZeroEntries(theta_k);
-    VecAXPY(theta_k, 1.0, theta[lev+0]); // quadrature weights
-    VecAXPY(theta_k, 1.0, theta[lev+1]); // are both 1.0
-    VecScatterBegin(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, theta_k, theta_k_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecAXPY(theta_k, 1.0, theta_l[lev+0]); // quadrature weights
+    VecAXPY(theta_k, 1.0, theta_l[lev+1]); // are both 1.0
 
     grad(exner, &dExner, lev);
-    F->assemble(theta_k_l, lev, false, scale);
+    F->assemble(theta_k, lev, false, scale);
     MatMult(F->M, dExner, dp);
     VecAXPY(*Fu, 1.0, dp);
+    VecDestroy(&dExner);
 #endif
 
     // add in the biharmonic voscosity
@@ -509,12 +491,8 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta, Vec exner, int lev, doub
     VecDestroy(&Ru);
     VecDestroy(&Ku);
     VecDestroy(&Mh);
-#ifdef ADD_IE
-    VecDestroy(&dExner);
-#endif
     VecDestroy(&dp);
     VecDestroy(&theta_k);
-    VecDestroy(&theta_k_l);
     if(do_visc) {
         VecDestroy(&d2u);
         VecDestroy(&d4u);
@@ -562,11 +540,6 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
             AssembleLinearWithTheta(ex, ey, theta, VA, scale);
             MatMult(VA, de3, dp);
             VecAXPY(fw[ei], 1.0, dp);
-
-            //AssembleConstWithTheta(ex, ey, theta, VB, scale);
-            //MatMult(VB, exner_v, de1);
-            //MatMult(V01, de1, dp);
-            //VecAXPY(fw[ei], 1.0, dp);
 #endif
             // TODO: add in horizontal vorticity terms
         }
@@ -587,15 +560,21 @@ uv: vertical velocity by horiztonal element
 void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
     int kk, ex, ey, ei, n2;
     double scale = 1.0e8;
-    Vec Mpu, Dv, pl, pu, Dh;
+    Vec Mpu, Dv, pl, pu, Dh, *Fpl;
+
+    Fpl = new Vec[geom->nk];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &Fpl[kk]);
+        VecZeroEntries(Fpl[kk]);
+    }
 
     n2 = topo->elOrd*topo->elOrd;
 
+#ifdef ADD_WZ
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
     // compute the vertical mass fluxes (piecewise linear in the vertical)
-#ifdef ADD_WZ
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -610,12 +589,12 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
 
             // copy the vertical contribution to the divergence into the
             // horiztonal vectors
-            VertToHoriz2(ex, ey, 0, geom->nk, Dv, Fp);
+            VertToHoriz2(ex, ey, 0, geom->nk, Dv, Fpl);
         }
     }
-#endif
     VecDestroy(&Mpu);
     VecDestroy(&Dv);
+#endif
 
     // compute the horiztonal mass fluxes
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &pl);
@@ -626,6 +605,9 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
         VecZeroEntries(Fh[kk]);
         VecScatterBegin(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
+
+        VecScatterBegin(topo->gtol_2, Fpl[kk], Fp[kk], INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(topo->gtol_2, Fpl[kk], Fp[kk], INSERT_VALUES, SCATTER_REVERSE);
 
         // add the horiztonal fluxes
         F->assemble(pl, kk, true, scale);
@@ -639,6 +621,10 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
     VecDestroy(&pl);
     VecDestroy(&pu);
     VecDestroy(&Dh);
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecDestroy(&Fpl[kk]);
+    }
+    delete[] Fpl;
 }
 
 /*
@@ -751,6 +737,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double s
 
 /*
 diagnose theta from rho X theta (with boundary condition)
+note: rho, rhoTheta and theta are all LOCAL vectors
 */
 void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     int ex, ey, n2, kk;
@@ -782,6 +769,7 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // construct horiztonal rho theta field
+            VecZeroEntries(rtv);
             HorizToVert2(ex, ey, rt, rtv);
             AssembleLinCon(ex, ey, AB, scale);
             MatMult(AB, rtv, frt);
@@ -857,8 +845,8 @@ void PrimEqns::grad(Vec phi, Vec* u, int lev) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mphi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMphi);
 
-    M1->assemble(lev, scale, true); //TODO: vertical scaling of this operator causes problems??
-    M2->assemble(lev, scale, true);
+    M1->assemble(lev, scale, false); //TODO: vertical scaling of this operator causes problems??
+    M2->assemble(lev, scale, false);
 
     MatMult(M2->M, phi, Mphi);
     MatMult(EtoF->E12, Mphi, dMphi);
@@ -1321,71 +1309,6 @@ void PrimEqns::AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A, double
     delete W;
 }
 
-void PrimEqns::AssembleConstWithTheta(int ex, int ey, Vec* theta, Mat A, double scale) {
-    int ii, kk, ei, mp1, mp12;
-    int *inds0;
-    double det, t1, t2;
-    int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    PetscScalar *t1Array, *t2Array;
-
-    inds0 = topo->elInds0_l(ex, ey);
-    mp1   = quad->n + 1;
-    mp12  = mp1*mp1;
-
-    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-
-    MatZeroEntries(A);
-
-    // Assemble the matrices
-    for(kk = 0; kk < geom->nk; kk++) {
-        // build the 2D mass matrix
-        Q->assemble(ex, ey);
-        ei = ey*topo->nElsX + ex;
-
-        VecGetArray(theta[kk+0], &t1Array);
-        VecGetArray(theta[kk+1], &t2Array);
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Q0[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
-            // for linear field we multiply by the vertical jacobian determinant when integrating, 
-            // and do no other trasformations for the basis functions
-            Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
-
-            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t1Array, &t1);
-            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t2Array, &t2);
-            Q0[ii][ii] *= 1.0*(t1 + t2); // quadrature weights are both 1.0
-        }
-        VecRestoreArray(theta[kk+0], &t1Array);
-        VecRestoreArray(theta[kk+1], &t2Array);
-
-        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = ii + kk*W->nDofsJ;
-        }
-        MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-    }
-    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
-}
-
 /*
 derive the vertical mass flux
 TODO: only need a single piecewise constant field, may be either rho or rho X theta
@@ -1492,7 +1415,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *rt_h, *exner_h, bu, bw, wi;
     Vec *Hu2, *Vu2, *Fp2, *Ft2, *rt_i, *exner_i, exner_f, *theta;
-    Vec *Fh, *Fv, *Gh, *Gv;
+    Vec *Fh, *Fv, *Gh, *Gv, *theta_l, *exner_l, *rho_l, *rt_l;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -1528,9 +1451,26 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     for(kk = 1; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta[kk]);
     }
+    // create local vectors for assembling vertical rhs terms
+    rho_l   = new Vec[geom->nk];
+    rt_l    = new Vec[geom->nk];
+    theta_l = new Vec[geom->nk+1];
+    exner_l = new Vec[geom->nk];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &rho_l[kk]  );
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &rt_l[kk]   );
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &exner_l[kk]);
+    }
+    for(kk = 0; kk < geom->nk + 1; kk++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l[kk]);
+    }
     // set the top and bottom potential temperature bcs
     theta[0]        = theta_b;
     theta[geom->nk] = theta_t;
+    VecScatterBegin(topo->gtol_2, theta_b, theta_l[0],        INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, theta_b, theta_l[0],        INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, theta_t, theta_l[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, theta_t, theta_l[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
 
     Vu1 = new Vec[topo->nElsX*topo->nElsX];
     Vu2 = new Vec[topo->nElsX*topo->nElsX];
@@ -1566,11 +1506,19 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // construct the right hand side terms for the first substep
     // note: do horiztonal rhs first as this assembles the kinetic energy
     // operator for use in the vertical rhs
-    diagTheta(rho, rt, theta);
     for(kk = 0; kk < geom->nk; kk++) {
-        horizMomRHS(velx[kk], velz, theta, exner[kk], kk, scale, &Hu1[kk]);
+        VecScatterBegin(topo->gtol_2, rho[kk],   rho_l[kk],   INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, rho[kk],   rho_l[kk],   INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterBegin(topo->gtol_2, rt[kk],    rt_l[kk],    INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, rt[kk],    rt_l[kk],    INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterBegin(topo->gtol_2, exner[kk], exner_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, exner[kk], exner_l[kk], INSERT_VALUES, SCATTER_FORWARD);
     }
-    vertMomRHS(velx, velz, theta, exner, Vu1);
+    diagTheta(rho_l, rt_l, theta_l);
+    for(kk = 0; kk < geom->nk; kk++) {
+        horizMomRHS(velx[kk], velz, theta_l, exner[kk], kk, scale, &Hu1[kk]);
+    }
+    vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
     massRHS(velx, velz, rho, Fh, Fv, Fp1);
     massRHS(velx, velz, rt,  Gh, Gv, Ft1);
 
@@ -1616,11 +1564,19 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // assemble the vertical and horiztonal kinetic energy vectors
     AssembleKEVecs(velx_h, velz_h, scale);
 
-    diagTheta(rho_h, rt_h, theta);
     for(kk = 0; kk < geom->nk; kk++) {
-        horizMomRHS(velx_h[kk], velz_h, theta, exner_h[kk], kk, scale, &Hu2[kk]);
+        VecScatterBegin(topo->gtol_2, rho_h[kk],   rho_l[kk],   INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, rho_h[kk],   rho_l[kk],   INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterBegin(topo->gtol_2, rt_h[kk],    rt_l[kk],    INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, rt_h[kk],    rt_l[kk],    INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterBegin(topo->gtol_2, exner_h[kk], exner_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, exner_h[kk], exner_l[kk], INSERT_VALUES, SCATTER_FORWARD);
     }
-    vertMomRHS(velx_h, velz_h, theta, exner_h, Vu2);
+    diagTheta(rho_l, rt_l, theta_l);
+    for(kk = 0; kk < geom->nk; kk++) {
+        horizMomRHS(velx_h[kk], velz_h, theta_l, exner_h[kk], kk, scale, &Hu2[kk]);
+    }
+    vertMomRHS(velx_h, velz_h, theta_l, exner_l, Vu2);
     massRHS(velx_h, velz_h, rho_h, Fh, Fv, Fp2);
     massRHS(velx_h, velz_h, rt_h,  Gh, Gv ,Ft2);
 
@@ -1708,9 +1664,15 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecDestroy(&exner_i[kk]);
         VecDestroy(&Fh[kk]);
         VecDestroy(&Gh[kk]);
+        VecDestroy(&rho_l[kk]  );
+        VecDestroy(&rt_l[kk]   );
+        VecDestroy(&exner_l[kk]);
     }
     for(kk = 1; kk < geom->nk; kk++) {
         VecDestroy(&theta[kk]);
+    }
+    for(kk = 0; kk < geom->nk + 1; kk++) {
+        VecDestroy(&theta_l[kk]);
     }
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&Vu1[ii]);
@@ -1739,6 +1701,10 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete[] Gh;
     delete[] Fv;
     delete[] Gv;
+    delete[] rho_l;
+    delete[] rt_l;
+    delete[] theta_l;
+    delete[] exner_l;
     VecDestroy(&bw);
     VecDestroy(&bu);
 }
@@ -1748,7 +1714,7 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     double scale = 1.0e8;
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, bw, wi;
-    Vec *rt_i, *exner_i, exner_f, *theta, *Fh, *Fv, *Gh, *Gv;
+    Vec *rt_i, *exner_i, exner_f, *theta, *Fh, *Fv, *Gh, *Gv, *rho_l, *rt_l, *theta_l, *exner_l;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -1764,6 +1730,10 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     Gh      = new Vec[geom->nk];
     Fv      = new Vec[topo->nElsX*topo->nElsX];
     Gv      = new Vec[topo->nElsX*topo->nElsX];
+    rho_l   = new Vec[geom->nk];
+    rt_l    = new Vec[geom->nk];
+    theta_l = new Vec[geom->nk+1];
+    exner_l = new Vec[geom->nk];
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt_i[kk]   );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner_i[kk]);
@@ -1772,14 +1742,25 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
         VecCopy(exner[kk], exner_i[kk]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh[kk]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Gh[kk]);
+
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &rho_l[kk]  );
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &rt_l[kk]   );
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &exner_l[kk]);
     }
     // create vectors for the potential temperature at the internal layer interfaces
     for(kk = 1; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta[kk]);
     }
+    for(kk = 0; kk < geom->nk + 1; kk++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l[kk]);
+    }
     // set the top and bottom potential temperature bcs
     theta[0]        = theta_b;
     theta[geom->nk] = theta_t;
+    VecScatterBegin(topo->gtol_2, theta_b, theta_l[0],        INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, theta_b, theta_l[0],        INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, theta_t, theta_l[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, theta_t, theta_l[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
 
     Vu1 = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
@@ -1802,19 +1783,27 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     // assemble the vertical and horiztonal kinetic energy vectors
     AssembleKEVecs(velx, velz, scale);
 
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecScatterBegin(topo->gtol_2, rho[kk],   rho_l[kk],   INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, rho[kk],   rho_l[kk],   INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterBegin(topo->gtol_2, rt[kk],    rt_l[kk],    INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, rt[kk],    rt_l[kk],    INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterBegin(topo->gtol_2, exner[kk], exner_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, exner[kk], exner_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+    }
     // construct the right hand side terms for the first substep
     // note: do horiztonal rhs first as this assembles the kinetic energy
     // operator for use in the vertical rhs
 #ifdef ADD_IE
     if(!rank)cout<<"\tdiagnosing theta..........."<<endl;
-    diagTheta(rho, rt, theta);
+    diagTheta(rho_l, rt_l, theta_l);
 #endif
     if(!rank)cout<<"\thorizontal momentum rhs...."<<endl;
     for(kk = 0; kk < geom->nk; kk++) {
-        horizMomRHS(velx[kk], velz, theta, exner[kk], kk, scale, &Hu1[kk]);
+        horizMomRHS(velx[kk], velz, theta_l, exner[kk], kk, scale, &Hu1[kk]);
     }
     if(!rank)cout<<"\tvertical momentum rhs......"<<endl;
-    vertMomRHS(velx, velz, theta, exner, Vu1);
+    vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
     if(!rank)cout<<"\tcontinuity eqn rhs........."<<endl;
     massRHS(velx, velz, rho, Fh, Fv, Fp1);
 #ifdef ADD_IE
@@ -1896,9 +1885,15 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
         VecDestroy(&exner_i[kk]);
         VecDestroy(&Fh[kk]);
         VecDestroy(&Gh[kk]);
+        VecDestroy(&rho_l[kk]  );
+        VecDestroy(&rt_l[kk]   );
+        VecDestroy(&exner_l[kk]);
     }
     for(kk = 1; kk < geom->nk; kk++) {
         VecDestroy(&theta[kk]);
+    }
+    for(kk = 0; kk < geom->nk + 1; kk++) {
+        VecDestroy(&theta_l[kk]);
     }
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&Vu1[ii]);
@@ -1916,6 +1911,10 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     delete[] Gh;
     delete[] Fv;
     delete[] Gv;
+    delete[] rho_l;
+    delete[] rt_l;
+    delete[] theta_l;
+    delete[] exner_l;
     VecDestroy(&bw);
     VecDestroy(&bu);
 }
@@ -1944,8 +1943,6 @@ void PrimEqns::HorizToVert2(int ex, int ey, Vec* ph, Vec pv) {
     PetscScalar *hArray, *vArray;
 
     n2 = topo->elOrd*topo->elOrd;
-
-    VecZeroEntries(pv);
 
     VecGetArray(pv, &vArray);
     for(kk = 0; kk < geom->nk; kk++) {
@@ -2141,3 +2138,70 @@ void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
     VecDestroy(&bg);
     VecDestroy(&WQb);
 }
+
+#if 0
+void PrimEqns::AssembleConstWithTheta(int ex, int ey, Vec* theta, Mat A, double scale) {
+    int ii, kk, ei, mp1, mp12;
+    int *inds0;
+    double det, t1, t2;
+    int inds2k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar *t1Array, *t2Array;
+
+    inds0 = topo->elInds0_l(ex, ey);
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    MatZeroEntries(A);
+
+    // Assemble the matrices
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        Q->assemble(ex, ey);
+        ei = ey*topo->nElsX + ex;
+
+        VecGetArray(theta[kk+0], &t1Array);
+        VecGetArray(theta[kk+1], &t2Array);
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
+            // for linear field we multiply by the vertical jacobian determinant when integrating, 
+            // and do no other trasformations for the basis functions
+            Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
+
+            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t1Array, &t1);
+            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t2Array, &t2);
+            Q0[ii][ii] *= 1.0*(t1 + t2); // quadrature weights are both 1.0
+        }
+        VecRestoreArray(theta[kk+0], &t1Array);
+        VecRestoreArray(theta[kk+1], &t2Array);
+
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+    }
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}
+#endif

@@ -362,8 +362,7 @@ Pvec::Pvec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
 }
 
 void Pvec::assemble(int lev, double scale, bool vert_det) {
-    int ii, ex, ey, np1, np12;
-    int *inds_x, *inds_l;
+    int ii, ex, ey, np1, np12, *inds_l;
 
     VecZeroEntries(vl);
 
@@ -383,8 +382,7 @@ void Pvec::assemble(int lev, double scale, bool vert_det) {
                     entries[ii] *= 2.0/geom->thick[lev][inds_l[ii]];
                 }
             }
-            inds_x = topo->elInds0_l(ex, ey);
-            VecSetValues(vl, np12, inds_x, entries, ADD_VALUES);
+            VecSetValues(vl, np12, inds_l, entries, ADD_VALUES);
         }
     }
 
