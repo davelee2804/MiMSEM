@@ -1414,7 +1414,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     double scale = 1.0e8;
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *rt_h, *exner_h, bu, bw, wi;
-    Vec *Hu2, *Vu2, *Fp2, *Ft2, *rt_i, *exner_i, exner_f, *theta;
+    Vec *Hu2, *Vu2, *Fp2, *Ft2, *rt_i, *exner_i, exner_f;
     Vec *Fh, *Fv, *Gh, *Gv, *theta_l, *exner_l, *rho_l, *rt_l;
 
     n2 = topo->elOrd*topo->elOrd;
@@ -1430,7 +1430,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rt_i    = new Vec[geom->nk];
     exner_i = new Vec[geom->nk];
     velz_h  = new Vec[topo->nElsX*topo->nElsX];
-    theta   = new Vec[geom->nk+1];
     Fh      = new Vec[geom->nk];
     Gh      = new Vec[geom->nk];
     Fv      = new Vec[topo->nElsX*topo->nElsX];
@@ -1447,10 +1446,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh[kk]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Gh[kk]);
     }
-    // create vectors for the potential temperature at the internal layer interfaces
-    for(kk = 1; kk < geom->nk; kk++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta[kk]);
-    }
     // create local vectors for assembling vertical rhs terms
     rho_l   = new Vec[geom->nk];
     rt_l    = new Vec[geom->nk];
@@ -1461,12 +1456,11 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &rt_l[kk]   );
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &exner_l[kk]);
     }
+    // create vectors for the potential temperature at the internal layer interfaces
     for(kk = 0; kk < geom->nk + 1; kk++) {
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l[kk]);
     }
     // set the top and bottom potential temperature bcs
-    theta[0]        = theta_b;
-    theta[geom->nk] = theta_t;
     VecScatterBegin(topo->gtol_2, theta_b, theta_l[0],        INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, theta_b, theta_l[0],        INSERT_VALUES, SCATTER_FORWARD);
     VecScatterBegin(topo->gtol_2, theta_t, theta_l[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
@@ -1668,9 +1662,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecDestroy(&rt_l[kk]   );
         VecDestroy(&exner_l[kk]);
     }
-    for(kk = 1; kk < geom->nk; kk++) {
-        VecDestroy(&theta[kk]);
-    }
     for(kk = 0; kk < geom->nk + 1; kk++) {
         VecDestroy(&theta_l[kk]);
     }
@@ -1696,7 +1687,6 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete[] rt_i;
     delete[] exner_i;
     delete[] velz_h;
-    delete[] theta;
     delete[] Fh;
     delete[] Gh;
     delete[] Fv;
@@ -1714,7 +1704,7 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     double scale = 1.0e8;
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, bw, wi;
-    Vec *rt_i, *exner_i, exner_f, *theta, *Fh, *Fv, *Gh, *Gv, *rho_l, *rt_l, *theta_l, *exner_l;
+    Vec *rt_i, *exner_i, exner_f, *Fh, *Fv, *Gh, *Gv, *rho_l, *rt_l, *theta_l, *exner_l;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -1725,7 +1715,6 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     Hu1     = new Vec[geom->nk];
     rt_i    = new Vec[geom->nk];
     exner_i = new Vec[geom->nk];
-    theta   = new Vec[geom->nk+1];
     Fh      = new Vec[geom->nk];
     Gh      = new Vec[geom->nk];
     Fv      = new Vec[topo->nElsX*topo->nElsX];
@@ -1748,15 +1737,10 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &exner_l[kk]);
     }
     // create vectors for the potential temperature at the internal layer interfaces
-    for(kk = 1; kk < geom->nk; kk++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta[kk]);
-    }
     for(kk = 0; kk < geom->nk + 1; kk++) {
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l[kk]);
     }
     // set the top and bottom potential temperature bcs
-    theta[0]        = theta_b;
-    theta[geom->nk] = theta_t;
     VecScatterBegin(topo->gtol_2, theta_b, theta_l[0],        INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, theta_b, theta_l[0],        INSERT_VALUES, SCATTER_FORWARD);
     VecScatterBegin(topo->gtol_2, theta_t, theta_l[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
@@ -1889,9 +1873,6 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
         VecDestroy(&rt_l[kk]   );
         VecDestroy(&exner_l[kk]);
     }
-    for(kk = 1; kk < geom->nk; kk++) {
-        VecDestroy(&theta[kk]);
-    }
     for(kk = 0; kk < geom->nk + 1; kk++) {
         VecDestroy(&theta_l[kk]);
     }
@@ -1906,7 +1887,6 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     delete[] Ft1;
     delete[] rt_i;
     delete[] exner_i;
-    delete[] theta;
     delete[] Fh;
     delete[] Gh;
     delete[] Fv;
