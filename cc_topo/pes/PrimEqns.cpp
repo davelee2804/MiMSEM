@@ -360,15 +360,14 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
         }
     }
 
-    // add the vertical contribution to the horiztonal vector
 #ifdef ADD_WZ
+    // add the vertical contribution to the horiztonal vector
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
             VertToHoriz2(ex, ey, 0, geom->nk, Kv[ei], Kh_l);
         }
     }
-
     for(kk = 0; kk < geom->nk; kk++) {
         VecScatterBegin(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
@@ -1831,7 +1830,7 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
             AssembleLinear(ex, ey, VA, scale);
             MatMult(VA, velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
-            AssembleVertLaplacian(ex, ey, VA, scale);
+            //AssembleVertLaplacian(ex, ey, VA, scale);
             KSPSolve(kspColA, bw, velz[ii]);
         }
     }
@@ -2024,14 +2023,15 @@ void PrimEqns::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
         MatMult(UQ->M, bg, UQb);
         VecScale(UQb, scale);
         KSPSolve(ksp1, UQb, u[kk]);
+
+        ISDestroy(&isl);
+        ISDestroy(&isg);
+        VecScatterDestroy(&scat);
     }
 
     VecDestroy(&bl);
     VecDestroy(&bg);
     VecDestroy(&UQb);
-    ISDestroy(&isl);
-    ISDestroy(&isg);
-    VecScatterDestroy(&scat);
     delete UQ;
     delete[] loc02;
 }
