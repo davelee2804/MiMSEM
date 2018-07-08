@@ -216,12 +216,12 @@ PrimEqns::~PrimEqns() {
     VecDestroy(&theta_b);
     VecDestroy(&theta_t);
 
-    //for(ii = 0; ii < geom->nk; ii++) {
-    //    VecDestroy(&fg[ii]);
-    //    VecDestroy(&Kh[ii]);
-    //}
-    //delete[] fg;
-    //delete[] Kh;
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecDestroy(&fg[ii]);
+        VecDestroy(&Kh[ii]);
+    }
+    delete[] fg;
+    delete[] Kh;
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&Kv[ii]);
     }
@@ -1909,7 +1909,8 @@ void PrimEqns::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph) {
     for(kk = ki; kk < kf; kk++) {
         VecGetArray(ph[kk], &hArray);
         for(ii = 0; ii < n2; ii++) {
-            hArray[inds2[ii]] += vArray[kk*n2+ii];
+            //hArray[inds2[ii]] += vArray[kk*n2+ii];
+            hArray[inds2[ii]] += vArray[(kk-ki)*n2+ii];
         }
         VecRestoreArray(ph[kk], &hArray);
     }

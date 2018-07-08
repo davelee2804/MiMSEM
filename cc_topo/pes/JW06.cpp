@@ -351,9 +351,9 @@ int main(int argc, char** argv) {
         //}
     }
 
-    delete topo;
-    delete geom;
     delete pe;
+    delete geom;
+    delete topo;
 
     for(ki = 0; ki < NK; ki++) {
         VecDestroy(&velx[ki] );

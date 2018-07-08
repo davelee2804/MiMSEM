@@ -136,7 +136,7 @@ Geom::~Geom() {
     for(ii = 0; ii < nk; ii++) {
         delete[] thick[ii];
     }
-    delete thick;
+    delete[] thick;
 }
 
 // Local to global Jacobian mapping
