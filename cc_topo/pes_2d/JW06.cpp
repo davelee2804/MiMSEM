@@ -193,11 +193,11 @@ double exner_init(double x, int ki) {
 }
 
 double theta_t_init(double x, int ki) {
-    return theta_init(x, 0);
+    return theta_init(x, NK);
 }
 
 double theta_b_init(double x, int ki) {
-    return theta_init(x, NK);
+    return theta_init(x, 0);
 }
 
 #define EL_ORD 3
