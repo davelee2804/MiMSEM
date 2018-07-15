@@ -113,7 +113,7 @@ double u_init(double* x, int ki) {
     double theta_c = 1.0*M_PI/9.0;
     double phi_c   = 2.0*M_PI/9.0;
     double rad     = acos(sin(phi_c)*sin(phi) + cos(phi_c)*cos(phi)*cos(theta - theta_c));
-    double up      = 1.0*exp(-rad*rad/10.0/10.0);
+    double up      = 1.0*exp(-rad*rad*10.0*10.0);
     
     return us + up;
 }
