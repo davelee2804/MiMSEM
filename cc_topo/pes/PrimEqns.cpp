@@ -776,11 +776,11 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
             // assemble in the bcs
             thetaBCVec(ex, ey, A, rho, &bcs, scale);
             VecAXPY(frt, -1.0, bcs);
+            VecDestroy(&bcs);
 
             AssembleLinearWithRho(ex, ey, rho, VA, scale);
             KSPSolve(kspColA, frt, theta_v);
             VertToHoriz2(ex, ey, 1, geom->nk, theta_v, theta);
-            VecDestroy(&bcs);
         }
     }
 

@@ -159,9 +159,9 @@ double rho_init(double* x, int ki) {
 }
 
 double theta_init(double* x, int ki) {
-    double phi   = asin(x[2]/RAD_EARTH);
-    double Ac    = 10.0/63.0 - 2.0*pow(phi, 6.0)*(cos(phi)*cos(phi) + 1.0/3.0);
-    double Bc    = RAD_EARTH*OMEGA*(1.6*pow(cos(phi), 3.0)*(sin(phi)*sin(phi) + 2.0/3.0) - 0.25*M_PI);
+    //double phi   = asin(x[2]/RAD_EARTH);
+    //double Ac    = 10.0/63.0 - 2.0*pow(phi, 6.0)*(cos(phi)*cos(phi) + 1.0/3.0);
+    //double Bc    = RAD_EARTH*OMEGA*(1.6*pow(cos(phi), 3.0)*(sin(phi)*sin(phi) + 2.0/3.0) - 0.25*M_PI);
     double temp  = t_init(x, ki);
     //double Ai[5] = {0.00,0.00,0.00,0.00,0.00};
     //double Bi[5] = {0.00,0.25,0.50,0.75,1.00};
@@ -170,9 +170,10 @@ double theta_init(double* x, int ki) {
                 0.37413623, 0.45705824, 0.54392892, 0.63376111, 0.72260612, 
                 0.80651530, 0.88153998, 0.94274432, 0.98519250, 1.00000000};
     double eta   = Ai[NK-ki] + Bi[NK-ki]; // theta is defined at the layer interfaces
-    double eta_v = 0.5*(eta - ETA_0)*M_PI;
-    double pres  = eta*P0;
-    double theta = (temp + 0.75*eta*M_PI*U0/RD*sin(eta_v)*sqrt(cos(eta_v))*(2.0*U0*Ac*pow(cos(eta_v), 1.5) + Bc))/pres;
+    //double eta_v = 0.5*(eta - ETA_0)*M_PI;
+    double Pi    = pow(eta*P0/P0, KAPPA);
+    //double theta = (temp + 0.75*eta*M_PI*U0/RD*sin(eta_v)*sqrt(cos(eta_v))*(2.0*U0*Ac*pow(cos(eta_v), 1.5) + Bc))/pres;
+    double theta = temp/Pi;
 
     return theta;
 }
