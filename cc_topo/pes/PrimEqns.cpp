@@ -556,7 +556,7 @@ compute the continuity equation right hand side for all levels
 uh: horiztonal velocity by vertical level
 uv: vertical velocity by horiztonal element
 */
-void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
+void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp, bool do_vert) {
     int kk, ex, ey, ei, n2;
     double scale = 1.0e8;
     Vec Mpu, Dv, pl, pu, Dh, *Fpl;
@@ -570,29 +570,31 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
     n2 = topo->elOrd*topo->elOrd;
 
 #ifdef ADD_WZ
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
+    if(do_vert) {
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
-    // compute the vertical mass fluxes (piecewise linear in the vertical)
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            ei = ey*topo->nElsX + ex;
-            VecZeroEntries(Fv[ei]);
+        // compute the vertical mass fluxes (piecewise linear in the vertical)
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                ei = ey*topo->nElsX + ex;
+                VecZeroEntries(Fv[ei]);
 
-            VertFlux(ex, ey, pi, VA, scale);
-            MatMult(VA, uv[ei], Mpu);
-            AssembleLinear(ex, ey, VA, scale);
-            KSPSolve(kspColA, Mpu, Fv[ei]);
-            // strong form vertical divergence
-            MatMult(V10, Fv[ei], Dv);
+                VertFlux(ex, ey, pi, VA, scale);
+                MatMult(VA, uv[ei], Mpu);
+                AssembleLinear(ex, ey, VA, scale);
+                KSPSolve(kspColA, Mpu, Fv[ei]);
+                // strong form vertical divergence
+                MatMult(V10, Fv[ei], Dv);
 
-            // copy the vertical contribution to the divergence into the
-            // horiztonal vectors
-            VertToHoriz2(ex, ey, 0, geom->nk, Dv, Fpl);
+                // copy the vertical contribution to the divergence into the
+                // horiztonal vectors
+                VertToHoriz2(ex, ey, 0, geom->nk, Dv, Fpl);
+            }
         }
+        VecDestroy(&Mpu);
+        VecDestroy(&Dv);
     }
-    VecDestroy(&Mpu);
-    VecDestroy(&Dv);
 #endif
 
     // compute the horiztonal mass fluxes
@@ -1512,8 +1514,8 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         horizMomRHS(velx[kk], velz, theta_l, exner[kk], kk, scale, &Hu1[kk]);
     }
     vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
-    massRHS(velx, velz, rho, Fh, Fv, Fp1);
-    massRHS(velx, velz, rt,  Gh, Gv, Ft1);
+    massRHS(velx, velz, rho, Fh, Fv, Fp1, true);
+    massRHS(velx, velz, rt,  Gh, Gv, Ft1, false);
 
     // solve for the half step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1570,8 +1572,8 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         horizMomRHS(velx_h[kk], velz_h, theta_l, exner_h[kk], kk, scale, &Hu2[kk]);
     }
     vertMomRHS(velx_h, velz_h, theta_l, exner_l, Vu2);
-    massRHS(velx_h, velz_h, rho_h, Fh, Fv, Fp2);
-    massRHS(velx_h, velz_h, rt_h,  Gh, Gv ,Ft2);
+    massRHS(velx_h, velz_h, rho_h, Fh, Fv, Fp2, true);
+    massRHS(velx_h, velz_h, rt_h,  Gh, Gv ,Ft2, false);
 
     // solve for the full step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1788,10 +1790,10 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     if(!rank)cout<<"\tvertical momentum rhs......"<<endl;
     vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
     if(!rank)cout<<"\tcontinuity eqn rhs........."<<endl;
-    massRHS(velx, velz, rho, Fh, Fv, Fp1);
+    massRHS(velx, velz, rho, Fh, Fv, Fp1, true);
 #ifdef ADD_IE
     if(!rank)cout<<"\tenergy eqn rhs............."<<endl;
-    massRHS(velx, velz, rt,  Gh, Gv, Ft1);
+    massRHS(velx, velz, rt,  Gh, Gv, Ft1, false);
 #endif
 
     // solve for the half step values
