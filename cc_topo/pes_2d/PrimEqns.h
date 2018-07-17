@@ -47,7 +47,7 @@ class PrimEqns {
         void AssembleLinearWithRho(int ex, Vec* rho, Mat A);
         void AssembleVertLaplacian(int ex, Mat M0);
         void VertFlux(int ex, Vec* pi, Mat Mp);    // vertical mass flux matrix
-        void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp);
+        void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp, bool do_vert);
         void vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec *fw);
         void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, Vec *Fu);
         void thetaBCVec(int ex, Mat A, Vec* rho, Vec* bTheta);

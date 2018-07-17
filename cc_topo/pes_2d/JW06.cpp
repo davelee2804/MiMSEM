@@ -97,7 +97,7 @@ double f_topog(double x) {
 // initial condition given by:
 //     Jablonowski and Williamson, QJRMS, 2006
 double u_init(double x, int ki) {
-    double phi     = 0.25*M_PI;//asin(x[2]/RAD_EARTH);
+    double phi     = 2.0*M_PI/9.0;//0.25*M_PI;//asin(x[2]/RAD_EARTH);
     double theta   = x/RAD_EARTH;//atan2(x[1], x[0]);
     //double Ai[5]   = {0.00,0.00,0.00,0.00,0.00};
     //double Bi[5]   = {0.00,0.25,0.50,0.75,1.00};
@@ -117,7 +117,7 @@ double u_init(double x, int ki) {
 }
 
 double t_init(double x, int ki) {
-    double phi     = 0.5*M_PI;//asin(x[2]/RAD_EARTH);
+    double phi     = 2.0*M_PI/9.0;//0.5*M_PI;//asin(x[2]/RAD_EARTH);
     //double Ai[5]   = {0.00,0.00,0.00,0.00,0.00};
     //double Bi[5]   = {0.00,0.25,0.50,0.75,1.00};
     double Ai[15] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};

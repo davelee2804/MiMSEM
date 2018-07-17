@@ -23,8 +23,8 @@
 
 using namespace std;
 
-//#define ADD_IE
-//#define ADD_GZ
+#define ADD_IE
+#define ADD_GZ
 #define ADD_WZ
 
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
@@ -394,6 +394,8 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
 
         // add in the pressure gradient
 #ifdef ADD_IE
+/* removing the vertical pressure gradient term (and the vertical temperature transport)
+   in order to remove vertical sound waves in an energetically consistent way
         VecZeroEntries(exner_v);
         HorizToVert2(ex, exner, exner_v);
 
@@ -412,8 +414,8 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
         AssembleLinearWithTheta(ex, theta, VA);
         MatMult(VA, de3, dp);
         VecAXPY(fw[ex], 1.0, dp);
+*/
 #endif
-            // TODO: add in horizontal vorticity terms
     }
 
     VecDestroy(&exner_v);
@@ -428,33 +430,35 @@ compute the continuity equation right hand side for all levels
 uh: horiztonal velocity by vertical level
 uv: vertical velocity by horiztonal element
 */
-void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
+void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp, bool do_vert) {
     int kk, ex, n2;
     Vec Mpu, Dv, pu, Dh;
 
     n2 = topo->elOrd;
 
 #ifdef ADD_WZ
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
+    if(do_vert) {
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
-    // compute the vertical mass fluxes (piecewise linear in the vertical)
-    for(ex = 0; ex < topo->nElsX; ex++) {
-        VecZeroEntries(Fv[ex]);
+        // compute the vertical mass fluxes (piecewise linear in the vertical)
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            VecZeroEntries(Fv[ex]);
 
-        VertFlux(ex, pi, VA);
-        MatMult(VA, uv[ex], Mpu);
-        AssembleLinear(ex, VA);
-        KSPSolve(kspColA, Mpu, Fv[ex]);
-        // strong form vertical divergence
-        MatMult(V10, Fv[ex], Dv);
+            VertFlux(ex, pi, VA);
+            MatMult(VA, uv[ex], Mpu);
+            AssembleLinear(ex, VA);
+            KSPSolve(kspColA, Mpu, Fv[ex]);
+            // strong form vertical divergence
+            MatMult(V10, Fv[ex], Dv);
 
-        // copy the vertical contribution to the divergence into the
-        // horiztonal vectors
-        VertToHoriz2(ex, 0, geom->nk, Dv, Fp);
+            // copy the vertical contribution to the divergence into the
+            // horiztonal vectors
+            VertToHoriz2(ex, 0, geom->nk, Dv, Fp);
+        }
+        VecDestroy(&Mpu);
+        VecDestroy(&Dv);
     }
-    VecDestroy(&Mpu);
-    VecDestroy(&Dv);
 #endif
 
     // compute the horiztonal mass fluxes
@@ -480,6 +484,7 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
 /*
 Assemble the boundary condition vector for rho(t) X theta(0)
 */
+#if 0
 void PrimEqns::thetaBCVec(int ex, Mat A, Vec* rho, Vec* bTheta) {
     int* inds2 = topo->elInds2(ex);
     int ii, mp1, n2;
@@ -576,6 +581,90 @@ void PrimEqns::thetaBCVec(int ex, Mat A, Vec* rho, Vec* bTheta) {
     delete[] WtQWflat;
     VecDestroy(&theta_o);
 }
+#endif
+void PrimEqns::thetaBCVec(int ex, Mat A, Vec* rho, Vec* bTheta) {
+    int* inds2 = topo->elInds2(ex);
+int* inds0 = topo->elInds0(ex);
+    int ii, jj, mp1, n2;
+    double det, rk;
+    double** Q0 = Alloc2D(quad->n+1, quad->n+1);
+    double** Wt = Alloc2D(edge->n, quad->n+1);
+    double** WtQ = Alloc2D(edge->n, quad->n+1);
+    double** WtQW = Alloc2D(edge->n, edge->n);
+    PetscScalar *rArray, *vArray, *hArray;
+
+    mp1 = quad->n + 1;
+    n2  = topo->elOrd;
+
+    Tran_IP(quad->n+1, edge->n, edge->ejxi, Wt);
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, bTheta);
+    VecZeroEntries(*bTheta);
+    MatZeroEntries(A);
+
+    // bottom boundary
+    VecGetArray(rho[0], &rArray);
+    for(ii = 0; ii < mp1; ii++) {
+        det = geom->det[ex][ii];
+        Q0[ii][ii] = det*quad->w[ii]/det/det;
+
+        // multuply by the vertical determinant to integrate, then
+        // divide piecewise constant density by the vertical determinant,
+        // so these cancel
+        geom->interp2(ex, ii, rArray, &rk);
+        Q0[ii][ii] *= rk;
+Q0[ii][ii] /= geom->thick[0][inds0[ii]];
+    }
+    VecRestoreArray(rho[0], &rArray);
+
+    Mult_IP(edge->n, quad->n+1, quad->n+1, Wt, Q0, WtQ);
+    Mult_IP(edge->n, edge->n, quad->n+1, WtQ, edge->ejxi, WtQW);
+
+    VecGetArray(*bTheta, &vArray);
+    VecGetArray(theta_b, &hArray);
+    for(ii = 0; ii < n2; ii++) {
+        vArray[ii+0*n2] = 0.0;
+        for(jj = 0; jj < n2; jj++) {
+            vArray[ii+0*n2] += WtQW[ii][jj]*hArray[inds2[jj]];
+        }
+    }
+    VecRestoreArray(*bTheta, &vArray);
+    VecRestoreArray(theta_b, &hArray);
+
+    // top boundary
+    VecGetArray(rho[geom->nk-1], &rArray);
+    for(ii = 0; ii < mp1; ii++) {
+        det = geom->det[ex][ii];
+        Q0[ii][ii] = det*quad->w[ii]/det/det;
+
+        // multuply by the vertical determinant to integrate, then
+        // divide piecewise constant density by the vertical determinant,
+        // so these cancel
+        geom->interp2(ex, ii, rArray, &rk);
+        Q0[ii][ii] *= rk;
+Q0[ii][ii] /= geom->thick[geom->nk-1][inds0[ii]];
+    }
+    VecRestoreArray(rho[geom->nk-1], &rArray);
+
+    Mult_IP(edge->n, quad->n+1, quad->n+1, Wt, Q0, WtQ);
+    Mult_IP(edge->n, edge->n, quad->n+1, WtQ, edge->ejxi, WtQW);
+
+    VecGetArray(*bTheta, &vArray);
+    VecGetArray(theta_t, &hArray);
+    for(ii = 0; ii < n2; ii++) {
+        vArray[ii+(geom->nk-2)*n2] = 0.0;
+        for(jj = 0; jj < n2; jj++) {
+            vArray[ii+(geom->nk-2)*n2] += WtQW[ii][jj]*hArray[inds2[jj]];
+        }
+    }
+    VecRestoreArray(*bTheta, &vArray);
+    VecRestoreArray(theta_t, &hArray);
+
+    Free2D(quad->n+1, Q0);
+    Free2D(edge->n, Wt);
+    Free2D(edge->n, WtQ);
+    Free2D(edge->n, WtQW);
+}
 
 /*
 diagnose theta from rho X theta (with boundary condition)
@@ -615,11 +704,9 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
         MatMult(AB, rtv, frt);
 
         // assemble in the bcs // TODO: BC application error!
-        //AssembleLinearWithRho(ex, rho, VA);
-        //thetaBCVec(ex, VA, rho, &bcs);
-        //thetaBCVec(ex, A, rho, &bcs);
-        //VecAXPY(frt, -1.0, bcs);
-        //VecDestroy(&bcs);
+        thetaBCVec(ex, A, rho, &bcs);
+        VecAXPY(frt, -1.0, bcs);
+        VecDestroy(&bcs);
 
         AssembleLinearWithRho(ex, rho, VA);
         KSPSolve(kspColA, frt, theta_v);
@@ -1217,10 +1304,10 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     cout<<"\tvertical momentum rhs......"<<endl;
     vertMomRHS(velx, velz, theta, exner, Vu1);
     cout<<"\tcontinuity eqn rhs........."<<endl;
-    massRHS(velx, velz, rho, Fh, Fv, Fp1);
+    massRHS(velx, velz, rho, Fh, Fv, Fp1, true);
 #ifdef ADD_IE
     cout<<"\tenergy eqn rhs............."<<endl;
-    massRHS(velx, velz, rt,  Gh, Gv, Ft1);
+    massRHS(velx, velz, rt,  Gh, Gv, Ft1, false);
 #endif
 
     // solve for the half step values

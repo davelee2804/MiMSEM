@@ -333,7 +333,7 @@ void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
             else {
                 levs[ii][jj] = 2.0;
             }
-if(!jj) cout << ii << "\tlevel: " << levs[ii][jj] << endl;
+//if(!jj) cout << ii << "\tlevel: " << levs[ii][jj] << endl;
         }
     }
     for(ii = 0; ii < nk; ii++) {
@@ -344,7 +344,7 @@ if(!jj) cout << ii << "\tlevel: " << levs[ii][jj] << endl;
             else {
                 thick[ii][jj] = 2.0;//TODO check this
             }
-if(!jj) cout << ii << "\tthick:  " << thick[ii][jj] << endl;
+//if(!jj) cout << ii << "\tthick:  " << thick[ii][jj] << endl;
         }
     }
 }
