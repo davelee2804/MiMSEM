@@ -613,7 +613,8 @@ int* inds0 = topo->elInds0(ex);
         // so these cancel
         geom->interp2(ex, ii, rArray, &rk);
         Q0[ii][ii] *= rk;
-Q0[ii][ii] /= geom->thick[0][inds0[ii]];
+//Q0[ii][ii] /= geom->thick[0][inds0[ii]];
+Q0[ii][ii] *= 2.0/geom->thick[0][inds0[ii]];
     }
     VecRestoreArray(rho[0], &rArray);
 
@@ -642,7 +643,8 @@ Q0[ii][ii] /= geom->thick[0][inds0[ii]];
         // so these cancel
         geom->interp2(ex, ii, rArray, &rk);
         Q0[ii][ii] *= rk;
-Q0[ii][ii] /= geom->thick[geom->nk-1][inds0[ii]];
+//Q0[ii][ii] /= geom->thick[geom->nk-1][inds0[ii]];
+Q0[ii][ii] *= 2.0/geom->thick[geom->nk-1][inds0[ii]];
     }
     VecRestoreArray(rho[geom->nk-1], &rArray);
 
