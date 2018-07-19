@@ -206,6 +206,13 @@ double theta_b_init(double* x, int ki) {
     return theta_init(x, 0);
 }
 
+double z_init(double* x, int ki) {
+    double zb = z_from_eta(x, ki + 0);
+    double zt = z_from_eta(x, ki + 1);
+
+    return 0.5*(zb + zt);
+}
+
 void LoadVecs(Vec* vecs, int nk, char* fieldname, int step, bool para) {
     int ki;
     char filename[100];
@@ -282,6 +289,8 @@ int main(int argc, char** argv) {
     pe->initTheta(pe->theta_b, theta_b_init);
     pe->initTheta(pe->theta_t, theta_t_init);
     geom->initTopog(f_topog, z_from_eta);
+    // initialise the 2 form height field
+    pe->init2(pe->gz, z_init);
 
     if(startStep == 0) {
         pe->init1(velx, u_init, v_init);

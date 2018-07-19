@@ -26,7 +26,7 @@
 using namespace std;
 
 //#define ADD_IE
-//#define ADD_GZ
+#define ADD_GZ
 #define ADD_WZ
 
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
@@ -112,6 +112,10 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     Kh = new Vec[geom->nk];
     for(ii = 0; ii < geom->nk; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Kh[ii]);
+    }
+    gz = new Vec[geom->nk];
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &gz[ii]);
     }
 
     // initialise the single column mass matrices and solvers
@@ -219,9 +223,11 @@ PrimEqns::~PrimEqns() {
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&fg[ii]);
         VecDestroy(&Kh[ii]);
+        VecDestroy(&gz[ii]);
     }
     delete[] fg;
     delete[] Kh;
+    delete[] gz;
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&Kv[ii]);
     }
@@ -253,8 +259,8 @@ PrimEqns::~PrimEqns() {
 /*
 */
 void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
-    int ex, ey, ei, ii, jj, kk, mp1, mp12, n2, rows[99], cols[99], *inds0;
-    double det, wb, wt, wi, gamma, zi;
+    int ex, ey, ei, ii, jj, kk, mp1, mp12, n2, rows[99], cols[99];
+    double det, wb, wt, wi, gamma;
     Mat BA;
     Vec velx_l, *Kh_l;
     Wii* Q = new Wii(node->q, geom);
@@ -264,9 +270,9 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    PetscScalar *kvArray, *zqArray;
+    PetscScalar *kvArray;
     WtQmat* WQ = new WtQmat(topo, geom, edge);
-    Vec zq, zw, zql;
+    Vec zq, *zl;
 
     n2   = topo->elOrd*topo->elOrd;
     mp1  = quad->n + 1;
@@ -384,41 +390,27 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
 
 #ifdef ADD_GZ
     // add in the vertical gravity vector TODO: add this to the horiztonal KE vectors also
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &zq);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &zw);
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &zql);
+    zl = new Vec[geom->nk];
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &zq);
     for(kk = 0; kk < geom->nk; kk++) {
-        VecGetArray(zql, &zqArray);
-        for(ey = 0; ey < topo->nElsX; ey++) {
-            for(ex = 0; ex < topo->nElsX; ex++) {
-                inds0 = topo->elInds0_l(ex, ey);
-                for(ii = 0; ii < mp12; ii++) {
-                    // quadrature weights are both 1.0
-                    zi = 1.0*(geom->levs[kk+0][inds0[ii]] + geom->levs[kk+1][inds0[ii]])*GRAVITY;
-                    zqArray[inds0[ii]] = scale*zi;
-                }
-            }
-        }
-        VecRestoreArray(zql, &zqArray);
-        VecScatterBegin(topo->gtol_0, zql, zq, INSERT_VALUES, SCATTER_REVERSE);
-        VecScatterEnd(topo->gtol_0, zql, zq, INSERT_VALUES, SCATTER_REVERSE);
-        MatMult(WQ->M, zq, zw);
-
-        VecZeroEntries(Kh_l[kk]);
-        VecScatterBegin(topo->gtol_2, zw, Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(topo->gtol_2, zw, Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+        M2->assemble(kk, scale, true);
+        MatMult(M2->M, gz[kk], zq);
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &zl[kk]);
+        VecScatterBegin(topo->gtol_2, zq, zl[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(topo->gtol_2, zq, zl[kk], INSERT_VALUES, SCATTER_FORWARD);
     }
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            HorizToVert2(ex, ey, Kh_l, Kv[ei]);
+            HorizToVert2(ex, ey, zl, Kv[ei]);
         }
     }
-
     VecDestroy(&zq);
-    VecDestroy(&zw);
-    VecDestroy(&zql);
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecDestroy(&zl[kk]);
+    }
+    delete[] zl;
 #endif
 
     for(kk = 0; kk < geom->nk; kk++) {
@@ -457,7 +449,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta_l, Vec exner, int lev, do
     VecScatterEnd(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
 
     VecZeroEntries(*Fu);
-    R->assemble(wl, lev, scale); // TODO: this operator causing problems (vorticity??)
+    R->assemble(wl, lev, scale);
     MatMult(R->M, uh, Ru);
     MatMult(EtoF->E12, Kh[lev], *Fu);
     VecAXPY(*Fu, 1.0, Ru);
@@ -476,7 +468,7 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta_l, Vec exner, int lev, do
     VecDestroy(&dExner);
 #endif
 
-    // add in the biharmonic voscosity TODO: this is causing problems at the moment...
+    // add in the biharmonic voscosity
     if(do_visc) {
         laplacian(uh, &d2u, lev);
         laplacian(d2u, &d4u, lev);
@@ -667,6 +659,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double s
         // so these cancel
         geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
         Q0[ii][ii] *= rk;
+//TODO: scaling seems to work, but don't understand why yet
 Q0[ii][ii] *= 2.0/geom->thick[0][inds0[ii]];
     }
     VecRestoreArray(rho[0], &rArray);
@@ -691,6 +684,7 @@ Q0[ii][ii] *= 2.0/geom->thick[0][inds0[ii]];
         // so these cancel
         geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
         Q0[ii][ii] *= rk;
+//TODO: scaling seems to work, but don't understand why yet
 Q0[ii][ii] *= 2.0/geom->thick[geom->nk-1][inds0[ii]];
     }
     VecRestoreArray(rho[geom->nk-1], &rArray);

@@ -30,6 +30,7 @@ class PrimEqns {
         Vec theta_t;                                 // top potential temperature bc
         Vec* Kv;                                     // kinetic energy vector for each vertical column
         Vec* Kh;                                     // kinetic energy vector for each horiztontal layer
+        Vec* gz;
         Mat V01;                                     // vertical divergence operator
         Mat V10;                                     // vertical gradient operator
         Mat VA;

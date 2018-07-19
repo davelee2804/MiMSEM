@@ -293,7 +293,7 @@ void SWEqn::solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save) {
         sprintf(fieldname, "velocity");
         geom->write1(uf, fieldname, step, 0);
         sprintf(fieldname, "pressure");
-        geom->write2(hf, fieldname, step, 0);
+        geom->write2(hf, fieldname, step, 0, false);
 
         VecDestroy(&wf);
     }
