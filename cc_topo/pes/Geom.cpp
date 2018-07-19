@@ -516,6 +516,51 @@ void Geom::writeSerial(Vec* vecs, char* fieldname, int nv, int tstep) {
     }
 }
 
+void Geom::writeVertToHoriz(Vec* vecs, char* fieldname, int tstep, int nv) {
+    int ex, ey, ei, ii, kk, n2, *inds2;
+    PetscScalar *hArray, *vArray;
+    Vec *hvecs, gvec;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    hvecs = new Vec[nv];
+    for(kk = 0; kk < nv; kk++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &hvecs[kk]);
+        VecZeroEntries(hvecs[kk]);
+    }
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &gvec);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            inds2 = topo->elInds2_l(ex, ey);
+
+            VecGetArray(vecs[ei], &vArray);
+            for(kk = 0; kk < nv; kk++) {
+                VecGetArray(hvecs[kk], &hArray);
+                for(ii = 0; ii < n2; ii++) {
+                    hArray[inds2[ii]] += vArray[kk*n2+ii];
+                }
+                VecRestoreArray(hvecs[kk], &hArray);
+            }
+            VecRestoreArray(vecs[ei], &vArray);
+        }
+    }
+
+    for(kk = 0; kk < nv; kk++) {
+        VecZeroEntries(gvec);
+        VecScatterBegin(topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
+        write2(gvec, fieldname, tstep, kk);
+    }
+
+    for(kk = 0; kk < nv; kk++) {
+        VecDestroy(&hvecs[kk]);
+    }
+    delete[] hvecs;
+    VecDestroy(&gvec);
+}
+
 // update global coordinates (cartesian and spherical) for consistency with local
 // coordinates as derived from the Jacobian
 void Geom::updateGlobalCoords() {

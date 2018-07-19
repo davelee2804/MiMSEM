@@ -28,6 +28,7 @@ class Geom {
         void write1(Vec u, char* fieldname, int tstep, int kk);
         void write2(Vec h, char* fieldname, int tstep, int kk);
         void writeSerial(Vec* vecs, char* fieldname, int nv, int tstep);
+        void writeVertToHoriz(Vec* vecs, char* fieldname, int tstep, int nv);
         void initJacobians();
         void updateGlobalCoords();
         void initTopog(TopogFunc* ft, LevelFunc* fl);
