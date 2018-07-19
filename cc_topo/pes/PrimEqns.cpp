@@ -323,8 +323,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
                         if(kk < geom->nk - 1) wt += kvArray[(kk+0)*n2+jj]*gamma;
                     }
                     wi = 1.0*(wb + wt); // quadrature weights are both 1.0
-
-                    Q0[ii][ii] *= wi;
+                    Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
                 }
 
                 Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -362,8 +361,6 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
 
 #ifdef ADD_WZ
     // add the vertical contribution to the horiztonal vector
-    // TODO: adding the vertical KE is causing BIG (O(e+14)) errors
-/*
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -374,7 +371,6 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
         VecScatterBegin(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
     }
-*/
 #endif
 
     // update the vertical vector with the horiztonal vector
@@ -1835,7 +1831,7 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
             AssembleLinear(ex, ey, VA, scale);
             MatMult(VA, velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
-            //AssembleVertLaplacian(ex, ey, VA, scale);
+            AssembleVertLaplacian(ex, ey, VA, scale);
             KSPSolve(kspColA, bw, velz[ii]);
         }
     }
