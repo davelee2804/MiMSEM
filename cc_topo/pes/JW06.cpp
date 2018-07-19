@@ -232,7 +232,8 @@ int main(int argc, char** argv) {
     char fieldname[50];//, filename[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 80.0;    // for 16x3rd order elements
+    //double dt = 80.0;    // for 16x3rd order elements
+    double dt = 1.0;    // for 16x3rd order elements
     int nSteps = 2;//10800;  // 10 days
     int dumpEvery = 1;//270; // 6 hours
     ofstream file;
@@ -292,11 +293,11 @@ int main(int argc, char** argv) {
             sprintf(fieldname,"velocity_h");
             geom->write1(velx[ki],fieldname,0,ki);
             sprintf(fieldname,"density");
-            geom->write2(rho[ki],fieldname,0,ki);
+            geom->write2(rho[ki],fieldname,0,ki, true);
             sprintf(fieldname,"exner");
-            geom->write2(exner[ki],fieldname,0,ki);
+            geom->write2(exner[ki],fieldname,0,ki, true);
             sprintf(fieldname,"rhoTheta");
-            geom->write2(rt[ki],fieldname,0,ki);
+            geom->write2(rt[ki],fieldname,0,ki, true);
         }
         for(ii = 0; ii < n2; ii++) {
             sprintf(fieldname, "output/velocity_z_%.4u_%.4u.vec", ii, 0);

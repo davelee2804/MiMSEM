@@ -433,7 +433,7 @@ void Geom::write1(Vec u, char* fieldname, int tstep, int lev) {
 }
 
 // interpolate 2 form field to quadrature points
-void Geom::write2(Vec h, char* fieldname, int tstep, int lev) {
+void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
     int ex, ey, ii, mp1, mp12;
     int *inds0;
     char filename[100];
@@ -467,7 +467,9 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev) {
                 hxArray[inds0[ii]] = val;
                 // assume piecewise constant in the vertical, so rescale by
                 // the vertical determinant inverse
+                if(vert_scale) {
                 hxArray[inds0[ii]] *= 2.0/thick[lev][inds0[ii]];
+                }
             }
         }
     }
@@ -551,7 +553,7 @@ void Geom::writeVertToHoriz(Vec* vecs, char* fieldname, int tstep, int nv) {
         VecZeroEntries(gvec);
         VecScatterBegin(topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
-        write2(gvec, fieldname, tstep, kk);
+        write2(gvec, fieldname, tstep, kk, false);
     }
 
     for(kk = 0; kk < nv; kk++) {

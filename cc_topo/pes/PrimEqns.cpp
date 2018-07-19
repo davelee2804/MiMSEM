@@ -27,7 +27,7 @@ using namespace std;
 
 //#define ADD_IE
 //#define ADD_GZ
-//#define ADD_WZ
+#define ADD_WZ
 
 PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     int ii, n2;
@@ -362,6 +362,8 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
 
 #ifdef ADD_WZ
     // add the vertical contribution to the horiztonal vector
+    // TODO: adding the vertical KE is causing BIG (O(e+14)) errors
+/*
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -372,6 +374,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
         VecScatterBegin(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
     }
+*/
 #endif
 
     // update the vertical vector with the horiztonal vector
@@ -384,7 +387,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     }
 
 #ifdef ADD_GZ
-    // add in the vertical gravity vector
+    // add in the vertical gravity vector TODO: add this to the horiztonal KE vectors also
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &zq);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &zw);
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &zql);
@@ -477,12 +480,13 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta_l, Vec exner, int lev, do
     VecDestroy(&dExner);
 #endif
 
-    // add in the biharmonic voscosity
-    // TODO: this is causing problems at the moment...
+    // add in the biharmonic voscosity TODO: this is causing problems at the moment...
     if(do_visc) {
         laplacian(uh, &d2u, lev);
         laplacian(d2u, &d4u, lev);
-        //VecAXPY(*Fu, scale, d4u);
+        VecAXPY(*Fu, scale, d4u);
+        VecDestroy(&d2u);
+        VecDestroy(&d4u);
     }
 
     VecDestroy(&wl);
@@ -492,10 +496,6 @@ void PrimEqns::horizMomRHS(Vec uh, Vec* uv, Vec* theta_l, Vec exner, int lev, do
     VecDestroy(&Mh);
     VecDestroy(&dp);
     VecDestroy(&theta_k);
-    if(do_visc) {
-        VecDestroy(&d2u);
-        VecDestroy(&d4u);
-    }
 }
 
 void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
@@ -633,6 +633,7 @@ Assemble the boundary condition vector for rho(t) X theta(0)
 */
 void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double scale) {
     int* inds2 = topo->elInds2_l(ex, ey);
+    int* inds0 = topo->elInds0_l(ex, ey);
     int ii, ei, mp1, mp12, n2;
     double det, rk;
     int inds2k[99];
@@ -670,6 +671,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double s
         // so these cancel
         geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
         Q0[ii][ii] *= rk;
+Q0[ii][ii] *= 2.0/geom->thick[0][inds0[ii]];
     }
     VecRestoreArray(rho[0], &rArray);
 
@@ -693,6 +695,7 @@ void PrimEqns::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double s
         // so these cancel
         geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
         Q0[ii][ii] *= rk;
+Q0[ii][ii] *= 2.0/geom->thick[geom->nk-1][inds0[ii]];
     }
     VecRestoreArray(rho[geom->nk-1], &rArray);
 
@@ -873,7 +876,6 @@ void PrimEqns::curl(Vec u, Vec* w, int lev, bool add_f) {
     MatMult(M1->M, u, Mu);
     MatMult(NtoE->E01, Mu, dMu);
     VecPointwiseDivide(*w, dMu, m0->vg);
-    VecScale(*w, 1.0);
 
     // add the coliolis term
     if(add_f) {
@@ -1630,15 +1632,16 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
             sprintf(fieldname, "velocity_h");
             geom->write1(velx[kk], fieldname, step, kk);
             sprintf(fieldname, "density");
-            geom->write2(rho[kk], fieldname, step, kk);
+            geom->write2(rho[kk], fieldname, step, kk, true);
             sprintf(fieldname, "rhoTheta");
-            geom->write2(rt[kk], fieldname, step, kk);
+            geom->write2(rt[kk], fieldname, step, kk, true);
             sprintf(fieldname, "exner");
-            geom->write2(exner[kk], fieldname, step, kk);
+            geom->write2(exner[kk], fieldname, step, kk, true);
 
             VecDestroy(&wi);
         }
-
+        sprintf(fieldname, "velocity_z");
+        geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
         sprintf(fieldname, "velVert");
         geom->writeSerial(velz, fieldname, topo->nElsX*topo->nElsX, step);
     }
@@ -1848,15 +1851,16 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
             sprintf(fieldname, "velocity_h");
             geom->write1(velx[kk], fieldname, step, kk);
             sprintf(fieldname, "density");
-            geom->write2(rho[kk], fieldname, step, kk);
+            geom->write2(rho[kk], fieldname, step, kk, true);
             sprintf(fieldname, "rhoTheta");
-            geom->write2(rt[kk], fieldname, step, kk);
+            geom->write2(rt[kk], fieldname, step, kk, true);
             sprintf(fieldname, "exner");
-            geom->write2(exner[kk], fieldname, step, kk);
+            geom->write2(exner[kk], fieldname, step, kk, true);
 
             VecDestroy(&wi);
         }
-
+        sprintf(fieldname, "velocity_z");
+        geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
         sprintf(fieldname, "velVert");
         geom->writeSerial(velz, fieldname, topo->nElsX*topo->nElsX, step);
     }
