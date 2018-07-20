@@ -25,7 +25,7 @@
 
 using namespace std;
 
-//#define ADD_IE
+#define ADD_IE
 #define ADD_GZ
 #define ADD_WZ
 
@@ -328,7 +328,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
                         if(kk > 0)            wb += kvArray[(kk-1)*n2+jj]*gamma;
                         if(kk < geom->nk - 1) wt += kvArray[(kk+0)*n2+jj]*gamma;
                     }
-                    wi = 1.0*(wb + wt); // quadrature weights are both 1.0
+                    wi = 0.5*(wb + wt); // quadrature weights are both 1.0, however ke is 0.5*w^2
                     Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
                 }
 
@@ -1507,7 +1507,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     }
     vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
     massRHS(velx, velz, rho, Fh, Fv, Fp1, true);
-    massRHS(velx, velz, rt,  Gh, Gv, Ft1, false);
+    massRHS(velx, velz, rt,  Gh, Gv, Ft1, true);
 
     // solve for the half step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1565,7 +1565,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     }
     vertMomRHS(velx_h, velz_h, theta_l, exner_l, Vu2);
     massRHS(velx_h, velz_h, rho_h, Fh, Fv, Fp2, true);
-    massRHS(velx_h, velz_h, rt_h,  Gh, Gv ,Ft2, false);
+    massRHS(velx_h, velz_h, rt_h,  Gh, Gv ,Ft2, true);
 
     // solve for the full step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1786,7 +1786,7 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     massRHS(velx, velz, rho, Fh, Fv, Fp1, true);
 #ifdef ADD_IE
     if(!rank)cout<<"\tenergy eqn rhs............."<<endl;
-    massRHS(velx, velz, rt,  Gh, Gv, Ft1, false);
+    massRHS(velx, velz, rt,  Gh, Gv, Ft1, true);
 #endif
 
     // solve for the half step values
