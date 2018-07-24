@@ -79,6 +79,7 @@ double z_from_eta(double* x, int ki) {
     if(ki == 0) return z;
 
     for(kk = 0; kk < ki; kk++) {
+/*
         pt    = Ai[NK-kk-1]*P0 + Bi[NK-kk-1]*P0;
         pb    = Ai[NK-kk+0]*P0 + Bi[NK-kk+0]*P0;
         ph    = 0.5*(pt + pb);
@@ -87,6 +88,15 @@ double z_from_eta(double* x, int ki) {
         temp  = t_bar(eta_h);
         rho   = ph/RD/temp;
         dz    = dp/rho/GRAVITY;
+        z    += dz;
+*/
+        pt    = CP*pow(Ai[NK-kk-1] + Bi[NK-kk-1], KAPPA);
+        pb    = CP*pow(Ai[NK-kk+0] + Bi[NK-kk+0], KAPPA);
+        dp    = pb - pt;
+        ph    = 0.5*(pt + pb)/CP;
+        eta_h = 0.5*(Ai[NK-kk-1] + Bi[NK-kk-1] + Ai[NK-kk+0] + Bi[NK-kk+0]);
+        temp  = t_bar(eta_h);
+        dz    = temp*dp/ph/GRAVITY;
         z    += dz;
     }
     return z;
@@ -171,7 +181,7 @@ double theta_init(double* x, int ki) {
                 0.80651530, 0.88153998, 0.94274432, 0.98519250, 1.00000000};
     double eta   = Ai[NK-ki] + Bi[NK-ki]; // theta is defined at the layer interfaces
     //double eta_v = 0.5*(eta - ETA_0)*M_PI;
-    double Pi    = pow(eta*P0/P0, KAPPA);
+    double Pi    = pow(eta*P0/P0, KAPPA);//TODO: check this!!
     //double theta = (temp + 0.75*eta*M_PI*U0/RD*sin(eta_v)*sqrt(cos(eta_v))*(2.0*U0*Ac*pow(cos(eta_v), 1.5) + Bc))/pres;
     double theta = temp/Pi;
 
@@ -193,9 +203,12 @@ double exner_init(double* x, int ki) {
     double Bi[15] = {0.05034551, 0.10365252, 0.16189536, 0.22606120, 0.29615005, 
                 0.37413623, 0.45705824, 0.54392892, 0.63376111, 0.72260612, 
                 0.80651530, 0.88153998, 0.94274432, 0.98519250, 1.00000000};
-    double pres = 0.5*(Ai[NK-ki] + Bi[NK-ki] + Ai[NK-ki-1] + Bi[NK-ki-1])*P0;
+    //double zi     = z_init(x, ki);
+    //double theta  = theta_init(x, ki);
+    double eta    = 0.5*(Ai[NK-ki] + Bi[NK-ki] + Ai[NK-ki-1] + Bi[NK-ki-1]);
+    double pres   = eta*P0;
 
-    return CP*pow(pres/P0, RD/CP); // scaling by c_p
+    return CP*pow(pres/P0, KAPPA); // scaling by c_p
 }
 
 double theta_t_init(double* x, int ki) {

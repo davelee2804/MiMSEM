@@ -119,6 +119,10 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     for(ii = 0; ii < geom->nk; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &gz[ii]);
     }
+    gv = new Vec[topo->nElsX*topo->nElsX];
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &gv[ii]);
+    }
 
     // initialise the single column mass matrices and solvers
     n2 = topo->elOrd*topo->elOrd;
@@ -142,6 +146,10 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     PCBJacobiSetTotalBlocks(pc, n2, NULL);
     KSPSetOptionsPrefix(kspColA, "kspColA_");
     KSPSetFromOptions(kspColA);
+
+#ifdef ADD_GZ
+    initGZ();
+#endif
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -214,6 +222,91 @@ void PrimEqns::coriolis() {
     VecDestroy(&PtQfxg);
 }
 
+void PrimEqns::initGZ() {
+    int ii, kk, ex, ey, ei, n2, mp12;
+    int *inds0;
+    double det;
+    double scale = 1.0e8;
+    int inds2k[99], inds0k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
+    Vec gq;
+    Mat AQ;
+
+    n2    = topo->elOrd*topo->elOrd;
+    mp12  = (quad->n + 1)*(quad->n + 1);
+
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*mp12, &gq);
+    VecSet(gq, grav);
+
+    MatCreate(MPI_COMM_SELF, &AQ);
+    MatSetType(AQ, MATSEQAIJ);
+    MatSetSizes(AQ, (geom->nk-1)*n2, (geom->nk+0)*mp12, (geom->nk-1)*n2, (geom->nk+0)*mp12);
+    MatSeqAIJSetPreallocation(AQ, 2*mp12, PETSC_NULL);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            MatZeroEntries(AQ);
+
+            ei = ey*topo->nElsX + ex;
+            inds0 = topo->elInds0_l(ex, ey);
+
+            // Assemble the matrices
+            for(kk = 0; kk < geom->nk; kk++) {
+                // build the 2D mass matrix
+                Q->assemble(ex, ey);
+
+                for(ii = 0; ii < mp12; ii++) {
+                    det = geom->det[ei][ii];
+                    Q0[ii][ii]  = Q->A[ii][ii]*(scale/det);
+                    // for linear field we multiply by the vertical jacobian determinant when 
+                    // integrating, and do no other trasformations for the basis functions
+                    Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
+                }
+
+                Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+                Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+                Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
+
+                for(ii = 0; ii < mp12; ii++) {
+                    inds0k[ii] = ii + kk*mp12;
+                }
+                // assemble the first basis function
+                if(kk > 0) {
+                    for(ii = 0; ii < W->nDofsJ; ii++) {
+                        inds2k[ii] = ii + (kk-1)*W->nDofsJ;
+                    }
+                    MatSetValues(AQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQflat, ADD_VALUES);
+                }
+                // assemble the second basis function
+                if(kk < geom->nk - 1) {
+                    for(ii = 0; ii < W->nDofsJ; ii++) {
+                        inds2k[ii] = ii + (kk+0)*W->nDofsJ;
+                    }
+                    MatSetValues(AQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQflat, ADD_VALUES);
+                }
+            }
+            MatAssemblyBegin(AQ, MAT_FINAL_ASSEMBLY);
+            MatAssemblyEnd(AQ, MAT_FINAL_ASSEMBLY);
+
+            MatMult(AQ, gq, gv[ei]);
+        }
+    }
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    delete[] WtQflat;
+    delete Q;
+    delete W;
+    VecDestroy(&gq);
+    MatDestroy(&AQ);
+}
+
 PrimEqns::~PrimEqns() {
     int ii;
 
@@ -234,6 +327,10 @@ PrimEqns::~PrimEqns() {
         VecDestroy(&Kv[ii]);
     }
     delete[] Kv;
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecDestroy(&gv[ii]);
+    }
+    delete[] gv;
 
     MatDestroy(&V01);
     MatDestroy(&V10);
@@ -392,6 +489,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
 
 #ifdef ADD_GZ
     // add in the vertical gravity vector TODO: add this to the horiztonal KE vectors also
+/*
     zl = new Vec[geom->nk];
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &zq);
     for(kk = 0; kk < geom->nk; kk++) {
@@ -413,6 +511,7 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
         VecDestroy(&zl[kk]);
     }
     delete[] zl;
+*/
 #endif
 
     for(kk = 0; kk < geom->nk; kk++) {
@@ -508,6 +607,11 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
 
             // add in the kinetic energy gradient
             MatMult(V01, Kv[ei], fw[ei]);
+
+#ifdef ADD_GZ
+            // add the vertical gravity vector
+            VecAXPY(fw[ei], 1.0, gv[ei]);
+#endif
 
             // add in the pressure gradient
 #ifdef ADD_IE

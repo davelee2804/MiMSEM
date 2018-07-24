@@ -31,6 +31,7 @@ class PrimEqns {
         Vec* Kv;                                     // kinetic energy vector for each vertical column
         Vec* Kh;                                     // kinetic energy vector for each horiztontal layer
         Vec* gz;
+        Vec* gv;
         Mat V01;                                     // vertical divergence operator
         Mat V10;                                     // vertical gradient operator
         Mat VA;
@@ -42,6 +43,7 @@ class PrimEqns {
         double viscosity_vert();
         void coriolis();
         void vertOps();
+        void initGZ();
         void grad(Vec phi, Vec* u, int lev);                      // weak form grad operator
         void curl(Vec u, Vec* w, int lev, bool add_f);            // weak form curl operator
         void laplacian(Vec u, Vec* ddu, int lev);                 // laplacian operator via helmholtz decomposition
