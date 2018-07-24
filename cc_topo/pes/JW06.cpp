@@ -203,8 +203,6 @@ double exner_init(double* x, int ki) {
     double Bi[15] = {0.05034551, 0.10365252, 0.16189536, 0.22606120, 0.29615005, 
                 0.37413623, 0.45705824, 0.54392892, 0.63376111, 0.72260612, 
                 0.80651530, 0.88153998, 0.94274432, 0.98519250, 1.00000000};
-    //double zi     = z_init(x, ki);
-    //double theta  = theta_init(x, ki);
     double eta    = 0.5*(Ai[NK-ki] + Bi[NK-ki] + Ai[NK-ki-1] + Bi[NK-ki-1]);
     double pres   = eta*P0;
 
@@ -223,7 +221,7 @@ double z_init(double* x, int ki) {
     double zb = z_from_eta(x, ki + 0);
     double zt = z_from_eta(x, ki + 1);
 
-    return 0.5*(zb + zt);
+    return 1.0*(zb + zt);// quadrature weight should be 1 not 0.5
 }
 
 void LoadVecs(Vec* vecs, int nk, char* fieldname, int step, bool para) {

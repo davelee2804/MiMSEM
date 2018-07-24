@@ -610,7 +610,7 @@ void PrimEqns::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
 
 #ifdef ADD_GZ
             // add the vertical gravity vector
-            VecAXPY(fw[ei], 1.0, gv[ei]);
+            VecAXPY(fw[ei], -1.0, gv[ei]);
 #endif
 
             // add in the pressure gradient
