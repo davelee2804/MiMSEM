@@ -24,6 +24,7 @@
 #define OMEGA 7.29212e-5
 #define RD 287.04
 #define CP 1005.7
+#define CV (CP/1.4)
 
 using namespace std;
 
@@ -371,7 +372,6 @@ void PrimEqns::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *kvArray;
     WtQmat* WQ = new WtQmat(topo, geom, edge);
-    Vec zq, *zl;
 
     n2   = topo->elOrd*topo->elOrd;
     mp1  = quad->n + 1;
@@ -896,20 +896,15 @@ void PrimEqns::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
 prognose the exner pressure
 reference: Gassman QJRMS 2013
 */
-void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec Gh, Vec* Gv, Vec exner_i, Vec* exner_f, int lev) {
-    int ex, ey, ei, jj, n2, *inds2;
+void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec DivG, Vec exner_i, Vec* exner_f, int lev) {
     double scale = 1.0e8;
-    PetscScalar *gvArray, *dgArray;
-    Vec rt_l, rhs, dG, dG_l;
+    Vec rt_l, rhs, dG_l;
     PC pc;
     KSP kspE;
-
-    n2 = topo->elOrd*topo->elOrd;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &rt_l);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &dG_l);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dG);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, exner_f);
 
     KSPCreate(MPI_COMM_WORLD, &kspE);
@@ -926,6 +921,8 @@ void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec Gh, Vec* Gv, Vec exner_i, Vec* 
     VecScatterBegin(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
 
+/*
+    n2 = topo->elOrd*topo->elOrd;
     VecZeroEntries(dG);
     MatMult(EtoF->E21, Gh, dG);
     VecScatterBegin(topo->gtol_2, dG, dG_l, INSERT_VALUES, SCATTER_FORWARD);
@@ -948,7 +945,13 @@ void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec Gh, Vec* Gv, Vec exner_i, Vec* 
         }
     }
     VecRestoreArray(dG_l, &dgArray);
+*/
+    VecScatterBegin(topo->gtol_2, DivG, dG_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, DivG, dG_l, INSERT_VALUES, SCATTER_FORWARD);
+
+    // TODO check the constant factor here against eqn (5) from notes
     VecAXPY(rt_l, -dt*RD/CP, dG_l);
+    //VecAXPY(rt_l, -dt*RD/CV, dG_l);
 
     T->assemble(rt_l, lev, true, scale);
     MatMult(T->M, exner_i, rhs);
@@ -962,7 +965,6 @@ void PrimEqns::progExner(Vec rt_i, Vec rt_f, Vec Gh, Vec* Gv, Vec exner_i, Vec* 
     VecDestroy(&rt_l);
     VecDestroy(&dG_l);
     VecDestroy(&rhs);
-    VecDestroy(&dG);
     KSPDestroy(&kspE);
 }
 
@@ -1667,7 +1669,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecAXPY(rt_h[kk], -dt, Ft1[kk]);
 
         // exner pressure
-        progExner(rt_i[kk], rt_h[kk], Gh[kk], Gv, exner[kk], &exner_h[kk], kk);
+        progExner(rt_i[kk], rt_h[kk], Ft1[kk], exner[kk], &exner_h[kk], kk);
     }
 
     // solve for the vertical velocity
@@ -1725,11 +1727,9 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecAXPY(rt[kk], -0.5*dt, Ft2[kk]);
 
         // exner pressure (second order)
-        VecScale(rt_i[kk]   , 0.5);
-        VecScale(exner_i[kk], 0.5);
-        VecAXPY(rt_i[kk]   , 0.5, rt_h[kk]   );
-        VecAXPY(exner_i[kk], 0.5, exner_h[kk]);
-        progExner(rt_i[kk], rt[kk], Gh[kk], Gv, exner_i[kk], &exner_f, kk);
+        VecScale(Ft1[kk], 0.5);
+        VecAXPY(Ft1[kk], 0.5, Ft2[kk]);
+        progExner(rt_i[kk], rt[kk], Ft1[kk], exner_i[kk], &exner_f, kk);
         VecCopy(exner_f, exner[kk]);
         VecDestroy(&exner_f);
     }
@@ -1947,7 +1947,7 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
 
         // exner pressure
         if(!rank)cout<<"\texner pressure solve......."<<endl;
-        progExner(rt_i[kk], rt[kk], Gh[kk], Gv, exner[kk], &exner_f, kk);
+        progExner(rt_i[kk], rt[kk], Ft1[kk], exner[kk], &exner_f, kk);
         VecCopy(exner_f, exner[kk]);
         VecDestroy(&exner_f);
 #endif
