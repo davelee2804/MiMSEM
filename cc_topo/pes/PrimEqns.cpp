@@ -650,7 +650,7 @@ compute the continuity equation right hand side for all levels
 uh: horiztonal velocity by vertical level
 uv: vertical velocity by horiztonal element
 */
-void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp, bool do_vert) {
+void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
     int kk, ex, ey, ei, n2;
     double scale = 1.0e8;
     Vec Mpu, Dv, pl, pu, Dh, *Fpl;
@@ -664,31 +664,29 @@ void PrimEqns::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp, boo
     n2 = topo->elOrd*topo->elOrd;
 
 #ifdef ADD_WZ
-    if(do_vert) {
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
-        // compute the vertical mass fluxes (piecewise linear in the vertical)
-        for(ey = 0; ey < topo->nElsX; ey++) {
-            for(ex = 0; ex < topo->nElsX; ex++) {
-                ei = ey*topo->nElsX + ex;
-                VecZeroEntries(Fv[ei]);
+    // compute the vertical mass fluxes (piecewise linear in the vertical)
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            VecZeroEntries(Fv[ei]);
 
-                VertFlux(ex, ey, pi, VA, scale);
-                MatMult(VA, uv[ei], Mpu);
-                AssembleLinear(ex, ey, VA, scale);
-                KSPSolve(kspColA, Mpu, Fv[ei]);
-                // strong form vertical divergence
-                MatMult(V10, Fv[ei], Dv);
+            VertFlux(ex, ey, pi, VA, scale);
+            MatMult(VA, uv[ei], Mpu);
+            AssembleLinear(ex, ey, VA, scale);
+            KSPSolve(kspColA, Mpu, Fv[ei]);
+            // strong form vertical divergence
+            MatMult(V10, Fv[ei], Dv);
 
-                // copy the vertical contribution to the divergence into the
-                // horiztonal vectors
-                VertToHoriz2(ex, ey, 0, geom->nk, Dv, Fpl);
-            }
+            // copy the vertical contribution to the divergence into the
+            // horiztonal vectors
+            VertToHoriz2(ex, ey, 0, geom->nk, Dv, Fpl);
         }
-        VecDestroy(&Mpu);
-        VecDestroy(&Dv);
     }
+    VecDestroy(&Mpu);
+    VecDestroy(&Dv);
 #endif
 
     // compute the horiztonal mass fluxes
@@ -1646,8 +1644,8 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         horizMomRHS(velx[kk], velz, theta_l, exner[kk], kk, scale, &Hu1[kk]);
     }
     vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
-    massRHS(velx, velz, rho, Fh, Fv, Fp1, true);
-    massRHS(velx, velz, rt,  Gh, Gv, Ft1, true);
+    massRHS(velx, velz, rho, Fh, Fv, Fp1);
+    massRHS(velx, velz, rt,  Gh, Gv, Ft1);
 
     // solve for the half step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1704,8 +1702,8 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         horizMomRHS(velx_h[kk], velz_h, theta_l, exner_h[kk], kk, scale, &Hu2[kk]);
     }
     vertMomRHS(velx_h, velz_h, theta_l, exner_l, Vu2);
-    massRHS(velx_h, velz_h, rho_h, Fh, Fv, Fp2, true);
-    massRHS(velx_h, velz_h, rt_h,  Gh, Gv, Ft2, true);
+    massRHS(velx_h, velz_h, rho_h, Fh, Fv, Fp2);
+    massRHS(velx_h, velz_h, rt_h,  Gh, Gv, Ft2);
 
     // solve for the full step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1921,10 +1919,10 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
     if(!rank)cout<<"\tvertical momentum rhs......"<<endl;
     vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
     if(!rank)cout<<"\tcontinuity eqn rhs........."<<endl;
-    massRHS(velx, velz, rho, Fh, Fv, Fp1, true);
+    massRHS(velx, velz, rho, Fh, Fv, Fp1);
 #ifdef ADD_IE
     if(!rank)cout<<"\tenergy eqn rhs............."<<endl;
-    massRHS(velx, velz, rt,  Gh, Gv, Ft1, true);
+    massRHS(velx, velz, rt,  Gh, Gv, Ft1);
 #endif
 
     // solve for the half step values
@@ -2253,70 +2251,3 @@ void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
     VecDestroy(&bg);
     VecDestroy(&WQb);
 }
-
-#if 0
-void PrimEqns::AssembleConstWithTheta(int ex, int ey, Vec* theta, Mat A, double scale) {
-    int ii, kk, ei, mp1, mp12;
-    int *inds0;
-    double det, t1, t2;
-    int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    PetscScalar *t1Array, *t2Array;
-
-    inds0 = topo->elInds0_l(ex, ey);
-    mp1   = quad->n + 1;
-    mp12  = mp1*mp1;
-
-    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-
-    MatZeroEntries(A);
-
-    // Assemble the matrices
-    for(kk = 0; kk < geom->nk; kk++) {
-        // build the 2D mass matrix
-        Q->assemble(ex, ey);
-        ei = ey*topo->nElsX + ex;
-
-        VecGetArray(theta[kk+0], &t1Array);
-        VecGetArray(theta[kk+1], &t2Array);
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Q0[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
-            // for linear field we multiply by the vertical jacobian determinant when integrating, 
-            // and do no other trasformations for the basis functions
-            Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
-
-            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t1Array, &t1);
-            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, t2Array, &t2);
-            Q0[ii][ii] *= 1.0*(t1 + t2); // quadrature weights are both 1.0
-        }
-        VecRestoreArray(theta[kk+0], &t1Array);
-        VecRestoreArray(theta[kk+1], &t2Array);
-
-        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = ii + kk*W->nDofsJ;
-        }
-        MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-    }
-    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
-}
-#endif
