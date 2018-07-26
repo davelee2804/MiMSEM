@@ -39,6 +39,7 @@ class PrimEqns {
         KSP ksp1;
         KSP ksp2;
         KSP kspColA;
+        KSP kspColB;
         double viscosity();
         double viscosity_vert();
         void coriolis();
@@ -55,7 +56,7 @@ class PrimEqns {
         void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double scale);
         void AssembleVertLaplacian(int ex, int ey, Mat M0, double scale);
         void VertFlux(int ex, int ey, Vec* pi, Mat Mp, double scale);    // vertical mass flux matrix
-        void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp, bool do_vert);
+        void massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp);
         void vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec *fw);
         void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, double scale, Vec *Fu);
         void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double scale);
@@ -70,4 +71,5 @@ class PrimEqns {
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* p, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
+        void solveMass(double dt, int ex, int ey, double scale, Mat AB, Vec wz, Vec fv, Vec rho);
 };

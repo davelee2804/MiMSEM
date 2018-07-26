@@ -148,6 +148,16 @@ PrimEqns::PrimEqns(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetOptionsPrefix(kspColA, "kspColA_");
     KSPSetFromOptions(kspColA);
 
+    KSPCreate(MPI_COMM_SELF, &kspColB);
+    KSPSetOperators(kspColB, VB, VB);
+    KSPSetTolerances(kspColB, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspColB, KSPGMRES);
+    KSPGetPC(kspColB, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, n2, NULL);//TODO??
+    KSPSetOptionsPrefix(kspColB, "kspColB_");
+    KSPSetFromOptions(kspColB);
+
 #ifdef ADD_GZ
     initGZ();
 #endif
@@ -338,6 +348,7 @@ PrimEqns::~PrimEqns() {
     MatDestroy(&VA);
     MatDestroy(&VB);
     KSPDestroy(&kspColA);
+    KSPDestroy(&kspColB);
 
     delete m0;
     delete M1;
@@ -1528,6 +1539,7 @@ void PrimEqns::AssembleVertLaplacian(int ex, int ey, Mat A, double scale) {
     AssembleConst(ex, ey, B, scale);
 
     // construct the laplacian mixing operator
+    // TODO: preallocate these
     MatMatMult(B, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &BD);
     MatMatMult(V01, BD, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &L);
 
@@ -2250,4 +2262,152 @@ void PrimEqns::initTheta(Vec theta, ICfunc3D* func) {
     VecDestroy(&bl);
     VecDestroy(&bg);
     VecDestroy(&WQb);
+}
+
+void PrimEqns::solveMass(double dt, int ex, int ey, double scale, Mat AB, Vec wz, Vec fv, Vec rho) {
+    int ii, jj, kk, ei, n2, mp1, mp12;
+    int *inds0;
+    double det, wb, wt, wi, gamma;
+    int rows[99], cols[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQW2 = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar* wArray;
+    Mat B10, B10Ainv, OP;
+
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+    n2    = topo->elOrd*topo->elOrd;
+    mp1   = quad->n+1;
+    mp12  = mp1*mp1;
+
+    // 1. assemble the piecewise linear/constant matrix
+    MatZeroEntries(AB);
+    VecGetArray(wz, &wArray);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        Q->assemble(ex, ey);
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
+
+            // multiply by the vertical jacobian, then scale the piecewise constant
+            // basis by the vertical jacobian, so do nothing
+
+            // interpolate the vertical velocity at the quadrature point
+            wb = wt = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                if(kk > 0)            wb += wArray[(kk-1)*n2+jj]*gamma;
+                if(kk < geom->nk - 1) wt += wArray[(kk+0)*n2+jj]*gamma;
+            }
+            wi = 1.0*(wb + wt);   // quadrature weights are both 1.0
+            Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
+        }
+
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            cols[ii] = ii + kk*W->nDofsJ;
+        }
+        // assemble the first basis function
+        if(kk > 0) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                rows[ii] = ii + (kk-1)*W->nDofsJ;
+            }
+            MatSetValues(AB, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+        }
+        // assemble the second basis function
+        if(kk < geom->nk - 1) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                rows[ii] = ii + (kk+0)*W->nDofsJ;
+            }
+            MatSetValues(AB, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+        }
+    }
+    VecGetArray(wz, &wArray);
+    MatAssemblyBegin(AB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(AB, MAT_FINAL_ASSEMBLY);
+
+    // 2. assemble the piecewise linear/linear matrix inverse
+    MatZeroEntries(VA);
+
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        Q->assemble(ex, ey);
+
+        // lower element
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
+            // for linear field we multiply by the vertical jacobian determinant when
+            // integrating, and do no other trasformations for the basis functions
+            Q0[ii][ii] *= geom->thick[kk+0][inds0[ii]]/2.0;
+        }
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+        // upper element
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
+            // for linear field we multiply by the vertical jacobian determinant when
+            // integrating, and do no other trasformations for the basis functions
+            Q0[ii][ii] *= geom->thick[kk+1][inds0[ii]]/2.0;
+        }
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW2);
+
+        // add contributions
+        for(ii = 0; ii < n2; ii++) {
+            for(jj = 0; jj < n2; jj++) {
+                WtQW[ii][jj] += WtQW2[ii][jj];
+            }
+        }
+        // take the inverse
+        Inverse(WtQW, WtQWinv, n2);
+        // add to matrix
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(VA, W->nDofsJ, rows, W->nDofsJ, rows, WtQWflat, ADD_VALUES);
+    }
+    MatAssemblyBegin(VA, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(VA, MAT_FINAL_ASSEMBLY);
+
+    // 3. assemble the piecewise constant/constant mass matrix
+    AssembleConst(ex, ey, VB, scale);
+
+    MatMatMult(VB, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &B10);
+    MatMatMult(B10, VA, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &B10Ainv);
+    MatMatMult(B10Ainv, AB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &OP);
+
+    MatAXPY(VB, dt, OP, DIFFERENT_NONZERO_PATTERN);
+    KSPSolve(kspColB, fv, rho);
+
+    MatDestroy(&B10);
+    MatDestroy(&B10Ainv);
+    MatDestroy(&OP);
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQW2);
+    Free2D(W->nDofsJ, WtQWinv);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
 }
