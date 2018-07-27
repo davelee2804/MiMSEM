@@ -382,11 +382,17 @@ void PrimEqns_HEVI::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *kvArray;
-    WtQmat* WQ = new WtQmat(topo, geom, edge);
+    Vec* Kv2;
 
     n2   = topo->elOrd*topo->elOrd;
     mp1  = quad->n + 1;
     mp12 = mp1*mp1;
+
+    Kv2 = new Vec[topo->nElsX*topo->nElsX];
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &Kv2[ii]);
+        VecZeroEntries(Kv2[ii]);
+    }
 
     // assemble the horiztonal operators
     Kh_l = new Vec[geom->nk];
@@ -404,6 +410,15 @@ void PrimEqns_HEVI::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
         VecScatterEnd(topo->gtol_2, Kh[kk], Kh_l[kk], INSERT_VALUES, SCATTER_FORWARD);
     }
     VecDestroy(&velx_l);
+
+    // update the vertical vector with the horiztonal vector
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            VecZeroEntries(Kv[ei]);
+            HorizToVert2(ex, ey, Kh_l, Kv[ei]);
+        }
+    }
 
     // assemble the vertical operators
     MatCreate(MPI_COMM_SELF, &BA);
@@ -470,34 +485,27 @@ void PrimEqns_HEVI::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
             MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
             VecRestoreArray(velz[ei], &kvArray);
 
-            VecZeroEntries(Kv[ei]);
-            MatMult(BA, velz[ei], Kv[ei]);
+            VecZeroEntries(Kv2[ei]);
+            MatMult(BA, velz[ei], Kv2[ei]);
         }
     }
 
-//#ifdef ADD_WZ
     // add the vertical contribution to the horiztonal vector
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            VertToHoriz2(ex, ey, 0, geom->nk, Kv[ei], Kh_l);
+            VertToHoriz2(ex, ey, 0, geom->nk, Kv2[ei], Kh_l);
         }
     }
     for(kk = 0; kk < geom->nk; kk++) {
         VecScatterBegin(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
     }
-//#endif
 
-    // update the vertical vector with the horiztonal vector
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            ei = ey*topo->nElsX + ex;
-            VecZeroEntries(Kv[ei]);
-            HorizToVert2(ex, ey, Kh_l, Kv[ei]);
-        }
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecDestroy(&Kv2[ii]);
     }
-
+    delete[] Kv2;
     for(kk = 0; kk < geom->nk; kk++) {
         VecDestroy(&Kh_l[kk]);
     }
@@ -510,7 +518,6 @@ void PrimEqns_HEVI::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     delete[] WtQWflat;
     delete Q;
     delete W;
-    delete WQ;
 }
 
 /*
@@ -634,73 +641,55 @@ compute the continuity equation right hand side for all levels
 uh: horiztonal velocity by vertical level
 uv: vertical velocity by horiztonal element
 */
-void PrimEqns_HEVI::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
-    int kk;
+void PrimEqns_HEVI::massRHS(Vec* uh, Vec* pi, Vec* Fp) {
+    int ex, ey, ei, kk;
     double scale = 1.0e8;
-    Vec pl, pu, Dh, *Fpl;
+    Vec pl, pu, Fh, Dh, *Dh_l;
 
-    Fpl = new Vec[geom->nk];
+    Dh_l = new Vec[geom->nk];
     for(kk = 0; kk < geom->nk; kk++) {
-        VecCreateSeq(MPI_COMM_SELF, topo->n2, &Fpl[kk]);
-        VecZeroEntries(Fpl[kk]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &Dh_l[kk]);
+        VecZeroEntries(Dh_l[kk]);
     }
-
-#ifndef IMP_VERT
-    n2 = topo->elOrd*topo->elOrd;
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
-
-    // compute the vertical mass fluxes (piecewise linear in the vertical)
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            ei = ey*topo->nElsX + ex;
-            VecZeroEntries(Fv[ei]);
-
-            VertFlux(ex, ey, pi, VA, scale);
-            MatMult(VA, uv[ei], Mpu);
-            AssembleLinear(ex, ey, VA, scale);
-            KSPSolve(kspColA, Mpu, Fv[ei]);
-            // strong form vertical divergence
-            MatMult(V10, Fv[ei], Dv);
-
-            // copy the vertical contribution to the divergence into the
-            // horiztonal vectors
-            VertToHoriz2(ex, ey, 0, geom->nk, Dv, Fpl);
-        }
-    }
-    VecDestroy(&Mpu);
-    VecDestroy(&Dv);
-#endif
 
     // compute the horiztonal mass fluxes
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &pl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Dh);
 
     for(kk = 0; kk < geom->nk; kk++) {
-        VecZeroEntries(Fh[kk]);
         VecScatterBegin(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(topo->gtol_2, pi[kk], pl, INSERT_VALUES, SCATTER_FORWARD);
-
-        VecScatterBegin(topo->gtol_2, Fpl[kk], Fp[kk], INSERT_VALUES, SCATTER_REVERSE);
-        VecScatterEnd(topo->gtol_2, Fpl[kk], Fp[kk], INSERT_VALUES, SCATTER_REVERSE);
 
         // add the horiztonal fluxes
         F->assemble(pl, kk, true, scale);
         M1->assemble(kk, scale, true);
         MatMult(F->M, uh[kk], pu);
-        KSPSolve(ksp1, pu, Fh[kk]);
-        MatMult(EtoF->E21, Fh[kk], Dh);
-        VecAXPY(Fp[kk], 1.0, Dh);
+        KSPSolve(ksp1, pu, Fh);
+        MatMult(EtoF->E21, Fh, Dh);
+
+        VecScatterBegin(topo->gtol_2, Dh, Dh_l[kk], INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(topo->gtol_2, Dh, Dh_l[kk], INSERT_VALUES, SCATTER_REVERSE);
+    }
+
+    // add horiztonal fluxes to the vertical vectors
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            VecZeroEntries(Fp[ei]);
+            HorizToVert2(ex, ey, Dh_l, Fp[ei]);
+        }
     }
 
     VecDestroy(&pl);
     VecDestroy(&pu);
+    VecDestroy(&Fh);
     VecDestroy(&Dh);
     for(kk = 0; kk < geom->nk; kk++) {
-        VecDestroy(&Fpl[kk]);
+        VecDestroy(&Dh_l[kk]);
     }
-    delete[] Fpl;
+    delete[] Dh_l;
 }
 
 /*
@@ -1504,7 +1493,7 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *rt_h, *exner_h, bu, bw, wi;
     Vec *Hu2, *Vu2, *Fp2, *Ft2, *rt_i, *exner_i, exner_f;
-    Vec *Fh, *Fv, *Gh, *Gv, *theta_l, *exner_l, *rho_l, *rt_l;
+    Vec *theta_l, *exner_l, *rho_l, *rt_l;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -1519,10 +1508,6 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
     rt_i    = new Vec[geom->nk];
     exner_i = new Vec[geom->nk];
     velz_h  = new Vec[topo->nElsX*topo->nElsX];
-    Fh      = new Vec[geom->nk];
-    Gh      = new Vec[geom->nk];
-    Fv      = new Vec[topo->nElsX*topo->nElsX];
-    Gv      = new Vec[topo->nElsX*topo->nElsX];
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_h[kk] );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_h[kk]  );
@@ -1532,8 +1517,6 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
         // temporary vectors for use in exner pressure prognosis
         VecCopy(rt[kk]   , rt_i[kk]   );
         VecCopy(exner[kk], exner_i[kk]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh[kk]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Gh[kk]);
     }
     // create local vectors for assembling vertical rhs terms
     rho_l   = new Vec[geom->nk];
@@ -1563,8 +1546,6 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu2[ii]   );
         VecZeroEntries(Vu1[ii]);
         VecZeroEntries(Vu2[ii]);
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv[ii]);
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Gv[ii]);
     }
 
     // continuity and temperature equation rhs vectors
@@ -1602,8 +1583,8 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
         horizMomRHS(velx[kk], velz, theta_l, exner[kk], kk, scale, &Hu1[kk]);
     }
     vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
-    massRHS(velx, velz, rho, Fh, Fv, Fp1);
-    massRHS(velx, velz, rt,  Gh, Gv, Ft1);
+    massRHS(velx, rho, Fp1);
+    massRHS(velx, rt,  Ft1);
 
     // solve for the half step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1660,8 +1641,8 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
         horizMomRHS(velx_h[kk], velz_h, theta_l, exner_h[kk], kk, scale, &Hu2[kk]);
     }
     vertMomRHS(velx_h, velz_h, theta_l, exner_l, Vu2);
-    massRHS(velx_h, velz_h, rho_h, Fh, Fv, Fp2);
-    massRHS(velx_h, velz_h, rt_h,  Gh, Gv, Ft2);
+    massRHS(velx_h, rho_h, Fp2);
+    massRHS(velx_h, rt_h,  Ft2);
 
     // solve for the full step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1744,8 +1725,6 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
         VecDestroy(&exner_h[kk]);
         VecDestroy(&rt_i[kk]);
         VecDestroy(&exner_i[kk]);
-        VecDestroy(&Fh[kk]);
-        VecDestroy(&Gh[kk]);
         VecDestroy(&rho_l[kk]  );
         VecDestroy(&rt_l[kk]   );
         VecDestroy(&exner_l[kk]);
@@ -1757,8 +1736,6 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
         VecDestroy(&Vu1[ii]);
         VecDestroy(&Vu2[ii]);
         VecDestroy(&velz_h[ii]);
-        VecDestroy(&Fv[ii]);
-        VecDestroy(&Gv[ii]);
     }
     delete[] Hu1;
     delete[] Vu1;
@@ -1775,10 +1752,6 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
     delete[] rt_i;
     delete[] exner_i;
     delete[] velz_h;
-    delete[] Fh;
-    delete[] Gh;
-    delete[] Fv;
-    delete[] Gv;
     delete[] rho_l;
     delete[] rt_l;
     delete[] theta_l;
@@ -1792,7 +1765,7 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     double scale = 1.0e8;
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, bw, wi;
-    Vec *rt_i, *exner_i, exner_f, *Fh, *Fv, *Gh, *Gv, *rho_l, *rt_l, *theta_l, *exner_l;
+    Vec *rt_i, *exner_i, exner_f, *rho_l, *rt_l, *theta_l, *exner_l;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -1803,10 +1776,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     Hu1     = new Vec[geom->nk];
     rt_i    = new Vec[geom->nk];
     exner_i = new Vec[geom->nk];
-    Fh      = new Vec[geom->nk];
-    Gh      = new Vec[geom->nk];
-    Fv      = new Vec[topo->nElsX*topo->nElsX];
-    Gv      = new Vec[topo->nElsX*topo->nElsX];
     rho_l   = new Vec[geom->nk];
     rt_l    = new Vec[geom->nk];
     theta_l = new Vec[geom->nk+1];
@@ -1817,8 +1786,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
         // temporary vectors for use in exner pressure prognosis
         VecCopy(rt[kk]   , rt_i[kk]   );
         VecCopy(exner[kk], exner_i[kk]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh[kk]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Gh[kk]);
 
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &rho_l[kk]  );
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &rt_l[kk]   );
@@ -1837,8 +1804,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     Vu1 = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu1[ii]);
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv[ii]);
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Gv[ii]);
         VecZeroEntries(Vu1[ii]);
     }
 
@@ -1866,10 +1831,8 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     // construct the right hand side terms for the first substep
     // note: do horiztonal rhs first as this assembles the kinetic energy
     // operator for use in the vertical rhs
-#ifdef ADD_IE
     if(!rank)cout<<"\tdiagnosing theta..........."<<endl;
     diagTheta(rho_l, rt_l, theta_l);
-#endif
     if(!rank)cout<<"\thorizontal momentum rhs...."<<endl;
     for(kk = 0; kk < geom->nk; kk++) {
         horizMomRHS(velx[kk], velz, theta_l, exner[kk], kk, scale, &Hu1[kk]);
@@ -1877,11 +1840,9 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     if(!rank)cout<<"\tvertical momentum rhs......"<<endl;
     vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
     if(!rank)cout<<"\tcontinuity eqn rhs........."<<endl;
-    massRHS(velx, velz, rho, Fh, Fv, Fp1);
-#ifdef ADD_IE
+    massRHS(velx, rho, Fp1);
     if(!rank)cout<<"\tenergy eqn rhs............."<<endl;
-    massRHS(velx, velz, rt,  Gh, Gv, Ft1);
-#endif
+    massRHS(velx, rt,  Ft1);
 
     // solve for the half step values
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1956,8 +1917,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
         VecDestroy(&Ft1[kk]);
         VecDestroy(&rt_i[kk]);
         VecDestroy(&exner_i[kk]);
-        VecDestroy(&Fh[kk]);
-        VecDestroy(&Gh[kk]);
         VecDestroy(&rho_l[kk]  );
         VecDestroy(&rt_l[kk]   );
         VecDestroy(&exner_l[kk]);
@@ -1967,8 +1926,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     }
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&Vu1[ii]);
-        VecDestroy(&Fv[ii]);
-        VecDestroy(&Gv[ii]);
     }
     delete[] Hu1;
     delete[] Vu1;
@@ -1976,10 +1933,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     delete[] Ft1;
     delete[] rt_i;
     delete[] exner_i;
-    delete[] Fh;
-    delete[] Gh;
-    delete[] Fv;
-    delete[] Gv;
     delete[] rho_l;
     delete[] rt_l;
     delete[] theta_l;
