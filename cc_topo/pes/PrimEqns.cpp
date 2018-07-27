@@ -2411,3 +2411,115 @@ void PrimEqns::solveMass(double dt, int ex, int ey, double scale, Mat AB, Vec wz
     delete Q;
     delete W;
 }
+
+void PrimEqns::solveMom(double dt, int ex, int ey, double scale, Mat BA, Vec wz, Vec fv) {
+    int ii, jj, kk, ei, mp1, mp12, n2, it = 0;
+    int rows[99], cols[99];
+    double det, wb, wt, wi, gamma, eps = 1.0e+9;
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar* zArray;
+    Vec wz_f, dw;
+    Mat DBA = NULL;
+
+    ei    = ey*topo->nElsX + ex;
+    n2    = topo->elOrd*topo->elOrd;
+    mp1   = quad->n+1;
+    mp12  = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wz_f);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &dw);
+
+    Q->assemble(ex, ey);
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    do {
+        // assemble the matrix
+        MatZeroEntries(BA);
+        VecGetArray(wz, &zArray);
+
+        // Assemble the matrices
+        for(kk = 0; kk < geom->nk; kk++) {
+            // build the 2D mass matrix
+
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
+
+                // multiply by the vertical jacobian, then scale the piecewise constant
+                // basis by the vertical jacobian, so do nothing
+
+                // interpolate the vertical velocity at the quadrature point
+                wb = wt = 0.0;
+                for(jj = 0; jj < n2; jj++) {
+                    gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                    if(kk > 0)            wb += zArray[(kk-1)*n2+jj]*gamma;
+                    if(kk < geom->nk - 1) wt += zArray[(kk+0)*n2+jj]*gamma;
+                }
+                wi = 0.5*(wb + wt);   // quadrature weights are both 1.0, however ke is 0.5*w^2
+                Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
+            }
+
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                rows[ii] = ii + kk*W->nDofsJ;
+            }
+
+            // assemble the first basis function
+            if(kk > 0) {
+                for(ii = 0; ii < W->nDofsJ; ii++) {
+                    cols[ii] = ii + (kk-1)*W->nDofsJ;
+                }
+                MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+            }
+
+            // assemble the second basis function
+            if(kk < geom->nk - 1) {
+                for(ii = 0; ii < W->nDofsJ; ii++) {
+                    cols[ii] = ii + (kk+0)*W->nDofsJ;
+                }
+                MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+            }
+        }
+        MatAssemblyBegin(BA, MAT_FINAL_ASSEMBLY);
+        MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
+        VecRestoreArray(wz, &zArray);
+
+        AssembleLinear(ex, ey, VA, scale);
+        AssembleVertLaplacian(ex, ey, VA, scale);
+        if(!DBA) {
+            MatMatMult(V01, BA, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DBA);
+        } else {
+            MatMatMult(V01, BA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DBA);
+        }
+        MatAXPY(VA, dt, DBA, DIFFERENT_NONZERO_PATTERN);
+        KSPSolve(kspColA, fv, wz_f);
+
+        VecCopy(wz_f, dw);
+        VecAXPY(dw, -1.0, wz);
+        VecNorm(dw, NORM_2, &eps);
+        VecCopy(wz_f, wz);
+    } while(it < 100 && fabs(eps) > 1.0-8);
+
+    VecDestroy(&wz_f);
+    VecDestroy(&dw);
+    MatDestroy(&DBA);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQWinv);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}

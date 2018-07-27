@@ -72,4 +72,5 @@ class PrimEqns {
         void init2(Vec* p, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
         void solveMass(double dt, int ex, int ey, double scale, Mat AB, Vec wz, Vec fv, Vec rho);
+        void solveMom(double dt, int ex, int ey, double scale, Mat BA, Vec wz, Vec fv);
 };
