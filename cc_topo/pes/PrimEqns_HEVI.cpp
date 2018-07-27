@@ -30,7 +30,6 @@ using namespace std;
 
 #define ADD_IE
 #define ADD_GZ
-#define ADD_WZ
 #define IMP_VERT
 
 PrimEqns_HEVI::PrimEqns_HEVI(Topo* _topo, Geom* _geom, double _dt) {
@@ -155,7 +154,7 @@ PrimEqns_HEVI::PrimEqns_HEVI(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetType(kspColB, KSPGMRES);
     KSPGetPC(kspColB, &pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, n2, NULL);//TODO??
+    PCBJacobiSetTotalBlocks(pc, n2, NULL); // TODO: check allocation
     KSPSetOptionsPrefix(kspColB, "kspColB_");
     KSPSetFromOptions(kspColB);
 
@@ -476,7 +475,7 @@ void PrimEqns_HEVI::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
         }
     }
 
-#ifdef ADD_WZ
+//#ifdef ADD_WZ
     // add the vertical contribution to the horiztonal vector
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -488,7 +487,7 @@ void PrimEqns_HEVI::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
         VecScatterBegin(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
     }
-#endif
+//#endif
 
     // update the vertical vector with the horiztonal vector
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -636,9 +635,9 @@ uh: horiztonal velocity by vertical level
 uv: vertical velocity by horiztonal element
 */
 void PrimEqns_HEVI::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp) {
-    int kk, ex, ey, ei, n2;
+    int kk;
     double scale = 1.0e8;
-    Vec Mpu, Dv, pl, pu, Dh, *Fpl;
+    Vec pl, pu, Dh, *Fpl;
 
     Fpl = new Vec[geom->nk];
     for(kk = 0; kk < geom->nk; kk++) {
@@ -646,9 +645,8 @@ void PrimEqns_HEVI::massRHS(Vec* uh, Vec* uv, Vec* pi, Vec* Fh, Vec* Fv, Vec* Fp
         VecZeroEntries(Fpl[kk]);
     }
 
+#ifndef IMP_VERT
     n2 = topo->elOrd*topo->elOrd;
-
-#ifdef ADD_WZ
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
 
@@ -2226,7 +2224,7 @@ void PrimEqns_HEVI::solveMass(double dt, int ex, int ey, double scale, Mat AB, V
     double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar* wArray;
-    Mat B10, B10Ainv, OP;
+    Mat DAinv, OP;
 
     ei    = ey*topo->nElsX + ex;
     inds0 = topo->elInds0_l(ex, ey);
@@ -2335,18 +2333,14 @@ void PrimEqns_HEVI::solveMass(double dt, int ex, int ey, double scale, Mat AB, V
     MatAssemblyBegin(VA, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(VA, MAT_FINAL_ASSEMBLY);
 
-    // 3. assemble the piecewise constant/constant mass matrix
-    AssembleConst(ex, ey, VB, scale);
-
-    MatMatMult(VB, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &B10);
-    MatMatMult(B10, VA, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &B10Ainv);
-    MatMatMult(B10Ainv, AB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &OP);
-
-    MatAXPY(VB, dt, OP, DIFFERENT_NONZERO_PATTERN);
+    MatMatMult(V10, VA, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DAinv);
+    MatMatMult(DAinv, AB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &OP);
+    MatScale(OP, dt);
+    MatShift(OP, 1.0);
+    MatCopy(OP, VB, SAME_NONZERO_PATTERN);
     KSPSolve(kspColB, fv, rho);
 
-    MatDestroy(&B10);
-    MatDestroy(&B10Ainv);
+    MatDestroy(&DAinv);
     MatDestroy(&OP);
     Free2D(Q->nDofsI, Q0);
     Free2D(W->nDofsJ, Wt);
