@@ -1494,6 +1494,7 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
     Vec *Hu1, *Vu1, *Fp1, *Ft1, *velx_h, *velz_h, *rho_h, *rt_h, *exner_h, bu, bw, wi;
     Vec *Hu2, *Vu2, *Fp2, *Ft2, *rt_i, *exner_i, exner_f;
     Vec *theta_l, *exner_l, *rho_l, *rt_l;
+    Mat AB, BA;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -1563,6 +1564,16 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
         VecZeroEntries(Fp2[kk]);
         VecZeroEntries(Ft2[kk]);
     }
+
+    MatCreate(MPI_COMM_SELF, &AB);
+    MatSetType(AB, MATSEQAIJ);
+    MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
+    MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &BA);
+    MatSetType(BA, MATSEQAIJ);
+    MatSetSizes(BA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(BA, 2*n2, PETSC_NULL);
 
     // assemble the vertical and horiztonal kinetic energy vectors
     AssembleKEVecs(velx, velz, scale);
@@ -1758,19 +1769,23 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
     delete[] exner_l;
     VecDestroy(&bw);
     VecDestroy(&bu);
+    MatDestroy(&AB);
+    MatDestroy(&BA);
 }
 
 void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int ii, kk, ex, ey, n2, rank;
     double scale = 1.0e8;
     char fieldname[100];
-    Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, bw, wi;
+    Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, bw, wi, rho_z;
     Vec *rt_i, *exner_i, exner_f, *rho_l, *rt_l, *theta_l, *exner_l;
+    Mat AB, BA;
 
     n2 = topo->elOrd*topo->elOrd;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &rho_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &bw);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
     Hu1     = new Vec[geom->nk];
@@ -1801,21 +1816,28 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     VecScatterBegin(topo->gtol_2, theta_t, theta_l[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, theta_t, theta_l[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
 
+    // rhs vectors
     Vu1 = new Vec[topo->nElsX*topo->nElsX];
+    Fp1 = new Vec[topo->nElsX*topo->nElsX];
+    Ft1 = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Vu1[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Fp1[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Ft1[ii]);
         VecZeroEntries(Vu1[ii]);
+        VecZeroEntries(Fp1[ii]);
+        VecZeroEntries(Ft1[ii]);
     }
 
-    // continuity and temperature equation rhs vectors
-    Fp1 = new Vec[geom->nk];
-    Ft1 = new Vec[geom->nk];
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Fp1[kk]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ft1[kk]);
-        VecZeroEntries(Fp1[kk]);
-        VecZeroEntries(Ft1[kk]);
-    }
+    MatCreate(MPI_COMM_SELF, &AB);
+    MatSetType(AB, MATSEQAIJ);
+    MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
+    MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &BA);
+    MatSetType(BA, MATSEQAIJ);
+    MatSetSizes(BA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(BA, 2*n2, PETSC_NULL);
 
     // assemble the vertical and horiztonal kinetic energy vectors
     AssembleKEVecs(velx, velz, scale);
@@ -1844,30 +1866,16 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     if(!rank)cout<<"\tenergy eqn rhs............."<<endl;
     massRHS(velx, rt,  Ft1);
 
-    // solve for the half step values
+    // solve for the horiztonal velocity
+    if(!rank)cout<<"\thorizontal momentum solve.."<<endl;
     for(kk = 0; kk < geom->nk; kk++) {
         // horizontal momentum
         M1->assemble(kk, scale, true);
         VecZeroEntries(bu);
         MatMult(M1->M, velx[kk], bu);
         VecAXPY(bu, -dt, Hu1[kk]);
-        if(!rank)cout<<"\thorizontal momentum solve.."<<endl;
         VecZeroEntries(velx[kk]);
         KSPSolve(ksp1, bu, velx[kk]);
-
-        // density
-        VecAXPY(rho[kk], -dt, Fp1[kk]);
-
-#ifdef ADD_IE
-        // potential temperature
-        VecAXPY(rt[kk], -dt, Ft1[kk]);
-
-        // exner pressure
-        if(!rank)cout<<"\texner pressure solve......."<<endl;
-        progExner(rt_i[kk], rt[kk], Ft1[kk], exner[kk], &exner_f, kk);
-        VecCopy(exner_f, exner[kk]);
-        VecDestroy(&exner_f);
-#endif
     }
 
     // solve for the vertical velocity
@@ -1875,14 +1883,43 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
-
-            VecZeroEntries(bw);
-            AssembleLinear(ex, ey, VA, scale);
-            MatMult(VA, velz[ii], bw);
-            VecAXPY(bw, -dt, Vu1[ii]);
-            AssembleVertLaplacian(ex, ey, VA, scale);
-            KSPSolve(kspColA, bw, velz[ii]);
+            solveMom(dt, ex, ey, scale, BA, velz[ii], Vu1[ii]);
         }
+    }
+
+    // solve the continuity and energy equations
+    if(!rank)cout<<"\tmass and temperature solve."<<endl;
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ii = ey*topo->nElsX + ex;
+
+            // update the density
+            HorizToVert2(ex, ey, rho_l, rho_z);
+            solveMass(dt, ex, ey, scale, AB, velz[ii], Fp1[ii], rho_z);
+            VertToHoriz2(ex, ey, 0, geom->nk, rho_z, rho_l);
+
+            // update the density weighted potential temperature
+            HorizToVert2(ex, ey, rt_l,  rho_z);
+            solveMass(dt, ex, ey, scale, AB, velz[ii], Ft1[ii], rho_z);
+            VertToHoriz2(ex, ey, 0, geom->nk, rho_z, rt_l );
+        }
+    }
+
+    // scatter the density and the density weighted potential temperature back
+    // to the global vectors
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecScatterBegin(topo->gtol_2, rho_l[kk], rho[kk], INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(  topo->gtol_2, rho_l[kk], rho[kk], INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterBegin(topo->gtol_2, rt_l[kk],  rt[kk],  INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(  topo->gtol_2, rt_l[kk],  rt[kk],  INSERT_VALUES, SCATTER_REVERSE);
+    }
+
+    // exner pressure
+    if(!rank)cout<<"\texner pressure solve......."<<endl;
+    for(kk = 0; kk < geom->nk; kk++) {
+        progExner(rt_i[kk], rt[kk], Ft1[kk], exner[kk], &exner_f, kk);
+        VecCopy(exner_f, exner[kk]);
+        VecDestroy(&exner_f);
     }
 
     // write output
@@ -1913,8 +1950,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     // deallocate
     for(kk = 0; kk < geom->nk; kk++) {
         VecDestroy(&Hu1[kk]);
-        VecDestroy(&Fp1[kk]);
-        VecDestroy(&Ft1[kk]);
         VecDestroy(&rt_i[kk]);
         VecDestroy(&exner_i[kk]);
         VecDestroy(&rho_l[kk]  );
@@ -1926,6 +1961,8 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     }
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&Vu1[ii]);
+        VecDestroy(&Fp1[ii]);
+        VecDestroy(&Ft1[ii]);
     }
     delete[] Hu1;
     delete[] Vu1;
@@ -1937,8 +1974,11 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     delete[] rt_l;
     delete[] theta_l;
     delete[] exner_l;
+    VecDestroy(&rho_z);
     VecDestroy(&bw);
     VecDestroy(&bu);
+    MatDestroy(&AB);
+    MatDestroy(&BA);
 }
 
 void PrimEqns_HEVI::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph) {
@@ -2291,6 +2331,7 @@ void PrimEqns_HEVI::solveMass(double dt, int ex, int ey, double scale, Mat AB, V
     MatScale(OP, dt);
     MatShift(OP, 1.0);
     MatCopy(OP, VB, SAME_NONZERO_PATTERN);
+    VecAYPX(fv, -dt, rho);
     KSPSolve(kspColB, fv, rho);
 
     MatDestroy(&DAinv);
@@ -2307,9 +2348,9 @@ void PrimEqns_HEVI::solveMass(double dt, int ex, int ey, double scale, Mat AB, V
 }
 
 void PrimEqns_HEVI::solveMom(double dt, int ex, int ey, double scale, Mat BA, Vec wz, Vec fv) {
-    int ii, jj, kk, ei, mp1, mp12, n2, it = 0;
+    int ii, jj, kk, ei, mp1, mp12, n2, it = 0, rank;
     int rows[99], cols[99];
-    double det, wb, wt, wi, gamma, eps = 1.0e+9;
+    double det, wb, wt, wi, gamma, eps = 1.0e+9, l2_dif, l2_old;
     Wii* Q = new Wii(node->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(edge);
     double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
@@ -2322,11 +2363,14 @@ void PrimEqns_HEVI::solveMom(double dt, int ex, int ey, double scale, Mat BA, Ve
     Vec wz_f, dw;
     Mat DBA = NULL;
 
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
     ei    = ey*topo->nElsX + ex;
     n2    = topo->elOrd*topo->elOrd;
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
 
+    VecAYPX(fv, -dt, wz);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wz_f);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &dw);
 
@@ -2400,9 +2444,16 @@ void PrimEqns_HEVI::solveMom(double dt, int ex, int ey, double scale, Mat BA, Ve
 
         VecCopy(wz_f, dw);
         VecAXPY(dw, -1.0, wz);
-        VecNorm(dw, NORM_2, &eps);
+        VecNorm(dw, NORM_2, &l2_dif);
+        VecNorm(wz, NORM_2, &l2_old);
+        eps = fabs(l2_dif/l2_old);
         VecCopy(wz_f, wz);
-    } while(it < 100 && fabs(eps) > 1.0-8);
+
+    if(!rank) cout << "vert mom, it: " << it << "\teps: " << eps << endl;
+        it++;
+    } while(it < 100 && eps > 1.0e-12);
+
+    if(!rank) cout << "vert mom, it: " << it << "\teps: " << eps << endl;
 
     VecDestroy(&wz_f);
     VecDestroy(&dw);
