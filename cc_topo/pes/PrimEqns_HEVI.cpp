@@ -1778,7 +1778,7 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     double scale = 1.0e8;
     char fieldname[100];
     Vec *Hu1, *Vu1, *Fp1, *Ft1, bu, bw, wi, rho_z;
-    Vec *rt_i, *exner_i, exner_f, *rho_l, *rt_l, *theta_l, *exner_l;
+    Vec *rt_i, *exner_i, exner_f, *rho_l, *rt_l, *theta_l, *exner_l, *Fth;
     Mat AB, BA;
 
     n2 = topo->elOrd*topo->elOrd;
@@ -1795,12 +1795,15 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     rt_l    = new Vec[geom->nk];
     theta_l = new Vec[geom->nk+1];
     exner_l = new Vec[geom->nk];
+    Fth     = new Vec[geom->nk];
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt_i[kk]   );
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner_i[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Fth[kk]    );
         // temporary vectors for use in exner pressure prognosis
         VecCopy(rt[kk]   , rt_i[kk]   );
         VecCopy(exner[kk], exner_i[kk]);
+        VecZeroEntries(Fth[kk]);
 
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &rho_l[kk]  );
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &rt_l[kk]   );
@@ -1916,8 +1919,14 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
 
     // exner pressure
     if(!rank)cout<<"\texner pressure solve......."<<endl;
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ii = ey*topo->nElsX + ex;
+            VertToHoriz2(ex, ey, 0, geom->nk, Ft1[ii], Fth);
+        }
+    }
     for(kk = 0; kk < geom->nk; kk++) {
-        progExner(rt_i[kk], rt[kk], Ft1[kk], exner[kk], &exner_f, kk);
+        progExner(rt_i[kk], rt[kk], Fth[kk], exner[kk], &exner_f, kk);
         VecCopy(exner_f, exner[kk]);
         VecDestroy(&exner_f);
     }
@@ -1949,12 +1958,13 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
 
     // deallocate
     for(kk = 0; kk < geom->nk; kk++) {
-        VecDestroy(&Hu1[kk]);
-        VecDestroy(&rt_i[kk]);
+        VecDestroy(&Hu1[kk]    );
+        VecDestroy(&rt_i[kk]   );
         VecDestroy(&exner_i[kk]);
         VecDestroy(&rho_l[kk]  );
         VecDestroy(&rt_l[kk]   );
         VecDestroy(&exner_l[kk]);
+        VecDestroy(&Fth[kk]    );
     }
     for(kk = 0; kk < geom->nk + 1; kk++) {
         VecDestroy(&theta_l[kk]);
@@ -1974,6 +1984,7 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     delete[] rt_l;
     delete[] theta_l;
     delete[] exner_l;
+    delete[] Fth;
     VecDestroy(&rho_z);
     VecDestroy(&bw);
     VecDestroy(&bu);
