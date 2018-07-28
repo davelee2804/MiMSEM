@@ -2217,7 +2217,7 @@ void PrimEqns_HEVI::solveMass(double dt, int ex, int ey, double scale, Mat AB, V
     double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar* wArray;
-    Mat DAinv, OP;
+    Mat DAinv;
 
     ei    = ey*topo->nElsX + ex;
     inds0 = topo->elInds0_l(ex, ey);
@@ -2315,7 +2315,7 @@ void PrimEqns_HEVI::solveMass(double dt, int ex, int ey, double scale, Mat AB, V
             }
         }
         // take the inverse
-        Inverse(WtQW, WtQWinv, n2);
+        Inv(WtQW, WtQWinv, n2);
         // add to matrix
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
         for(ii = 0; ii < W->nDofsJ; ii++) {
@@ -2327,15 +2327,13 @@ void PrimEqns_HEVI::solveMass(double dt, int ex, int ey, double scale, Mat AB, V
     MatAssemblyEnd(VA, MAT_FINAL_ASSEMBLY);
 
     MatMatMult(V10, VA, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DAinv);
-    MatMatMult(DAinv, AB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &OP);
-    MatScale(OP, dt);
-    MatShift(OP, 1.0);
-    MatCopy(OP, VB, SAME_NONZERO_PATTERN);
+    MatMatMult(DAinv, AB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VB);
+    MatScale(VB, dt);
+    MatShift(VB, 1.0);
     VecAYPX(fv, -dt, rho);
     KSPSolve(kspColB, fv, rho);
 
     MatDestroy(&DAinv);
-    MatDestroy(&OP);
     Free2D(Q->nDofsI, Q0);
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
@@ -2449,7 +2447,6 @@ void PrimEqns_HEVI::solveMom(double dt, int ex, int ey, double scale, Mat BA, Ve
         eps = fabs(l2_dif/l2_old);
         VecCopy(wz_f, wz);
 
-    if(!rank) cout << "vert mom, it: " << it << "\teps: " << eps << endl;
         it++;
     } while(it < 100 && eps > 1.0e-12);
 
