@@ -494,7 +494,7 @@ void PrimEqns_HEVI::AssembleKEVecs(Vec* velx, Vec* velz, double scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            VertToHoriz2(ex, ey, 0, geom->nk, Kv2[ei], Kh_l);
+            VertToHoriz2(ex, ey, 0, geom->nk, Kv2[ei], Kh_l, false);
         }
     }
     for(kk = 0; kk < geom->nk; kk++) {
@@ -851,7 +851,7 @@ void PrimEqns_HEVI::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
 
             AssembleLinearWithRho(ex, ey, rho, VA, scale);
             KSPSolve(kspColA, frt, theta_v);
-            VertToHoriz2(ex, ey, 1, geom->nk, theta_v, theta);
+            VertToHoriz2(ex, ey, 1, geom->nk, theta_v, theta, false);
         }
     }
 
@@ -1897,14 +1897,16 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
             ii = ey*topo->nElsX + ex;
 
             // update the density
+            VecZeroEntries(rho_z);
             HorizToVert2(ex, ey, rho_l, rho_z);
             solveMass(dt, ex, ey, scale, AB, velz[ii], Fp1[ii], rho_z);
-            VertToHoriz2(ex, ey, 0, geom->nk, rho_z, rho_l);
+            VertToHoriz2(ex, ey, 0, geom->nk, rho_z, rho_l, true);
 
             // update the density weighted potential temperature
+            VecZeroEntries(rho_z);
             HorizToVert2(ex, ey, rt_l,  rho_z);
             solveMass(dt, ex, ey, scale, AB, velz[ii], Ft1[ii], rho_z);
-            VertToHoriz2(ex, ey, 0, geom->nk, rho_z, rt_l );
+            VertToHoriz2(ex, ey, 0, geom->nk, rho_z, rt_l , true);
         }
     }
 
@@ -1922,7 +1924,7 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ii = ey*topo->nElsX + ex;
-            VertToHoriz2(ex, ey, 0, geom->nk, Ft1[ii], Fth);
+            VertToHoriz2(ex, ey, 0, geom->nk, Ft1[ii], Fth, false);
         }
     }
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1992,7 +1994,7 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     MatDestroy(&BA);
 }
 
-void PrimEqns_HEVI::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph) {
+void PrimEqns_HEVI::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph, bool assign) {
     int ii, kk, n2;
     int* inds2 = topo->elInds2_l(ex, ey);
     PetscScalar *hArray, *vArray;
@@ -2003,7 +2005,12 @@ void PrimEqns_HEVI::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph
     for(kk = ki; kk < kf; kk++) {
         VecGetArray(ph[kk], &hArray);
         for(ii = 0; ii < n2; ii++) {
-            hArray[inds2[ii]] += vArray[(kk-ki)*n2+ii];
+            if(assign) {
+                hArray[inds2[ii]]  = vArray[(kk-ki)*n2+ii];
+            }
+            else {
+                hArray[inds2[ii]] += vArray[(kk-ki)*n2+ii];
+            }
         }
         VecRestoreArray(ph[kk], &hArray);
     }
@@ -2224,7 +2231,6 @@ void PrimEqns_HEVI::solveMass(double dt, int ex, int ey, double scale, Mat AB, V
     double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
     double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQW2 = Alloc2D(W->nDofsJ, W->nDofsJ);
     double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar* wArray;
@@ -2295,36 +2301,17 @@ void PrimEqns_HEVI::solveMass(double dt, int ex, int ey, double scale, Mat AB, V
     for(kk = 0; kk < geom->nk-1; kk++) {
         Q->assemble(ex, ey);
 
-        // lower element
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
             Q0[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
             // for linear field we multiply by the vertical jacobian determinant when
             // integrating, and do no other trasformations for the basis functions
-            Q0[ii][ii] *= geom->thick[kk+0][inds0[ii]]/2.0;
+            Q0[ii][ii] *= (geom->thick[kk+0][inds0[ii]]/2.0 + geom->thick[kk+1][inds0[ii]]/2.0);
         }
         Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
-        // upper element
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Q0[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
-            // for linear field we multiply by the vertical jacobian determinant when
-            // integrating, and do no other trasformations for the basis functions
-            Q0[ii][ii] *= geom->thick[kk+1][inds0[ii]]/2.0;
-        }
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW2);
-
-        // add contributions
-        for(ii = 0; ii < n2; ii++) {
-            for(jj = 0; jj < n2; jj++) {
-                WtQW[ii][jj] += WtQW2[ii][jj];
-            }
-        }
         // take the inverse
         Inv(WtQW, WtQWinv, n2);
         // add to matrix
@@ -2349,7 +2336,6 @@ void PrimEqns_HEVI::solveMass(double dt, int ex, int ey, double scale, Mat AB, V
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
-    Free2D(W->nDofsJ, WtQW2);
     Free2D(W->nDofsJ, WtQWinv);
     delete[] WtQWflat;
     delete Q;

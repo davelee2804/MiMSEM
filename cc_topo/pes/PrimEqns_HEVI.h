@@ -63,7 +63,7 @@ class PrimEqns_HEVI {
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
         void progExner(Vec rt_i, Vec rt_f, Vec DG, Vec exner_i, Vec* exner_f, int lev);
         void AssembleKEVecs(Vec* velx, Vec* velz, double scale);
-        void VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph);
+        void VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph, bool assign);
         void HorizToVert2(int ex, int ey, Vec* ph, Vec pv);
         void SolveEuler(Vec* velx, Vec* velw, Vec* rho, Vec* theta, Vec* exner, bool save);
         void SolveRK2(Vec* velx, Vec* velw, Vec* rho, Vec* theta, Vec* exner, bool save);
