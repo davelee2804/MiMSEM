@@ -24,7 +24,7 @@ using namespace std;
 #define P0 100000.0
 #define U0 35.0
 #define T0 288.0
-#define RD 287.04
+#define RD 287.0
 #define DELTA_T 480000.0
 #define GAMMA 0.005
 #define ETA_T 0.2
@@ -46,22 +46,30 @@ using namespace std;
 #define VP 1.0
 #define D0 (RAD_EARTH/6.0)
 
-double torr_1(double* x, int ki) {
-    double A   = 1.0/GAMMA;
-    double B   = (TE - TP)/(TE + TP)/TP;
+double torr_1(double r) {
+    double A    = 1.0/GAMMA;
+    double B    = (TE - TP)/(TE + TP)/TP;
+    double H    = RD*T0/GRAVITY;
+    double b    = 2.0;
+    double fac  = (r - RAD_EARTH)/(b*H);
+    double fac2 = fac*fac;
     
-    return 1.0/T0 + B;
+    return (A*GAMMA/T0)*exp(GAMMA*(r - RAD_EARTH)/T0) + B*(1.0 - 2.0*fac2)*exp(-fac2);
 }
 
-double torr_1(double* x, int ki) {
-    double C   = 0.5*(KP + 2.0)*(TE + TP)/TE/TP;
+double torr_1(double r) {
+    double C    = 0.5*(KP + 2.0)*(TE + TP)/TE/TP;
+    double H    = RD*T0/GRAVITY;
+    double b    = 2.0;
+    double fac  = (r - RAD_EARTH)/(b*H);
+    double fac2 = fac*fac;
     
-    return C;
+    return C*(1.0 - 2.0*fac2)*exp(-fac2);
 }
 
-double temp_init(double* x, int ki) {
-    double torr1 = torr_1(x, ki);
-    double torr2 = torr_2(x, ki);
+double temp_init(double* x, double r) {
+    double torr1 = torr_1(r);
+    double torr2 = torr_2(r);
     double phi   = asin(x[2]/RAD_EARTH);
     double cp    = cos(phi);
     double cpk   = pow(cp, KP);
@@ -69,6 +77,30 @@ double temp_init(double* x, int ki) {
     double Tinv  = torr1 - torr2*(cpk - KP*cpkp2/(KP + 2.0));
 
     return 1.0/Tinv;
+}
+
+double pres(double* x, double r) {
+    int    i;
+    int    nr         = 100;
+    double phi        = asin(x[2]/RAD_EARTH);
+    double dr         = (r - RAD_SPHERE)/nr;
+    double int_torr_1 = 0.0;
+    double int_torr_2 = 0.0;
+    double ri         = RAD_EARTH + 0.5*dr;
+    double cp         = cos(phi);
+    double cpk        = pow(cp, KP);
+    double cpkp2      = pow(cp, KP+2.0);
+    double fac        = cpk - (KP/(KP+2.0))*cpkp2;
+
+    for(i = 0; i < nr; i++) {
+        int_torr_1 += torr_1(ri)*dr;
+        int_torr_2 += torr_2(ri)*dr;
+        ri += dr;
+    }
+    int_torr_1 *=     GRAVIRY/RD;
+    int_torr_2 *= fac*GRAVITY/RD;
+
+    return P0*exp(int_torr_2 - int_torr_1);
 }
 
 double z_at_level(int ki) {
