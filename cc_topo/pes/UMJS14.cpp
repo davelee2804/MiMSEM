@@ -67,6 +67,27 @@ double torr_1(double r) {
     return C*(1.0 - 2.0*fac2)*exp(-fac2);
 }
 
+double int_torr_1(double r) {
+    double A    = 1.0/GAMMA;
+    double B    = (TE - TP)/(TE + TP)/TP;
+    double H    = RD*T0/GRAVITY;
+    double b    = 2.0;
+    double fac  = (r - RAD_EARTH)/(b*H);
+    double fac2 = fac*fac;
+
+    return A*(exp(GAMMA*(r - RAD_EARTH)/T0) - 1.0) + B*(r - RAD_EARTH)*exp(-fac2);
+}
+
+double int_torr_2(double r) {
+    double C    = 0.5*(KP + 2.0)*(TE + TP)/TE/TP;
+    double H    = RD*T0/GRAVITY;
+    double b    = 2.0;
+    double fac  = (r - RAD_EARTH)/(b*H);
+    double fac2 = fac*fac;
+
+    return C*(r - RAD_EARTH)*exp(-fac2);
+}
+
 double temp_init(double* x, double r) {
     double torr1 = torr_1(r);
     double torr2 = torr_2(r);
@@ -80,6 +101,15 @@ double temp_init(double* x, double r) {
 }
 
 double pres(double* x, double r) {
+    double it1   = int_torr_1(r);
+    double it2   = int_torr_2(r);
+    double cp    = cos(phi);
+    double cpk   = pow(cp, KP);
+    double cpkp2 = pow(cp, KP+2.0);
+    double fac   = cpk - (KP/(KP+2.0))*cpkp2;
+
+    return P0*exp(-GRAVITY*it1/RD + GRAVITY*it2*fac/RD);
+/*
     int    i;
     int    nr         = 100;
     double phi        = asin(x[2]/RAD_EARTH);
@@ -101,6 +131,19 @@ double pres(double* x, double r) {
     int_torr_2 *= fac*GRAVITY/RD;
 
     return P0*exp(int_torr_2 - int_torr_1);
+*/
+}
+
+double u_mean(double* x, double r) {
+    double phi   = asin(x[2]/RAD_EARTH);
+    double cp    = cos(phi);
+    double cpm1  = pow(cp, KP-1.0);
+    double cpp1  = pow(cp, KP+1.0);
+    double it2   = int_torr_2(r);
+    double temp  = temp_init(x, r);
+    double U     = (GRAVITY*KP/RAD_EARTH)*it2*(cpm1 + cpp1)*temp;
+
+    return -OMEGA*RAD_EARTH*cp + sqrt(OMEGA*OMEGA*RAD_EARTH*RAD_EARTH*cp*cp + RAD_EARTH*cp*U);
 }
 
 double z_at_level(int ki) {
