@@ -14,16 +14,13 @@
 #include "ElMats.h"
 #include "Assembly.h"
 #include "SWEqn.h"
-#include "PrimEqns.h"
+#include "PrimEqns_HEVI.h"
 
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define RAD_SPHERE 6371220.0
 #define NK 30
 #define P0 100000.0
-#define U0 35.0
-#define T0 288.0
 #define RD 287.0
 #define DELTA_T 480000.0
 #define GAMMA 0.005
@@ -36,7 +33,7 @@ using namespace std;
 #define KAPPA (RD/CP) // TODO: check this!
 #define TE 310.0
 #define TP 240.0
-#define TO (0.5*(TE + TP))
+#define T0 (0.5*(TE + TP))
 #define KP 3.0
 #define GAMMA 0.005
 #define ZT 15000.0
@@ -48,7 +45,7 @@ using namespace std;
 
 double torr_1(double r) {
     double A    = 1.0/GAMMA;
-    double B    = (TE - TP)/(TE + TP)/TP;
+    double B    = (TE - TP)/((TE + TP)*TP);
     double H    = RD*T0/GRAVITY;
     double b    = 2.0;
     double fac  = (r - RAD_EARTH)/(b*H);
@@ -58,7 +55,7 @@ double torr_1(double r) {
 }
 
 double torr_2(double r) {
-    double C    = 0.5*(KP + 2.0)*(TE + TP)/TE/TP;
+    double C    = 0.5*(KP + 2.0)*(TE - TP)/(TE*TP);
     double H    = RD*T0/GRAVITY;
     double b    = 2.0;
     double fac  = (r - RAD_EARTH)/(b*H);
@@ -69,7 +66,7 @@ double torr_2(double r) {
 
 double int_torr_1(double r) {
     double A    = 1.0/GAMMA;
-    double B    = (TE - TP)/(TE + TP)/TP;
+    double B    = (TE - TP)/((TE + TP)*TP);
     double H    = RD*T0/GRAVITY;
     double b    = 2.0;
     double fac  = (r - RAD_EARTH)/(b*H);
@@ -79,7 +76,7 @@ double int_torr_1(double r) {
 }
 
 double int_torr_2(double r) {
-    double C    = 0.5*(KP + 2.0)*(TE + TP)/TE/TP;
+    double C    = 0.5*(KP + 2.0)*(TE - TP)/(TE*TP);
     double H    = RD*T0/GRAVITY;
     double b    = 2.0;
     double fac  = (r - RAD_EARTH)/(b*H);
@@ -114,7 +111,7 @@ double pres(double* x, double r) {
     int    i;
     int    nr         = 100;
     double phi        = asin(x[2]/RAD_EARTH);
-    double dr         = (r - RAD_SPHERE)/nr;
+    double dr         = (r - RAD_EARTH)/nr;
     double int_torr_1 = 0.0;
     double int_torr_2 = 0.0;
     double ri         = RAD_EARTH + 0.5*dr;
@@ -290,7 +287,7 @@ int main(int argc, char** argv) {
     ofstream file;
     Topo* topo;
     Geom* geom;
-    PrimEqns* pe;
+    PrimEqns_HEVI* pe;
     Vec *velx, *velz, *rho, *rt, *exner;
     PetscViewer viewer;
 
@@ -305,7 +302,7 @@ int main(int argc, char** argv) {
     geom = new Geom(rank, topo, NK);
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
-    pe   = new PrimEqns(topo, geom, dt);
+    pe   = new PrimEqns_HEVI(topo, geom, dt);
     pe->step = startStep;
 
     n2 = topo->nElsX*topo->nElsX;
