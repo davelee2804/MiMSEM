@@ -55,13 +55,13 @@ class PrimEqns_HEVI {
         void AssembleConstWithTheta(int ex, int ey, Vec* theta, Mat A, double scale);
         void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, double scale);
         void AssembleVertLaplacian(int ex, int ey, Mat M0, double scale);
-        void VertFlux(int ex, int ey, Vec* pi, Mat Mp, double scale);    // vertical mass flux matrix
+        void VertFlux(int ex, int ey, Vec pi, Mat Mp, double scale);    // vertical mass flux matrix
         void massRHS(Vec* uh, Vec* pi, Vec* Fp);
         void vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec *fw);
         void horizMomRHS(Vec ui, Vec* wi, Vec* theta, Vec exner, int lev, double scale, Vec *Fu);
         void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta, double scale);
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
-        void progExner(Vec rt_i, Vec rt_f, Vec DG, Vec exner_i, Vec* exner_f, int lev);
+        void progExner(Vec rt_i, Vec rt_f, Vec DivH, Vec DivV, Vec exner_i, Vec* exner_f, int lev);
         void AssembleKEVecs(Vec* velx, Vec* velz, double scale);
         void VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph, bool assign);
         void HorizToVert2(int ex, int ey, Vec* ph, Vec pv);

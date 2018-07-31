@@ -1456,7 +1456,7 @@ derive the vertical mass flux
 TODO: only need a single piecewise constant field, may be either rho or rho X theta
 */
 void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp, double scale) {
-    int ii, kk, ei, mp1, mp12;
+    int ii, kk, ei, mp1, mp12, *inds0;
     double det, rho;
     int inds2k[99];
     Wii* Q = new Wii(node->q, geom);
@@ -1468,9 +1468,10 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp, double scale) {
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *pArray;
 
-    ei   = ey*topo->nElsX + ex;
-    mp1  = quad->n + 1;
-    mp12 = mp1*mp1;
+    ei    = ey*topo->nElsX + ex;
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+    inds0 = topo->elInds0_l(ex, ey);
 
     // build the 2D mass matrix
     Q->assemble(ex, ey);
@@ -1486,7 +1487,8 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp, double scale) {
             Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
 
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &rho);
-            Q0[ii][ii] *= rho;
+            //Q0[ii][ii] *= rho;
+            Q0[ii][ii] *= rho*(2.0/geom->thick[kk][inds0[ii]]);
 
             // multiply by the vertical determinant for the vertical integral,
             // then divide by the vertical determinant to rescale the piecewise
