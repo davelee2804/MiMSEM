@@ -19,13 +19,10 @@
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define NK 30
+#define NK 10
 #define P0 100000.0
 #define RD 287.0
-#define DELTA_T 480000.0
 #define GAMMA 0.005
-#define ETA_T 0.2
-#define ETA_0 0.252
 #define GRAVITY 9.80616
 #define OMEGA 7.29212e-5
 #define CP 1004.5
@@ -92,7 +89,8 @@ double temp(double* x, double r) {
     double cp    = cos(phi);
     double cpk   = pow(cp, KP);
     double cpkp2 = pow(cp, KP+2.0);
-    double Tinv  = torr1 - torr2*(cpk - KP*cpkp2/(KP + 2.0));
+    double fac   = cpk - (KP/(KP+2.0))*cpkp2;
+    double Tinv  = torr1 - torr2*fac;
 
     return 1.0/Tinv;
 }
@@ -139,7 +137,7 @@ double u_mean(double* x, double r) {
     double cpp1  = pow(cp, KP+1.0);
     double it2   = int_torr_2(r);
     double T     = temp(x, r);
-    double U     = (GRAVITY*KP/RAD_EARTH)*it2*(cpm1 + cpp1)*T;
+    double U     = (GRAVITY*KP/RAD_EARTH)*it2*(cpm1 - cpp1)*T;
 
     return -OMEGA*RAD_EARTH*cp + sqrt(OMEGA*OMEGA*RAD_EARTH*RAD_EARTH*cp*cp + RAD_EARTH*cp*U);
 }
