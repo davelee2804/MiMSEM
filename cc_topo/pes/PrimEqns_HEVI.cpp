@@ -31,7 +31,6 @@ using namespace std;
 
 #define ADD_IE
 #define ADD_GZ
-#define ADD_VERT_EXNER_FLUX
 
 PrimEqns_HEVI::PrimEqns_HEVI(Topo* _topo, Geom* _geom, double _dt) {
     int ii, n2;
@@ -1855,12 +1854,11 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
         VecZeroEntries(Ft1[ii]);
     }
 
-//#ifdef ADD_VERT_EXNER_FLUX
+    // vertical flux vectors for the exner solve
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &pi);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv);
-//#endif
 
     MatCreate(MPI_COMM_SELF, &AB);
     MatSetType(AB, MATSEQAIJ);
@@ -1950,8 +1948,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     }
 
     // exner pressure
-    // TODO: Fth should include both vertical and horizontal components 
-    //       of the density weighted potential temperature divergence
     if(!rank)cout<<"\texner pressure solve......."<<endl;
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -1960,7 +1956,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
 
             // add the vertical component of the density weighted potential
             // temperature divergence
-//#ifdef ADD_VERT_EXNER_FLUX
             // compute the vertical mass fluxes (piecewise linear in the vertical)
             VecZeroEntries(Fv);
             VecZeroEntries(pi);
@@ -1974,7 +1969,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
             // copy the vertical contribution to the divergence into the
             // horiztonal vectors
             VertToHoriz2(ex, ey, 0, geom->nk, Dv, Ftv, false);
-//#endif
         }
     }
     for(kk = 0; kk < geom->nk; kk++) {
@@ -2009,12 +2003,10 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     }
 
     // deallocate
-//#ifdef ADD_VERT_EXNER_FLUX
     VecDestroy(&Mpu);
     VecDestroy(&Dv);
     VecDestroy(&pi);
     VecDestroy(&Fv);
-//#endif
 
     for(kk = 0; kk < geom->nk; kk++) {
         VecDestroy(&Hu1[kk]    );
@@ -2116,12 +2108,11 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
         VecZeroEntries(Ft1[ii]);
     }
 
-#ifdef ADD_VERT_EXNER_FLUX
+    // vertical flux vectors for the exner solve
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Mpu);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Dv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &pi);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fv);
-#endif
 
     MatCreate(MPI_COMM_SELF, &AB);
     MatSetType(AB, MATSEQAIJ);
@@ -2205,7 +2196,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
 
             // add the vertical component of the density weighted potential
             // temperature divergence
-#ifdef ADD_VERT_EXNER_FLUX
             // compute the vertical mass fluxes (piecewise linear in the vertical)
             VecZeroEntries(Fv);
             VecZeroEntries(pi);
@@ -2219,7 +2209,6 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
             // copy the vertical contribution to the divergence into the
             // horiztonal vectors
             VertToHoriz2(ex, ey, 0, geom->nk, Dv, Ftv, false);
-#endif
         }
     }
     for(kk = 0; kk < geom->nk; kk++) {
@@ -2227,6 +2216,14 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
         VecCopy(exner_f, exner[kk]);
         VecDestroy(&exner_f);
     }
+
+    // NEW
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecScatterBegin(topo->gtol_2, exner[kk], exner_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, exner[kk], exner_l[kk], INSERT_VALUES, SCATTER_FORWARD);
+    }
+    diagTheta(rho_l, rt_l, theta_l);
+    //
 
     // solve for the vertical velocity
     if(!rank)cout<<"\tvertical momentum rhs......"<<endl;
@@ -2265,12 +2262,10 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     }
 
     // deallocate
-#ifdef ADD_VERT_EXNER_FLUX
     VecDestroy(&Mpu);
     VecDestroy(&Dv);
     VecDestroy(&pi);
     VecDestroy(&Fv);
-#endif
 
     for(kk = 0; kk < geom->nk; kk++) {
         VecDestroy(&Hu1[kk]    );
@@ -2715,6 +2710,7 @@ void PrimEqns_HEVI::solveMom(double dt, int ex, int ey, double scale, Mat BA, Ve
         for(kk = 0; kk < geom->nk; kk++) {
             // build the 2D mass matrix
 
+/*
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
@@ -2752,6 +2748,61 @@ void PrimEqns_HEVI::solveMom(double dt, int ex, int ey, double scale, Mat BA, Ve
             // assemble the second basis function
             if(kk < geom->nk - 1) {
                 for(ii = 0; ii < W->nDofsJ; ii++) {
+                    cols[ii] = ii + (kk+0)*W->nDofsJ;
+                }
+                MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+            }
+*/
+            if(kk > 0) {
+                for(ii = 0; ii < mp12; ii++) {
+                    det = geom->det[ei][ii];
+                    Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
+
+                    // multiply by the vertical jacobian, then scale the piecewise constant
+                    // basis by the vertical jacobian, so do nothing
+
+                    // interpolate the vertical velocity at the quadrature point
+                    wb = 0.0;
+                    for(jj = 0; jj < n2; jj++) {
+                        gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                        wb += zArray[(kk-1)*n2+jj]*gamma;
+                    }
+                    Q0[ii][ii] *= 0.5*wb/det;
+                }
+
+                Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+                Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+                Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+                for(ii = 0; ii < W->nDofsJ; ii++) {
+                    rows[ii] = ii + (kk+0)*W->nDofsJ;
+                    cols[ii] = ii + (kk-1)*W->nDofsJ;
+                }
+                MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+            }
+
+            if(kk < geom->nk - 1) {
+                for(ii = 0; ii < mp12; ii++) {
+                    det = geom->det[ei][ii];
+                    Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
+
+                    // multiply by the vertical jacobian, then scale the piecewise constant
+                    // basis by the vertical jacobian, so do nothing
+
+                    // interpolate the vertical velocity at the quadrature point
+                    wt = 0.0;
+                    for(jj = 0; jj < n2; jj++) {
+                        gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                        wt += zArray[(kk+0)*n2+jj]*gamma;
+                    }
+                    Q0[ii][ii] *= 0.5*wt/det;
+                }
+
+                Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+                Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+                Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+                for(ii = 0; ii < W->nDofsJ; ii++) {
+                    rows[ii] = ii + (kk+0)*W->nDofsJ;
                     cols[ii] = ii + (kk+0)*W->nDofsJ;
                 }
                 MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
