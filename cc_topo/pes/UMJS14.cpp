@@ -14,7 +14,7 @@
 #include "ElMats.h"
 #include "Assembly.h"
 #include "SWEqn.h"
-#include "PrimEqns_HEVI.h"
+#include "PrimEqns.h"
 
 using namespace std;
 
@@ -105,29 +105,6 @@ double pres(double* x, double r) {
     double fac   = cpk - (KP/(KP+2.0))*cpkp2;
 
     return P0*exp(-GRAVITY*it1/RD + GRAVITY*it2*fac/RD);
-/*
-    int    i;
-    int    nr         = 100;
-    double phi        = asin(x[2]/RAD_EARTH);
-    double dr         = (r - RAD_EARTH)/nr;
-    double int_torr_1 = 0.0;
-    double int_torr_2 = 0.0;
-    double ri         = RAD_EARTH + 0.5*dr;
-    double cp         = cos(phi);
-    double cpk        = pow(cp, KP);
-    double cpkp2      = pow(cp, KP+2.0);
-    double fac        = cpk - (KP/(KP+2.0))*cpkp2;
-
-    for(i = 0; i < nr; i++) {
-        int_torr_1 += torr_1(ri)*dr;
-        int_torr_2 += torr_2(ri)*dr;
-        ri += dr;
-    }
-    int_torr_1 *=     GRAVIRY/RD;
-    int_torr_2 *= fac*GRAVITY/RD;
-
-    return P0*exp(int_torr_2 - int_torr_1);
-*/
 }
 
 double u_mean(double* x, double r) {
@@ -285,7 +262,7 @@ int main(int argc, char** argv) {
     ofstream file;
     Topo* topo;
     Geom* geom;
-    PrimEqns_HEVI* pe;
+    PrimEqns* pe;
     Vec *velx, *velz, *rho, *rt, *exner;
     PetscViewer viewer;
 
@@ -300,7 +277,7 @@ int main(int argc, char** argv) {
     geom = new Geom(rank, topo, NK);
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
-    pe   = new PrimEqns_HEVI(topo, geom, dt);
+    pe   = new PrimEqns(topo, geom, dt);
     pe->step = startStep;
 
     n2 = topo->nElsX*topo->nElsX;

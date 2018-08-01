@@ -173,7 +173,7 @@ class Whmat {
         Geom* geom;
         LagrangeEdge* e;
         Mat M;
-        void assemble(Vec rho, int lev, bool vert_const, double scale);
+        void assemble(Vec rho, int lev, double scale);
 };
 
 /*class UtQWmat {

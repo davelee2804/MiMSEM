@@ -22,8 +22,10 @@
 #define GRAVITY 9.80616
 #define OMEGA 7.29212e-5
 #define RD 287.0
-#define CP 1005.7
+#define CP 1004.5
+#define GAMMA (RD/CP)
 #define CV (CP/1.4)
+#define P0 100000.0
 
 using namespace std;
 
@@ -73,7 +75,6 @@ PrimEqns_HEVI::PrimEqns_HEVI(Topo* _topo, Geom* _geom, double _dt) {
     K = new WtQUmat(topo, geom, node, edge);
 
     // potential temperature projection operator
-    //T = new UtQWmat(topo, geom, node, edge);
     T = new Whmat(topo, geom, edge);
 
     // coriolis vector (projected onto 0 forms)
@@ -865,7 +866,7 @@ void PrimEqns_HEVI::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
 prognose the exner pressure
 reference: Gassman QJRMS 2013
 */
-void PrimEqns_HEVI::progExner(Vec rt_i, Vec rt_f, Vec DivH, Vec DivV, Vec exner_i, Vec* exner_f, int lev) {
+void PrimEqns_HEVI::progExner(Vec rt_i, Vec DivH, Vec DivV, Vec exner_i, Vec* exner_f, int lev) {
     double scale = 1.0e8;
     Vec rt_l, rhs, dG_l, rt_sum;
     PC pc;
@@ -894,20 +895,23 @@ void PrimEqns_HEVI::progExner(Vec rt_i, Vec rt_f, Vec DivH, Vec DivV, Vec exner_
     VecScatterBegin(topo->gtol_2, DivH, dG_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, DivH, dG_l, INSERT_VALUES, SCATTER_FORWARD);
 
-    // TODO: check the constant factor here against eqn (5) from notes
-    VecAXPY(rt_l, -dt*RD/CP, dG_l);
+    //VecAXPY(rt_l, -dt*RD/CP, dG_l);
+    VecAXPY(rt_l, -dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)), dG_l);
 
-    T->assemble(rt_l, lev, true, scale);
+    T->assemble(rt_l, lev, scale);
     MatMult(T->M, exner_i, rhs);
 
     // assemble the nonlinear operator
-    VecCopy(rt_f, rt_sum);
+    // NOTE: density weighted potential temperature from the previous time level is
+    //       also used on the left hand side
+    VecCopy(rt_i, rt_sum);
     if(DivV) { // add the vertical component of the divergence
-        VecAXPY(rt_sum, 1.0, DivV);
+        //VecAXPY(rt_sum, dt*RD/CP, DivV);
+        VecAXPY(rt_sum, dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)), DivV);
     }
     VecScatterBegin(topo->gtol_2, rt_sum, rt_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, rt_sum, rt_l, INSERT_VALUES, SCATTER_FORWARD);
-    T->assemble(rt_l, lev, true, scale);
+    T->assemble(rt_l, lev, scale);
 
     KSPSolve(kspE, rhs, *exner_f);
 
@@ -1631,7 +1635,7 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
         VecAXPY(rt_h[kk], -dt, Ft1[kk]);
 
         // exner pressure
-        progExner(rt_i[kk], rt_h[kk], Ft1[kk], NULL, exner[kk], &exner_h[kk], kk);
+        progExner(rt_i[kk], Ft1[kk], NULL, exner[kk], &exner_h[kk], kk);
     }
 
     // solve for the vertical velocity
@@ -1691,7 +1695,7 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
         // exner pressure (second order)
         VecScale(Ft1[kk], 0.5);
         VecAXPY(Ft1[kk], 0.5, Ft2[kk]);
-        progExner(rt_i[kk], rt[kk], Ft1[kk], NULL, exner_i[kk], &exner_f, kk);
+        progExner(rt_i[kk], Ft1[kk], NULL, exner_i[kk], &exner_f, kk);
         VecCopy(exner_f, exner[kk]);
         VecDestroy(&exner_f);
     }
@@ -1974,7 +1978,7 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
         }
     }
     for(kk = 0; kk < geom->nk; kk++) {
-        progExner(rt_i[kk], rt[kk], Fth[kk], Ftv[kk], exner[kk], &exner_f, kk);
+        progExner(rt_i[kk], Fth[kk], Ftv[kk], exner[kk], &exner_f, kk);
         VecCopy(exner_f, exner[kk]);
         VecDestroy(&exner_f);
     }
@@ -2219,7 +2223,7 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
         }
     }
     for(kk = 0; kk < geom->nk; kk++) {
-        progExner(rt_i[kk], rt[kk], Fth[kk], Ftv[kk], exner[kk], &exner_f, kk);
+        progExner(rt_i[kk], Fth[kk], Ftv[kk], exner[kk], &exner_f, kk);
         VecCopy(exner_f, exner[kk]);
         VecDestroy(&exner_f);
     }
