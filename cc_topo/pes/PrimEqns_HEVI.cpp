@@ -14,6 +14,7 @@
 #include "Basis.h"
 #include "Topo.h"
 #include "Geom.h"
+#include "L2Vecs.h"
 #include "ElMats.h"
 #include "Assembly.h"
 #include "PrimEqns_HEVI.h"
@@ -524,7 +525,7 @@ compute the right hand side for the momentum equation for a given level
 note that the vertical velocity, uv, is stored as a different vector for 
 each element
 */
-void PrimEqns_HEVI::horizMomRHS(Vec uh, Vec* uv, Vec* theta_l, Vec exner, int lev, double scale, Vec *Fu) {
+void PrimEqns_HEVI::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, double scale, Vec *Fu) {
     Vec wl, wi, Ru, Ku, Mh, d2u, d4u, theta_k, dExner, dp;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
@@ -1608,7 +1609,7 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
     }
     diagTheta(rho_l, rt_l, theta_l);
     for(kk = 0; kk < geom->nk; kk++) {
-        horizMomRHS(velx[kk], velz, theta_l, exner[kk], kk, scale, &Hu1[kk]);
+        horizMomRHS(velx[kk], theta_l, exner[kk], kk, scale, &Hu1[kk]);
     }
     vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
     massRHS(velx, rho, Fp1);
@@ -1666,7 +1667,7 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
     }
     diagTheta(rho_l, rt_l, theta_l);
     for(kk = 0; kk < geom->nk; kk++) {
-        horizMomRHS(velx_h[kk], velz_h, theta_l, exner_h[kk], kk, scale, &Hu2[kk]);
+        horizMomRHS(velx_h[kk], theta_l, exner_h[kk], kk, scale, &Hu2[kk]);
     }
     vertMomRHS(velx_h, velz_h, theta_l, exner_l, Vu2);
     massRHS(velx_h, rho_h, Fp2);
@@ -1888,7 +1889,7 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     diagTheta(rho_l, rt_l, theta_l);
     if(!rank)cout<<"\thorizontal momentum rhs...."<<endl;
     for(kk = 0; kk < geom->nk; kk++) {
-        horizMomRHS(velx[kk], velz, theta_l, exner[kk], kk, scale, &Hu1[kk]);
+        horizMomRHS(velx[kk], theta_l, exner[kk], kk, scale, &Hu1[kk]);
     }
     if(!rank)cout<<"\tvertical momentum rhs......"<<endl;
     vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
@@ -2143,7 +2144,7 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     if(!rank)cout<<"\thorizontal momentum rhs...."<<endl;
     // solve for the horiztonal velocity
     for(kk = 0; kk < geom->nk; kk++) {
-        horizMomRHS(velx[kk], velz, theta_l, exner[kk], kk, scale, &Hu1[kk]);
+        horizMomRHS(velx[kk], theta_l, exner[kk], kk, scale, &Hu1[kk]);
         M1->assemble(kk, scale, true);
         VecZeroEntries(bu);
         MatMult(M1->M, velx[kk], bu);
@@ -2674,7 +2675,7 @@ void PrimEqns_HEVI::solveMass(double dt, int ex, int ey, double scale, Mat AB, V
 void PrimEqns_HEVI::solveMom(double dt, int ex, int ey, double scale, Mat BA, Vec wz, Vec fv) {
     int ii, jj, kk, ei, mp1, mp12, n2, it = 0, rank;
     int rows[99], cols[99];
-    double det, wb, wt, wi, gamma, eps = 1.0e+9, l2_dif, l2_old;
+    double det, wb, wt, gamma, eps = 1.0e+9, l2_dif, l2_old;
     Wii* Q = new Wii(node->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(edge);
     double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
