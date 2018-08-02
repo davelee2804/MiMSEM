@@ -74,6 +74,6 @@ class PrimEqns_HEVI2 {
         void solveMass(double dt, int ex, int ey, Mat AB, Vec wz, Vec fv, Vec rho);
         void solveMom(double dt, int ex, int ey, Mat BA, Vec wz, Vec fv);
         void HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, Vec* Fu, Vec* Fp, Vec* Ft);
-        void SolveExner_h(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f);
+        void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double stepSize);
         void SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 };

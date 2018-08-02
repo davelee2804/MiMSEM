@@ -1490,9 +1490,6 @@ void PrimEqns_HEVI2::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner,
     VecScatterBegin(topo->gtol_2, theta_t, theta[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, theta_t, theta[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
 
-    rho->UpdateLocal();
-    rt->UpdateLocal();
-
     diagTheta(rho->vl, rt->vl, theta);
 
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1508,7 +1505,7 @@ void PrimEqns_HEVI2::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner,
 }
 
 // rt is a local vector
-void PrimEqns_HEVI2::SolveExner_h(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f) {
+void PrimEqns_HEVI2::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double stepSize) {
     int ii;
     Vec rt_sum, rhs;
 
@@ -1519,7 +1516,7 @@ void PrimEqns_HEVI2::SolveExner_h(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f) 
         VecScatterBegin(topo->gtol_2, Ft[ii], rt_sum, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(topo->gtol_2,   Ft[ii], rt_sum, INSERT_VALUES, SCATTER_FORWARD);
 
-        VecScale(rt_sum, -dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)));
+        VecScale(rt_sum, -stepSize*dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)));
         VecAXPY(rt_sum, 1.0, rt[ii]);
         T->assemble(rt_sum, ii, SCALE);
         MatMult(T->M, exner_i[ii], rhs);
@@ -1531,23 +1528,23 @@ void PrimEqns_HEVI2::SolveExner_h(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f) 
     VecDestroy(&rhs);
 }
 
-//void PrimEqns_HEVI2::SolveExner_v() {
-//}
-
 void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int     ii;
-    Vec     bu;
+    Vec     bu, xu;
     Vec*    Fu       = new Vec[geom->nk];
     Vec*    Fp       = new Vec[geom->nk];
     Vec*    Ft       = new Vec[geom->nk];
     Vec*    velx_i   = new Vec[geom->nk];
     Vec*    rho_i    = new Vec[geom->nk];
     Vec*    rt_i     = new Vec[geom->nk];
+    Vec*    exner_i  = new Vec[geom->nk];
+    Vec*    exner_j  = new Vec[geom->nk];
     L2Vecs* l2_rho   = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* l2_rt    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* l2_exner = new L2Vecs(geom->nk, topo, geom);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &xu);
     for(ii = 0; ii < geom->nk; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fu[ii]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Fp[ii]);
@@ -1555,6 +1552,8 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_i[ii]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_i[ii]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt_i[ii]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner_i[ii]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner_j[ii]);
     }
 
     l2_rho->CopyFromHoriz(rho);
@@ -1564,7 +1563,11 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     // 1.  half step in the vertical
 
     // 2.  full step in the horiztonal (SSRK3)
+
     // 2.1 first horiztonal substep
+    l2_rho->UpdateLocal();
+    l2_rt->UpdateLocal();
+
     HorizRHS(velx, l2_rho, l2_rt, l2_exner, Fu, Fp, Ft);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
@@ -1581,6 +1584,45 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
         VecCopy(rt[ii], rt_i[ii]);
         VecAXPY(rt_i[ii], -dt, Ft[ii]);
     }
+    SolveExner(l2_rt->vl, Ft, exner, exner_i, 1.0);
+
+    // 2.1 second horiztonal substep
+    l2_rho->CopyFromHoriz(rho_i);
+    l2_rt->CopyFromHoriz(rt_i);
+    l2_exner->CopyFromHoriz(exner_i);
+
+    l2_rho->UpdateLocal();
+    l2_rt->UpdateLocal();
+
+    HorizRHS(velx_i, l2_rho, l2_rt, l2_exner, Fu, Fp, Ft);
+    for(ii = 0; ii < geom->nk; ii++) {
+        // momentum
+        VecZeroEntries(xu);
+        VecAXPY(xu, 0.75, velx[ii]);
+        VecAXPY(xu, 0.25, velx_i[ii]);
+        M1->assemble(ii, SCALE, true);
+        MatMult(M1->M, xu, bu);
+        VecAXPY(bu, -0.25*dt, Fu[ii]);
+        KSPSolve(ksp1, bu, velx_i[ii]);
+
+        // continuity
+        VecScale(rho_i[ii], 0.25);
+        VecAXPY(rho_i[ii], 0.75, rho[ii]);
+        VecAXPY(rho_i[ii], -0.25*dt, Fp[ii]);
+        
+        // internal energy
+        VecScale(rt_i[ii], 0.25);
+        VecAXPY(rt_i[ii], 0.75, rt[ii]);
+        VecAXPY(rt_i[ii], -0.25*dt, Ft[ii]);
+    }
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecZeroEntries(exner_j[ii]);
+        VecAXPY(exner_j[ii], 0.75, exner[ii]);
+        VecAXPY(exner_j[ii], 0.25, exner_i[ii]);
+    }
+    SolveExner(l2_rt->vl, Ft, exner_j, exner_i, 0.25);
+
+    // 2.2 third horiztonal substep
 
     // 3.  half step in the vertical
 
@@ -1588,6 +1630,7 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     delete l2_rt;
     delete l2_exner;
     VecDestroy(&bu);
+    VecDestroy(&xu);
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&Fu[ii]);
         VecDestroy(&Fp[ii]);
@@ -1595,6 +1638,8 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
         VecDestroy(&velx_i[ii]);
         VecDestroy(&rho_i[ii]);
         VecDestroy(&rt_i[ii]);
+        VecDestroy(&exner_i[ii]);
+        VecDestroy(&exner_j[ii]);
     }
     delete[] Fu;
     delete[] Fp;
@@ -1602,6 +1647,8 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     delete[] velx_i;
     delete[] rho_i;
     delete[] rt_i;
+    delete[] exner_i;
+    delete[] exner_j;
 }
 
 void PrimEqns_HEVI2::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph, bool assign) {
