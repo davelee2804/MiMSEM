@@ -38,6 +38,7 @@ class PrimEqns_HEVI2 {
         Mat VB;
         KSP ksp1;
         KSP ksp2;
+        KSP kspE;
         KSP kspColA;
         KSP kspColB;
         double viscosity();
@@ -56,7 +57,8 @@ class PrimEqns_HEVI2 {
         void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
         void AssembleVertLaplacian(int ex, int ey, Mat M0);
         void VertFlux(int ex, int ey, Vec pi, Mat Mp);  // vertical mass flux matrix
-        void massRHS(Vec* uh, Vec* pi, Vec* Fp);
+        void massRHS_h(Vec* uh, Vec* pi, Vec* Fp);
+        void massRHS_v(Vec* uv, Vec* pi, Vec* Fp);
         void vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec *fw);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu);
         void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta);
@@ -71,6 +73,7 @@ class PrimEqns_HEVI2 {
         void initTheta(Vec theta, ICfunc3D* func);
         void solveMass(double dt, int ex, int ey, Mat AB, Vec wz, Vec fv, Vec rho);
         void solveMom(double dt, int ex, int ey, Mat BA, Vec wz, Vec fv);
-        void HorizRHS(Vec* velx, L2Vecs* velz, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, Vec* Fu, Vec* Fp, Vec* Ft);
+        void HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, Vec* Fu, Vec* Fp, Vec* Ft);
+        void SolveExner_h(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f);
         void SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 };
