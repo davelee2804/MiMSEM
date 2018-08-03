@@ -582,7 +582,8 @@ void PrimEqns_HEVI2::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec F
     VecDestroy(&theta_k);
 }
 
-void PrimEqns_HEVI2::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
+// theta and exner are local vectors and fw is a vertical vector
+void PrimEqns_HEVI2::vertMomRHS(Vec* theta, Vec* exner, Vec* fw) {
     int ex, ey, ei, n2;
     Vec exner_v, de1, de2, de3, dp;
 
@@ -851,50 +852,6 @@ void PrimEqns_HEVI2::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     VecDestroy(&theta_v);
     MatDestroy(&A);
     MatDestroy(&AB);
-}
-
-/*
-prognose the exner pressure
-reference: Gassman QJRMS 2013
-*/
-void PrimEqns_HEVI2::progExner(Vec rt_i, Vec DivH, Vec DivV, Vec exner_i, Vec* exner_f, int lev) {
-    Vec rt_l, rhs, dG_l, rt_sum;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rt_l);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &dG_l);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt_sum);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, exner_f);
-
-    // assemble the right hand side
-    VecScatterBegin(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, rt_i, rt_l, INSERT_VALUES, SCATTER_FORWARD);
-
-    VecScatterBegin(topo->gtol_2, DivH, dG_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, DivH, dG_l, INSERT_VALUES, SCATTER_FORWARD);
-
-    VecAXPY(rt_l, -dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)), dG_l);
-
-    T->assemble(rt_l, lev, SCALE);
-    MatMult(T->M, exner_i, rhs);
-
-    // assemble the nonlinear operator
-    // NOTE: density weighted potential temperature from the previous time level is
-    //       also used on the left hand side
-    VecCopy(rt_i, rt_sum);
-    if(DivV) { // add the vertical component of the divergence
-        VecAXPY(rt_sum, dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)), DivV);
-    }
-    VecScatterBegin(topo->gtol_2, rt_sum, rt_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, rt_sum, rt_l, INSERT_VALUES, SCATTER_FORWARD);
-    T->assemble(rt_l, lev, SCALE);
-
-    KSPSolve(kspE, rhs, *exner_f);
-
-    VecDestroy(&rt_l);
-    VecDestroy(&dG_l);
-    VecDestroy(&rhs);
-    VecDestroy(&rt_sum);
 }
 
 /*
@@ -1504,8 +1461,8 @@ void PrimEqns_HEVI2::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner,
     delete[] theta;
 }
 
-// rt is a local vector
-void PrimEqns_HEVI2::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double stepSize) {
+// rt and Ft and local vectors
+void PrimEqns_HEVI2::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt) {
     int ii;
     Vec rt_sum, rhs;
 
@@ -1513,10 +1470,8 @@ void PrimEqns_HEVI2::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, do
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs);
 
     for(ii = 0; ii < geom->nk; ii++) {
-        VecScatterBegin(topo->gtol_2, Ft[ii], rt_sum, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(topo->gtol_2,   Ft[ii], rt_sum, INSERT_VALUES, SCATTER_FORWARD);
-
-        VecScale(rt_sum, -stepSize*dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)));
+        VecCopy(Ft[ii], rt_sum);
+        VecScale(rt_sum, -_dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)));
         VecAXPY(rt_sum, 1.0, rt[ii]);
         T->assemble(rt_sum, ii, SCALE);
         MatMult(T->M, exner_i[ii], rhs);
@@ -1528,47 +1483,160 @@ void PrimEqns_HEVI2::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, do
     VecDestroy(&rhs);
 }
 
+// density, density weighted potential temperature and exner are local vectors and velz is a vertical vector
+void PrimEqns_HEVI2::SolveVertMom(Vec* rho, Vec* rt, Vec* exner, Vec* velz, double _dt) {
+    int  ii, ex, ey;
+    int  n2     = topo->elOrd*topo->elOrd;
+    Vec* Fz     = new Vec[n2];
+    Vec* theta  = new Vec[geom->nk+1];
+    Mat  BA;
+
+    for(ii = 0; ii < geom->nk + 1; ii++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta[ii]);
+    }
+    // set the top and bottom potential temperature bcs
+    VecScatterBegin(topo->gtol_2, theta_b, theta[0],        INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, theta_b, theta[0],        INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, theta_t, theta[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, theta_t, theta[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
+
+    diagTheta(rho, rt, theta);
+
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &Fz[ii]);
+    }
+
+    MatCreate(MPI_COMM_SELF, &BA);
+    MatSetType(BA, MATSEQAIJ);
+    MatSetSizes(BA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(BA, 2*n2, PETSC_NULL);
+
+    vertMomRHS(theta, exner, Fz);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ii = ey*topo->nElsX + ex;
+            solveMom(_dt, ex, ey, BA, velz[ii], Fz[ii]);
+        }
+    }
+
+    for(ii = 0; ii < geom->nk + 1; ii++) {
+        VecDestroy(&theta[ii]);
+    }
+    delete[] theta;
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecDestroy(&Fz[ii]);
+    }
+    delete[] Fz;
+    MatDestroy(&BA);
+}
+
+// velz is a vertical vector and rho is a local vector
+void PrimEqns_HEVI2::SolveVertMass(Vec* velz, Vec* rho, double _dt) {
+    int ex, ey, ii;
+    int n2;
+    Vec rho_z, Fv;
+    Mat AB;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &rho_z);
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &Fv);
+
+    MatCreate(MPI_COMM_SELF, &AB);
+    MatSetType(AB, MATSEQAIJ);
+    MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
+    MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ii = ey*topo->nElsX + ex;
+            // update the density
+            VecZeroEntries(rho_z);
+            HorizToVert2(ex, ey, rho, rho_z);
+            VecCopy(rho_z, Fv);
+            solveMass(_dt, ex, ey, AB, velz[ii], Fv, rho_z);
+            VertToHoriz2(ex, ey, 0, geom->nk, rho_z, rho, true);
+        }
+    }
+
+    VecDestroy(&rho_z);
+    VecDestroy(&Fv);
+    MatDestroy(&AB);
+}
+
 void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int     ii;
     Vec     bu, xu;
     Vec*    Fu       = new Vec[geom->nk];
     Vec*    Fp       = new Vec[geom->nk];
-    Vec*    Ft       = new Vec[geom->nk];
     Vec*    velx_i   = new Vec[geom->nk];
     Vec*    rho_i    = new Vec[geom->nk];
     Vec*    rt_i     = new Vec[geom->nk];
     Vec*    exner_i  = new Vec[geom->nk];
     Vec*    exner_j  = new Vec[geom->nk];
+    Vec*    velz_i   = new Vec[topo->nElsX*topo->nElsX];
     L2Vecs* l2_rho   = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* l2_rt    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* l2_exner = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* l2_Ft    = new L2Vecs(geom->nk, topo, geom);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &xu);
     for(ii = 0; ii < geom->nk; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fu[ii]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Fp[ii]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ft[ii]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_i[ii]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_i[ii]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rt_i[ii]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner_i[ii]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &exner_j[ii]);
     }
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &velz_i[ii]);
+        VecCopy(velz[ii], velz_i[ii]);
+    }
 
+    // 1.  half step in the vertical
     l2_rho->CopyFromHoriz(rho);
     l2_rt->CopyFromHoriz(rt);
     l2_exner->CopyFromHoriz(exner);
 
-    // 1.  half step in the vertical
+    l2_rho->UpdateLocal();
+    l2_rt->UpdateLocal();
+    l2_exner->UpdateLocal();
 
-    // 2.  full step in the horiztonal (SSRK3)
+    // 1.1 vertical momentum
+    SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
+
+    // 1.2 vertical density
+    SolveVertMass(velz, l2_rho->vl, 0.5*dt);
+    
+    // 1.3 vertical density
+    SolveVertMass(velz, l2_rt->vl, 0.5*dt);
+
+    // 1.4 vertical exner pressure
+    l2_rt->HorizToVert();
+    massRHS_v(velz, l2_rt->vz, l2_Ft->vz);
+    l2_Ft->VertToHoriz();
+    SolveExner(l2_rt->vl, l2_Ft->vl, exner, l2_exner->vh, 0.5*dt);
+
+    // 1.5 update the solution vectors
+    l2_rho->UpdateGlobal();
+    l2_rt->UpdateGlobal();
+
+    l2_rho->CopyToHoriz(rho);
+    l2_rt->CopyToHoriz(rt);
+    l2_exner->CopyToHoriz(exner);
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCopy(velz_i[ii], velz[ii]);
+    }
 
     // 2.1 first horiztonal substep
     l2_rho->UpdateLocal();
     l2_rt->UpdateLocal();
 
-    HorizRHS(velx, l2_rho, l2_rt, l2_exner, Fu, Fp, Ft);
+    HorizRHS(velx, l2_rho, l2_rt, l2_exner, Fu, Fp, l2_Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         M1->assemble(ii, SCALE, true);
@@ -1582,11 +1650,12 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
         
         // internal energy
         VecCopy(rt[ii], rt_i[ii]);
-        VecAXPY(rt_i[ii], -dt, Ft[ii]);
+        VecAXPY(rt_i[ii], -dt, l2_Ft->vh[ii]);
     }
-    SolveExner(l2_rt->vl, Ft, exner, exner_i, 1.0);
+    l2_Ft->UpdateLocal();
+    SolveExner(l2_rt->vl, l2_Ft->vl, exner, exner_i, dt);
 
-    // 2.1 second horiztonal substep
+    // 2.2 second horiztonal substep
     l2_rho->CopyFromHoriz(rho_i);
     l2_rt->CopyFromHoriz(rt_i);
     l2_exner->CopyFromHoriz(exner_i);
@@ -1594,7 +1663,7 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     l2_rho->UpdateLocal();
     l2_rt->UpdateLocal();
 
-    HorizRHS(velx_i, l2_rho, l2_rt, l2_exner, Fu, Fp, Ft);
+    HorizRHS(velx_i, l2_rho, l2_rt, l2_exner, Fu, Fp, l2_Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         VecZeroEntries(xu);
@@ -1613,42 +1682,122 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
         // internal energy
         VecScale(rt_i[ii], 0.25);
         VecAXPY(rt_i[ii], 0.75, rt[ii]);
-        VecAXPY(rt_i[ii], -0.25*dt, Ft[ii]);
+        VecAXPY(rt_i[ii], -0.25*dt, l2_Ft->vh[ii]);
     }
     for(ii = 0; ii < geom->nk; ii++) {
         VecZeroEntries(exner_j[ii]);
         VecAXPY(exner_j[ii], 0.75, exner[ii]);
         VecAXPY(exner_j[ii], 0.25, exner_i[ii]);
     }
-    SolveExner(l2_rt->vl, Ft, exner_j, exner_i, 0.25);
+    l2_Ft->UpdateLocal();
+    SolveExner(l2_rt->vl, l2_Ft->vl, exner_j, exner_i, 0.25*dt);
 
-    // 2.2 third horiztonal substep
+    // 2.3 third horiztonal substep
+    l2_rho->CopyFromHoriz(rho_i);
+    l2_rt->CopyFromHoriz(rt_i);
+    l2_exner->CopyFromHoriz(exner_i);
+
+    l2_rho->UpdateLocal();
+    l2_rt->UpdateLocal();
+
+    HorizRHS(velx_i, l2_rho, l2_rt, l2_exner, Fu, Fp, l2_Ft->vh);
+    for(ii = 0; ii < geom->nk; ii++) {
+        // momentum
+        VecZeroEntries(xu);
+        VecAXPY(xu, 1.0/3.0, velx[ii]);
+        VecAXPY(xu, 2.0/3.0, velx_i[ii]);
+        M1->assemble(ii, SCALE, true);
+        MatMult(M1->M, xu, bu);
+        VecAXPY(bu, (-2.0/3.0)*dt, Fu[ii]);
+        KSPSolve(ksp1, bu, velx_i[ii]);
+
+        // continuity
+        VecScale(rho_i[ii], 2.0/3.0);
+        VecAXPY(rho_i[ii], 1.0/3.0, rho[ii]);
+        VecAXPY(rho_i[ii], (-2.0/3.0)*dt, Fp[ii]);
+        
+        // internal energy
+        VecScale(rt_i[ii], 2.0/3.0);
+        VecAXPY(rt_i[ii], 1.0/3.0, rt[ii]);
+        VecAXPY(rt_i[ii], (-2.0/3.0)*dt, l2_Ft->vh[ii]);
+    }
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecZeroEntries(exner_j[ii]);
+        VecAXPY(exner_j[ii], 1.0/3.0, exner[ii]);
+        VecAXPY(exner_j[ii], 2.0/3.0, exner_i[ii]);
+    }
+    l2_Ft->UpdateLocal();
+    SolveExner(l2_rt->vl, l2_Ft->vl, exner_j, exner_i, (2.0/3.0)*dt);
+
+    // 2.4 update the solution vectors
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecCopy(velx_i[ii] , velx[ii] );
+        VecCopy(rho_i[ii]  , rho[ii]  );
+        VecCopy(rt_i[ii]   , rt[ii]   );
+        VecCopy(exner_i[ii], exner[ii]);
+    }
 
     // 3.  half step in the vertical
+    l2_rho->CopyFromHoriz(rho);
+    l2_rt->CopyFromHoriz(rt);
+    l2_exner->CopyFromHoriz(exner);
+
+    l2_rho->UpdateLocal();
+    l2_rt->UpdateLocal();
+    l2_exner->UpdateLocal();
+
+    // 3.1 vertical momentum
+    SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
+
+    // 3.2 vertical density
+    SolveVertMass(velz, l2_rho->vl, 0.5*dt);
+    
+    // 3.3 vertical density
+    SolveVertMass(velz, l2_rt->vl, 0.5*dt);
+
+    // 3.4 vertical exner pressure
+    l2_rt->HorizToVert();
+    massRHS_v(velz, l2_rt->vz, l2_Ft->vz);
+    l2_Ft->VertToHoriz();
+    SolveExner(l2_rt->vl, l2_Ft->vl, exner, l2_exner->vh, 0.5*dt);
+
+    // 3.5 update the solution vectors
+    l2_rho->UpdateGlobal();
+    l2_rt->UpdateGlobal();
+
+    l2_rho->CopyToHoriz(rho);
+    l2_rt->CopyToHoriz(rt);
+    l2_exner->CopyToHoriz(exner);
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCopy(velz_i[ii], velz[ii]);
+    }
 
     delete l2_rho;
     delete l2_rt;
     delete l2_exner;
+    delete l2_Ft;
     VecDestroy(&bu);
     VecDestroy(&xu);
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&Fu[ii]);
         VecDestroy(&Fp[ii]);
-        VecDestroy(&Ft[ii]);
         VecDestroy(&velx_i[ii]);
         VecDestroy(&rho_i[ii]);
         VecDestroy(&rt_i[ii]);
         VecDestroy(&exner_i[ii]);
         VecDestroy(&exner_j[ii]);
     }
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecDestroy(&velz_i[ii]);
+    }
     delete[] Fu;
     delete[] Fp;
-    delete[] Ft;
     delete[] velx_i;
     delete[] rho_i;
     delete[] rt_i;
     delete[] exner_i;
     delete[] exner_j;
+    delete[] velz_i;
 }
 
 void PrimEqns_HEVI2::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph, bool assign) {
@@ -1874,7 +2023,7 @@ void PrimEqns_HEVI2::initTheta(Vec theta, ICfunc3D* func) {
     VecDestroy(&WQb);
 }
 
-void PrimEqns_HEVI2::solveMass(double dt, int ex, int ey, Mat AB, Vec wz, Vec fv, Vec rho) {
+void PrimEqns_HEVI2::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec fv, Vec rho) {
     int ii, jj, kk, ei, n2, mp1, mp12;
     int *inds0;
     double det, wb, wt, wi, gamma;
@@ -1981,13 +2130,9 @@ void PrimEqns_HEVI2::solveMass(double dt, int ex, int ey, Mat AB, Vec wz, Vec fv
     MatAssemblyEnd(VA, MAT_FINAL_ASSEMBLY);
 
     MatMatMult(V10, VA, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DAinv);
-    //MatMatMult(DAinv, AB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VB);
-    //MatScale(VB, dt);
-    //MatShift(VB, 1.0);
     MatMatMult(DAinv, AB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Op);
-    MatScale(Op, dt);
+    MatScale(Op, _dt);
     MatShift(Op, 1.0);
-    VecAYPX(fv, -dt, rho);
 
     KSPCreate(MPI_COMM_SELF, &kspMass);
     KSPSetOperators(kspMass, Op, Op);
@@ -2014,7 +2159,7 @@ void PrimEqns_HEVI2::solveMass(double dt, int ex, int ey, Mat AB, Vec wz, Vec fv
     delete W;
 }
 
-void PrimEqns_HEVI2::solveMom(double dt, int ex, int ey, Mat BA, Vec wz, Vec fv) {
+void PrimEqns_HEVI2::solveMom(double _dt, int ex, int ey, Mat BA, Vec wz, Vec fv) {
     int ii, jj, kk, ei, mp1, mp12, n2, it = 0, rank;
     int rows[99], cols[99];
     double det, wb, wt, gamma, eps = 1.0e+9, l2_dif, l2_old;
@@ -2037,7 +2182,7 @@ void PrimEqns_HEVI2::solveMom(double dt, int ex, int ey, Mat BA, Vec wz, Vec fv)
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
 
-    VecAYPX(fv, -dt, wz);
+    VecAYPX(fv, -_dt, wz);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wz_f);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &dw);
 
@@ -2118,7 +2263,7 @@ void PrimEqns_HEVI2::solveMom(double dt, int ex, int ey, Mat BA, Vec wz, Vec fv)
         } else {
             MatMatMult(V01, BA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DBA);
         }
-        MatAXPY(VA, dt, DBA, DIFFERENT_NONZERO_PATTERN);
+        MatAXPY(VA, _dt, DBA, DIFFERENT_NONZERO_PATTERN);
         KSPSolve(kspColA, fv, wz_f);
 
         VecCopy(wz_f, dw);
