@@ -174,19 +174,18 @@ double PrimEqns_HEVI::viscosity() {
 
 double PrimEqns_HEVI::viscosity_vert() {
     int ii, kk;
-    double dzMinG, dzMin = 1.0e+6;
+    double dzMaxG, dzMax = 1.0e-6;
 
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < topo->n0; ii++) {
-            if(geom->thick[kk][ii] < dzMin) {
-                dzMin = geom->thick[kk][ii];
+            if(geom->thick[kk][ii] > dzMax) {
+                dzMax = geom->thick[kk][ii];
             }
         }
     }
-    MPI_Allreduce(&dzMin, &dzMinG, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-    return dzMinG*dzMinG/6.0;//TODO
-
+    return 4.0*dzMinG*dzMinG;//TODO: tune
 }
 
 // project coriolis term onto 0 forms
