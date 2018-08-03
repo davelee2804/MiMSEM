@@ -1487,7 +1487,7 @@ void PrimEqns_HEVI2::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, do
 void PrimEqns_HEVI2::SolveVertMom(Vec* rho, Vec* rt, Vec* exner, Vec* velz, double _dt) {
     int  ii, ex, ey;
     int  n2     = topo->elOrd*topo->elOrd;
-    Vec* Fz     = new Vec[n2];
+    Vec* Fz     = new Vec[topo->nElsX*topo->nElsX];
     Vec* theta  = new Vec[geom->nk+1];
     Mat  BA;
 
