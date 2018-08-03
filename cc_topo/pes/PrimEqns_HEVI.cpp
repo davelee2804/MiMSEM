@@ -578,7 +578,7 @@ void PrimEqns_HEVI::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, double
     VecDestroy(&theta_k);
 }
 
-void PrimEqns_HEVI::vertMomRHS(Vec* ui, Vec* wi, Vec* theta, Vec* exner, Vec* fw) {
+void PrimEqns_HEVI::vertMomRHS(Vec* theta, Vec* exner, Vec* fw) {
     int ex, ey, ei, n2;
     double scale = 1.0e8;
     Vec exner_v, de1, de2, de3, dp;
@@ -1611,7 +1611,7 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
     for(kk = 0; kk < geom->nk; kk++) {
         horizMomRHS(velx[kk], theta_l, exner[kk], kk, scale, &Hu1[kk]);
     }
-    vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
+    vertMomRHS(theta_l, exner_l, Vu1);
     massRHS(velx, rho, Fp1);
     massRHS(velx, rt,  Ft1);
 
@@ -1669,7 +1669,7 @@ void PrimEqns_HEVI::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner
     for(kk = 0; kk < geom->nk; kk++) {
         horizMomRHS(velx_h[kk], theta_l, exner_h[kk], kk, scale, &Hu2[kk]);
     }
-    vertMomRHS(velx_h, velz_h, theta_l, exner_l, Vu2);
+    vertMomRHS(theta_l, exner_l, Vu2);
     massRHS(velx_h, rho_h, Fp2);
     massRHS(velx_h, rt_h,  Ft2);
 
@@ -1892,7 +1892,7 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
         horizMomRHS(velx[kk], theta_l, exner[kk], kk, scale, &Hu1[kk]);
     }
     if(!rank)cout<<"\tvertical momentum rhs......"<<endl;
-    vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
+    vertMomRHS(theta_l, exner_l, Vu1);
     if(!rank)cout<<"\tcontinuity eqn rhs........."<<endl;
     massRHS(velx, rho, Fp1);
     if(!rank)cout<<"\tenergy eqn rhs............."<<endl;
@@ -2209,6 +2209,7 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
             MatMult(V10, Fv, Dv);
             // copy the vertical contribution to the divergence into the
             // horiztonal vectors
+//TODO: Ftv is a GLOBAL vector - should be scattered to a global from a local!!
             VertToHoriz2(ex, ey, 0, geom->nk, Dv, Ftv, false);
         }
     }
@@ -2227,8 +2228,9 @@ void PrimEqns_HEVI::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exn
     //
 
     // solve for the vertical velocity
+//TODO: only use horiztonal rhs for horiztonal solve and vertical rhs for vertical solve
     if(!rank)cout<<"\tvertical momentum rhs......"<<endl;
-    vertMomRHS(velx, velz, theta_l, exner_l, Vu1);
+    vertMomRHS(theta_l, exner_l, Vu1);
     if(!rank)cout<<"\tvertical momentum solve...."<<endl;
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
