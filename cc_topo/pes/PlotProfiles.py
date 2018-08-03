@@ -18,7 +18,7 @@ GRAVITY = 9.80616
 OMEGA = 7.29212e-5
 T0 = 0.5*(TE+TP)
 b = 2.0
-KP = 2.0
+KP = 3.0
 GAMMA = 0.005
 P0 = 100000
 RE = 6371229.0
@@ -43,7 +43,7 @@ for ii in np.arange(nk+1):
 	cp    = np.cos(2.0*np.pi/9.0)
 	cpk   = np.power(cp, KP)
 	cpkp2 = np.power(cp, KP+2)
-	fac3  = cpk - (KP/KP+2.0)*cpkp2
+	fac3  = cpk - (KP/(KP+2.0))*cpkp2
 
 	torr_1[ii] = (A*GAMMA/T0)*np.exp(GAMMA*(X[ii])/T0) + B*(1.0 - 2.0*fac2)*np.exp(-fac2)
 	torr_2[ii] = C*(1.0 - 2.0*fac2)*np.exp(-fac2)
