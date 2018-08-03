@@ -175,15 +175,15 @@ double v_pert(double* x, int ki) {
 }
 
 double u_init(double* x, int ki) {
-    double zi = z_at_level(x, ki);
+    double zi = 0.5*(z_at_level(x, ki+0) + z_at_level(x, ki+1));
     double um = u_mean(x, zi+RAD_EARTH);
-    double up = u_pert(x, ki);
+    double up = 0.5*(u_pert(x, ki+0) + u_pert(x, ki+1));
 
     return  um + up;
 }
 
 double v_init(double* x, int ki) {
-    double vp = v_pert(x, ki);
+    double vp = 0.5*(v_pert(x, ki+0) + v_pert(x, ki+1));
 
     return vp;
 }
@@ -197,7 +197,7 @@ double theta_init(double* x, int ki) {
 }
 
 double rho_init(double* x, int ki) {
-    double zi = z_at_level(x, ki);
+    double zi = 0.5*(z_at_level(x, ki+0) + z_at_level(x, ki+1));
     double ti = temp(x, zi+RAD_EARTH);
     double pi = pres(x, zi+RAD_EARTH);
 
@@ -206,13 +206,13 @@ double rho_init(double* x, int ki) {
 
 double rt_init(double* x, int ki) {
     double rho   = rho_init(x, ki);
-    double theta = theta_init(x, ki);
+    double theta = 0.5*(theta_init(x, ki+0) + theta_init(x, ki+1));
 
     return rho*theta;
 }
 
 double exner_init(double* x, int ki) {
-    double zi = z_at_level(x, ki);
+    double zi = 0.5*(z_at_level(x, ki+0) + z_at_level(x, ki+1));
     double pi = pres(x, zi+RAD_EARTH);
 
     return CP*pow(pi/P0, RD/CP);
