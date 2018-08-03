@@ -55,7 +55,7 @@ class PrimEqns_HEVI2 {
         void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A);
         void AssembleConstWithTheta(int ex, int ey, Vec* theta, Mat A);
         void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
-        void AssembleVertLaplacian(int ex, int ey, Mat M0);
+        void AssembleVertLaplacian(int ex, int ey, Mat M0, double _dt);
         void VertFlux(int ex, int ey, Vec pi, Mat Mp);  // vertical mass flux matrix
         void massRHS_h(Vec* uh, Vec* pi, Vec* Fp);
         void massRHS_v(Vec* uv, Vec* pi, Vec* Fp);

@@ -1409,7 +1409,7 @@ void PrimEqns_HEVI2::VertFlux(int ex, int ey, Vec pi, Mat Mp) {
     delete W;
 }
 
-void PrimEqns_HEVI2::AssembleVertLaplacian(int ex, int ey, Mat A) {
+void PrimEqns_HEVI2::AssembleVertLaplacian(int ex, int ey, Mat A, double _dt) {
     int n2 = topo->elOrd*topo->elOrd;
     Mat B, L, BD;
 
@@ -1426,7 +1426,7 @@ void PrimEqns_HEVI2::AssembleVertLaplacian(int ex, int ey, Mat A) {
     MatMatMult(V01, BD, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &L);
 
     // assemble the piecewise linear mass matrix (with gravity)
-    MatAXPY(A, -vert_visc, L, DIFFERENT_NONZERO_PATTERN);//TODO: check the sign on the viscosity
+    MatAXPY(A, -_dt*vert_visc, L, DIFFERENT_NONZERO_PATTERN);//TODO: check the sign on the viscosity
 
     MatDestroy(&B);
     MatDestroy(&BD);
@@ -2315,7 +2315,7 @@ void PrimEqns_HEVI2::solveMom(double _dt, int ex, int ey, Mat BA, Vec wz, Vec fv
         VecRestoreArray(wz, &zArray);
 
         AssembleLinear(ex, ey, VA);
-        AssembleVertLaplacian(ex, ey, VA);
+        AssembleVertLaplacian(ex, ey, VA, _dt);
         if(!DBA) {
             MatMatMult(V01, BA, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DBA);
         } else {
@@ -2334,7 +2334,7 @@ void PrimEqns_HEVI2::solveMom(double _dt, int ex, int ey, Mat BA, Vec wz, Vec fv
         it++;
     } while(it < 100 && eps > 1.0e-12);
 
-    if(!rank) cout << "\n\nvert mom, it: " << it << "\teps: " << eps << endl;
+    if(!rank) cout << "\t\tvert mom, it: " << it << "\teps: " << eps << endl;
 
     VecDestroy(&wz_f);
     VecDestroy(&dw);

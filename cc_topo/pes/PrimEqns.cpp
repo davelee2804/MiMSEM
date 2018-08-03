@@ -1532,7 +1532,7 @@ void PrimEqns::VertFlux(int ex, int ey, Vec* pi, Mat Mp, double scale) {
     delete W;
 }
 
-void PrimEqns::AssembleVertLaplacian(int ex, int ey, Mat A, double scale) {
+void PrimEqns::AssembleVertLaplacian(int ex, int ey, Mat A, double scale, double _dt) {
     int n2 = topo->elOrd*topo->elOrd;
     Mat B, L, BD;
 
@@ -1549,7 +1549,7 @@ void PrimEqns::AssembleVertLaplacian(int ex, int ey, Mat A, double scale) {
     MatMatMult(V01, BD, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &L);
 
     // assemble the piecewise linear mass matrix (with gravity)
-    MatAXPY(A, -vert_visc, L, DIFFERENT_NONZERO_PATTERN);//TODO: check the sign on the viscosity
+    MatAXPY(A, -_dt*vert_visc, L, DIFFERENT_NONZERO_PATTERN);//TODO: check the sign on the viscosity
 
     MatDestroy(&B);
     MatDestroy(&BD);
@@ -1696,7 +1696,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
             AssembleLinear(ex, ey, VA, scale);
             MatMult(VA, velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
-            AssembleVertLaplacian(ex, ey, VA, scale);
+            AssembleVertLaplacian(ex, ey, VA, scale, dt);
             KSPSolve(kspColA, bw, velz_h[ii]);
         }
     }
@@ -1759,7 +1759,7 @@ void PrimEqns::SolveRK2(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
             MatMult(VA, velz[ii], bw);
             VecAXPY(bw, -0.5*dt, Vu1[ii]);
             VecAXPY(bw, -0.5*dt, Vu2[ii]);
-            AssembleVertLaplacian(ex, ey, VA, scale);
+            AssembleVertLaplacian(ex, ey, VA, scale, dt);
             KSPSolve(kspColA, bw, velz[ii]);
         }
     }
@@ -1978,7 +1978,7 @@ void PrimEqns::SolveEuler(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, b
             AssembleLinear(ex, ey, VA, scale);
             MatMult(VA, velz[ii], bw);
             VecAXPY(bw, -dt, Vu1[ii]);
-            AssembleVertLaplacian(ex, ey, VA, scale);
+            AssembleVertLaplacian(ex, ey, VA, scale, dt);
             KSPSolve(kspColA, bw, velz[ii]);
         }
     }
@@ -2500,7 +2500,7 @@ void PrimEqns::solveMom(double dt, int ex, int ey, double scale, Mat BA, Vec wz,
         VecRestoreArray(wz, &zArray);
 
         AssembleLinear(ex, ey, VA, scale);
-        AssembleVertLaplacian(ex, ey, VA, scale);
+        AssembleVertLaplacian(ex, ey, VA, scale, dt);
         if(!DBA) {
             MatMatMult(V01, BA, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DBA);
         } else {
