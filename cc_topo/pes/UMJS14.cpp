@@ -11,10 +11,11 @@
 #include "Basis.h"
 #include "Topo.h"
 #include "Geom.h"
+#include "L2Vecs.h"
 #include "ElMats.h"
 #include "Assembly.h"
 #include "SWEqn.h"
-#include "PrimEqns.h"
+#include "PrimEqns_HEVI2.h"
 
 using namespace std;
 
@@ -262,7 +263,7 @@ int main(int argc, char** argv) {
     ofstream file;
     Topo* topo;
     Geom* geom;
-    PrimEqns* pe;
+    PrimEqns_HEVI2* pe;
     Vec *velx, *velz, *rho, *rt, *exner;
     PetscViewer viewer;
 
@@ -277,7 +278,7 @@ int main(int argc, char** argv) {
     geom = new Geom(rank, topo, NK);
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
-    pe   = new PrimEqns(topo, geom, dt);
+    pe   = new PrimEqns_HEVI2(topo, geom, dt);
     pe->step = startStep;
 
     n2 = topo->nElsX*topo->nElsX;
@@ -358,7 +359,9 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         //pe->SolveRK2(velx, velz, rho, rt, exner, dump);
-        pe->SolveEuler(velx, velz, rho, rt, exner, dump);
+        //pe->SolveEuler(velx, velz, rho, rt, exner, dump);
+        pe->SolveStrang(velx, velz, rho, rt, exner, dump);
+
         //if(dump) {
             //vort_n = mass_n = ener_n = 0.0;
             //for(ki = 0; ki < NK; ki++) {

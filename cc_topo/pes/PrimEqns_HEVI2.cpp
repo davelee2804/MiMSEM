@@ -1567,7 +1567,8 @@ void PrimEqns_HEVI2::SolveVertMass(Vec* velz, Vec* rho, double _dt) {
 
 void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int     ii;
-    Vec     bu, xu;
+    char    fieldname[100];
+    Vec     bu, xu, wi;
     Vec*    Fu       = new Vec[geom->nk];
     Vec*    Fp       = new Vec[geom->nk];
     Vec*    velx_i   = new Vec[geom->nk];
@@ -1770,6 +1771,31 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     l2_exner->CopyToHoriz(exner);
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecCopy(velz_i[ii], velz[ii]);
+    }
+
+    // write output
+    if(save) {
+        step++;
+        for(ii = 0; ii < geom->nk; ii++) {
+            curl(velx[ii], &wi, ii, false);
+
+            sprintf(fieldname, "vorticity");
+            geom->write0(wi, fieldname, step, ii);
+            sprintf(fieldname, "velocity_h");
+            geom->write1(velx[ii], fieldname, step, ii);
+            sprintf(fieldname, "density");
+            geom->write2(rho[ii], fieldname, step, ii, true);
+            sprintf(fieldname, "rhoTheta");
+            geom->write2(rt[ii], fieldname, step, ii, true);
+            sprintf(fieldname, "exner");
+            geom->write2(exner[ii], fieldname, step, ii, true);
+
+            VecDestroy(&wi);
+        }
+        sprintf(fieldname, "velocity_z");
+        geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
+        sprintf(fieldname, "velVert");
+        geom->writeSerial(velz, fieldname, topo->nElsX*topo->nElsX, step);
     }
 
     delete l2_rho;
