@@ -1566,7 +1566,7 @@ void PrimEqns_HEVI2::SolveVertMass(Vec* velz, Vec* rho, double _dt) {
 }
 
 void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
-    int     ii;
+    int     ii, rank;
     char    fieldname[100];
     Vec     bu, xu, wi;
     Vec*    Fu       = new Vec[geom->nk];
@@ -1581,6 +1581,8 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     L2Vecs* l2_rt    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* l2_exner = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* l2_Ft    = new L2Vecs(geom->nk, topo, geom);
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &xu);
@@ -1599,6 +1601,7 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     }
 
     // 1.  half step in the vertical
+    if(!rank)cout<<"vertical half step (1)..............."<<endl;
     l2_rho->CopyFromHoriz(rho);
     l2_rt->CopyFromHoriz(rt);
     l2_exner->CopyFromHoriz(exner);
@@ -1608,19 +1611,24 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     l2_exner->UpdateLocal();
 
     // 1.1 vertical momentum
-    SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
+    //SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 1.2 vertical density
+    if(!rank)cout<<"\tvertical density solve......."<<endl;
     SolveVertMass(velz, l2_rho->vl, 0.5*dt);
     
     // 1.3 vertical density
+    if(!rank)cout<<"\tvertical rho theta solve....."<<endl;
     SolveVertMass(velz, l2_rt->vl, 0.5*dt);
 
     // 1.4 vertical exner pressure
+    if(!rank)cout<<"\tvertical exner solve........."<<endl;
     l2_rt->HorizToVert();
     massRHS_v(velz, l2_rt->vz, l2_Ft->vz);
     l2_Ft->VertToHoriz();
     SolveExner(l2_rt->vl, l2_Ft->vl, exner, l2_exner->vh, 0.5*dt);
+l2_exner->UpdateLocal();
+SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 1.5 update the solution vectors
     l2_rho->UpdateGlobal();
@@ -1634,6 +1642,7 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     }
 
     // 2.1 first horiztonal substep
+    if(!rank)cout<<"horiztonal step (1).................."<<endl;
     l2_rho->UpdateLocal();
     l2_rt->UpdateLocal();
 
@@ -1657,6 +1666,7 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     SolveExner(l2_rt->vl, l2_Ft->vl, exner, exner_i, dt);
 
     // 2.2 second horiztonal substep
+    if(!rank)cout<<"horiztonal step (2).................."<<endl;
     l2_rho->CopyFromHoriz(rho_i);
     l2_rt->CopyFromHoriz(rt_i);
     l2_exner->CopyFromHoriz(exner_i);
@@ -1694,6 +1704,7 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     SolveExner(l2_rt->vl, l2_Ft->vl, exner_j, exner_i, 0.25*dt);
 
     // 2.3 third horiztonal substep
+    if(!rank)cout<<"horiztonal step (3).................."<<endl;
     l2_rho->CopyFromHoriz(rho_i);
     l2_rt->CopyFromHoriz(rt_i);
     l2_exner->CopyFromHoriz(exner_i);
@@ -1739,6 +1750,7 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     }
 
     // 3.  half step in the vertical
+    if(!rank)cout<<"vertical half step (2)..............."<<endl;
     l2_rho->CopyFromHoriz(rho);
     l2_rt->CopyFromHoriz(rt);
     l2_exner->CopyFromHoriz(exner);
@@ -1748,19 +1760,24 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     l2_exner->UpdateLocal();
 
     // 3.1 vertical momentum
-    SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
+    //SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 3.2 vertical density
+    if(!rank)cout<<"\tvertical density solve......."<<endl;
     SolveVertMass(velz, l2_rho->vl, 0.5*dt);
     
     // 3.3 vertical density
+    if(!rank)cout<<"\tvertical rho theta solve....."<<endl;
     SolveVertMass(velz, l2_rt->vl, 0.5*dt);
 
     // 3.4 vertical exner pressure
+    if(!rank)cout<<"\tvertical exner solve........."<<endl;
     l2_rt->HorizToVert();
     massRHS_v(velz, l2_rt->vz, l2_Ft->vz);
     l2_Ft->VertToHoriz();
     SolveExner(l2_rt->vl, l2_Ft->vl, exner, l2_exner->vh, 0.5*dt);
+l2_exner->UpdateLocal();
+SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 3.5 update the solution vectors
     l2_rho->UpdateGlobal();
