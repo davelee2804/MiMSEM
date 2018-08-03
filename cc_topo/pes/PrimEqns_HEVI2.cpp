@@ -1602,6 +1602,9 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
 
     // 1.  half step in the vertical
     if(!rank)cout<<"vertical half step (1)..............."<<endl;
+
+    AssembleKEVecs(velx, velz);
+
     l2_rho->CopyFromHoriz(rho);
     l2_rt->CopyFromHoriz(rt);
     l2_exner->CopyFromHoriz(exner);
@@ -1643,6 +1646,9 @@ SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 2.1 first horiztonal substep
     if(!rank)cout<<"horiztonal step (1).................."<<endl;
+
+    AssembleKEVecs(velx, velz);
+
     l2_rho->UpdateLocal();
     l2_rt->UpdateLocal();
 
@@ -1667,6 +1673,9 @@ SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 2.2 second horiztonal substep
     if(!rank)cout<<"horiztonal step (2).................."<<endl;
+
+    AssembleKEVecs(velx, velz);
+
     l2_rho->CopyFromHoriz(rho_i);
     l2_rt->CopyFromHoriz(rt_i);
     l2_exner->CopyFromHoriz(exner_i);
@@ -1705,6 +1714,9 @@ SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 2.3 third horiztonal substep
     if(!rank)cout<<"horiztonal step (3).................."<<endl;
+
+    AssembleKEVecs(velx, velz);
+
     l2_rho->CopyFromHoriz(rho_i);
     l2_rt->CopyFromHoriz(rt_i);
     l2_exner->CopyFromHoriz(exner_i);
@@ -1751,6 +1763,9 @@ SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 3.  half step in the vertical
     if(!rank)cout<<"vertical half step (2)..............."<<endl;
+
+    AssembleKEVecs(velx, velz);
+
     l2_rho->CopyFromHoriz(rho);
     l2_rt->CopyFromHoriz(rt);
     l2_exner->CopyFromHoriz(exner);
@@ -2319,7 +2334,7 @@ void PrimEqns_HEVI2::solveMom(double _dt, int ex, int ey, Mat BA, Vec wz, Vec fv
         it++;
     } while(it < 100 && eps > 1.0e-12);
 
-    if(!rank) cout << "vert mom, it: " << it << "\teps: " << eps << endl;
+    if(!rank) cout << "\n\nvert mom, it: " << it << "\teps: " << eps << endl;
 
     VecDestroy(&wz_f);
     VecDestroy(&dw);
