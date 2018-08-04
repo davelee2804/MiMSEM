@@ -959,8 +959,7 @@ void PrimEqns::progExner(Vec rt_i, Vec DivG, Vec exner_i, Vec* exner_f, int lev)
     VecScatterBegin(topo->gtol_2, DivG, dG_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, DivG, dG_l, INSERT_VALUES, SCATTER_FORWARD);
 
-    //VecAXPY(rt_l, -dt*RD/CP, dG_l);
-    VecAXPY(rt_l, -dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)), dG_l);
+    VecAXPY(rt_l, -dt*CP*(GAMMA/(1.0-GAMMA)), dG_l);
 
     T->assemble(rt_l, lev, scale);
     MatMult(T->M, exner_i, rhs);

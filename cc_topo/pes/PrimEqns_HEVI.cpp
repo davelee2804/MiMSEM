@@ -185,7 +185,7 @@ double PrimEqns_HEVI::viscosity_vert() {
     }
     MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-    return 4.0*dzMinG*dzMinG;//TODO: tune
+    return 4.0*dzMaxG*dzMaxG;//TODO: tune
 }
 
 // project coriolis term onto 0 forms
@@ -895,7 +895,7 @@ void PrimEqns_HEVI::progExner(Vec rt_i, Vec DivH, Vec DivV, Vec exner_i, Vec* ex
     VecScatterEnd(topo->gtol_2, DivH, dG_l, INSERT_VALUES, SCATTER_FORWARD);
 
     //VecAXPY(rt_l, -dt*RD/CP, dG_l);
-    VecAXPY(rt_l, -dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)), dG_l);
+    VecAXPY(rt_l, -dt*CP*(GAMMA/(1.0-GAMMA)), dG_l);
 
     T->assemble(rt_l, lev, scale);
     MatMult(T->M, exner_i, rhs);
@@ -906,7 +906,7 @@ void PrimEqns_HEVI::progExner(Vec rt_i, Vec DivH, Vec DivV, Vec exner_i, Vec* ex
     VecCopy(rt_i, rt_sum);
     if(DivV) { // add the vertical component of the divergence
         //VecAXPY(rt_sum, dt*RD/CP, DivV);
-        VecAXPY(rt_sum, dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)), DivV);
+        VecAXPY(rt_sum, dt*CP*(GAMMA/(1.0-GAMMA)), DivV);
     }
     VecScatterBegin(topo->gtol_2, rt_sum, rt_l, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_2, rt_sum, rt_l, INSERT_VALUES, SCATTER_FORWARD);

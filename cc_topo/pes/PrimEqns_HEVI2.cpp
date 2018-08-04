@@ -1470,7 +1470,7 @@ void PrimEqns_HEVI2::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, do
 
     for(ii = 0; ii < geom->nk; ii++) {
         VecCopy(Ft[ii], rt_sum);
-        VecScale(rt_sum, -_dt*(GAMMA/(1.0-GAMMA))*pow(RD/P0,GAMMA/(1.0-GAMMA)));
+        VecScale(rt_sum, -_dt*CP*(GAMMA/(1.0-GAMMA)));
         VecAXPY(rt_sum, 1.0, rt[ii]);
         T->assemble(rt_sum, ii, SCALE);
         MatMult(T->M, exner_i[ii], rhs);
