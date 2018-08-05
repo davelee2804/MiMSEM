@@ -49,13 +49,6 @@ class PrimEqns_HEVI2 {
         void grad(Vec phi, Vec* u, int lev);            // weak form grad operator
         void curl(Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
         void laplacian(Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
-        void AssembleConst(int ex, int ey, Mat A);      // piecewise constant (in vertical) mass matrix
-        void AssembleLinear(int ex, int ey, Mat B);     // piecewise linear (in vertical) mass matrix
-        void AssembleLinCon(int ex, int ey, Mat AB);
-        void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A);
-        void AssembleConstWithTheta(int ex, int ey, Vec* theta, Mat A);
-        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
-        void AssembleVertLaplacian(int ex, int ey, Mat M0, double _dt);
         void VertFlux(int ex, int ey, Vec pi, Mat Mp);  // vertical mass flux matrix
         void massRHS_h(Vec* uh, Vec* pi, Vec* Fp);
         void massRHS_v(Vec* uv, Vec* pi, Vec* Fp);
@@ -77,4 +70,20 @@ class PrimEqns_HEVI2 {
         void SolveVertMom(Vec* rho, Vec* rt, Vec* exner, Vec* velz, double _dt);
         void SolveVertMass(Vec* velz, Vec* rho, double _dt);
         void SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
+
+        void AssembleConst(int ex, int ey, Mat A);      // piecewise constant (in vertical) mass matrix
+        void AssembleLinear(int ex, int ey, Mat B);     // piecewise linear (in vertical) mass matrix
+        void AssembleLinCon(int ex, int ey, Mat AB);
+        void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A);
+        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
+        void AssembleVertLaplacian(int ex, int ey, Mat M0, double _dt);
+        void AssembleLinearInv(int ex, int ey, Mat A);
+        void AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B);
+        void AssembleConstWithThetaInv(int ex, int ey, Vec theta, Mat B);
+        void AssembleConstWithRho(int ex, int ey, Vec rho, Mat A);
+        void AssembleLinConWithW(int ex, int ey, Vec velz, Mat AB);
+        void AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA);
+
+        void VertSolve(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec exner);
+
 };

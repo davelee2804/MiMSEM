@@ -1001,7 +1001,7 @@ void PrimEqns_HEVI2::AssembleConst(int ex, int ey, Mat B) {
         // build the 2D mass matrix
         Q->assemble(ex, ey);
         ei = ey*topo->nElsX + ex;
-        
+
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
             Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
@@ -1124,7 +1124,7 @@ void PrimEqns_HEVI2::AssembleLinCon(int ex, int ey, Mat AB) {
         // build the 2D mass matrix
         Q->assemble(ex, ey);
         ei = ey*topo->nElsX + ex;
-        
+
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
             Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
@@ -1613,7 +1613,7 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     l2_exner->UpdateLocal();
 
     // 1.1 vertical momentum
-    //SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
+    SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 1.2 vertical density
     if(!rank)cout<<"\tvertical density solve......."<<endl;
@@ -1629,8 +1629,8 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     massRHS_v(velz, l2_rt->vz, l2_Ft->vz);
     l2_Ft->VertToHoriz();
     SolveExner(l2_rt->vl, l2_Ft->vl, exner, l2_exner->vh, 0.5*dt);
-l2_exner->UpdateLocal();
-SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
+//l2_exner->UpdateLocal();
+//SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 1.5 update the solution vectors
     l2_rho->UpdateGlobal();
@@ -1774,7 +1774,7 @@ SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
     l2_exner->UpdateLocal();
 
     // 3.1 vertical momentum
-    //SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
+    SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 3.2 vertical density
     if(!rank)cout<<"\tvertical density solve......."<<endl;
@@ -1790,8 +1790,8 @@ SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
     massRHS_v(velz, l2_rt->vz, l2_Ft->vz);
     l2_Ft->VertToHoriz();
     SolveExner(l2_rt->vl, l2_Ft->vl, exner, l2_exner->vh, 0.5*dt);
-l2_exner->UpdateLocal();
-SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
+//l2_exner->UpdateLocal();
+//SolveVertMom(l2_rho->vl, l2_rt->vl, l2_exner->vl, velz_i, 0.5*dt);
 
     // 3.5 update the solution vectors
     l2_rho->UpdateGlobal();
@@ -2347,4 +2347,281 @@ void PrimEqns_HEVI2::solveMom(double _dt, int ex, int ey, Mat BA, Vec wz, Vec fv
     delete[] WtQWflat;
     delete Q;
     delete W;
+}
+
+void PrimEqns_HEVI2::AssembleLinearInv(int ex, int ey, Mat A) {
+    int kk, ii, rows[99], ei, *inds0, n2, mp1, mp12;
+    double det;
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+    n2    = topo->elOrd*topo->elOrd;
+    mp1   = quad->n+1;
+    mp12  = mp1*mp1;
+
+    MatZeroEntries(VA);
+
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        Q->assemble(ex, ey);
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            // for linear field we multiply by the vertical jacobian determinant when
+            // integrating, and do no other trasformations for the basis functions
+            Q0[ii][ii] *= (geom->thick[kk+0][inds0[ii]]/2.0 + geom->thick[kk+1][inds0[ii]]/2.0);
+        }
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+        // take the inverse
+        Inv(WtQW, WtQWinv, n2);
+        // add to matrix
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(VA, W->nDofsJ, rows, W->nDofsJ, rows, WtQWflat, ADD_VALUES);
+    }
+    MatAssemblyBegin(VA, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(VA, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQWinv);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}
+
+void PrimEqns_HEVI2::AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B) {
+    int ii, jj, kk, ei, mp1, mp12, n2;
+    int *inds0;
+    double det, tt, tb, gamma;
+    int inds2k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar* tArray;
+
+    inds0 = topo->elInds0_l(ex, ey);
+    n2    = topo->elOrd*topo->elOrd;
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    MatZeroEntries(B);
+    VecGetArray(theta, &tArray);
+
+    // assemble the matrices
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        Q->assemble(ex, ey);
+        ei = ey*topo->nElsX + ex;
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            // for constant field we multiply by the vertical jacobian determinant when integrating, 
+            // then divide by the vertical jacobian for both the trial and the test functions
+            // vertical determinant is dz/2
+            Q0[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
+
+            tt = tb = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                if(kk > 0)            tb += tArray[(kk-1)*n2+jj]*gamma;
+                if(kk < geom->nk - 1) tt += tArray[(kk+0)*n2+jj]*gamma;
+            }
+            Q0[ii][ii] *= (tb + tt)/det; // vertical quadrature weights are both 1.0
+        }
+
+        // assemble the piecewise constant mass matrix for level k
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(theta, &tArray);
+    MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}
+
+void PrimEqns_HEVI2::AssembleConstWithThetaInv(int ex, int ey, Vec theta, Mat B) {
+    int ii, jj, kk, ei, mp1, mp12, n2;
+    int *inds0;
+    double det, tt, tb, gamma;
+    int inds2k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar* tArray;
+
+    inds0 = topo->elInds0_l(ex, ey);
+    n2    = topo->elOrd*topo->elOrd;
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    MatZeroEntries(B);
+    VecGetArray(theta, &tArray);
+
+    // assemble the matrices
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        Q->assemble(ex, ey);
+        ei = ey*topo->nElsX + ex;
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            // for constant field we multiply by the vertical jacobian determinant when integrating, 
+            // then divide by the vertical jacobian for both the trial and the test functions
+            // vertical determinant is dz/2
+            Q0[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
+
+            tt = tb = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                if(kk > 0)            tb += tArray[(kk-1)*n2+jj]*gamma;
+                if(kk < geom->nk - 1) tt += tArray[(kk+0)*n2+jj]*gamma;
+            }
+            Q0[ii][ii] *= (tb + tt)/det; // vertical quadrature weights are both 1.0
+        }
+
+        // assemble the piecewise constant mass matrix for level k
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Inv(WtQW, WtQWinv, n2);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(theta, &tArray);
+    MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQWinv);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}
+
+void PrimEqns_HEVI2::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
+    int ii, jj, kk, ei, mp1, mp12, n2;
+    int *inds0;
+    double det, rk, gamma;
+    int inds2k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar* rArray;
+
+    inds0 = topo->elInds0_l(ex, ey);
+    n2    = topo->elOrd*topo->elOrd;
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    MatZeroEntries(B);
+    VecGetArray(rho, &rArray);
+
+    // assemble the matrices
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        Q->assemble(ex, ey);
+        ei = ey*topo->nElsX + ex;
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            // for constant field we multiply by the vertical jacobian determinant when integrating, 
+            // then divide by the vertical jacobian for both the trial and the test functions
+            // vertical determinant is dz/2
+            Q0[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
+
+            rk = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                rk += rArray[kk*n2+jj]*gamma;
+            }
+            Q0[ii][ii] *= rk*(2.0/geom->thick[kk][inds0[ii]]*det);
+        }
+
+        // assemble the piecewise constant mass matrix for level k
+        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(rho, &rArray);
+    MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}
+
+void PrimEqns_HEVI2::AssembleLinConWithW(int ex, int ey, Vec velz, Mat AB) {
+}
+
+void PrimEqns_HEVI2::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
+}
+
+void PrimEqns_HEVI2::VertSolve(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec exner) {
+    Mat V0_Theta, V0_inv, V1_Pi, V1_Theta_inv, V1, V0_theta, V10_w;
+
+    // initialise matrices
 }
