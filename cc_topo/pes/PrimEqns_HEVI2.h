@@ -26,8 +26,11 @@ class PrimEqns_HEVI2 {
         WtQUmat* K;
         Whmat* T;
         Vec* fg;                                     // coriolis vector (global)
+        bool mapThetaBCs;
         Vec theta_b;                                 // bottom potential temperature bc
         Vec theta_t;                                 // top potential temperature bc
+        Vec theta_b_l;                               // bottom potential temperature bc
+        Vec theta_t_l;                               // top potential temperature bc
         Vec* Kv;                                     // kinetic energy vector for each vertical column
         Vec* Kh;                                     // kinetic energy vector for each horiztontal layer
         Vec* gz;
@@ -75,6 +78,7 @@ class PrimEqns_HEVI2 {
         void AssembleLinear(int ex, int ey, Mat B);     // piecewise linear (in vertical) mass matrix
         void AssembleLinCon(int ex, int ey, Mat AB);
         void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A);
+        void AssembleLinearWithThetaVert(int ex, int ey, Vec theta, Mat A);
         void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
         void AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A);
         void AssembleVertLaplacian(int ex, int ey, Mat M0, double _dt);
@@ -84,6 +88,8 @@ class PrimEqns_HEVI2 {
         void AssembleConstWithRho(int ex, int ey, Vec rho, Mat A);
         void AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA);
 
-        void VertSolve(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec exner, Vec velz_n, Vec rho_n, Vec rt_n, Vec exner_n);
+        void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
 
+        void thetaBCVecVert(int ex, int ey, Mat A, Vec rho, Vec* bTheta);
+        void diagThetaVert(int ex, int ey, Mat A, Mat AB, Vec rho, Vec rt, Vec theta);
 };

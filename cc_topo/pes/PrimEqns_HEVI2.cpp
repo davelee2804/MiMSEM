@@ -46,6 +46,7 @@ PrimEqns_HEVI2::PrimEqns_HEVI2(Topo* _topo, Geom* _geom, double _dt) {
     del2 = viscosity();
     vert_visc = viscosity_vert();
     step = 0;
+    mapThetaBCs = false;
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -106,6 +107,8 @@ PrimEqns_HEVI2::PrimEqns_HEVI2(Topo* _topo, Geom* _geom, double _dt) {
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_b);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_t);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_b_l);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_t_l);
 
     Kv = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
@@ -331,6 +334,8 @@ PrimEqns_HEVI2::~PrimEqns_HEVI2() {
     KSPDestroy(&kspE);
     VecDestroy(&theta_b);
     VecDestroy(&theta_t);
+    VecDestroy(&theta_b_l);
+    VecDestroy(&theta_t_l);
 
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&fg[ii]);
@@ -727,7 +732,6 @@ void PrimEqns_HEVI2::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
         // so these cancel
         geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
         Q0[ii][ii] *= rk;
-        //TODO: scaling seems to work, but don't understand why yet
         Q0[ii][ii] *= 2.0/geom->thick[0][inds0[ii]];
     }
     VecRestoreArray(rho[0], &rArray);
@@ -752,7 +756,6 @@ void PrimEqns_HEVI2::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
         // so these cancel
         geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
         Q0[ii][ii] *= rk;
-        //TODO: scaling seems to work, but don't understand why yet
         Q0[ii][ii] *= 2.0/geom->thick[geom->nk-1][inds0[ii]];
     }
     VecRestoreArray(rho[geom->nk-1], &rArray);
@@ -851,6 +854,165 @@ void PrimEqns_HEVI2::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     VecDestroy(&theta_v);
     MatDestroy(&A);
     MatDestroy(&AB);
+}
+
+void PrimEqns_HEVI2::thetaBCVecVert(int ex, int ey, Mat A, Vec rho, Vec* bTheta) {
+    int* inds2 = topo->elInds2_l(ex, ey);
+    int* inds0 = topo->elInds0_l(ex, ey);
+    int ii, jj, ei, mp1, mp12, n2;
+    double det, rk, gamma;
+    int inds2k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar *rArray, *vArray, *hArray;
+    Vec theta_o;
+
+    ei    = ey*topo->nElsX + ex;
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+    n2    = topo->elOrd*topo->elOrd;
+
+    Q->assemble(ex, ey);
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &theta_o);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, bTheta);
+
+    MatZeroEntries(A);
+
+    // bottom boundary
+    VecGetArray(rho, &rArray);
+    for(ii = 0; ii < mp12; ii++) {
+        det = geom->det[ei][ii];
+        Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+
+        // multuply by the vertical determinant to integrate, then
+        // divide piecewise constant density by the vertical determinant,
+        // so these cancel
+        rk = 0.0;
+        for(jj = 0; jj < n2; jj++) {
+            gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+            rk += rArray[jj]*gamma;
+        }
+        Q0[ii][ii] *= rk*2.0/(geom->thick[0][inds0[ii]]*det);
+    }
+
+    Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+    for(ii = 0; ii < W->nDofsJ; ii++) {
+        inds2k[ii] = ii + 0*W->nDofsJ;
+    }
+    MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+
+    // top boundary
+    for(ii = 0; ii < mp12; ii++) {
+        det = geom->det[ei][ii];
+        Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+
+        // multuply by the vertical determinant to integrate, then
+        // divide piecewise constant density by the vertical determinant,
+        // so these cancel
+        rk = 0.0;
+        for(jj = 0; jj < n2; jj++) {
+            gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+            rk += rArray[(geom->nk-1)*n2+jj]*gamma;
+        }
+        Q0[ii][ii] *= rk*2.0/(geom->thick[geom->nk-1][inds0[ii]]*det);
+    }
+
+    Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+    for(ii = 0; ii < W->nDofsJ; ii++) {
+        inds2k[ii] = ii + (geom->nk-2)*W->nDofsJ;
+    }
+    MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+    VecRestoreArray(rho, &rArray);
+
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+
+    // assemble the theta bc vector
+    VecGetArray(theta_o, &vArray);
+    // bottom
+    VecGetArray(theta_b, &hArray);
+    for(ii = 0; ii < n2; ii++) {
+        vArray[ii] = hArray[inds2[ii]];
+    }
+    VecRestoreArray(theta_b, &hArray);
+    // top
+    VecGetArray(theta_t, &hArray);
+    for(ii = 0; ii < n2; ii++) {
+        vArray[(geom->nk-2)*n2+ii] = hArray[inds2[ii]];
+    }
+    VecRestoreArray(theta_t, &hArray);
+    VecRestoreArray(theta_o, &vArray);
+
+    MatMult(A, theta_o, *bTheta);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+    VecDestroy(&theta_o);
+}
+
+// rho, rt and theta are all vertical vectors
+void PrimEqns_HEVI2::diagThetaVert(int ex, int ey, Mat A, Mat AB, Vec rho, Vec rt, Vec theta) {
+    int ii, kk;
+    int n2 = topo->elOrd*topo->elOrd;
+    int* inds2 = topo->elInds2_l(ex, ey);
+    Vec frt, theta_v, bcs;
+    PetscScalar *ttArray, *tbArray, *tiArray, *tjArray;
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &frt);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &theta_v);
+
+    // construct horiztonal rho theta field
+    AssembleLinCon(ex, ey, AB);
+    MatMult(AB, rt, frt);
+
+    // assemble in the bcs
+    thetaBCVecVert(ex, ey, A, rho, &bcs);
+    VecAXPY(frt, -1.0, bcs);
+    VecDestroy(&bcs);
+
+    // map back to the full column
+    AssembleLinearWithRT(ex, ey, rho, VA);
+    KSPSolve(kspColA, frt, theta_v);
+
+    VecGetArray(theta_v,   &tiArray);
+    VecGetArray(theta,     &tjArray);
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        for(ii = 0; ii < n2; ii++) {
+            tjArray[(kk+1)*n2+ii] = tiArray[kk*n2+ii];
+        }
+    }
+    VecRestoreArray(theta_v,   &tiArray);
+
+    VecGetArray(theta_b_l, &tbArray);
+    VecGetArray(theta_t_l, &ttArray);
+    for(ii = 0; ii < n2; ii++) {
+        tjArray[ii]             = tbArray[inds2[ii]];
+        tjArray[geom->nk*n2+ii] = ttArray[inds2[ii]];
+    }
+    VecRestoreArray(theta_b_l, &tbArray);
+    VecRestoreArray(theta_t_l, &ttArray);
+    VecRestoreArray(theta,     &tjArray);
+
+    VecDestroy(&frt);
+    VecDestroy(&theta_v);
 }
 
 /*
@@ -1582,6 +1744,14 @@ void PrimEqns_HEVI2::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     L2Vecs* l2_Ft    = new L2Vecs(geom->nk, topo, geom);
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    if(!mapThetaBCs) {
+        VecScatterBegin(topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterBegin(topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
+        mapThetaBCs = true;
+    }
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &xu);
@@ -2777,16 +2947,105 @@ void PrimEqns_HEVI2::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A) {
     delete W;
 }
 
-void PrimEqns_HEVI2::VertSolve(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec exner, Vec velz_n, Vec rho_n, Vec rt_n, Vec exner_n) {
-    int kk, n2, it = 0;
+void PrimEqns_HEVI2::AssembleLinearWithThetaVert(int ex, int ey, Vec theta, Mat A) {
+    int ii, jj, kk, ei, mp1, mp12, n2;
+    int *inds0;
+    double det, tb, tt, gamma;
+    int inds2k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** QB = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** QT = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar *tArray;
+
+    inds0 = topo->elInds0_l(ex, ey);
+    n2    = topo->elOrd*topo->elOrd;
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    MatZeroEntries(A);
+
+    // Assemble the matrices
+    VecGetArray(theta, &tArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        Q->assemble(ex, ey);
+        ei = ey*topo->nElsX + ex;
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            QB[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            // for linear field we multiply by the vertical jacobian determinant when integrating, 
+            // and do no other trasformations for the basis functions
+            QB[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
+            QT[ii][ii]  = QB[ii][ii];
+
+            tb = tt = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                tb += tArray[(kk+0)*n2+jj]*gamma;
+                tt += tArray[(kk+1)*n2+jj]*gamma;
+            }
+
+            QB[ii][ii] *= tb/det;
+            QT[ii][ii] *= tt/det;
+        }
+
+        // assemble the first basis function
+        if(kk > 0) {
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QB, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                inds2k[ii] = ii + (kk-1)*W->nDofsJ;
+            }
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        }
+
+        // assemble the second basis function
+        if(kk < geom->nk - 1) {
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QT, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                inds2k[ii] = ii + (kk+0)*W->nDofsJ;
+            }
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(theta, &tArray);
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, QB);
+    Free2D(Q->nDofsI, QT);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}
+
+void PrimEqns_HEVI2::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n) {
+    int ex, ey, ei, n2, it = 0;
     double eps = 1.0e+9;
-    Mat V0_rt, V0_inv, V1_Pi, V1_rt_inv, V0_theta, V10_w;
+    Mat V0_rt, V0_inv, V1_Pi, V1_rt_inv, V0_theta, V10_w, AB;
     Mat DTV10_w      = NULL;
     Mat DTV1         = NULL;
     Mat V0_invDTV1   = NULL;
     Mat GRAD         = NULL;
     Mat V0_invV0_rt  = NULL;
     Mat DV0_invV0_rt = NULL;
+    L2Vecs* l2_theta = new L2Vecs(geom->nk+1, topo, geom);
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -2821,50 +3080,63 @@ void PrimEqns_HEVI2::VertSolve(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec ex
     MatSetSizes(V10_w, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(V10_w, 2*n2, PETSC_NULL);
 
-    do {
-        // assemble the operators
-        AssembleConLinWithW(ex, ey, velz, V10_w);
-        if(!DTV10_w) {
-            MatMatMult(V01, V10_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV10_w);
-        } else {
-            MatMatMult(V01, V10_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV10_w);
-        }
-        MatScale(DTV10_w, 0.5*0.5*dt);
+    MatCreate(MPI_COMM_SELF, &AB);
+    MatSetType(AB, MATSEQAIJ);
+    MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
+    MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
 
-        AssembleConst(ex, ey, VB);
-        if(!DTV1) {
-            MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
-        } else {
-            MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
-        }
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
 
-        AssembleLinearInv(ex, ey, V0_inv);
-        if(!V0_invDTV1) {
-            MatMatMult(V0_inv, DTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
-        } else {
-            MatMatMult(V0_inv, DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
-        }
+            do {
+                diagThetaVert(ex, ey, VA, AB, rho[ei], rt[ei], l2_theta->vz[ei]);
 
-        //AssembleLinearWithTheta(ex, ey, theta, V0_theta);
-        if(!GRAD) {
-            MatMatMult(V0_theta, V0_invDTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GRAD);
-        } else {
-            MatMatMult(V0_theta, V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &GRAD);
-        }
+                // assemble the operators
+                AssembleConLinWithW(ex, ey, velz[ei], V10_w);
+                if(!DTV10_w) {
+                    MatMatMult(V01, V10_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV10_w);
+                } else {
+                    MatMatMult(V01, V10_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV10_w);
+                }
+                MatScale(DTV10_w, 0.5*0.5*dt);
 
-        AssembleLinearWithRT(ex, ey, rt, V0_rt);
-        if(!V0_invV0_rt) {
-            MatMatMult(V0_inv, V0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
-        } else {
-            MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
-        }
-        if(!DV0_invV0_rt) {
-            MatMatMult(V10, V0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
-        } else {
-            MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
-        }
+                AssembleConst(ex, ey, VB);
+                if(!DTV1) {
+                    MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
+                } else {
+                    MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
+                }
 
-    } while(it < 100 && eps > 1.0e-12);
+                AssembleLinearInv(ex, ey, V0_inv);
+                if(!V0_invDTV1) {
+                    MatMatMult(V0_inv, DTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
+                } else {
+                    MatMatMult(V0_inv, DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
+                }
+
+                AssembleLinearWithThetaVert(ex, ey, l2_theta->vz[ei], V0_theta);
+                if(!GRAD) {
+                    MatMatMult(V0_theta, V0_invDTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GRAD);
+                } else {
+                    MatMatMult(V0_theta, V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &GRAD);
+                }
+
+                AssembleLinearWithRT(ex, ey, rt[ei], V0_rt);
+                if(!V0_invV0_rt) {
+                    MatMatMult(V0_inv, V0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+                } else {
+                    MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+                }
+                if(!DV0_invV0_rt) {
+                    MatMatMult(V10, V0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+                } else {
+                    MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+                }
+
+            } while(it < 100 && eps > 1.0e-12);
+        }
+    }
 
     // deallocate matrices
     MatDestroy(&V0_rt       );
@@ -2879,4 +3151,6 @@ void PrimEqns_HEVI2::VertSolve(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec ex
     MatDestroy(&GRAD        );
     MatDestroy(&V0_invV0_rt );
     MatDestroy(&DV0_invV0_rt);
+    MatDestroy(&AB          );
+    delete l2_theta;
 }
