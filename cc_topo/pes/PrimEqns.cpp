@@ -790,7 +790,8 @@ Q0[ii][ii] *= 2.0/geom->thick[0][inds0[ii]];
     MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
     // top boundary
-    VecGetArray(rho[geom->nk-1], &rArray);
+    //VecGetArray(rho[geom->nk-1], &rArray);
+    VecGetArray(rho[geom->nk], &rArray);
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
         Q0[ii][ii] = Q->A[ii][ii]*(scale/det/det);
@@ -801,9 +802,11 @@ Q0[ii][ii] *= 2.0/geom->thick[0][inds0[ii]];
         geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
         Q0[ii][ii] *= rk;
 //TODO: scaling seems to work, but don't understand why yet
-Q0[ii][ii] *= 2.0/geom->thick[geom->nk-1][inds0[ii]];
+//Q0[ii][ii] *= 2.0/geom->thick[geom->nk-1][inds0[ii]];
+Q0[ii][ii] *= 2.0/geom->thick[geom->nk][inds0[ii]];
     }
-    VecRestoreArray(rho[geom->nk-1], &rArray);
+    //VecRestoreArray(rho[geom->nk-1], &rArray);
+    VecRestoreArray(rho[geom->nk], &rArray);
 
     Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
     Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);

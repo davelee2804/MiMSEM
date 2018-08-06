@@ -90,7 +90,7 @@ void L2Vecs::HorizToVert() {
             inds2 = topo->elInds2_l(ex, ey);
 
             VecGetArray(vz[ei], &zArray);
-            for(kk = 0; kk < geom->nk; kk++) {
+            for(kk = 0; kk < nk; kk++) {
                 VecGetArray(vl[kk], &hArray);
                 for(ii = 0; ii < n2; ii++) {
                     zArray[kk*n2+ii] = hArray[inds2[ii]];
