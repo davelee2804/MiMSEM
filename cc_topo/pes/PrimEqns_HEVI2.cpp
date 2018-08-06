@@ -2564,6 +2564,7 @@ void PrimEqns_HEVI2::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
     n2    = topo->elOrd*topo->elOrd;
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
+    ei    = ey*topo->nElsX + ex;
 
     MatZeroEntries(B);
     VecGetArray(rho, &rArray);
@@ -2572,7 +2573,6 @@ void PrimEqns_HEVI2::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
     for(kk = 0; kk < geom->nk; kk++) {
         // build the 2D mass matrix
         Q->assemble(ex, ey);
-        ei = ey*topo->nElsX + ex;
 
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -2587,7 +2587,7 @@ void PrimEqns_HEVI2::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
                 gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                 rk += rArray[kk*n2+jj]*gamma;
             }
-            Q0[ii][ii] *= rk*(2.0/geom->thick[kk][inds0[ii]]*det);
+            Q0[ii][ii] *= rk*2.0/(geom->thick[kk][inds0[ii]]*det);
         }
 
         // assemble the piecewise constant mass matrix for level k
@@ -2614,14 +2614,269 @@ void PrimEqns_HEVI2::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
     delete W;
 }
 
-void PrimEqns_HEVI2::AssembleLinConWithW(int ex, int ey, Vec velz, Mat AB) {
-}
-
 void PrimEqns_HEVI2::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
+    int ii, jj, kk, ei, n2, mp1, mp12, rows[99], cols[99];
+    double wb, wt, gamma, det;
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar* wArray;
+
+    n2    = topo->elOrd*topo->elOrd;
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+    ei    = ey*topo->nElsX + ex;
+
+    VecGetArray(velz, &wArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        if(kk > 0) {
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+
+                // multiply by the vertical jacobian, then scale the piecewise constant
+                // basis by the vertical jacobian, so do nothing
+
+                // interpolate the vertical velocity at the quadrature point
+                wb = 0.0;
+                for(jj = 0; jj < n2; jj++) {
+                    gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                    wb += wArray[(kk-1)*n2+jj]*gamma;
+                }
+                Q0[ii][ii] *= 0.5*wb/det;
+            }
+
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                rows[ii] = ii + (kk+0)*W->nDofsJ;
+                cols[ii] = ii + (kk-1)*W->nDofsJ;
+            }
+            MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+        }
+
+        if(kk < geom->nk - 1) {
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+
+                // multiply by the vertical jacobian, then scale the piecewise constant
+                // basis by the vertical jacobian, so do nothing
+
+                // interpolate the vertical velocity at the quadrature point
+                wt = 0.0;
+                for(jj = 0; jj < n2; jj++) {
+                    gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                    wt += wArray[(kk+0)*n2+jj]*gamma;
+                }
+                Q0[ii][ii] *= 0.5*wt/det;
+            }
+
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                rows[ii] = ii + (kk+0)*W->nDofsJ;
+                cols[ii] = ii + (kk+0)*W->nDofsJ;
+            }
+            MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(velz, &wArray);
+    MatAssemblyBegin(BA, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
 }
 
-void PrimEqns_HEVI2::VertSolve(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec exner) {
-    Mat V0_Theta, V0_inv, V1_Pi, V1_Theta_inv, V1, V0_theta, V10_w;
+void PrimEqns_HEVI2::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A) {
+    int ii, jj, kk, ei, mp1, mp12, n2, *inds0;
+    double det, rk, gamma;
+    int inds2k[99];
+    Wii* Q = new Wii(node->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar *rArray;
+
+    inds0 = topo->elInds0_l(ex, ey);
+    ei    = ey*topo->nElsX + ex;
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+    n2    = topo->elOrd*topo->elOrd;
+
+    Q->assemble(ex, ey);
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    MatZeroEntries(A);
+
+    // Assemble the matrices
+    VecGetArray(rt, &rArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+
+            // multuply by the vertical determinant to integrate, then
+            // divide piecewise constant density by the vertical determinant,
+            // so these cancel
+            rk = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                rk += rArray[kk*n2+jj]*gamma;
+            }
+            Q0[ii][ii] *= rk*2.0/(geom->thick[kk][inds0[ii]]*det);
+        }
+
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        // assemble the first basis function
+        if(kk > 0) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                inds2k[ii] = ii + (kk-1)*W->nDofsJ;
+            }
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        }
+
+        // assemble the second basis function
+        if(kk < geom->nk - 1) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                inds2k[ii] = ii + (kk+0)*W->nDofsJ;
+            }
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(rt, &rArray);
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
+}
+
+void PrimEqns_HEVI2::VertSolve(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec exner, Vec velz_n, Vec rho_n, Vec rt_n, Vec exner_n) {
+    int kk, n2, it = 0;
+    double eps = 1.0e+9;
+    Mat V0_rt, V0_inv, V1_Pi, V1_rt_inv, V0_theta, V10_w;
+    Mat DTV10_w      = NULL;
+    Mat DTV1         = NULL;
+    Mat V0_invDTV1   = NULL;
+    Mat GRAD         = NULL;
+    Mat V0_invV0_rt  = NULL;
+    Mat DV0_invV0_rt = NULL;
+
+    n2 = topo->elOrd*topo->elOrd;
 
     // initialise matrices
+    MatCreate(MPI_COMM_SELF, &V0_rt);
+    MatSetType(V0_rt, MATSEQAIJ);
+    MatSetSizes(V0_rt, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(V0_rt, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &V0_inv);
+    MatSetType(V0_inv, MATSEQAIJ);
+    MatSetSizes(V0_inv, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(V0_inv, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &V1_Pi);
+    MatSetType(V1_Pi, MATSEQAIJ);
+    MatSetSizes(V1_Pi, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2);
+    MatSeqAIJSetPreallocation(V1_Pi, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &V1_rt_inv);
+    MatSetType(V1_rt_inv, MATSEQAIJ);
+    MatSetSizes(V1_rt_inv, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2);
+    MatSeqAIJSetPreallocation(V1_rt_inv, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &V0_theta);
+    MatSetType(V0_theta, MATSEQAIJ);
+    MatSetSizes(V0_theta, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(V0_theta, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &V10_w);
+    MatSetType(V10_w, MATSEQAIJ);
+    MatSetSizes(V10_w, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(V10_w, 2*n2, PETSC_NULL);
+
+    do {
+        // assemble the operators
+        AssembleConLinWithW(ex, ey, velz, V10_w);
+        if(!DTV10_w) {
+            MatMatMult(V01, V10_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV10_w);
+        } else {
+            MatMatMult(V01, V10_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV10_w);
+        }
+        MatScale(DTV10_w, 0.5*0.5*dt);
+
+        AssembleConst(ex, ey, VB);
+        if(!DTV1) {
+            MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
+        } else {
+            MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
+        }
+
+        AssembleLinearInv(ex, ey, V0_inv);
+        if(!V0_invDTV1) {
+            MatMatMult(V0_inv, DTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
+        } else {
+            MatMatMult(V0_inv, DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
+        }
+
+        //AssembleLinearWithTheta(ex, ey, theta, V0_theta);
+        if(!GRAD) {
+            MatMatMult(V0_theta, V0_invDTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GRAD);
+        } else {
+            MatMatMult(V0_theta, V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &GRAD);
+        }
+
+        AssembleLinearWithRT(ex, ey, rt, V0_rt);
+        if(!V0_invV0_rt) {
+            MatMatMult(V0_inv, V0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+        } else {
+            MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+        }
+        if(!DV0_invV0_rt) {
+            MatMatMult(V10, V0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+        } else {
+            MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+        }
+
+    } while(it < 100 && eps > 1.0e-12);
+
+    // deallocate matrices
+    MatDestroy(&V0_rt       );
+    MatDestroy(&V0_inv      );
+    MatDestroy(&V1_Pi       );
+    MatDestroy(&V1_rt_inv   );
+    MatDestroy(&V0_theta    );
+    MatDestroy(&V10_w       );
+    MatDestroy(&DTV10_w     );
+    MatDestroy(&DTV1        );
+    MatDestroy(&V0_invDTV1  );
+    MatDestroy(&GRAD        );
+    MatDestroy(&V0_invV0_rt );
+    MatDestroy(&DV0_invV0_rt);
 }

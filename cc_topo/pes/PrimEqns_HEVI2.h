@@ -76,14 +76,14 @@ class PrimEqns_HEVI2 {
         void AssembleLinCon(int ex, int ey, Mat AB);
         void AssembleLinearWithTheta(int ex, int ey, Vec* theta, Mat A);
         void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
+        void AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A);
         void AssembleVertLaplacian(int ex, int ey, Mat M0, double _dt);
         void AssembleLinearInv(int ex, int ey, Mat A);
         void AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B);
         void AssembleConstWithThetaInv(int ex, int ey, Vec theta, Mat B);
         void AssembleConstWithRho(int ex, int ey, Vec rho, Mat A);
-        void AssembleLinConWithW(int ex, int ey, Vec velz, Mat AB);
         void AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA);
 
-        void VertSolve(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec exner);
+        void VertSolve(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec exner, Vec velz_n, Vec rho_n, Vec rt_n, Vec exner_n);
 
 };
