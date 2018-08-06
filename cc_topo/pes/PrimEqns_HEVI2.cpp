@@ -2817,7 +2817,7 @@ void PrimEqns_HEVI2::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                     wb += wArray[(kk-1)*n2+jj]*gamma;
                 }
-                Q0[ii][ii] *= 0.5*wb/det;
+                Q0[ii][ii] *= wb/det; // scale by 0.5 outside
             }
 
             Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -2992,7 +2992,6 @@ void PrimEqns_HEVI2::AssembleLinearWithThetaVert(int ex, int ey, Vec theta, Mat 
                 tb += tArray[(kk+0)*n2+jj]*gamma;
                 tt += tArray[(kk+1)*n2+jj]*gamma;
             }
-
             QB[ii][ii] *= tb/det;
             QT[ii][ii] *= tt/det;
         }
@@ -3099,7 +3098,7 @@ void PrimEqns_HEVI2::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 } else {
                     MatMatMult(V01, V10_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV10_w);
                 }
-                MatScale(DTV10_w, 0.5*0.5*dt);
+                MatScale(DTV10_w, 0.5*0.5*dt); // 0.5 for the nonlinear term and 0.5 for the time step
 
                 AssembleConst(ex, ey, VB);
                 if(!DTV1) {
