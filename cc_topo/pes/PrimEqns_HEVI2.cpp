@@ -3108,10 +3108,9 @@ void PrimEqns_HEVI2::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            eps = 1.0e+9;
             ei = ey*topo->nElsX + ex;
 
-            // assemble the rhs
+            // assemble the vertical velocity rhs (except the exner term)
             AssembleLinear(ex, ey, VA);
             MatMult(VA, velz_n[ei], rhs);
             VecAXPY(rhs, +0.5*dt, gv[ei]); // subtract the -ve gravity
@@ -3184,26 +3183,55 @@ void PrimEqns_HEVI2::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
 
                 // add the exner pressure at the previous time level to the rhs
                 MatMult(GRAD, exner_n[ei], tmp);
-                VecAYPX(tmp, -0.5*dt, rhs);//TODO: AYPX - check!
+                VecAYPX(tmp, -0.5*dt, rhs);
 
                 AssembleLinear(ex, ey, VA);
                 AssembleVertLaplacian(ex, ey, VA, 0.5*dt);
                 MatAXPY(VA, 0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
                 MatAXPY(VA, -0.25*dt*dt, LAP, SAME_NONZERO_PATTERN);
 
-                KSPSolve(kspColA, rhs, velz_j);
+                KSPSolve(kspColA, tmp, velz_j);
 
                 // update the exner pressure
                 MatMult(DIV, velz_j, exner_j);
-                VecAYPX(exner_j, -0.5*dt*CP*GAMMA/(1.0 - GAMMA), exner_n[ei]);//TODO: AYPX - check!
+                VecAYPX(exner_j, -0.5*dt*CP*GAMMA/(1.0 - GAMMA), exner_n[ei]);
 
                 // update the density and the density weighted potential temperature
                 solveMass(0.5*dt, ex, ey, AB, velz_j, rho_n[ei], rho_j);
                 solveMass(0.5*dt, ex, ey, AB, velz_j, rt_n[ei] , rt_j );
 
                 // check the differences
+                VecCopy(velz_j, velz_d);
+                VecAXPY(velz_d, -1.0, velz[ei]);
+                VecNorm(velz_d, NORM_2, &eps);
+                VecNorm(velz_j, NORM_2, &eps_norm);
+                max_eps = eps/eps_norm;
 
-            } while(it < 100 && eps > 1.0e-12);
+                VecCopy(exner_j, exner_d);
+                VecAXPY(exner_d, -1.0, exner[ei]);
+                VecNorm(exner_d, NORM_2, &eps);
+                VecNorm(exner_j, NORM_2, &eps_norm);
+                if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
+
+                VecCopy(rho_j, rho_d);
+                VecAXPY(rho_d, -1.0, rho[ei]);
+                VecNorm(rho_d, NORM_2, &eps);
+                VecNorm(rho_j, NORM_2, &eps_norm);
+                if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
+
+                VecCopy(rt_j, rt_d);
+                VecAXPY(rt_d, -1.0, rt[ei]);
+                VecNorm(rt_d, NORM_2, &eps);
+                VecNorm(rt_j, NORM_2, &eps_norm);
+                if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
+
+                // copy over the new solutions at this iteration
+                VecCopy(velz_j , velz[ei] );
+                VecCopy(exner_j, exner[ei]);
+                VecCopy(rho_j  , rho[ei]  );
+                VecCopy(rt_j   , rt[ei]   );
+
+            } while(it < 100 && max_eps > 1.0e-12);
         }
     }
 
