@@ -2735,12 +2735,12 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
 
                 // add the exner pressure at the previous time level to the rhs
                 MatMult(GRAD, exner_n[ei], tmp);
-                //VecAYPX(tmp, -0.5*dt, rhs);
+                VecAYPX(tmp, -0.5*dt, rhs);
 
                 AssembleLinear(ex, ey, VA);
-                //AssembleVertLaplacian(ex, ey, VA, 0.5*dt);
+                AssembleVertLaplacian(ex, ey, VA, 0.5*dt);
                 MatAXPY(VA, 0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
-                //MatAXPY(VA, -0.25*dt*dt*CP*GAMMA/(1.0 - GAMMA), LAP, SAME_NONZERO_PATTERN);
+                MatAXPY(VA, -0.25*dt*dt*CP*GAMMA/(1.0 - GAMMA), LAP, SAME_NONZERO_PATTERN);
 
                 KSPSolve(kspColA, tmp, velz_j);
 
