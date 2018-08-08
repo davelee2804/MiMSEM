@@ -1214,7 +1214,8 @@ void PrimEqns_HEVI3::AssembleLinCon(int ex, int ey, Mat AB) {
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
-    mp12  = (quad->n + 1)*(quad->n + 1);
+    ei   = ey*topo->nElsX + ex;
+    mp12 = (quad->n + 1)*(quad->n + 1);
 
     MatZeroEntries(AB);
 
@@ -1222,7 +1223,6 @@ void PrimEqns_HEVI3::AssembleLinCon(int ex, int ey, Mat AB) {
     for(kk = 0; kk < geom->nk; kk++) {
         // build the 2D mass matrix
         Q->assemble(ex, ey);
-        ei = ey*topo->nElsX + ex;
 
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -1240,7 +1240,6 @@ void PrimEqns_HEVI3::AssembleLinCon(int ex, int ey, Mat AB) {
         for(ii = 0; ii < W->nDofsJ; ii++) {
             cols[ii] = ii + kk*W->nDofsJ;
         }
-
         // assemble the first basis function
         if(kk > 0) {
             for(ii = 0; ii < W->nDofsJ; ii++) {
@@ -2419,7 +2418,7 @@ void PrimEqns_HEVI3::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
 }
 
 void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A) {
-    int ii, jj, kk, ei, mp1, mp12, n2, *inds0;
+    int ii, jj, kk, ei, mp1, mp12, n2;
     double det, rk, gamma;
     int inds2k[99];
     Wii* Q = new Wii(node->q, geom);
@@ -2431,7 +2430,6 @@ void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A) {
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *rArray;
 
-    inds0 = topo->elInds0_l(ex, ey);
     ei    = ey*topo->nElsX + ex;
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
@@ -2458,7 +2456,7 @@ void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A) {
                 gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                 rk += rArray[kk*n2+jj]*gamma;
             }
-            Q0[ii][ii] *= rk*2.0/(geom->thick[kk][inds0[ii]]*det);
+            Q0[ii][ii] *= rk/det;
         }
 
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -2693,7 +2691,6 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 }
 
                 diagThetaVert(ex, ey, AB, rho[ei], rt[ei], l2_theta->vz[ei]);
-//VecSet(l2_theta->vz[ei],1.0);
                 AssembleLinearWithTheta(ex, ey, l2_theta->vz[ei], V0_theta);
                 if(!GRAD) {
                     MatMatMult(V0_theta, V0_invDTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GRAD);
@@ -2786,14 +2783,20 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 VecCopy(rho_j  , rho[ei]  );
                 VecCopy(rt_j   , rt[ei]   );
 
-                if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
-                if(!rank)cout << "\t\t\t\t|eps_w|:     " << eps_1 << endl;
-                if(!rank)cout << "\t\t\t\t|eps_Pi|:    " << eps_2 << endl;
-                if(!rank)cout << "\t\t\t\t|eps_rho|:   " << eps_3 << endl;
-                if(!rank)cout << "\t\t\t\t|eps_Theta|: " << eps_4 << endl;
+                //if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
+                //if(!rank)cout << "\t\t\t\t|eps_w|:     " << eps_1 << endl;
+                //if(!rank)cout << "\t\t\t\t|eps_Pi|:    " << eps_2 << endl;
+                //if(!rank)cout << "\t\t\t\t|eps_rho|:   " << eps_3 << endl;
+                //if(!rank)cout << "\t\t\t\t|eps_Theta|: " << eps_4 << endl;
                 it++;
 
             } while(it < 100 && max_eps > 1.0e-12);
+
+            if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
+            if(!rank)cout << "\t\t\t\t|eps_w|:     " << eps_1 << endl;
+            if(!rank)cout << "\t\t\t\t|eps_Pi|:    " << eps_2 << endl;
+            if(!rank)cout << "\t\t\t\t|eps_rho|:   " << eps_3 << endl;
+            if(!rank)cout << "\t\t\t\t|eps_Theta|: " << eps_4 << endl;
         }
     }
 
