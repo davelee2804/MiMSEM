@@ -3013,7 +3013,7 @@ void PrimEqns_HEVI3::AssembleLinearWithThetaVert(int ex, int ey, Vec theta, Mat 
 // _n vectors are the for the initial state at the beginning of the step
 void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n) {
     int ex, ey, ei, n2, it, rank;
-    double eps, max_eps, eps_norm;
+    double eps, max_eps, eps_norm, eps_1, eps_2, eps_3, eps_4;
     Mat V0_rt, V0_inv, V1_Pi, V1_rt_inv, V0_theta, V10_w, AB;
     Mat DTV10_w                    = NULL;
     Mat DTV1                       = NULL;
@@ -3100,6 +3100,7 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
 
             do {
                 diagThetaVert(ex, ey, VA, AB, rho[ei], rt[ei], l2_theta->vz[ei]);
+//VecSet(l2_theta->vz[ei],1.0);
 
                 // assemble the operators
                 AssembleConLinWithW(ex, ey, velz[ei], V10_w);
@@ -3169,7 +3170,7 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 AssembleLinear(ex, ey, VA);
                 AssembleVertLaplacian(ex, ey, VA, 0.5*dt);
                 MatAXPY(VA, 0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
-                MatAXPY(VA, -0.25*dt*dt, LAP, SAME_NONZERO_PATTERN);
+                MatAXPY(VA, -0.25*dt*dt*CP*GAMMA/(1.0 - GAMMA), LAP, SAME_NONZERO_PATTERN);
 
                 KSPSolve(kspColA, tmp, velz_j);
 
@@ -3187,24 +3188,28 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 VecNorm(velz_d, NORM_2, &eps);
                 VecNorm(velz_j, NORM_2, &eps_norm);
                 max_eps = eps/eps_norm;
+                eps_1 = eps/eps_norm;
 
                 VecCopy(exner_j, exner_d);
                 VecAXPY(exner_d, -1.0, exner[ei]);
                 VecNorm(exner_d, NORM_2, &eps);
                 VecNorm(exner_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
+                eps_2 = eps/eps_norm;
 
                 VecCopy(rho_j, rho_d);
                 VecAXPY(rho_d, -1.0, rho[ei]);
                 VecNorm(rho_d, NORM_2, &eps);
                 VecNorm(rho_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
+                eps_3 = eps/eps_norm;
 
                 VecCopy(rt_j, rt_d);
                 VecAXPY(rt_d, -1.0, rt[ei]);
                 VecNorm(rt_d, NORM_2, &eps);
                 VecNorm(rt_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
+                eps_4 = eps/eps_norm;
 
                 // copy over the new solutions at this iteration
                 VecCopy(velz_j , velz[ei] );
@@ -3213,6 +3218,10 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 VecCopy(rt_j   , rt[ei]   );
 
                 if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
+                if(!rank)cout << "\t\t\t\t|eps_w|:     " << eps_1 << endl;
+                if(!rank)cout << "\t\t\t\t|eps_Pi|:    " << eps_2 << endl;
+                if(!rank)cout << "\t\t\t\t|eps_rho|:   " << eps_3 << endl;
+                if(!rank)cout << "\t\t\t\t|eps_Theta|: " << eps_4 << endl;
                 it++;
 
             } while(it < 100 && max_eps > 1.0e-12);
