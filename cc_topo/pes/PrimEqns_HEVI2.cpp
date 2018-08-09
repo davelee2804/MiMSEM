@@ -732,7 +732,7 @@ void PrimEqns_HEVI2::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
         // so these cancel
         geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
         Q0[ii][ii] *= rk;
-        Q0[ii][ii] *= 2.0/geom->thick[0][inds0[ii]];
+        //Q0[ii][ii] *= 2.0/geom->thick[0][inds0[ii]];//TODO: don't think this scaling should appear
     }
     VecRestoreArray(rho[0], &rArray);
 
@@ -756,7 +756,7 @@ void PrimEqns_HEVI2::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
         // so these cancel
         geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
         Q0[ii][ii] *= rk;
-        Q0[ii][ii] *= 2.0/geom->thick[geom->nk-1][inds0[ii]];
+        //Q0[ii][ii] *= 2.0/geom->thick[geom->nk-1][inds0[ii]];//TODO: don't think this scaling should appear
     }
     VecRestoreArray(rho[geom->nk-1], &rArray);
 
@@ -899,7 +899,8 @@ void PrimEqns_HEVI2::thetaBCVecVert(int ex, int ey, Mat A, Vec rho, Vec* bTheta)
             gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
             rk += rArray[jj]*gamma;
         }
-        Q0[ii][ii] *= rk*2.0/(geom->thick[0][inds0[ii]]*det);
+        Q0[ii][ii] *= rk/det;
+        //Q0[ii][ii] *= rk*2.0/(geom->thick[0][inds0[ii]]*det);
     }
 
     Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -924,7 +925,8 @@ void PrimEqns_HEVI2::thetaBCVecVert(int ex, int ey, Mat A, Vec rho, Vec* bTheta)
             gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
             rk += rArray[(geom->nk-1)*n2+jj]*gamma;
         }
-        Q0[ii][ii] *= rk*2.0/(geom->thick[geom->nk-1][inds0[ii]]*det);
+        Q0[ii][ii] *= rk/det;
+        //Q0[ii][ii] *= rk*2.0/(geom->thick[geom->nk-1][inds0[ii]]*det);
     }
 
     Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);

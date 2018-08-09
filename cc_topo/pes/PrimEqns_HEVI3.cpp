@@ -756,121 +756,6 @@ void PrimEqns_HEVI3::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     MatDestroy(&AB);
 }
 
-#if 0
-void PrimEqns_HEVI3::thetaBCVecVert(int ex, int ey, Mat A, Vec rho, Vec* bTheta) {
-    int* inds2 = topo->elInds2_l(ex, ey);
-    int* inds0 = topo->elInds0_l(ex, ey);
-    int ii, jj, ei, mp1, mp12, n2;
-    double det, rk, gamma;
-    int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    PetscScalar *rArray, *vArray, *hArray;
-    Vec theta_o;
-
-    ei    = ey*topo->nElsX + ex;
-    mp1   = quad->n + 1;
-    mp12  = mp1*mp1;
-    n2    = topo->elOrd*topo->elOrd;
-
-    Q->assemble(ex, ey);
-    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &theta_o);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, bTheta);
-
-    MatZeroEntries(A);
-
-    // bottom boundary
-    VecGetArray(rho, &rArray);
-    for(ii = 0; ii < mp12; ii++) {
-        det = geom->det[ei][ii];
-        Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
-
-        // multuply by the vertical determinant to integrate, then
-        // divide piecewise constant density by the vertical determinant,
-        // so these cancel
-        rk = 0.0;
-        for(jj = 0; jj < n2; jj++) {
-            gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
-            rk += rArray[jj]*gamma;
-        }
-        Q0[ii][ii] *= rk*2.0/(geom->thick[0][inds0[ii]]*det);
-    }
-
-    Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
-    for(ii = 0; ii < W->nDofsJ; ii++) {
-        inds2k[ii] = ii + 0*W->nDofsJ;
-    }
-    MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-
-    // top boundary
-    for(ii = 0; ii < mp12; ii++) {
-        det = geom->det[ei][ii];
-        Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
-
-        // multuply by the vertical determinant to integrate, then
-        // divide piecewise constant density by the vertical determinant,
-        // so these cancel
-        rk = 0.0;
-        for(jj = 0; jj < n2; jj++) {
-            gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
-            rk += rArray[(geom->nk-1)*n2+jj]*gamma;
-        }
-        Q0[ii][ii] *= rk*2.0/(geom->thick[geom->nk-1][inds0[ii]]*det);
-    }
-
-    Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
-    for(ii = 0; ii < W->nDofsJ; ii++) {
-        inds2k[ii] = ii + (geom->nk-2)*W->nDofsJ;
-    }
-    MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-    VecRestoreArray(rho, &rArray);
-
-    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-
-    // assemble the theta bc vector
-    VecZeroEntries(theta_o);
-    VecGetArray(theta_o, &vArray);
-    // bottom
-    VecGetArray(theta_b_l, &hArray);
-    for(ii = 0; ii < n2; ii++) {
-        vArray[ii] = hArray[inds2[ii]];
-    }
-    VecRestoreArray(theta_b_l, &hArray);
-    // top
-    VecGetArray(theta_t_l, &hArray);
-    for(ii = 0; ii < n2; ii++) {
-        vArray[(geom->nk-2)*n2+ii] = hArray[inds2[ii]];
-    }
-    VecRestoreArray(theta_t_l, &hArray);
-    VecRestoreArray(theta_o, &vArray);
-
-    MatMult(A, theta_o, *bTheta);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
-    VecDestroy(&theta_o);
-}
-#endif
-
 // assume V0^{rho} has already been assembled
 void PrimEqns_HEVI3::thetaBCVecVert(int ex, int ey, Mat A, Vec* bTheta) {
     int* inds2 = topo->elInds2_l(ex, ey);
@@ -2649,11 +2534,6 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
     MatSetType(AB, MATSEQAIJ);
     MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
     MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
-
-    MatCreate(MPI_COMM_SELF, &LAP);
-    MatSetType(LAP, MATSEQAIJ);
-    MatSetSizes(LAP, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(LAP, 2*n2, PETSC_NULL);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
