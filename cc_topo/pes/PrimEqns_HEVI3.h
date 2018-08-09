@@ -26,7 +26,7 @@ class PrimEqns_HEVI3 {
         WtQUmat* K;
         Whmat* T;
         Vec* fg;                                     // coriolis vector (global)
-        bool mapThetaBCs;
+        bool firstStep;
         Vec theta_b;                                 // bottom potential temperature bc
         Vec theta_t;                                 // top potential temperature bc
         Vec theta_b_l;                               // bottom potential temperature bc

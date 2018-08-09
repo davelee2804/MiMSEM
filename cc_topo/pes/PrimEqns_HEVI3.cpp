@@ -45,7 +45,7 @@ PrimEqns_HEVI3::PrimEqns_HEVI3(Topo* _topo, Geom* _geom, double _dt) {
     del2 = viscosity();
     vert_visc = viscosity_vert();
     step = 0;
-    mapThetaBCs = false;
+    firstStep = true;
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -847,8 +847,8 @@ void PrimEqns_HEVI3::grad(Vec phi, Vec* u, int lev) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mphi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMphi);
 
-    M1->assemble(lev, SCALE, false); //TODO: vertical scaling of this operator causes problems??
-    M2->assemble(lev, SCALE, false);
+    M1->assemble(lev, SCALE, true); //TODO: vertical scaling of this operator causes problems??
+    M2->assemble(lev, SCALE, true);
 
     MatMult(M2->M, phi, Mphi);
     MatMult(EtoF->E12, Mphi, dMphi);
@@ -1399,12 +1399,11 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    if(!mapThetaBCs) {
+    if(firstStep) {
         VecScatterBegin(topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(  topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterBegin(topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(  topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
-        mapThetaBCs = true;
     }
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
@@ -1607,6 +1606,8 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecCopy(velz_i[ii], velz[ii]);
     }
+
+    firstStep = false;
 
     // write output
     if(save) {
@@ -2622,11 +2623,20 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 KSPSolve(kspColA, tmp, velz_j);
 
                 // update the exner pressure
-                MatMult(DIV, velz_j, exner_j);
-                VecAYPX(exner_j, -0.5*dt*CP*GAMMA/(1.0 - GAMMA), exner_n[ei]);
+                //MatMult(DIV, velz_j, exner_j);
+                //VecAYPX(exner_j, -0.5*dt*CP*GAMMA/(1.0 - GAMMA), exner_n[ei]);
 
                 // update the density and the density weighted potential temperature
                 solveMass(0.5*dt, ex, ey, AB, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j);
+
+AssembleLinearWithRT(ex, ey, rt_j, V0_rt);
+MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+MatMatMult(V1_Pi, DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V1_PiDV0_invV0_rt);
+MatMatMult(V1_rt_inv, V1_PiDV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DIV);
+
+MatMult(DIV, velz_j, exner_j);
+VecAYPX(exner_j, -0.5*dt*CP*GAMMA/(1.0 - GAMMA), exner_n[ei]);
 
                 // check the differences
                 VecCopy(velz_j, velz_d);
