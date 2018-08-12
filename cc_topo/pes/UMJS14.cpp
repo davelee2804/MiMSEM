@@ -15,7 +15,7 @@
 #include "ElMats.h"
 #include "Assembly.h"
 #include "SWEqn.h"
-#include "PrimEqns_HEVI2.h"
+#include "PrimEqns_HEVI3.h"
 
 using namespace std;
 
@@ -263,7 +263,7 @@ int main(int argc, char** argv) {
     ofstream file;
     Topo* topo;
     Geom* geom;
-    PrimEqns_HEVI2* pe;
+    PrimEqns_HEVI3* pe;
     Vec *velx, *velz, *rho, *rt, *exner;
     PetscViewer viewer;
 
@@ -278,7 +278,7 @@ int main(int argc, char** argv) {
     geom = new Geom(rank, topo, NK);
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
-    pe   = new PrimEqns_HEVI2(topo, geom, dt);
+    pe   = new PrimEqns_HEVI3(topo, geom, dt);
     pe->step = startStep;
 
     n2 = topo->nElsX*topo->nElsX;
@@ -307,7 +307,7 @@ int main(int argc, char** argv) {
     pe->initTheta(pe->theta_t, theta_t_init);
     geom->initTopog(f_topog, z_at_level);
     // initialise the 2 form height field
-    pe->init2(pe->gz, z_at_level);
+    //pe->init2(pe->gz, z_at_level);
 
     if(startStep == 0) {
         pe->init1(velx, u_init, v_init);
@@ -352,6 +352,12 @@ int main(int argc, char** argv) {
     //    ener_0 += sw->intE(velx[ki], rho[ki]);
     //    VecDestroy(&wi);
     //}
+
+    // initial solve for dt = 1s
+    pe->dt = 1.0;
+    pe->SolveStrang(velx, velz, rho, rt, exner, true);
+    pe->firstStep = true;
+    pe->dt = dt;
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {

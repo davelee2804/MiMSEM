@@ -34,6 +34,7 @@ class PrimEqns_HEVI3 {
         Vec* Kv;                                     // kinetic energy vector for each vertical column
         Vec* Kh;                                     // kinetic energy vector for each horiztontal layer
         Vec* gv;
+        L2Vecs* exner_pre;
         Mat V01;                                     // vertical divergence operator
         Mat V10;                                     // vertical gradient operator
         Mat VA;
