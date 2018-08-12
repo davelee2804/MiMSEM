@@ -24,7 +24,8 @@
 #define OMEGA 7.29212e-5
 #define RD 287.0
 #define CP 1004.5
-#define GAMMA (RD/CP)
+#define KAPPA (RD/CP)
+#define CV 717.5
 #define P0 100000.0
 
 #define SCALE 1.0e+8
@@ -1358,7 +1359,8 @@ void PrimEqns_HEVI3::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, do
 
     for(ii = 0; ii < geom->nk; ii++) {
         VecCopy(Ft[ii], rt_sum);
-        VecScale(rt_sum, -_dt*CP*(GAMMA/(1.0-GAMMA)));
+        //VecScale(rt_sum, -_dt*CP*(KAPPA/(1.0-KAPPA)));
+        VecScale(rt_sum, -_dt*RD/CV);
         VecAXPY(rt_sum, 1.0, rt[ii]);
         T->assemble(rt_sum, ii, SCALE);
         MatMult(T->M, exner_i[ii], rhs);
@@ -2914,13 +2916,15 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 AssembleLinear(ex, ey, VA);
                 AssembleVertLaplacian(ex, ey, VA, 0.5*dt);
                 MatAXPY(VA, 0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
-                MatAXPY(VA, -0.25*dt*dt*CP*GAMMA/(1.0 - GAMMA), LAP, SAME_NONZERO_PATTERN);
+                //MatAXPY(VA, -0.25*dt*dt*CP*KAPPA/(1.0 - KAPPA), LAP, SAME_NONZERO_PATTERN);
+                MatAXPY(VA, -0.25*dt*dt*RD/CV, LAP, SAME_NONZERO_PATTERN);
 
                 KSPSolve(kspColA, tmp, velz_j);
 
                 // update the exner pressure
                 //MatMult(DIV, velz_j, exner_j);
-                //VecAYPX(exner_j, -0.5*dt*CP*GAMMA/(1.0 - GAMMA), exner_n[ei]);
+                //VecAYPX(exner_j, -0.5*dt*CP*KAPPA/(1.0 - KAPPA), exner_n[ei]);
+                //VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
 
                 // update the density and the density weighted potential temperature
                 solveMass(0.5*dt, ex, ey, AB, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j);
@@ -2931,7 +2935,8 @@ MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
 MatMatMult(V1_Pi, DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V1_PiDV0_invV0_rt);
 MatMatMult(V1_rt_inv, V1_PiDV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DIV);
 MatMult(DIV, velz_j, exner_j);
-VecAYPX(exner_j, -0.5*dt*CP*GAMMA/(1.0 - GAMMA), exner_n[ei]);
+//VecAYPX(exner_j, -0.5*dt*CP*KAPPA/(1.0 - KAPPA), exner_n[ei]);
+VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
 
                 // check the differences
                 VecCopy(velz_j, velz_d);
