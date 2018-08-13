@@ -795,6 +795,7 @@ void RotMat::assemble(Vec q0, int lev, double scale) {
                 Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
 
                 Qab[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
+                Qba[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
             }
 
             Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
