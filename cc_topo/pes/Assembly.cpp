@@ -32,7 +32,7 @@ Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     delete U;
 }
 
-void Umat::assemble(int lev, double scale, bool vert_det) {
+void Umat::assemble(int lev, double scale) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_0;
     Wii* Q = new Wii(l->q, geom);
@@ -75,11 +75,9 @@ void Umat::assemble(int lev, double scale, bool vert_det) {
                 Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                if(vert_det) {
-                    Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
-                    Qab[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
-                    Qbb[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
-                }
+                Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
+                Qab[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
+                Qbb[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -153,7 +151,7 @@ Wmat::Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     delete W;
 }
 
-void Wmat::assemble(int lev, double scale, bool vert_det) {
+void Wmat::assemble(int lev, double scale) {
     int ex, ey, ei, mp1, mp12, ii, *inds, *inds0;
     double det;
     Wii* Q = new Wii(e->l->q, geom);
@@ -180,9 +178,7 @@ void Wmat::assemble(int lev, double scale, bool vert_det) {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
-                if(vert_det) {
-                    Qaa[ii][ii] *= 2.0/geom->thick[lev][inds0[ii]];
-                }
+                Qaa[ii][ii] *= 2.0/geom->thick[lev][inds0[ii]];
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -361,7 +357,7 @@ Pvec::Pvec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
     Q = new Wii(l->q, geom);
 }
 
-void Pvec::assemble(int lev, double scale, bool vert_det) {
+void Pvec::assemble(int lev, double scale) {
     int ii, ex, ey, np1, np12, *inds_l;
 
     VecZeroEntries(vl);
@@ -378,9 +374,7 @@ void Pvec::assemble(int lev, double scale, bool vert_det) {
             inds_l = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < np12; ii++) {
                 entries[ii]  = scale*Q->A[ii][ii];
-                if(vert_det) {
-                    entries[ii] *= 2.0/geom->thick[lev][inds_l[ii]];
-                }
+                entries[ii] *= 2.0/geom->thick[lev][inds_l[ii]];
             }
             VecSetValues(vl, np12, inds_l, entries, ADD_VALUES);
         }

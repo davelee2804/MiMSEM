@@ -219,7 +219,7 @@ void PrimEqns_HEVI3::coriolis() {
     // diagonal mass matrix as vector
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fg[kk]);
-        m0->assemble(kk, 1.0, true);
+        m0->assemble(kk, 1.0);
         VecPointwiseDivide(fg[kk], PtQfxg, m0->vg);
     }
     
@@ -569,7 +569,7 @@ void PrimEqns_HEVI3::massRHS_h(Vec* uh, Vec* pi, Vec* Fp) {
 
     for(kk = 0; kk < geom->nk; kk++) {
         F->assemble(pi[kk], kk, true, SCALE);
-        M1->assemble(kk, SCALE, true);
+        M1->assemble(kk, SCALE);
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fh);
         MatMult(EtoF->E21, Fh, Fp[kk]);
@@ -756,8 +756,8 @@ void PrimEqns_HEVI3::grad(Vec phi, Vec* u, int lev) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mphi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMphi);
 
-    M1->assemble(lev, SCALE, true); //TODO: vertical scaling of this operator causes problems??
-    M2->assemble(lev, SCALE, true);
+    M1->assemble(lev, SCALE); //TODO: vertical scaling of this operator causes problems??
+    M2->assemble(lev, SCALE);
 
     MatMult(M2->M, phi, Mphi);
     MatMult(EtoF->E12, Mphi, dMphi);
@@ -777,8 +777,8 @@ void PrimEqns_HEVI3::curl(Vec u, Vec* w, int lev, bool add_f) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &dMu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
 
-    m0->assemble(lev, SCALE, true);
-    M1->assemble(lev, SCALE, true);
+    m0->assemble(lev, SCALE);
+    M1->assemble(lev, SCALE);
     MatMult(M1->M, u, Mu);
     MatMult(NtoE->E01, Mu, dMu);
     VecPointwiseDivide(*w, dMu, m0->vg);
@@ -1395,7 +1395,7 @@ l2_rt->UpdateLocal();
     HorizRHS(velx, l2_rho->vl, l2_rt->vl, exner_tmp->vh, Fu, Fp, l2_Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
-        M1->assemble(ii, SCALE, true);
+        M1->assemble(ii, SCALE);
         MatMult(M1->M, velx[ii], bu);
         VecAXPY(bu, -dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx_i[ii]);
@@ -1434,7 +1434,7 @@ l2_rt->UpdateLocal();
         VecZeroEntries(xu);
         VecAXPY(xu, 0.75, velx[ii]);
         VecAXPY(xu, 0.25, velx_i[ii]);
-        M1->assemble(ii, SCALE, true);
+        M1->assemble(ii, SCALE);
         MatMult(M1->M, xu, bu);
         VecAXPY(bu, -0.25*dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx_i[ii]);
@@ -1482,7 +1482,7 @@ rt_tmp->UpdateLocal();
         VecZeroEntries(xu);
         VecAXPY(xu, 1.0/3.0, velx[ii]);
         VecAXPY(xu, 2.0/3.0, velx_i[ii]);
-        M1->assemble(ii, SCALE, true);
+        M1->assemble(ii, SCALE);
         MatMult(M1->M, xu, bu);
         VecAXPY(bu, (-2.0/3.0)*dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx_i[ii]);
@@ -1718,7 +1718,7 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     HorizRHS(velx, rho_old->vl, rt_old->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
-        M1->assemble(ii, SCALE, true);
+        M1->assemble(ii, SCALE);
         MatMult(M1->M, velx[ii], bu);
         VecAXPY(bu, -dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx_new[ii]);
@@ -1747,7 +1747,7 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
         VecZeroEntries(xu);
         VecAXPY(xu, 0.75, velx[ii]);
         VecAXPY(xu, 0.25, velx_new[ii]);
-        M1->assemble(ii, SCALE, true);
+        M1->assemble(ii, SCALE);
         MatMult(M1->M, xu, bu);
         VecAXPY(bu, -0.25*dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx_new[ii]);
@@ -1783,7 +1783,7 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
         VecZeroEntries(xu);
         VecAXPY(xu, 1.0/3.0, velx[ii]);
         VecAXPY(xu, 2.0/3.0, velx_new[ii]);
-        M1->assemble(ii, SCALE, true);
+        M1->assemble(ii, SCALE);
         MatMult(M1->M, xu, bu);
         VecAXPY(bu, (-2.0/3.0)*dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx_new[ii]);
@@ -1965,7 +1965,7 @@ void PrimEqns_HEVI3::init0(Vec* q, ICfunc3D* func) {
         VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-        m0->assemble(kk, 1.0, true);
+        m0->assemble(kk, 1.0);
         MatMult(PQ->M, bg, PQb);
         VecPointwiseDivide(q[kk], PQb, m0->vg);
     }
@@ -2019,7 +2019,7 @@ void PrimEqns_HEVI3::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
         VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-        M1->assemble(kk, SCALE, true);
+        M1->assemble(kk, SCALE);
         MatMult(UQ->M, bg, UQb);
         VecScale(UQb, SCALE);
         KSPSolve(ksp1, UQb, u[kk]);
@@ -2067,8 +2067,8 @@ void PrimEqns_HEVI3::init2(Vec* h, ICfunc3D* func) {
         VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
         MatMult(WQ->M, bg, WQb);
-        VecScale(WQb, SCALE);          // have to rescale the M2 operator as the metric terms scale
-        M2->assemble(kk, SCALE, true); // this down to machine precision, so rescale the rhs as well
+        VecScale(WQb, SCALE);       // have to rescale the M2 operator as the metric terms scale
+        M2->assemble(kk, SCALE);    // this down to machine precision, so rescale the rhs as well
         KSPSolve(ksp2, WQb, h[kk]);
     }
 
@@ -2106,8 +2106,8 @@ void PrimEqns_HEVI3::initTheta(Vec theta, ICfunc3D* func) {
     VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-    M2->assemble(0, SCALE, true); // note: layer thickness must be set to 2.0 for all layers 
-    MatMult(WQ->M, bg, WQb);      //       before M2 matrix is assembled to initialise theta
+    M2->assemble(0, SCALE);    // note: layer thickness must be set to 2.0 for all layers 
+    MatMult(WQ->M, bg, WQb);   //       before M2 matrix is assembled to initialise theta
     VecScale(WQb, SCALE);
     KSPSolve(ksp2, WQb, theta);
 

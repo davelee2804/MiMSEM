@@ -42,14 +42,15 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     // 0 form lumped mass matrix (vector)
     m0 = new Pvec(topo, geom, node);
+    m0->assemble(0, 1.0);
 
     // 1 form mass matrix
     M1 = new Umat(topo, geom, node, edge);
-    M1->assemble(0, 1.0, false);
+    M1->assemble(0, 1.0);
 
     // 2 form mass matrix
     M2 = new Wmat(topo, geom, edge);
-    M2->assemble(0, 1.0, false);
+    M2->assemble(0, 1.0);
 
 
     // incidence matrices
