@@ -584,109 +584,32 @@ Assemble the boundary condition vector for rho(t) X theta(0)
 */
 void PrimEqns_HEVI3::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
     int* inds2 = topo->elInds2_l(ex, ey);
-    int* inds0 = topo->elInds0_l(ex, ey);
-    int ii, ei, mp1, mp12, n2;
-    double det, rk;
-    int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    PetscScalar *rArray, *vArray, *hArray;
+    int ii, n2;
+    PetscScalar *vArray, *hArray;
     Vec theta_o;
 
-    ei    = ey*topo->nElsX + ex;
-    mp1   = quad->n + 1;
-    mp12  = mp1*mp1;
-    n2    = topo->elOrd*topo->elOrd;
-
-    Q->assemble(ex, ey);
-    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+    n2 = topo->elOrd*topo->elOrd;
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &theta_o);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, bTheta);
 
-    MatZeroEntries(A);
-
-    // bottom boundary
-    VecGetArray(rho[0], &rArray);
-    for(ii = 0; ii < mp12; ii++) {
-        det = geom->det[ei][ii];
-        Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
-
-        // multuply by the vertical determinant to integrate, then
-        // divide piecewise constant density by the vertical determinant,
-        // so these cancel
-        geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
-        Q0[ii][ii] *= rk;
-        Q0[ii][ii] *= 2.0/geom->thick[0][inds0[ii]];
-    }
-    VecRestoreArray(rho[0], &rArray);
-
-    Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
-    for(ii = 0; ii < W->nDofsJ; ii++) {
-        inds2k[ii] = ii + 0*W->nDofsJ;
-    }
-    MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-
-    // top boundary
-    VecGetArray(rho[geom->nk-1], &rArray);
-    for(ii = 0; ii < mp12; ii++) {
-        det = geom->det[ei][ii];
-        Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
-
-        // multuply by the vertical determinant to integrate, then
-        // divide piecewise constant density by the vertical determinant,
-        // so these cancel
-        geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
-        Q0[ii][ii] *= rk;
-        Q0[ii][ii] *= 2.0/geom->thick[geom->nk-1][inds0[ii]];
-    }
-    VecRestoreArray(rho[geom->nk-1], &rArray);
-
-    Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
-    for(ii = 0; ii < W->nDofsJ; ii++) {
-        inds2k[ii] = ii + (geom->nk-2)*W->nDofsJ;
-    }
-    MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-
-    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-
     // assemble the theta bc vector
     VecGetArray(theta_o, &vArray);
     // bottom
-    VecGetArray(theta_b, &hArray);
+    VecGetArray(theta_b_l, &hArray);
     for(ii = 0; ii < n2; ii++) {
         vArray[ii] = hArray[inds2[ii]];
     }
-    VecRestoreArray(theta_b, &hArray);
+    VecRestoreArray(theta_b_l, &hArray);
     // top
-    VecGetArray(theta_t, &hArray);
+    VecGetArray(theta_t_l, &hArray);
     for(ii = 0; ii < n2; ii++) {
         vArray[(geom->nk-2)*n2+ii] = hArray[inds2[ii]];
     }
-    VecRestoreArray(theta_t, &hArray);
+    VecRestoreArray(theta_t_l, &hArray);
     VecRestoreArray(theta_o, &vArray);
 
     MatMult(A, theta_o, *bTheta);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
     VecDestroy(&theta_o);
 }
 
@@ -697,7 +620,7 @@ note: rho, rhoTheta and theta are all LOCAL vectors
 void PrimEqns_HEVI3::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     int ex, ey, n2, kk;
     Vec rtv, frt, theta_v, bcs;
-    Mat A, AB;
+    Mat AB;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -709,11 +632,6 @@ void PrimEqns_HEVI3::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rtv);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &frt);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &theta_v);
-
-    MatCreate(MPI_COMM_SELF, &A);
-    MatSetType(A, MATSEQAIJ);
-    MatSetSizes(A, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(A, n2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &AB);
     MatSetType(AB, MATSEQAIJ);
@@ -729,11 +647,13 @@ void PrimEqns_HEVI3::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
             MatMult(AB, rtv, frt);
 
             // assemble in the bcs
-            thetaBCVec(ex, ey, A, rho, &bcs);
+            AssembleLinearWithRho(ex, ey, rho, VA);
+            //thetaBCVec(ex, ey, A, rho, &bcs);
+            thetaBCVec(ex, ey, VA, rho, &bcs);
             VecAXPY(frt, -1.0, bcs);
             VecDestroy(&bcs);
 
-            AssembleLinearWithRho(ex, ey, rho, VA);
+            //AssembleLinearWithRho(ex, ey, rho, VA);
             KSPSolve(kspColA, frt, theta_v);
             VertToHoriz2(ex, ey, 1, geom->nk, theta_v, theta);
         }
@@ -742,7 +662,6 @@ void PrimEqns_HEVI3::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     VecDestroy(&rtv);
     VecDestroy(&frt);
     VecDestroy(&theta_v);
-    MatDestroy(&A);
     MatDestroy(&AB);
 }
 
@@ -965,6 +884,7 @@ void PrimEqns_HEVI3::AssembleConst(int ex, int ey, Mat B) {
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
+    ei    = ey*topo->nElsX + ex;
     inds0 = topo->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
@@ -974,7 +894,6 @@ void PrimEqns_HEVI3::AssembleConst(int ex, int ey, Mat B) {
     for(kk = 0; kk < geom->nk; kk++) {
         // build the 2D mass matrix
         Q->assemble(ex, ey);
-        ei = ey*topo->nElsX + ex;
 
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -1025,7 +944,7 @@ void PrimEqns_HEVI3::AssembleLinear(int ex, int ey, Mat A) {
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
-    ei = ey*topo->nElsX + ex;
+    ei    = ey*topo->nElsX + ex;
     inds0 = topo->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
@@ -1405,8 +1324,10 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     else {
         for(ii = 0; ii < geom->nk; ii++) {
             VecZeroEntries(exner_tmp->vh[ii]);
-            VecAXPY(exner_tmp->vh[ii], +1.5, exner[ii]);
-            VecAXPY(exner_tmp->vh[ii], -0.5, exner_pre->vh[ii]);
+            //VecAXPY(exner_tmp->vh[ii], +1.5, exner[ii]);
+            //VecAXPY(exner_tmp->vh[ii], -0.5, exner_pre->vh[ii]);
+            VecAXPY(exner_tmp->vh[ii], CV/CP + 0.5, exner[ii]);
+            VecAXPY(exner_tmp->vh[ii], RD/CP - 0.5, exner_pre->vh[ii]);
         }
         exner_pre->CopyFromHoriz(exner);
     }
@@ -1706,6 +1627,7 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     L2Vecs* exner_old = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_new = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_tmp = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_hlf = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* Fp        = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* Ft        = new L2Vecs(geom->nk, topo, geom);
 
@@ -1716,6 +1638,17 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
         VecScatterEnd(  topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterBegin(topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(  topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
+
+        exner_pre->CopyFromHoriz(exner);
+        exner_hlf->CopyFromHoriz(exner);
+    }
+    else {
+        for(ii = 0; ii < geom->nk; ii++) {
+            VecZeroEntries(exner_hlf->vh[ii]);
+            VecAXPY(exner_hlf->vh[ii], CV/CP + 0.5, exner[ii]);
+            VecAXPY(exner_hlf->vh[ii], RD/CP - 0.5, exner_pre->vh[ii]);
+        }
+        exner_pre->CopyFromHoriz(exner);
     }
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &xu);
@@ -1781,7 +1714,8 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     // 2.1 First horiztonal substep
     if(!rank)cout<<"horiztonal step (1).................."<<endl;
     AssembleKEVecs(velx, velz);
-    HorizRHS(velx, rho_old->vl, rt_old->vl, exner_old->vh, Fu, Fp->vh, Ft->vh);
+    //HorizRHS(velx, rho_old->vl, rt_old->vl, exner_old->vh, Fu, Fp->vh, Ft->vh);
+    HorizRHS(velx, rho_old->vl, rt_old->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         M1->assemble(ii, SCALE, true);
@@ -1806,7 +1740,8 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     // 2.2 Second horiztonal step
     if(!rank)cout<<"horiztonal step (2).................."<<endl;
     AssembleKEVecs(velx_new, velz);
-    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
+    //HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
+    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         VecZeroEntries(xu);
@@ -1841,7 +1776,8 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     // 2.3 Third horiztonal step
     if(!rank)cout<<"horiztonal step (3).................."<<endl;
     AssembleKEVecs(velx_new, velz);
-    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
+    //HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
+    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         VecZeroEntries(xu);
@@ -1957,6 +1893,7 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     delete exner_old;
     delete exner_new;
     delete exner_tmp;
+    delete exner_hlf;
     delete Fp;
     delete Ft;
 }
