@@ -792,7 +792,6 @@ void PrimEqns_HEVI3::curl(Vec u, Vec* w, int lev, bool add_f) {
 void PrimEqns_HEVI3::laplacian(Vec ui, Vec* ddu, int lev) {
     Vec Du, Cu, RCu;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, ddu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &RCu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Du);
 
