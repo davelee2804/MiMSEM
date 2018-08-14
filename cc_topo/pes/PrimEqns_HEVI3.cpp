@@ -2,7 +2,6 @@
 #include <fstream>
 
 #include <mpi.h>
-
 #include <petsc.h>
 #include <petscis.h>
 #include <petscvec.h>
@@ -26,8 +25,6 @@
 #define CP 1004.5
 #define KAPPA (RD/CP)
 #define CV 717.5
-#define P0 100000.0
-
 #define SCALE 1.0e+8
 
 using namespace std;
@@ -540,7 +537,8 @@ void PrimEqns_HEVI3::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec F
     VecAXPY(Fu, 1.0, dp);
     VecDestroy(&dExner);
 
-    // add in the biharmonic voscosity
+    // add in the biharmonic voscosity 
+    // TODO: horizontal viscosity is causing blow ups with moderate time step!?!
     if(do_visc) {
         laplacian(uh, &d2u, lev);
         laplacian(d2u, &d4u, lev);
@@ -1249,10 +1247,8 @@ void PrimEqns_HEVI3::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu,
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta[kk]);
     }
     // set the top and bottom potential temperature bcs
-    VecScatterBegin(topo->gtol_2, theta_b, theta[0],        INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, theta_b, theta[0],        INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterBegin(topo->gtol_2, theta_t, theta[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, theta_t, theta[geom->nk], INSERT_VALUES, SCATTER_FORWARD);
+    VecCopy(theta_b_l, theta[0]);
+    VecCopy(theta_t_l, theta[geom->nk]);
 
     diagTheta(rho, rt, theta);
 
@@ -1291,6 +1287,7 @@ void PrimEqns_HEVI3::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, do
     VecDestroy(&rhs);
 }
 
+#if 0
 void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int     ii, rank;
     char    fieldname[100];
@@ -1611,7 +1608,8 @@ rt_tmp->UpdateLocal();
     delete[] exner_j;
     delete[] velz_i;
 }
-#if 0
+#endif
+
 void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int     ii, rank;
     char    fieldname[100];
@@ -1897,7 +1895,6 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     delete Fp;
     delete Ft;
 }
-#endif
 
 void PrimEqns_HEVI3::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph) {
     int ii, kk, n2;
@@ -2853,27 +2850,24 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 AssembleLinear(ex, ey, VA);
                 AssembleVertLaplacian(ex, ey, VA, 0.5*dt);
                 MatAXPY(VA, 0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
-                //MatAXPY(VA, -0.25*dt*dt*CP*KAPPA/(1.0 - KAPPA), LAP, SAME_NONZERO_PATTERN);
                 MatAXPY(VA, -0.25*dt*dt*RD/CV, LAP, SAME_NONZERO_PATTERN);
 
                 KSPSolve(kspColA, tmp, velz_j);
 
                 // update the exner pressure
-                //MatMult(DIV, velz_j, exner_j);
-                //VecAYPX(exner_j, -0.5*dt*CP*KAPPA/(1.0 - KAPPA), exner_n[ei]);
-                //VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
+                MatMult(DIV, velz_j, exner_j);
+                VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
 
                 // update the density and the density weighted potential temperature
                 solveMass(0.5*dt, ex, ey, AB, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j);
 
-AssembleLinearWithRT(ex, ey, rt_j, V0_rt);
-MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
-MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
-MatMatMult(V1_Pi, DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V1_PiDV0_invV0_rt);
-MatMatMult(V1_rt_inv, V1_PiDV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DIV);
-MatMult(DIV, velz_j, exner_j);
-//VecAYPX(exner_j, -0.5*dt*CP*KAPPA/(1.0 - KAPPA), exner_n[ei]);
-VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
+//AssembleLinearWithRT(ex, ey, rt_j, V0_rt);
+//MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+//MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+//MatMatMult(V1_Pi, DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V1_PiDV0_invV0_rt);
+//MatMatMult(V1_rt_inv, V1_PiDV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DIV);
+//MatMult(DIV, velz_j, exner_j);
+//VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
 
                 // check the differences
                 VecCopy(velz_j, velz_d);
