@@ -48,9 +48,9 @@ class PrimEqns_HEVI3 {
         void coriolis();
         void vertOps();
         void initGZ();
-        void grad(Vec phi, Vec* u, int lev);            // weak form grad operator
-        void curl(Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
-        void laplacian(Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
+        void grad(bool assemble, Vec phi, Vec* u, int lev);            // weak form grad operator
+        void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
+        void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
         void VertFlux(int ex, int ey, Vec pi, Mat Mp);  // vertical mass flux matrix
         void massRHS_h(Vec* uh, Vec* pi, Vec* Fp);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu);

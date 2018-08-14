@@ -515,7 +515,12 @@ void PrimEqns_HEVI3::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec F
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ku);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mh);
 
-    curl(uh, &wi, lev, true);
+    // assemble the mass matrices for use in the weak form grad, curl and laplacian operators
+    m0->assemble(lev, SCALE);
+    M1->assemble(lev, SCALE);
+    M2->assemble(lev, SCALE);
+
+    curl(false, uh, &wi, lev, true);
     VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
 
@@ -531,18 +536,20 @@ void PrimEqns_HEVI3::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec F
     VecAXPY(theta_k, 1.0, theta_l[lev+0]); // quadrature weights
     VecAXPY(theta_k, 1.0, theta_l[lev+1]); // are both 1.0
 
-    grad(exner, &dExner, lev);
+    grad(false, exner, &dExner, lev);
     F->assemble(theta_k, lev, false, SCALE);
     MatMult(F->M, dExner, dp);
     VecAXPY(Fu, 1.0, dp);
     VecDestroy(&dExner);
 
     // add in the biharmonic voscosity 
-    // TODO: horizontal viscosity is causing blow ups with moderate time step!?!
     if(do_visc) {
-        laplacian(uh, &d2u, lev);
-        laplacian(d2u, &d4u, lev);
-        VecAXPY(Fu, SCALE, d4u);
+        laplacian(false, uh, &d2u, lev);
+        laplacian(false, d2u, &d4u, lev);
+        M1->assemble(lev, SCALE);
+        VecZeroEntries(d2u);
+        MatMult(M1->M, d4u, d2u);
+        VecAXPY(Fu, 1.0, d2u);
         VecDestroy(&d2u);
         VecDestroy(&d4u);
     }
@@ -747,15 +754,17 @@ void PrimEqns_HEVI3::diagThetaVert(int ex, int ey, Mat AB, Vec rho, Vec rt, Vec 
 /*
 Take the weak form gradient of a 2 form scalar field as a 1 form vector field
 */
-void PrimEqns_HEVI3::grad(Vec phi, Vec* u, int lev) {
+void PrimEqns_HEVI3::grad(bool assemble, Vec phi, Vec* u, int lev) {
     Vec Mphi, dMphi;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, u);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mphi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMphi);
 
-    M1->assemble(lev, SCALE); //TODO: vertical scaling of this operator causes problems??
-    M2->assemble(lev, SCALE);
+    if(assemble) {
+        M1->assemble(lev, SCALE);
+        M2->assemble(lev, SCALE);
+    }
 
     MatMult(M2->M, phi, Mphi);
     MatMult(EtoF->E12, Mphi, dMphi);
@@ -768,15 +777,17 @@ void PrimEqns_HEVI3::grad(Vec phi, Vec* u, int lev) {
 /*
 Take the weak form curl of a 1 form vector field as a 1 form vector field
 */
-void PrimEqns_HEVI3::curl(Vec u, Vec* w, int lev, bool add_f) {
+void PrimEqns_HEVI3::curl(bool assemble, Vec u, Vec* w, int lev, bool add_f) {
     Vec Mu, dMu;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &dMu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
 
-    m0->assemble(lev, SCALE);
-    M1->assemble(lev, SCALE);
+    if(assemble) {
+        m0->assemble(lev, SCALE);
+        M1->assemble(lev, SCALE);
+    }
     MatMult(M1->M, u, Mu);
     MatMult(NtoE->E01, Mu, dMu);
     VecPointwiseDivide(*w, dMu, m0->vg);
@@ -789,7 +800,7 @@ void PrimEqns_HEVI3::curl(Vec u, Vec* w, int lev, bool add_f) {
     VecDestroy(&dMu);
 }
 
-void PrimEqns_HEVI3::laplacian(Vec ui, Vec* ddu, int lev) {
+void PrimEqns_HEVI3::laplacian(bool assemble, Vec ui, Vec* ddu, int lev) {
     Vec Du, Cu, RCu;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &RCu);
@@ -800,11 +811,11 @@ void PrimEqns_HEVI3::laplacian(Vec ui, Vec* ddu, int lev) {
     MatMult(EtoF->E21, ui, Du);
 
     // grad (weak form)
-    grad(Du, ddu, lev);
+    grad(assemble, Du, ddu, lev);
 
     /*** rotational component ***/
     // curl (weak form)
-    curl(ui, &Cu, lev, false);
+    curl(assemble, ui, &Cu, lev, false);
 
     // rot (strong form)
     MatMult(NtoE->E10, Cu, RCu);
@@ -1560,7 +1571,7 @@ rt_tmp->UpdateLocal();
     if(save) {
         step++;
         for(ii = 0; ii < geom->nk; ii++) {
-            curl(velx[ii], &wi, ii, false);
+            curl(true, velx[ii], &wi, ii, false);
 
             sprintf(fieldname, "vorticity");
             geom->write0(wi, fieldname, step, ii);
@@ -1850,7 +1861,7 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     if(save) {
         step++;
         for(ii = 0; ii < geom->nk; ii++) {
-            curl(velx[ii], &wi, ii, false);
+            curl(true, velx[ii], &wi, ii, false);
 
             sprintf(fieldname, "vorticity");
             geom->write0(wi, fieldname, step, ii);
@@ -2860,14 +2871,6 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 // update the density and the density weighted potential temperature
                 solveMass(0.5*dt, ex, ey, AB, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j);
 
-//AssembleLinearWithRT(ex, ey, rt_j, V0_rt);
-//MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
-//MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
-//MatMatMult(V1_Pi, DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V1_PiDV0_invV0_rt);
-//MatMatMult(V1_rt_inv, V1_PiDV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DIV);
-//MatMult(DIV, velz_j, exner_j);
-//VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
-
                 // check the differences
                 VecCopy(velz_j, velz_d);
                 VecAXPY(velz_d, -1.0, velz[ei]);
@@ -2903,20 +2906,14 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 VecCopy(rho_j  , rho[ei]  );
                 VecCopy(rt_j   , rt[ei]   );
 
-                //if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
-                //if(!rank)cout << "\t\t\t\t|eps_w|:     " << eps_1 << endl;
-                //if(!rank)cout << "\t\t\t\t|eps_Pi|:    " << eps_2 << endl;
-                //if(!rank)cout << "\t\t\t\t|eps_rho|:   " << eps_3 << endl;
-                //if(!rank)cout << "\t\t\t\t|eps_Theta|: " << eps_4 << endl;
                 it++;
-
             } while(it < 100 && max_eps > 1.0e-12);
 
             if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
-            if(!rank)cout << "\t\t\t\t|eps_w|:     " << eps_1 << endl;
-            if(!rank)cout << "\t\t\t\t|eps_Pi|:    " << eps_2 << endl;
-            if(!rank)cout << "\t\t\t\t|eps_rho|:   " << eps_3 << endl;
-            if(!rank)cout << "\t\t\t\t|eps_Theta|: " << eps_4 << endl;
+            //if(!rank)cout << "\t\t\t\t|eps_w|:     " << eps_1 << endl;
+            //if(!rank)cout << "\t\t\t\t|eps_Pi|:    " << eps_2 << endl;
+            //if(!rank)cout << "\t\t\t\t|eps_rho|:   " << eps_3 << endl;
+            //if(!rank)cout << "\t\t\t\t|eps_Theta|: " << eps_4 << endl;
         }
     }
 
