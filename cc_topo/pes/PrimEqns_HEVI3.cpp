@@ -1223,30 +1223,6 @@ void PrimEqns_HEVI3::VertFlux(int ex, int ey, Vec pi, Mat Mp) {
     delete W;
 }
 
-void PrimEqns_HEVI3::AssembleVertLaplacian(int ex, int ey, Mat A, double _dt) {
-    int n2 = topo->elOrd*topo->elOrd;
-    Mat B, L, BD;
-
-    MatCreate(MPI_COMM_SELF, &B);
-    MatSetType(B, MATSEQAIJ);
-    MatSetSizes(B, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(B, n2, PETSC_NULL);
-
-    AssembleConst(ex, ey, B);
-
-    // construct the laplacian mixing operator
-    // TODO: preallocate these
-    MatMatMult(B, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &BD);
-    MatMatMult(V01, BD, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &L);
-
-    // assemble the piecewise linear mass matrix (with gravity)
-    MatAXPY(A, -_dt*vert_visc, L, DIFFERENT_NONZERO_PATTERN);
-
-    MatDestroy(&B);
-    MatDestroy(&BD);
-    MatDestroy(&L);
-}
-
 // rho and rt are local vectors, and exner is a global vector
 void PrimEqns_HEVI3::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft) {
     int kk;
@@ -2710,7 +2686,7 @@ void PrimEqns_HEVI3::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
 // _n vectors are the for the initial state at the beginning of the step
 void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n) {
     int ex, ey, ei, n2, it, rank;
-    double eps, max_eps, eps_norm, eps_1, eps_2, eps_3, eps_4;
+    double eps, max_eps, eps_norm;
     Mat V0_rt, V0_inv, V1_Pi, V1_rt_inv, V0_theta, V10_w, AB;
     Mat DTV10_w                    = NULL;
     Mat DTV1                       = NULL;
@@ -2722,6 +2698,7 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
     Mat V1_rt_intV1_PiDV0_invV0_rt = NULL;
     Mat DIV                        = NULL;
     Mat LAP                        = NULL;
+    Mat DEL2                       = NULL;
     Vec rhs, tmp;
     Vec velz_j, exner_j, rho_j, rt_j;
     Vec velz_d, exner_d, rho_d, rt_d;
@@ -2858,8 +2835,14 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 VecAYPX(tmp, -0.5*dt, rhs);
 
                 AssembleLinear(ex, ey, VA);
-                AssembleVertLaplacian(ex, ey, VA, 0.5*dt);
-                MatAXPY(VA, 0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
+                // assemble the vertical lapcalian viscosity
+                if(!DEL2) {
+                    MatMatMult(DTV1, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DEL2);
+                } else {
+                    MatMatMult(DTV1, V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
+                }
+                MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
+                MatAXPY(VA, +0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
                 MatAXPY(VA, -0.25*dt*dt*RD/CV, LAP, SAME_NONZERO_PATTERN);
 
                 KSPSolve(kspColA, tmp, velz_j);
@@ -2877,28 +2860,28 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 VecNorm(velz_d, NORM_2, &eps);
                 VecNorm(velz_j, NORM_2, &eps_norm);
                 max_eps = eps/eps_norm;
-                eps_1 = eps/eps_norm;
+                //eps_1 = eps/eps_norm;
 
                 VecCopy(exner_j, exner_d);
                 VecAXPY(exner_d, -1.0, exner[ei]);
                 VecNorm(exner_d, NORM_2, &eps);
                 VecNorm(exner_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
-                eps_2 = eps/eps_norm;
+                //eps_2 = eps/eps_norm;
 
                 VecCopy(rho_j, rho_d);
                 VecAXPY(rho_d, -1.0, rho[ei]);
                 VecNorm(rho_d, NORM_2, &eps);
                 VecNorm(rho_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
-                eps_3 = eps/eps_norm;
+                //eps_3 = eps/eps_norm;
 
                 VecCopy(rt_j, rt_d);
                 VecAXPY(rt_d, -1.0, rt[ei]);
                 VecNorm(rt_d, NORM_2, &eps);
                 VecNorm(rt_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
-                eps_4 = eps/eps_norm;
+                //eps_4 = eps/eps_norm;
 
                 // copy over the new solutions at this iteration
                 VecCopy(velz_j , velz[ei] );
@@ -2956,5 +2939,6 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
     MatDestroy(&DIV                       );
     MatDestroy(&LAP                       );
     MatDestroy(&AB                        );
+    MatDestroy(&DEL2                      );
     delete l2_theta;
 }

@@ -74,7 +74,6 @@ class PrimEqns_HEVI3 {
         void AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A);
         void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
         void AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A);
-        void AssembleVertLaplacian(int ex, int ey, Mat M0, double _dt);
         void AssembleLinearInv(int ex, int ey, Mat A);
         void AssembleConstWithRhoInv(int ex, int ey, Vec theta, Mat B);
         void AssembleConstWithRho(int ex, int ey, Vec rho, Mat A);
