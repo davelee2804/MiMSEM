@@ -18,7 +18,7 @@ class Wmat {
         Geom* geom;
         LagrangeEdge* e;
         Mat M;
-        void assemble(int lev, double scale);
+        void assemble(int lev, double scale, bool vert_scale);
 };
 
 class Uhmat {

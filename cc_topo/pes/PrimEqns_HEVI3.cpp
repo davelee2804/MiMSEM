@@ -518,7 +518,7 @@ void PrimEqns_HEVI3::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec F
     // assemble the mass matrices for use in the weak form grad, curl and laplacian operators
     m0->assemble(lev, SCALE);
     M1->assemble(lev, SCALE);
-    M2->assemble(lev, SCALE);
+    M2->assemble(lev, SCALE, true);
 
     curl(false, uh, &wi, lev, true);
     VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
@@ -564,13 +564,21 @@ void PrimEqns_HEVI3::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec F
 }
 
 // pi is a local vector
-void PrimEqns_HEVI3::massRHS_h(Vec* uh, Vec* pi, Vec* Fp) {
+void PrimEqns_HEVI3::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l) {
     int kk;
     Vec pu, Fh;
+    Vec theta_l, theta_g, dTheta, rho_dTheta_1, rho_dTheta_2, d2Theta;
 
     // compute the horiztonal mass fluxes
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh);
+    if(theta) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_g);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_1);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_2);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &d2Theta);
+    }
 
     for(kk = 0; kk < geom->nk; kk++) {
         F->assemble(pi[kk], kk, true, SCALE);
@@ -578,10 +586,36 @@ void PrimEqns_HEVI3::massRHS_h(Vec* uh, Vec* pi, Vec* Fp) {
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fh);
         MatMult(EtoF->E21, Fh, Fp[kk]);
+
+        // apply horiztonal biharmonic viscosity
+        if(theta) {
+            VecZeroEntries(theta_l);
+            VecAXPY(theta_l, 1.0, theta[kk+0]);
+            VecAXPY(theta_l, 1.0, theta[kk+1]);
+            VecScatterBegin(topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_FORWARD);
+            VecScatterEnd(  topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_FORWARD);
+
+            M2->assemble(kk, SCALE, false);
+            grad(false, theta_g, &dTheta, kk);
+            F->assemble(rho_l[kk], kk, true, SCALE);
+            MatMult(F->M, dTheta, rho_dTheta_1);
+            KSPSolve(ksp1, rho_dTheta_1, rho_dTheta_2);
+            MatMult(EtoF->E21, rho_dTheta_2, d2Theta);
+            VecAXPY(Fp[kk], del2, d2Theta);
+
+            VecDestroy(&dTheta);
+        }
     }
 
     VecDestroy(&pu);
     VecDestroy(&Fh);
+    if(theta) {
+        VecDestroy(&theta_l);
+        VecDestroy(&theta_g);
+        VecDestroy(&rho_dTheta_1);
+        VecDestroy(&rho_dTheta_2);
+        VecDestroy(&d2Theta);
+    }
 }
 
 /*
@@ -763,7 +797,7 @@ void PrimEqns_HEVI3::grad(bool assemble, Vec phi, Vec* u, int lev) {
 
     if(assemble) {
         M1->assemble(lev, SCALE);
-        M2->assemble(lev, SCALE);
+        M2->assemble(lev, SCALE, true);
     }
 
     MatMult(M2->M, phi, Mphi);
@@ -1241,8 +1275,8 @@ void PrimEqns_HEVI3::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu,
     for(kk = 0; kk < geom->nk; kk++) {
         horizMomRHS(velx[kk], theta, exner[kk], kk, Fu[kk]);
     }
-    massRHS_h(velx, rho, Fp);
-    massRHS_h(velx, rt,  Ft);
+    massRHS(velx, rho, Fp, NULL, NULL);
+    massRHS(velx, rt,  Ft, theta, rho);
 
     for(kk = 0; kk < geom->nk + 1; kk++) {
         VecDestroy(&theta[kk]);
@@ -2050,8 +2084,8 @@ void PrimEqns_HEVI3::init2(Vec* h, ICfunc3D* func) {
         VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
         MatMult(WQ->M, bg, WQb);
-        VecScale(WQb, SCALE);       // have to rescale the M2 operator as the metric terms scale
-        M2->assemble(kk, SCALE);    // this down to machine precision, so rescale the rhs as well
+        VecScale(WQb, SCALE);          // have to rescale the M2 operator as the metric terms scale
+        M2->assemble(kk, SCALE, true); // this down to machine precision, so rescale the rhs as well
         KSPSolve(ksp2, WQb, h[kk]);
     }
 
@@ -2089,8 +2123,8 @@ void PrimEqns_HEVI3::initTheta(Vec theta, ICfunc3D* func) {
     VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-    M2->assemble(0, SCALE);    // note: layer thickness must be set to 2.0 for all layers 
-    MatMult(WQ->M, bg, WQb);   //       before M2 matrix is assembled to initialise theta
+    M2->assemble(0, SCALE, true); // note: layer thickness must be set to 2.0 for all layers 
+    MatMult(WQ->M, bg, WQb);      //       before M2 matrix is assembled to initialise theta
     VecScale(WQb, SCALE);
     KSPSolve(ksp2, WQb, theta);
 
@@ -2776,18 +2810,20 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                     MatMatMult(V01, V10_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV10_w);
                 }
 
-                AssembleConst(ex, ey, VB);
-                if(!DTV1) {
-                    MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
-                } else {
-                    MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
-                }
+                if(it == 0) {
+                    AssembleConst(ex, ey, VB);
+                    if(!DTV1) {
+                        MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
+                    } else {
+                        MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
+                    }
 
-                AssembleLinearInv(ex, ey, V0_inv);
-                if(!V0_invDTV1) {
-                    MatMatMult(V0_inv, DTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
-                } else {
-                    MatMatMult(V0_inv, DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
+                    AssembleLinearInv(ex, ey, V0_inv);
+                    if(!V0_invDTV1) {
+                        MatMatMult(V0_inv, DTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
+                    } else {
+                        MatMatMult(V0_inv, DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
+                    }
                 }
 
                 diagThetaVert(ex, ey, AB, rho[ei], rt[ei], l2_theta->vz[ei]);
@@ -2836,10 +2872,12 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
 
                 AssembleLinear(ex, ey, VA);
                 // assemble the vertical lapcalian viscosity
-                if(!DEL2) {
-                    MatMatMult(DTV1, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DEL2);
-                } else {
-                    MatMatMult(DTV1, V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
+                if(it == 0) {
+                    if(!DEL2) {
+                        MatMatMult(DTV1, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DEL2);
+                    } else {
+                        MatMatMult(DTV1, V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
+                    }
                 }
                 MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
                 MatAXPY(VA, +0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step

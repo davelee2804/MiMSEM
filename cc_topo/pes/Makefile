@@ -11,7 +11,7 @@ include ${PETSC_DIR}/conf/rules
 
 CXX = mpicxx
 
-CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -g -Wall
+CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -O3 -Wall
 
 OBJS = LinAlg.o \
        Basis.o \
@@ -21,25 +21,17 @@ OBJS = LinAlg.o \
        ElMats.o \
        Assembly.o \
        SWEqn.o \
-       PrimEqns_HEVI.o \
-       PrimEqns_HEVI2.o \
+       PrimEqns_HEVI3.o \
        UMJS14.o
-#       Williamson2.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-#Williamson2.o: Williamson2.cpp PrimEqns_HEVI.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-#	${CXX} -c Williamson2.cpp ${CXXFLAGS}
-
-UMJS14.o: UMJS14.cpp PrimEqns_HEVI2.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+UMJS14.o: UMJS14.cpp PrimEqns_HEVI3.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c UMJS14.cpp ${CXXFLAGS}
 
-PrimEqns_HEVI2.o: PrimEqns_HEVI2.cpp PrimEqns_HEVI2.h SWEqn.o Assembly.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c PrimEqns_HEVI2.cpp ${CXXFLAGS}
-
-PrimEqns_HEVI.o: PrimEqns_HEVI.cpp PrimEqns_HEVI.h SWEqn.o Assembly.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c PrimEqns_HEVI.cpp ${CXXFLAGS}
+PrimEqns_HEVI3.o: PrimEqns_HEVI3.cpp PrimEqns_HEVI3.h SWEqn.o Assembly.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c PrimEqns_HEVI3.cpp ${CXXFLAGS}
 
 SWEqn.o: SWEqn.cpp SWEqn.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c SWEqn.cpp ${CXXFLAGS}

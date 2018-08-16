@@ -52,7 +52,7 @@ class PrimEqns_HEVI3 {
         void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
         void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
         void VertFlux(int ex, int ey, Vec pi, Mat Mp);  // vertical mass flux matrix
-        void massRHS_h(Vec* uh, Vec* pi, Vec* Fp);
+        void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu);
         void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta);
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
