@@ -153,9 +153,22 @@ PrimEqns_HEVI3::PrimEqns_HEVI3(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetOptionsPrefix(kspE, "exner_");
     KSPSetFromOptions(kspE);
 
-    initGZ();
-
     exner_pre = new L2Vecs(geom->nk, topo, geom);
+
+    Q = new Wii(node->q, geom);
+    W = new M2_j_xy_i(edge);
+    Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    QT = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    QB = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    initGZ();
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -232,11 +245,6 @@ void PrimEqns_HEVI3::initGZ() {
     int *inds0;
     double det;
     int inds2k[99], inds0k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
     Vec gq;
     Mat AQ;
@@ -259,11 +267,11 @@ void PrimEqns_HEVI3::initGZ() {
             ei = ey*topo->nElsX + ex;
             inds0 = topo->elInds0_l(ex, ey);
 
+            Q->assemble(ex, ey);
+
             // Assemble the matrices
             for(kk = 0; kk < geom->nk; kk++) {
                 // build the 2D mass matrix
-                Q->assemble(ex, ey);
-
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
@@ -271,8 +279,6 @@ void PrimEqns_HEVI3::initGZ() {
                     // integrating, and do no other trasformations for the basis functions
                     Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
                 }
-
-                Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
                 Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
                 Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
 
@@ -301,18 +307,24 @@ void PrimEqns_HEVI3::initGZ() {
         }
     }
 
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    delete[] WtQflat;
-    delete Q;
-    delete W;
     VecDestroy(&gq);
     MatDestroy(&AQ);
+    delete[] WtQflat;
 }
 
 PrimEqns_HEVI3::~PrimEqns_HEVI3() {
     int ii;
+
+    Free2D(Q->nDofsI, Q0);
+    Free2D(Q->nDofsI, QT);
+    Free2D(Q->nDofsI, QB);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQWinv);
+    delete[] WtQWflat;
+    delete Q;
+    delete W;
 
     KSPDestroy(&ksp1);
     KSPDestroy(&ksp2);
@@ -369,13 +381,6 @@ void PrimEqns_HEVI3::AssembleKEVecs(Vec* velx, Vec* velz) {
     double det, wb, wt, wi, gamma;
     Mat BA;
     Vec velx_l, *Kh_l, Kv2;
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *kvArray;
 
     n2   = topo->elOrd*topo->elOrd;
@@ -416,19 +421,17 @@ void PrimEqns_HEVI3::AssembleKEVecs(Vec* velx, Vec* velz) {
     MatSetSizes(BA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(BA, 2*n2, PETSC_NULL);
 
-    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             MatZeroEntries(BA);
             ei = ey*topo->nElsX + ex;
             VecGetArray(velz[ei], &kvArray);
 
+            Q->assemble(ex, ey);
+
             // Assemble the matrices
             for(kk = 0; kk < geom->nk; kk++) {
                 // build the 2D mass matrix
-                Q->assemble(ex, ey);
-
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
@@ -491,13 +494,6 @@ void PrimEqns_HEVI3::AssembleKEVecs(Vec* velx, Vec* velz) {
     }
     delete[] Kh_l;
     MatDestroy(&BA);
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 /*
@@ -599,9 +595,15 @@ void PrimEqns_HEVI3::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l) 
             grad(false, theta_g, &dTheta, kk);
             F->assemble(rho_l[kk], kk, true, SCALE);
             MatMult(F->M, dTheta, rho_dTheta_1);
+
             KSPSolve(ksp1, rho_dTheta_1, rho_dTheta_2);
             MatMult(EtoF->E21, rho_dTheta_2, d2Theta);
             VecAXPY(Fp[kk], del2, d2Theta);
+
+            //MatMult(EtoF->E21, rho_dTheta_1, d2Theta_2);
+            //M2->assemble(kk, SCALE, true);
+            //KSPSolve(ksp2, d2Theta_2, d2Theta);
+            //VecAXPY(Fp[kk], del2, d2Theta);
 
             VecDestroy(&dTheta);
         }
@@ -918,13 +920,6 @@ void PrimEqns_HEVI3::AssembleConst(int ex, int ey, Mat B) {
     int *inds0;
     double det;
     int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
     ei    = ey*topo->nElsX + ex;
     inds0 = topo->elInds0_l(ex, ey);
@@ -947,7 +942,6 @@ void PrimEqns_HEVI3::AssembleConst(int ex, int ey, Mat B) {
         }
 
         // assemble the piecewise constant mass matrix for level k
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
@@ -959,14 +953,6 @@ void PrimEqns_HEVI3::AssembleConst(int ex, int ey, Mat B) {
     }
     MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 /*
@@ -978,13 +964,6 @@ void PrimEqns_HEVI3::AssembleLinear(int ex, int ey, Mat A) {
     int *inds0;
     double det;
     int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
     ei    = ey*topo->nElsX + ex;
     inds0 = topo->elInds0_l(ex, ey);
@@ -1005,7 +984,6 @@ void PrimEqns_HEVI3::AssembleLinear(int ex, int ey, Mat A) {
             Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
         }
 
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
@@ -1028,27 +1006,12 @@ void PrimEqns_HEVI3::AssembleLinear(int ex, int ey, Mat A) {
     }
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 void PrimEqns_HEVI3::AssembleLinCon(int ex, int ey, Mat AB) {
     int ii, kk, ei, mp12;
     double det;
     int rows[99], cols[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
     ei   = ey*topo->nElsX + ex;
     mp12 = (quad->n + 1)*(quad->n + 1);
@@ -1068,7 +1031,6 @@ void PrimEqns_HEVI3::AssembleLinCon(int ex, int ey, Mat AB) {
             // basis by the vertical jacobian, so do nothing 
         }
 
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
@@ -1094,27 +1056,12 @@ void PrimEqns_HEVI3::AssembleLinCon(int ex, int ey, Mat AB) {
     }
     MatAssemblyBegin(AB, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(AB, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 void PrimEqns_HEVI3::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
     int ii, kk, ei, mp1, mp12;
     double det, rk;
     int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *rArray;
 
     ei   = ey*topo->nElsX + ex;
@@ -1122,7 +1069,6 @@ void PrimEqns_HEVI3::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
     mp12 = mp1*mp1;
 
     Q->assemble(ex, ey);
-    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
     MatZeroEntries(A);
 
@@ -1164,14 +1110,6 @@ void PrimEqns_HEVI3::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
     }
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 /*
@@ -1182,13 +1120,6 @@ void PrimEqns_HEVI3::VertFlux(int ex, int ey, Vec pi, Mat Mp) {
     int* inds0 = topo->elInds0_l(ex, ey);
     double det, rho, gamma;
     int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *pArray;
 
     ei   = ey*topo->nElsX + ex;
@@ -1198,7 +1129,6 @@ void PrimEqns_HEVI3::VertFlux(int ex, int ey, Vec pi, Mat Mp) {
 
     // build the 2D mass matrix
     Q->assemble(ex, ey);
-    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
     MatZeroEntries(Mp);
 
@@ -1247,14 +1177,6 @@ void PrimEqns_HEVI3::VertFlux(int ex, int ey, Vec pi, Mat Mp) {
     VecRestoreArray(pi, &pArray);
     MatAssemblyBegin(Mp, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(Mp, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 // rho and rt are local vectors, and exner is a global vector
@@ -2139,14 +2061,6 @@ void PrimEqns_HEVI3::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f
     int *inds0;
     double det, wb, wt, wi, gamma;
     int rows[99], cols[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar* wArray;
     Mat DAinv, Op;
     PC pc;
@@ -2184,7 +2098,6 @@ void PrimEqns_HEVI3::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f
             Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
         }
 
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
@@ -2224,7 +2137,6 @@ void PrimEqns_HEVI3::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f
             // integrating, and do no other trasformations for the basis functions
             Q0[ii][ii] *= (geom->thick[kk+0][inds0[ii]]/2.0 + geom->thick[kk+1][inds0[ii]]/2.0);
         }
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
@@ -2261,27 +2173,11 @@ void PrimEqns_HEVI3::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f
 
     MatDestroy(&DAinv);
     MatDestroy(&Op);
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    Free2D(W->nDofsJ, WtQWinv);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 void PrimEqns_HEVI3::AssembleLinearInv(int ex, int ey, Mat A) {
     int kk, ii, rows[99], ei, *inds0, n2, mp1, mp12;
     double det;
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
     ei    = ey*topo->nElsX + ex;
     inds0 = topo->elInds0_l(ex, ey);
@@ -2301,7 +2197,6 @@ void PrimEqns_HEVI3::AssembleLinearInv(int ex, int ey, Mat A) {
             // integrating, and do no other trasformations for the basis functions
             Q0[ii][ii] *= (geom->thick[kk+0][inds0[ii]]/2.0 + geom->thick[kk+1][inds0[ii]]/2.0);
         }
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
@@ -2316,15 +2211,6 @@ void PrimEqns_HEVI3::AssembleLinearInv(int ex, int ey, Mat A) {
     }
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    Free2D(W->nDofsJ, WtQWinv);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 void PrimEqns_HEVI3::AssembleConstWithRhoInv(int ex, int ey, Vec rho, Mat B) {
@@ -2332,14 +2218,6 @@ void PrimEqns_HEVI3::AssembleConstWithRhoInv(int ex, int ey, Vec rho, Mat B) {
     int *inds0;
     double det, rk, gamma;
     int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar* rArray;
 
     inds0 = topo->elInds0_l(ex, ey);
@@ -2373,7 +2251,6 @@ void PrimEqns_HEVI3::AssembleConstWithRhoInv(int ex, int ey, Vec rho, Mat B) {
         }
 
         // assemble the piecewise constant mass matrix for level k
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
         Inv(WtQW, WtQWinv, n2);
@@ -2387,15 +2264,6 @@ void PrimEqns_HEVI3::AssembleConstWithRhoInv(int ex, int ey, Vec rho, Mat B) {
     VecRestoreArray(rho, &rArray);
     MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    Free2D(W->nDofsJ, WtQWinv);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 void PrimEqns_HEVI3::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
@@ -2403,13 +2271,6 @@ void PrimEqns_HEVI3::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
     int *inds0;
     double det, rk, gamma;
     int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar* rArray;
 
     inds0 = topo->elInds0_l(ex, ey);
@@ -2443,7 +2304,6 @@ void PrimEqns_HEVI3::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
         }
 
         // assemble the piecewise constant mass matrix for level k
-        Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
@@ -2456,26 +2316,11 @@ void PrimEqns_HEVI3::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
     VecRestoreArray(rho, &rArray);
     MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 void PrimEqns_HEVI3::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
     int ii, jj, kk, ei, n2, mp1, mp12, rows[99], cols[99];
     double wb, wt, gamma, det;
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar* wArray;
 
     n2    = topo->elOrd*topo->elOrd;
@@ -2484,6 +2329,7 @@ void PrimEqns_HEVI3::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
     ei    = ey*topo->nElsX + ex;
 
     MatZeroEntries(BA);
+    Q->assemble(ex, ey);
 
     VecGetArray(velz, &wArray);
     for(kk = 0; kk < geom->nk; kk++) {
@@ -2545,27 +2391,12 @@ void PrimEqns_HEVI3::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
     VecRestoreArray(velz, &wArray);
     MatAssemblyBegin(BA, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A) {
     int ii, jj, kk, ei, mp1, mp12, n2;
     double det, rk, gamma;
     int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *rArray;
 
     ei    = ey*topo->nElsX + ex;
@@ -2574,7 +2405,6 @@ void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A) {
     n2    = topo->elOrd*topo->elOrd;
 
     Q->assemble(ex, ey);
-    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
     MatZeroEntries(A);
 
@@ -2620,14 +2450,6 @@ void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A) {
     VecRestoreArray(rt, &rArray);
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, Q0);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 void PrimEqns_HEVI3::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
@@ -2635,31 +2457,21 @@ void PrimEqns_HEVI3::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
     int *inds0;
     double det, tb, tt, gamma;
     int inds2k[99];
-    Wii* Q = new Wii(node->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double** QB = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** QT = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *tArray;
 
     inds0 = topo->elInds0_l(ex, ey);
     n2    = topo->elOrd*topo->elOrd;
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
+    ei    = ey*topo->nElsX + ex;
 
-    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-
+    Q->assemble(ex, ey);
     MatZeroEntries(A);
 
     // Assemble the matrices
     VecGetArray(theta, &tArray);
     for(kk = 0; kk < geom->nk; kk++) {
         // build the 2D mass matrix
-        Q->assemble(ex, ey);
-        ei = ey*topo->nElsX + ex;
 
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -2706,15 +2518,6 @@ void PrimEqns_HEVI3::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
     VecRestoreArray(theta, &tArray);
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-
-    Free2D(Q->nDofsI, QB);
-    Free2D(Q->nDofsI, QT);
-    Free2D(W->nDofsJ, Wt);
-    Free2D(W->nDofsJ, WtQ);
-    Free2D(W->nDofsJ, WtQW);
-    delete[] WtQWflat;
-    delete Q;
-    delete W;
 }
 
 // _n vectors are the for the initial state at the beginning of the step

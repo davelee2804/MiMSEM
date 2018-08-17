@@ -43,6 +43,18 @@ class PrimEqns_HEVI3 {
         KSP ksp2;
         KSP kspE;
         KSP kspColA;
+
+        Wii* Q;
+        M2_j_xy_i* W;
+        double** Q0;
+        double** QT;
+        double** QB;
+        double** Wt;
+        double** WtQ;
+        double** WtQW;
+        double** WtQWinv;
+        double* WtQWflat;
+
         double viscosity();
         double viscosity_vert();
         void coriolis();
