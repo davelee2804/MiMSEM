@@ -63,7 +63,6 @@ class PrimEqns_HEVI3 {
         void grad(bool assemble, Vec phi, Vec* u, int lev);            // weak form grad operator
         void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
         void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
-        void VertFlux(int ex, int ey, Vec pi, Mat Mp);  // vertical mass flux matrix
         void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu);
         void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta);
@@ -75,7 +74,7 @@ class PrimEqns_HEVI3 {
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* p, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
-        void solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt);
+        void solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt, Mat VISC);
         void HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft);
         void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
         void SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);

@@ -50,7 +50,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     // 2 form mass matrix
     M2 = new Wmat(topo, geom, edge);
-    M2->assemble(0, 1.0);
+    M2->assemble(0, 1.0, true);
 
 
     // incidence matrices

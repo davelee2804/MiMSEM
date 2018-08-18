@@ -1112,73 +1112,6 @@ void PrimEqns_HEVI3::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
 }
 
-/*
-derive the vertical mass flux
-*/
-void PrimEqns_HEVI3::VertFlux(int ex, int ey, Vec pi, Mat Mp) {
-    int ii, jj, kk, ei, n2, mp1, mp12;
-    int* inds0 = topo->elInds0_l(ex, ey);
-    double det, rho, gamma;
-    int inds2k[99];
-    PetscScalar *pArray;
-
-    ei   = ey*topo->nElsX + ex;
-    n2   = topo->elOrd*topo->elOrd;
-    mp1  = quad->n + 1;
-    mp12 = mp1*mp1;
-
-    // build the 2D mass matrix
-    Q->assemble(ex, ey);
-
-    MatZeroEntries(Mp);
-
-    // assemble the matrices
-    VecGetArray(pi, &pArray);
-    for(kk = 0; kk < geom->nk; kk++) {
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
-
-            //geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &rho);
-            rho = 0.0;
-            for(jj = 0; jj < n2; jj++) {
-                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
-                rho += pArray[(kk+0)*n2+jj]*gamma;
-            }
-            rho *= 2.0/(geom->thick[kk][inds0[ii]]*det);
-            Q0[ii][ii] *= rho;
-
-            // multiply by the vertical determinant for the vertical integral,
-            // then divide by the vertical determinant to rescale the piecewise
-            // constant density, so do nothing.
-        }
-
-        // assemble the piecewise constant mass matrix for level k
-        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
-        // assemble the first basis function (exclude bottom boundary)
-        if(kk > 0) {
-            for(ii = 0; ii < W->nDofsJ; ii++) {
-                inds2k[ii] = ii + (kk-1)*W->nDofsJ;
-            }
-            MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-        }
-
-        // assemble the second basis function (exclude top boundary)
-        if(kk < geom->nk - 1) {
-            for(ii = 0; ii < W->nDofsJ; ii++) {
-                inds2k[ii] = ii + (kk+0)*W->nDofsJ;
-            }
-            MatSetValues(Mp, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
-        }
-    }
-    VecRestoreArray(pi, &pArray);
-    MatAssemblyBegin(Mp, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(Mp, MAT_FINAL_ASSEMBLY);
-}
-
 // rho and rt are local vectors, and exner is a global vector
 void PrimEqns_HEVI3::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft) {
     int kk;
@@ -2056,7 +1989,7 @@ void PrimEqns_HEVI3::initTheta(Vec theta, ICfunc3D* func) {
     VecDestroy(&WQb);
 }
 
-void PrimEqns_HEVI3::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt) {
+void PrimEqns_HEVI3::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt, Mat VISC) {
     int ii, jj, kk, ei, n2, mp1, mp12;
     int *inds0;
     double det, wb, wt, wi, gamma;
@@ -2168,6 +2101,22 @@ void PrimEqns_HEVI3::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f
     KSPSetFromOptions(kspMass);
 
     KSPSolve(kspMass, f_rho, rho);
+    KSPDestroy(&kspMass);
+
+    if(VISC) {
+        MatAXPY(Op, -_dt*vert_visc, VISC, DIFFERENT_NONZERO_PATTERN);
+    }
+
+    KSPCreate(MPI_COMM_SELF, &kspMass);
+    KSPSetOperators(kspMass, Op, Op);
+    KSPSetTolerances(kspMass, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspMass, KSPGMRES);
+    KSPGetPC(kspMass, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, W->nDofsJ, NULL); // TODO: check allocation
+    KSPSetOptionsPrefix(kspMass, "kspMass_");
+    KSPSetFromOptions(kspMass);
+
     KSPSolve(kspMass, f_rt , rt );
     KSPDestroy(&kspMass);
 
@@ -2523,7 +2472,7 @@ void PrimEqns_HEVI3::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
 // _n vectors are the for the initial state at the beginning of the step
 void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n) {
     int ex, ey, ei, n2, it, rank;
-    double eps, max_eps, eps_norm;
+    double eps, max_eps, eps_norm, eps_1, eps_2, eps_3, eps_4;
     Mat V0_rt, V0_inv, V1_Pi, V1_rt_inv, V0_theta, V10_w, AB;
     Mat DTV10_w                    = NULL;
     Mat DTV1                       = NULL;
@@ -2536,6 +2485,13 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
     Mat DIV                        = NULL;
     Mat LAP                        = NULL;
     Mat DEL2                       = NULL;
+Mat V1_invV1 = NULL;
+Mat V1V1_invV1 = NULL;
+Mat V0V0_inv = NULL;
+Mat V0_invV0V0_inv = NULL;
+Mat GRAD_t = NULL;
+Mat DIV_t = NULL;
+Mat VISC_t = NULL;
     Vec rhs, tmp;
     Vec velz_j, exner_j, rho_j, rt_j;
     Vec velz_d, exner_d, rho_d, rt_d;
@@ -2692,8 +2648,49 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 MatMult(DIV, velz_j, exner_j);
                 VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
 
+                // assemble the temperature equation viscosity operator
+                AssembleConstWithRhoInv(ex, ey, rho[ei], V1_rt_inv);
+                AssembleLinearWithRT(ex, ey, rho[ei], V0_rt);
+                if(!V1_invV1) {
+                    MatMatMult(V1_rt_inv, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V1_invV1);
+                } else {
+                    MatMatMult(V1_rt_inv, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V1_invV1);
+                }
+                if(!V1V1_invV1) {
+                    MatMatMult(VB, V1_invV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V1V1_invV1);
+                } else {
+                    MatMatMult(VB, V1_invV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V1V1_invV1);
+                }
+                if(!GRAD_t) {
+                    MatMatMult(V01, V1V1_invV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GRAD_t);
+                } else {
+                    MatMatMult(V01, V1V1_invV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &GRAD_t);
+                }
+
+                if(!V0V0_inv) {
+                    MatMatMult(V0_rt, V0_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0V0_inv);
+                } else {
+                    MatMatMult(V0_rt, V0_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0V0_inv);
+                }
+                if(!V0_invV0V0_inv) {
+                    MatMatMult(V0_inv, V0V0_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invV0V0_inv);
+                } else {
+                    MatMatMult(V0_inv, V0V0_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0V0_inv);
+                }
+                if(!DIV_t) {
+                    MatMatMult(V10, V0_invV0V0_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DIV_t);
+                } else {
+                    MatMatMult(V10, V0_invV0V0_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DIV_t);
+                }
+
+                if(!VISC_t) {
+                    MatMatMult(DIV_t, GRAD_t, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VISC_t);
+                } else {
+                    MatMatMult(DIV_t, GRAD_t, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VISC_t);
+                }
+
                 // update the density and the density weighted potential temperature
-                solveMass(0.5*dt, ex, ey, AB, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j);
+                solveMass(0.5*dt, ex, ey, AB, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j, VISC_t);
 
                 // check the differences
                 VecCopy(velz_j, velz_d);
@@ -2701,28 +2698,28 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 VecNorm(velz_d, NORM_2, &eps);
                 VecNorm(velz_j, NORM_2, &eps_norm);
                 max_eps = eps/eps_norm;
-                //eps_1 = eps/eps_norm;
+                eps_1 = eps/eps_norm;
 
                 VecCopy(exner_j, exner_d);
                 VecAXPY(exner_d, -1.0, exner[ei]);
                 VecNorm(exner_d, NORM_2, &eps);
                 VecNorm(exner_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
-                //eps_2 = eps/eps_norm;
+                eps_2 = eps/eps_norm;
 
                 VecCopy(rho_j, rho_d);
                 VecAXPY(rho_d, -1.0, rho[ei]);
                 VecNorm(rho_d, NORM_2, &eps);
                 VecNorm(rho_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
-                //eps_3 = eps/eps_norm;
+                eps_3 = eps/eps_norm;
 
                 VecCopy(rt_j, rt_d);
                 VecAXPY(rt_d, -1.0, rt[ei]);
                 VecNorm(rt_d, NORM_2, &eps);
                 VecNorm(rt_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
-                //eps_4 = eps/eps_norm;
+                eps_4 = eps/eps_norm;
 
                 // copy over the new solutions at this iteration
                 VecCopy(velz_j , velz[ei] );
@@ -2730,14 +2727,16 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 VecCopy(rho_j  , rho[ei]  );
                 VecCopy(rt_j   , rt[ei]   );
 
-                it++;
-            } while(it < 100 && max_eps > 1.0e-12);
-
             if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
             //if(!rank)cout << "\t\t\t\t|eps_w|:     " << eps_1 << endl;
             //if(!rank)cout << "\t\t\t\t|eps_Pi|:    " << eps_2 << endl;
             //if(!rank)cout << "\t\t\t\t|eps_rho|:   " << eps_3 << endl;
-            //if(!rank)cout << "\t\t\t\t|eps_Theta|: " << eps_4 << endl;
+            //f(!rank)cout << "\t\t\t\t|eps_Theta|: " << eps_4 << endl;
+
+                it++;
+            } while(it < 100 && max_eps > 1.0e-12);
+
+            //if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
         }
     }
 
@@ -2781,5 +2780,12 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
     MatDestroy(&LAP                       );
     MatDestroy(&AB                        );
     MatDestroy(&DEL2                      );
+MatDestroy(&V1_invV1);
+MatDestroy(&V1V1_invV1);
+MatDestroy(&V0V0_inv);
+MatDestroy(&V0_invV0V0_inv);
+MatDestroy(&GRAD_t);
+MatDestroy(&DIV_t);
+MatDestroy(&VISC_t);
     delete l2_theta;
 }
