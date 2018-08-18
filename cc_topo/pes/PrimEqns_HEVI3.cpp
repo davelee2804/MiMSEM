@@ -27,6 +27,9 @@
 #define CV 717.5
 #define SCALE 1.0e+8
 
+//#define THETA_VISC_H
+//#define THETA_VISC_V
+
 using namespace std;
 
 PrimEqns_HEVI3::PrimEqns_HEVI3(Topo* _topo, Geom* _geom, double _dt) {
@@ -1131,7 +1134,11 @@ void PrimEqns_HEVI3::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu,
         horizMomRHS(velx[kk], theta, exner[kk], kk, Fu[kk]);
     }
     massRHS(velx, rho, Fp, NULL, NULL);
+#ifdef THETA_VISC_H
     massRHS(velx, rt,  Ft, theta, rho);
+#else
+    massRHS(velx, rt,  Ft, NULL, NULL);
+#endif
 
     for(kk = 0; kk < geom->nk + 1; kk++) {
         VecDestroy(&theta[kk]);
@@ -2472,26 +2479,27 @@ void PrimEqns_HEVI3::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
 // _n vectors are the for the initial state at the beginning of the step
 void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n) {
     int ex, ey, ei, n2, it, rank;
-    double eps, max_eps, eps_norm, eps_1, eps_2, eps_3, eps_4;
+    double eps, max_eps, eps_norm;
     Mat V0_rt, V0_inv, V1_Pi, V1_rt_inv, V0_theta, V10_w, AB;
-    Mat DTV10_w                    = NULL;
-    Mat DTV1                       = NULL;
-    Mat V0_invDTV1                 = NULL;
-    Mat GRAD                       = NULL;
-    Mat V0_invV0_rt                = NULL;
-    Mat DV0_invV0_rt               = NULL;
-    Mat V1_PiDV0_invV0_rt          = NULL;
-    Mat V1_rt_intV1_PiDV0_invV0_rt = NULL;
-    Mat DIV                        = NULL;
-    Mat LAP                        = NULL;
-    Mat DEL2                       = NULL;
-Mat V1_invV1 = NULL;
-Mat V1V1_invV1 = NULL;
-Mat V0V0_inv = NULL;
-Mat V0_invV0V0_inv = NULL;
-Mat GRAD_t = NULL;
-Mat DIV_t = NULL;
-Mat VISC_t = NULL;
+    Mat DTV10_w           = NULL;
+    Mat DTV1              = NULL;
+    Mat V0_invDTV1        = NULL;
+    Mat GRAD              = NULL;
+    Mat V0_invV0_rt       = NULL;
+    Mat DV0_invV0_rt      = NULL;
+    Mat V1_PiDV0_invV0_rt = NULL;
+    Mat DIV               = NULL;
+    Mat LAP               = NULL;
+    Mat DEL2              = NULL;
+#ifdef THETA_VISC_V
+    Mat V1_invV1          = NULL;
+    Mat V1V1_invV1        = NULL;
+    Mat V0V0_inv          = NULL;
+    Mat V0_invV0V0_inv    = NULL;
+    Mat GRAD_t            = NULL;
+    Mat DIV_t             = NULL;
+#endif
+    Mat VISC_t            = NULL;
     Vec rhs, tmp;
     Vec velz_j, exner_j, rho_j, rt_j;
     Vec velz_d, exner_d, rho_d, rt_d;
@@ -2613,7 +2621,7 @@ Mat VISC_t = NULL;
                 }
 
                 AssembleConstWithRhoInv(ex, ey, rt_n[ei], V1_rt_inv);
-                if(!V1_rt_intV1_PiDV0_invV0_rt) {
+                if(!DIV) {
                     MatMatMult(V1_rt_inv, V1_PiDV0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DIV);
                 } else {
                     MatMatMult(V1_rt_inv, V1_PiDV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DIV);
@@ -2638,7 +2646,8 @@ Mat VISC_t = NULL;
                         MatMatMult(DTV1, V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
                     }
                 }
-                MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
+                //MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
+                MatAXPY(VA, -0.5*dt*8.0*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
                 MatAXPY(VA, +0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
                 MatAXPY(VA, -0.25*dt*dt*RD/CV, LAP, SAME_NONZERO_PATTERN);
 
@@ -2649,6 +2658,7 @@ Mat VISC_t = NULL;
                 VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
 
                 // assemble the temperature equation viscosity operator
+#ifdef THETA_VISC_V
                 AssembleConstWithRhoInv(ex, ey, rho[ei], V1_rt_inv);
                 AssembleLinearWithRT(ex, ey, rho[ei], V0_rt);
                 if(!V1_invV1) {
@@ -2688,6 +2698,7 @@ Mat VISC_t = NULL;
                 } else {
                     MatMatMult(DIV_t, GRAD_t, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VISC_t);
                 }
+#endif
 
                 // update the density and the density weighted potential temperature
                 solveMass(0.5*dt, ex, ey, AB, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j, VISC_t);
@@ -2698,28 +2709,28 @@ Mat VISC_t = NULL;
                 VecNorm(velz_d, NORM_2, &eps);
                 VecNorm(velz_j, NORM_2, &eps_norm);
                 max_eps = eps/eps_norm;
-                eps_1 = eps/eps_norm;
+                //eps_1 = eps/eps_norm;
 
                 VecCopy(exner_j, exner_d);
                 VecAXPY(exner_d, -1.0, exner[ei]);
                 VecNorm(exner_d, NORM_2, &eps);
                 VecNorm(exner_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
-                eps_2 = eps/eps_norm;
+                //eps_2 = eps/eps_norm;
 
                 VecCopy(rho_j, rho_d);
                 VecAXPY(rho_d, -1.0, rho[ei]);
                 VecNorm(rho_d, NORM_2, &eps);
                 VecNorm(rho_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
-                eps_3 = eps/eps_norm;
+                //eps_3 = eps/eps_norm;
 
                 VecCopy(rt_j, rt_d);
                 VecAXPY(rt_d, -1.0, rt[ei]);
                 VecNorm(rt_d, NORM_2, &eps);
                 VecNorm(rt_j, NORM_2, &eps_norm);
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
-                eps_4 = eps/eps_norm;
+                //eps_4 = eps/eps_norm;
 
                 // copy over the new solutions at this iteration
                 VecCopy(velz_j , velz[ei] );
@@ -2727,16 +2738,14 @@ Mat VISC_t = NULL;
                 VecCopy(rho_j  , rho[ei]  );
                 VecCopy(rt_j   , rt[ei]   );
 
+                it++;
+            } while(it < 100 && max_eps > 1.0e-12);
+
             if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
             //if(!rank)cout << "\t\t\t\t|eps_w|:     " << eps_1 << endl;
             //if(!rank)cout << "\t\t\t\t|eps_Pi|:    " << eps_2 << endl;
             //if(!rank)cout << "\t\t\t\t|eps_rho|:   " << eps_3 << endl;
-            //f(!rank)cout << "\t\t\t\t|eps_Theta|: " << eps_4 << endl;
-
-                it++;
-            } while(it < 100 && max_eps > 1.0e-12);
-
-            //if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
+            //if(!rank)cout << "\t\t\t\t|eps_Theta|: " << eps_4 << endl;
         }
     }
 
@@ -2762,30 +2771,31 @@ Mat VISC_t = NULL;
     VecDestroy(&exner_d);
     VecDestroy(&rho_d);
     VecDestroy(&rt_d);
-    MatDestroy(&V0_rt                     );
-    MatDestroy(&V0_inv                    );
-    MatDestroy(&V1_Pi                     );
-    MatDestroy(&V1_rt_inv                 );
-    MatDestroy(&V0_theta                  );
-    MatDestroy(&V10_w                     );
-    MatDestroy(&DTV10_w                   );
-    MatDestroy(&DTV1                      );
-    MatDestroy(&V0_invDTV1                );
-    MatDestroy(&GRAD                      );
-    MatDestroy(&V0_invV0_rt               );
-    MatDestroy(&DV0_invV0_rt              );
-    MatDestroy(&V1_PiDV0_invV0_rt         );
-    MatDestroy(&V1_rt_intV1_PiDV0_invV0_rt);
-    MatDestroy(&DIV                       );
-    MatDestroy(&LAP                       );
-    MatDestroy(&AB                        );
-    MatDestroy(&DEL2                      );
-MatDestroy(&V1_invV1);
-MatDestroy(&V1V1_invV1);
-MatDestroy(&V0V0_inv);
-MatDestroy(&V0_invV0V0_inv);
-MatDestroy(&GRAD_t);
-MatDestroy(&DIV_t);
-MatDestroy(&VISC_t);
+    MatDestroy(&V0_rt            );
+    MatDestroy(&V0_inv           );
+    MatDestroy(&V1_Pi            );
+    MatDestroy(&V1_rt_inv        );
+    MatDestroy(&V0_theta         );
+    MatDestroy(&V10_w            );
+    MatDestroy(&DTV10_w          );
+    MatDestroy(&DTV1             );
+    MatDestroy(&V0_invDTV1       );
+    MatDestroy(&GRAD             );
+    MatDestroy(&V0_invV0_rt      );
+    MatDestroy(&DV0_invV0_rt     );
+    MatDestroy(&V1_PiDV0_invV0_rt);
+    MatDestroy(&DIV              );
+    MatDestroy(&LAP              );
+    MatDestroy(&AB               );
+    MatDestroy(&DEL2             );
+#ifdef THETA_VISC_V
+    MatDestroy(&V1_invV1);
+    MatDestroy(&V1V1_invV1);
+    MatDestroy(&V0V0_inv);
+    MatDestroy(&V0_invV0V0_inv);
+    MatDestroy(&GRAD_t);
+    MatDestroy(&DIV_t);
+    MatDestroy(&VISC_t);
+#endif
     delete l2_theta;
 }
