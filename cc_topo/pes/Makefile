@@ -20,21 +20,17 @@ OBJS = LinAlg.o \
        L2Vecs.o \
        ElMats.o \
        Assembly.o \
-       SWEqn.o \
        PrimEqns_HEVI3.o \
        UMJS14.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-UMJS14.o: UMJS14.cpp PrimEqns_HEVI3.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+UMJS14.o: UMJS14.cpp PrimEqns_HEVI3.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c UMJS14.cpp ${CXXFLAGS}
 
-PrimEqns_HEVI3.o: PrimEqns_HEVI3.cpp PrimEqns_HEVI3.h SWEqn.o Assembly.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+PrimEqns_HEVI3.o: PrimEqns_HEVI3.cpp PrimEqns_HEVI3.h Assembly.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c PrimEqns_HEVI3.cpp ${CXXFLAGS}
-
-SWEqn.o: SWEqn.cpp SWEqn.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c SWEqn.cpp ${CXXFLAGS}
 
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}

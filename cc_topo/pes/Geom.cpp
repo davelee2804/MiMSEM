@@ -468,7 +468,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
                 // assume piecewise constant in the vertical, so rescale by
                 // the vertical determinant inverse
                 if(vert_scale) {
-                hxArray[inds0[ii]] *= 2.0/thick[lev][inds0[ii]];
+                    hxArray[inds0[ii]] *= 2.0/thick[lev][inds0[ii]];
                 }
             }
         }

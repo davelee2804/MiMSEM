@@ -84,3 +84,30 @@ for fieldname in fieldnames:
 		plt.ylim([-0.5*np.pi,+0.5*np.pi])
 		plt.savefig(picname)
 
+fieldnames = ['theta_h_', 'theta_v_']
+for fieldname in fieldnames:
+	for kk in np.arange(nk+1):
+		filename = 'output/' + fieldname + '%.3d'%kk + '_%.4d'%step + '.dat'
+		print filename
+
+		#delete text lines
+		f = open(filename,'r')
+		lines = f.readlines()
+		f.close()
+		f = open(filename,'w')
+		for line in lines:
+			if line[0] != ' ' and line[0] != 'V' and line[0] != 'P':
+				f.write(line)
+		f.close()
+
+		w=np.loadtxt(filename)
+
+		picname = 'output/' + fieldname + '%.3d'%kk + '_%.4d'%step + '.png'
+
+		fig = plt.figure()
+		plt.tricontourf(triang, w, 100)
+		plt.colorbar(orientation='horizontal')
+		plt.xlim([-np.pi,+np.pi])
+		plt.ylim([-0.5*np.pi,+0.5*np.pi])
+		plt.savefig(picname)
+

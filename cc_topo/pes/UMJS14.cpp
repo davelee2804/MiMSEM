@@ -14,7 +14,6 @@
 #include "L2Vecs.h"
 #include "ElMats.h"
 #include "Assembly.h"
-#include "SWEqn.h"
 #include "PrimEqns_HEVI3.h"
 
 using namespace std;
@@ -256,9 +255,8 @@ int main(int argc, char** argv) {
     char fieldname[50];//, filename[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    //double dt = 80.0;    // for 16x3rd order elements
-    double dt = 1.0;    // for 16x3rd order elements
-    int nSteps = 2;//10800;  // 10 days
+    double dt = 60.0;    // for 16x3rd order elements
+    int nSteps = 3;//10800;  // 10 days
     int dumpEvery = 1;//270; // 6 hours
     ofstream file;
     Topo* topo;
@@ -353,19 +351,11 @@ int main(int argc, char** argv) {
     //    VecDestroy(&wi);
     //}
 
-    // initial solve for dt = 1s
-    pe->dt = 1.0;
-    pe->SolveStrang(velx, velz, rho, rt, exner, true);
-    pe->firstStep = true;
-    pe->dt = dt;
-
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        //pe->SolveRK2(velx, velz, rho, rt, exner, dump);
-        //pe->SolveEuler(velx, velz, rho, rt, exner, dump);
         pe->SolveStrang(velx, velz, rho, rt, exner, dump);
 
         //if(dump) {
