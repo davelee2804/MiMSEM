@@ -624,9 +624,10 @@ void PrimEqns_HEVI3::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l) 
 }
 
 /*
-Assemble the boundary condition vector for rho(t) X theta(0)
+assemble the boundary condition vector for rho(t) X theta(0)
+assume V0^{rho} has already been assembled (omitting internal levels)
 */
-void PrimEqns_HEVI3::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
+void PrimEqns_HEVI3::thetaBCVec(int ex, int ey, Mat A, Vec* bTheta) {
     int* inds2 = topo->elInds2_l(ex, ey);
     int ii, n2;
     PetscScalar *vArray, *hArray;
@@ -638,6 +639,7 @@ void PrimEqns_HEVI3::thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta) {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, bTheta);
 
     // assemble the theta bc vector
+    VecZeroEntries(theta_o);
     VecGetArray(theta_o, &vArray);
     // bottom
     VecGetArray(theta_b_l, &hArray);
@@ -691,13 +693,12 @@ void PrimEqns_HEVI3::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
             MatMult(AB, rtv, frt);
 
             // assemble in the bcs
-            AssembleLinearWithRho(ex, ey, rho, VA);
-            //thetaBCVec(ex, ey, A, rho, &bcs);
-            thetaBCVec(ex, ey, VA, rho, &bcs);
+            AssembleLinearWithRho(ex, ey, rho, VA, false);
+            thetaBCVec(ex, ey, VA, &bcs);
             VecAXPY(frt, -1.0, bcs);
             VecDestroy(&bcs);
 
-            //AssembleLinearWithRho(ex, ey, rho, VA);
+            AssembleLinearWithRho(ex, ey, rho, VA, true);
             KSPSolve(kspColA, frt, theta_v);
             VertToHoriz2(ex, ey, 1, geom->nk, theta_v, theta);
         }
@@ -707,40 +708,6 @@ void PrimEqns_HEVI3::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     VecDestroy(&frt);
     VecDestroy(&theta_v);
     MatDestroy(&AB);
-}
-
-// assume V0^{rho} has already been assembled
-void PrimEqns_HEVI3::thetaBCVecVert(int ex, int ey, Mat A, Vec* bTheta) {
-    int* inds2 = topo->elInds2_l(ex, ey);
-    int ii, n2;
-    PetscScalar *vArray, *hArray;
-    Vec theta_o;
-
-    n2    = topo->elOrd*topo->elOrd;
-
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &theta_o);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, bTheta);
-
-    // assemble the theta bc vector
-    VecZeroEntries(theta_o);
-    VecGetArray(theta_o, &vArray);
-    // bottom
-    VecGetArray(theta_b_l, &hArray);
-    for(ii = 0; ii < n2; ii++) {
-        vArray[ii] = hArray[inds2[ii]];
-    }
-    VecRestoreArray(theta_b_l, &hArray);
-    // top
-    VecGetArray(theta_t_l, &hArray);
-    for(ii = 0; ii < n2; ii++) {
-        vArray[(geom->nk-2)*n2+ii] = hArray[inds2[ii]];
-    }
-    VecRestoreArray(theta_t_l, &hArray);
-    VecRestoreArray(theta_o, &vArray);
-
-    MatMult(A, theta_o, *bTheta);
-
-    VecDestroy(&theta_o);
 }
 
 // rho, rt and theta are all vertical vectors
@@ -759,12 +726,13 @@ void PrimEqns_HEVI3::diagThetaVert(int ex, int ey, Mat AB, Vec rho, Vec rt, Vec 
     MatMult(AB, rt, frt);
 
     // assemble in the bcs
-    AssembleLinearWithRT(ex, ey, rho, VA);
-    thetaBCVecVert(ex, ey, VA, &bcs);
+    AssembleLinearWithRT(ex, ey, rho, VA, false);
+    thetaBCVec(ex, ey, VA, &bcs);
     VecAXPY(frt, -1.0, bcs);
     VecDestroy(&bcs);
 
     // map back to the full column
+    AssembleLinearWithRT(ex, ey, rho, VA, true);
     KSPSolve(kspColA, frt, theta_v);
 
     VecGetArray(theta_v,   &tiArray);
@@ -1061,10 +1029,11 @@ void PrimEqns_HEVI3::AssembleLinCon(int ex, int ey, Mat AB) {
     MatAssemblyEnd(AB, MAT_FINAL_ASSEMBLY);
 }
 
-void PrimEqns_HEVI3::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
+void PrimEqns_HEVI3::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_internal) {
     int ii, kk, ei, mp1, mp12;
     double det, rk;
     int inds2k[99];
+    int* inds0 = topo->elInds0_l(ex, ey);
     PetscScalar *rArray;
 
     ei   = ey*topo->nElsX + ex;
@@ -1077,6 +1046,10 @@ void PrimEqns_HEVI3::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
 
     // Assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
+        if(kk > 0 && kk < geom->nk-1 && !do_internal) {
+            continue;
+        }
+
         // build the 2D mass matrix
         VecGetArray(rho[kk], &rArray);
         for(ii = 0; ii < mp12; ii++) {
@@ -1087,6 +1060,9 @@ void PrimEqns_HEVI3::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A) {
             // divide piecewise constant density by the vertical determinant,
             // so these cancel
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
+            if(!do_internal) { // TODO: don't understand this scaling?!?
+                rk *= 2.0/geom->thick[kk][inds0[ii]];
+            }
             Q0[ii][ii] *= rk;
         }
         VecRestoreArray(rho[kk], &rArray);
@@ -1736,6 +1712,9 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
         int n2 = topo->elOrd*topo->elOrd;
         L2Vecs* theta = new L2Vecs(geom->nk+1, topo, geom);
         Mat AB;
+
+        VecCopy(theta_b_l, theta->vl[0]       );
+        VecCopy(theta_t_l, theta->vl[geom->nk]);
         diagTheta(rho_new->vl, rt_new->vl, theta->vl);
         theta->UpdateGlobal();
         for(ii = 0; ii < geom->nk+1; ii++) {
@@ -2377,10 +2356,11 @@ void PrimEqns_HEVI3::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
     MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
 }
 
-void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A) {
+void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_internal) {
     int ii, jj, kk, ei, mp1, mp12, n2;
     double det, rk, gamma;
     int inds2k[99];
+    int* inds0 = topo->elInds0_l(ex, ey);
     PetscScalar *rArray;
 
     ei    = ey*topo->nElsX + ex;
@@ -2395,6 +2375,10 @@ void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A) {
     // Assemble the matrices
     VecGetArray(rt, &rArray);
     for(kk = 0; kk < geom->nk; kk++) {
+        if(kk > 0 && kk < geom->nk-1 && !do_internal) {
+            continue;
+        }
+
         // build the 2D mass matrix
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -2407,6 +2391,9 @@ void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A) {
             for(jj = 0; jj < n2; jj++) {
                 gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                 rk += rArray[kk*n2+jj]*gamma;
+            }
+            if(!do_internal) { // TODO: don't understand this scaling ?!?
+                rk *= 2.0/geom->thick[kk][inds0[ii]];
             }
             Q0[ii][ii] *= rk/det;
         }
@@ -2629,7 +2616,7 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                     MatMatMult(V0_theta, V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &GRAD);
                 }
 
-                AssembleLinearWithRT(ex, ey, rt[ei], V0_rt);
+                AssembleLinearWithRT(ex, ey, rt[ei], V0_rt, true);
                 if(!V0_invV0_rt) {
                     MatMatMult(V0_inv, V0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
                 } else {
@@ -2688,7 +2675,7 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 // assemble the temperature equation viscosity operator
 #ifdef THETA_VISC_V
                 AssembleConstWithRhoInv(ex, ey, rho[ei], V1_rt_inv);
-                AssembleLinearWithRT(ex, ey, rho[ei], V0_rt);
+                AssembleLinearWithRT(ex, ey, rho[ei], V0_rt, true);
                 if(!V1_invV1) {
                     MatMatMult(V1_rt_inv, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V1_invV1);
                 } else {

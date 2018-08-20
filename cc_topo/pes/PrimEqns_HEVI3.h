@@ -65,8 +65,9 @@ class PrimEqns_HEVI3 {
         void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
         void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu);
-        void thetaBCVec(int ex, int ey, Mat A, Vec* rho, Vec* bTheta);
+        void thetaBCVec(int ex, int ey, Mat A, Vec* bTheta);
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
+        void diagThetaVert(int ex, int ey, Mat AB, Vec rho, Vec rt, Vec theta);
         void AssembleKEVecs(Vec* velx, Vec* velz);
         void VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph);
         void HorizToVert2(int ex, int ey, Vec* ph, Vec pv);
@@ -83,15 +84,12 @@ class PrimEqns_HEVI3 {
         void AssembleLinear(int ex, int ey, Mat B);     // piecewise linear (in vertical) mass matrix
         void AssembleLinCon(int ex, int ey, Mat AB);
         void AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A);
-        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A);
-        void AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A);
+        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_internal);
+        void AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_internal);
         void AssembleLinearInv(int ex, int ey, Mat A);
         void AssembleConstWithRhoInv(int ex, int ey, Vec theta, Mat B);
         void AssembleConstWithRho(int ex, int ey, Vec rho, Mat A);
         void AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA);
 
         void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
-
-        void thetaBCVecVert(int ex, int ey, Mat A, Vec* bTheta);
-        void diagThetaVert(int ex, int ey, Mat AB, Vec rho, Vec rt, Vec theta);
 };
