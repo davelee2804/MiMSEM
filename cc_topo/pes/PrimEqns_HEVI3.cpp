@@ -1710,35 +1710,16 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     if(save) {
         step++;
 
-        int n2 = topo->elOrd*topo->elOrd;
         L2Vecs* theta = new L2Vecs(geom->nk+1, topo, geom);
-        Mat AB;
-
         VecCopy(theta_b_l, theta->vl[0]       );
         VecCopy(theta_t_l, theta->vl[geom->nk]);
         diagTheta(rho_new->vl, rt_new->vl, theta->vl);
         theta->UpdateGlobal();
         for(ii = 0; ii < geom->nk+1; ii++) {
-            sprintf(fieldname, "theta_h");
-            geom->write2(theta->vh[ii], fieldname, step, ii, false);
-        }
-
-        MatCreate(MPI_COMM_SELF, &AB);
-        MatSetType(AB, MATSEQAIJ);
-        MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
-        MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
-
-        for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-            diagThetaVert(ii%topo->nElsX, ii/topo->nElsX, AB, rho_new->vz[ii], rt_new->vz[ii], theta->vz[ii]);
-        }
-        theta->VertToHoriz();
-        theta->UpdateGlobal();
-        for(ii = 0; ii < geom->nk+1; ii++) {
-            sprintf(fieldname, "theta_v");
+            sprintf(fieldname, "theta");
             geom->write2(theta->vh[ii], fieldname, step, ii, false);
         }
         delete theta;
-        MatDestroy(&AB);
 
         for(ii = 0; ii < geom->nk; ii++) {
             curl(true, velx[ii], &wi, ii, false);

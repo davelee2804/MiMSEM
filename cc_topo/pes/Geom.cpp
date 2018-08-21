@@ -426,7 +426,7 @@ void Geom::write1(Vec u, char* fieldname, int tstep, int lev) {
     VecDestroy(&uxg);
 
     // also write the vector itself
-    sprintf(filename, "output/%s_%.4u.vec", fieldname, tstep);
+    sprintf(filename, "output/%s_%.3u_%.4u.vec", fieldname, lev, tstep);
     PetscViewerBinaryOpen(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
     VecView(u, viewer);
     PetscViewerDestroy(&viewer);
@@ -494,7 +494,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
     VecDestroy(&hl);
 
     // also write the vector itself
-    sprintf(filename, "output/%s_%.4u.vec", fieldname, tstep);
+    sprintf(filename, "output/%s_%.3u_%.4u.vec", fieldname, lev, tstep);
     PetscViewerBinaryOpen(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
     VecView(h, viewer);
     PetscViewerDestroy(&viewer);
@@ -552,7 +552,7 @@ void Geom::writeVertToHoriz(Vec* vecs, char* fieldname, int tstep, int nv) {
     for(kk = 0; kk < nv; kk++) {
         VecZeroEntries(gvec);
         VecScatterBegin(topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
-        VecScatterEnd(topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(  topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
         write2(gvec, fieldname, tstep, kk, false);
     }
 
