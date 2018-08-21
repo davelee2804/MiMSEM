@@ -26,6 +26,7 @@
 #define KAPPA (RD/CP)
 #define CV 717.5
 #define SCALE 1.0e+8
+#define VERT_TOL 1.0e-10
 
 //#define THETA_VISC_H
 //#define THETA_VISC_V
@@ -196,7 +197,7 @@ double PrimEqns_HEVI3::viscosity_vert() {
     }
     MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-    return 4.0*dzMaxG*dzMaxG;//TODO: tune
+    return 32.0*dzMaxG*dzMaxG;
 }
 
 // project coriolis term onto 0 forms
@@ -1061,7 +1062,7 @@ void PrimEqns_HEVI3::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool
             // so these cancel
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
             if(!do_internal) { // TODO: don't understand this scaling?!?
-                rk *= 2.0/geom->thick[kk][inds0[ii]];
+                rk *= 1.0/geom->thick[kk][inds0[ii]];
             }
             Q0[ii][ii] *= rk;
         }
@@ -2117,9 +2118,9 @@ void PrimEqns_HEVI3::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f
     KSPSolve(kspMass, f_rho, rho);
     KSPDestroy(&kspMass);
 
-    if(VISC) {
-        MatAXPY(Op, -_dt*vert_visc, VISC, DIFFERENT_NONZERO_PATTERN);
-    }
+#ifdef THETA_VISC_V
+    MatAXPY(Op, -_dt*vert_visc, VISC, DIFFERENT_NONZERO_PATTERN);
+#endif
 
     KSPCreate(MPI_COMM_SELF, &kspMass);
     KSPSetOperators(kspMass, Op, Op);
@@ -2393,7 +2394,7 @@ void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do
                 rk += rArray[kk*n2+jj]*gamma;
             }
             if(!do_internal) { // TODO: don't understand this scaling ?!?
-                rk *= 2.0/geom->thick[kk][inds0[ii]];
+                rk *= 1.0/geom->thick[kk][inds0[ii]];
             }
             Q0[ii][ii] *= rk/det;
         }
@@ -2661,8 +2662,7 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                         MatMatMult(DTV1, V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
                     }
                 }
-                //MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
-                MatAXPY(VA, -0.5*dt*8.0*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
+                MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
                 MatAXPY(VA, +0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
                 MatAXPY(VA, -0.25*dt*dt*RD/CV, LAP, SAME_NONZERO_PATTERN);
 
@@ -2754,7 +2754,7 @@ void PrimEqns_HEVI3::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 VecCopy(rt_j   , rt[ei]   );
 
                 it++;
-            } while(it < 100 && max_eps > 1.0e-12);
+            } while(it < 100 && max_eps > VERT_TOL);
 
             if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
             //if(!rank)cout << "\t\t\t\t|eps_w|:     " << eps_1 << endl;

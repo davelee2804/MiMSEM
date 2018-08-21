@@ -19,7 +19,7 @@
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define NK 10
+#define NK 30
 #define P0 100000.0
 #define RD 287.0
 #define GAMMA 0.005
@@ -27,7 +27,6 @@ using namespace std;
 #define OMEGA 7.29212e-5
 #define CP 1004.5
 #define CV 717.5
-#define KAPPA (RD/CP) // TODO: check this!
 #define TE 310.0
 #define TP 240.0
 #define T0 (0.5*(TE + TP))
@@ -255,9 +254,9 @@ int main(int argc, char** argv) {
     char fieldname[50];//, filename[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 60.0;    // for 16x3rd order elements
-    int nSteps = 3;//10800;  // 10 days
-    int dumpEvery = 1;//270; // 6 hours
+    double dt = 60.0;
+    int nSteps = 48*60;
+    int dumpEvery = 20;
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -304,8 +303,6 @@ int main(int argc, char** argv) {
     pe->initTheta(pe->theta_b, theta_b_init);
     pe->initTheta(pe->theta_t, theta_t_init);
     geom->initTopog(f_topog, z_at_level);
-    // initialise the 2 form height field
-    //pe->init2(pe->gz, z_at_level);
 
     if(startStep == 0) {
         pe->init1(velx, u_init, v_init);
