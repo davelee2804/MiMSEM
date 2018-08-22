@@ -542,7 +542,7 @@ void PrimEqns_HEVI3::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec F
     VecAXPY(Fu, 1.0, dp);
     VecDestroy(&dExner);
 
-    // add in the biharmonic voscosity 
+    // add in the biharmonic viscosity
     if(do_visc) {
         laplacian(false, uh, &d2u, lev);
         laplacian(false, d2u, &d4u, lev);
@@ -1710,6 +1710,7 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
     if(save) {
         step++;
 
+        Vec kek;
         L2Vecs* theta = new L2Vecs(geom->nk+1, topo, geom);
         VecCopy(theta_b_l, theta->vl[0]       );
         VecCopy(theta_t_l, theta->vl[geom->nk]);
@@ -1720,6 +1721,8 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
             geom->write2(theta->vh[ii], fieldname, step, ii, false);
         }
         delete theta;
+
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &kek);
 
         for(ii = 0; ii < geom->nk; ii++) {
             curl(true, velx[ii], &wi, ii, false);
@@ -1736,11 +1739,18 @@ void PrimEqns_HEVI3::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* e
             geom->write2(exner[ii], fieldname, step, ii, true);
 
             VecDestroy(&wi);
+
+            M2->assemble(ii, SCALE, true);
+            KSPSolve(ksp2, Kh[ii], kek);
+            sprintf(fieldname, "ke");
+            geom->write2(kek, fieldname, step, ii, true);
         }
         sprintf(fieldname, "velocity_z");
         geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
         sprintf(fieldname, "velVert");
         geom->writeSerial(velz, fieldname, topo->nElsX*topo->nElsX, step);
+
+        VecDestroy(&kek);
     }
 
     VecDestroy(&xu);
