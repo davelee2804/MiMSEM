@@ -82,7 +82,7 @@ double** Mult(int ni, int nj, int nk, double** A, double** B) {
     return C;
 }
 
-// Multiply two matrices into a thrid (supplied)
+// Multiply two matrices into a third (supplied)
 void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
     int ii, jj, kk;
 
@@ -92,6 +92,28 @@ void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
             for(kk = 0; kk < nk; kk++) {
                 C[ii][jj] += A[ii][kk]*B[kk][jj];
             }
+        }
+    }
+}
+
+// Multiply diagonal by full matrix
+void Mult_DF_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
+    int ii, jj;
+
+    for(ii = 0; ii < ni; ii++) {
+        for(jj = 0; jj < nj; jj++) {
+            C[ii][jj] = A[ii][ii]*B[ii][jj];
+        }
+    }
+}
+
+// Multiply full by diagonal matrix
+void Mult_FD_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
+    int ii, jj;
+
+    for(ii = 0; ii < ni; ii++) {
+        for(jj = 0; jj < nj; jj++) {
+            C[ii][jj] = A[ii][jj]*B[jj][jj];
         }
     }
 }
