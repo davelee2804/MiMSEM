@@ -11,7 +11,7 @@ class Side:
 		self.axis = axis
 
 class Proc:
-	def __init__(self,pn,nxg,nxl,pix,piy,npx,fi,n_procs):
+	def __init__(self,pn,nxg,nxl,pix,piy,npx,fi,n_procs,path):
 		self.polyDeg = pn
 		self.nElsXFace = nxg
 		self.nElsXProc = nxl
@@ -21,6 +21,7 @@ class Proc:
 		self.faceID = fi
 		self.nProcs = n_procs
 		self.procID = fi*npx*npx + piy*npx + pix
+		self.path = path
 
 		self.nDofsXProc = self.polyDeg*self.nElsXProc
 		self.nDofsXFace = self.polyDeg*self.nElsXFace
@@ -326,7 +327,7 @@ class Proc:
 		a[1] = self.n1xl
 		a[2] = self.n1yl
 		a[3] = self.n2l
-		np.savetxt('./src2/input/local_sizes_%.4u'%self.procID + '.txt', a, fmt='%u')
+		np.savetxt(self.path+'/input/local_sizes_%.4u'%self.procID + '.txt', a, fmt='%u')
 
 # face of the cube
 class Face:
@@ -387,10 +388,11 @@ class Face:
 
 # topological cube of 6.n^2 processors
 class ParaCube:
-	def __init__(self,n_procs,pn,nx):
+	def __init__(self,n_procs,pn,nx,path):
 		self.np = n_procs	# total number of processors
 		self.pn = pn		# polynomial degree
 		self.nx = nx		# number of elements across a face (global)
+		self.path = path
 
 		npx = int(np.sqrt(n_procs/6))
 		self.npx = npx
@@ -469,7 +471,7 @@ class ParaCube:
 		for fi in np.arange(6):
 			face = self.faces[fi]
 			for pj in np.arange(npx*npx):
-				self.procs[pi] = Proc(self.pn,self.nx,self.nx/self.npx,pj%npx,pj/npx,npx,fi,self.np)
+				self.procs[pi] = Proc(self.pn,self.nx,self.nx/self.npx,pj%npx,pj/npx,npx,fi,self.np,self.path)
 				face.procs[pj] = self.procs[pi]
 				pi = pi + 1
 
@@ -642,18 +644,18 @@ class ParaCube:
 	def print_nodes(self,pi):
 		proc = self.procs[pi]
 		#print str(pi) + ':\t' + str(proc.loc0)
-		np.savetxt('./src2/input/nodes_%.4u'%pi + '.txt', proc.loc0, fmt='%u')
+		np.savetxt(self.path+'/input/nodes_%.4u'%pi + '.txt', proc.loc0, fmt='%u')
 
 	def print_edges(self,pi,dim):
 		proc = self.procs[pi]
 		if dim == 0:
 			#print str(pi) + ' (x):\t' + str(proc.loc1x)
-			np.savetxt('./src2/input/edges_x_%.4u'%pi + '.txt', proc.loc1x, fmt='%u')
+			np.savetxt(self.path+'/input/edges_x_%.4u'%pi + '.txt', proc.loc1x, fmt='%u')
 		else:
 			#print str(pi) + ' (y):\t' + str(proc.loc1y)
-			np.savetxt('./src2/input/edges_y_%.4u'%pi + '.txt', proc.loc1y, fmt='%u')
+			np.savetxt(self.path+'/input/edges_y_%.4u'%pi + '.txt', proc.loc1y, fmt='%u')
 
 	def print_faces(self,pi):
 		proc = self.procs[pi]
 		#print str(pi) + ':\t' + str(proc.loc2)
-		np.savetxt('./src2/input/faces_%.4u'%pi + '.txt', proc.loc2, fmt='%u')
+		np.savetxt(self.path+'/input/faces_%.4u'%pi + '.txt', proc.loc2, fmt='%u')

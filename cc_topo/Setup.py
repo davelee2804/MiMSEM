@@ -12,14 +12,16 @@ pn = int(sys.argv[1])
 ne = int(sys.argv[2])
 n_procs = int(sys.argv[3])
 
+path = './pes/'
+
 try:
-	os.makedirs('./src2/input')
-	os.makedirs('./src2/output')
+	os.makedirs(path + '/input')
+	os.makedirs(path + '/output')
 except OSError:
 	pass
 
 # Generate the topology
-pc = ParaCube(n_procs,pn,ne)
+pc = ParaCube(n_procs,pn,ne,path)
 
 for pi in np.arange(n_procs):
 	pc.print_nodes(pi)
@@ -29,7 +31,7 @@ for pi in np.arange(n_procs):
 	pc.procs[pi].writeLocalSizes()
 
 # Write the grid metadata
-f = open('src2/input/grid_res.txt', 'w')
+f = open(path + '/input/grid_res.txt', 'w')
 f.write(str(pn) + '\n')
 f.write(str(ne/pc.npx))
 f.close()
@@ -45,5 +47,5 @@ for pi in np.arange(n_procs):
 		coords[ii,1] = yg[proc.loc0[ii]]
 		coords[ii,2] = zg[proc.loc0[ii]]
 
-	np.savetxt('./src2/input/geom_%.4u'%pi + '.txt', coords, fmt='%.18e')
+	np.savetxt(path + '/input/geom_%.4u'%pi + '.txt', coords, fmt='%.18e')
 
