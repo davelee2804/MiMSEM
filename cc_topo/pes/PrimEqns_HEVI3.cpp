@@ -23,7 +23,6 @@
 #define OMEGA 7.29212e-5
 #define RD 287.0
 #define CP 1004.5
-#define KAPPA (RD/CP)
 #define CV 717.5
 #define SCALE 1.0e+8
 #define VERT_TOL 1.0e-10
@@ -1133,7 +1132,6 @@ void PrimEqns_HEVI3::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, do
 
     for(ii = 0; ii < geom->nk; ii++) {
         VecCopy(Ft[ii], rt_sum);
-        //VecScale(rt_sum, -_dt*CP*(KAPPA/(1.0-KAPPA)));
         VecScale(rt_sum, -_dt*RD/CV);
         VecAXPY(rt_sum, 1.0, rt[ii]);
         T->assemble(rt_sum, ii, SCALE);
@@ -2330,7 +2328,8 @@ void PrimEqns_HEVI3::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                     wt += wArray[(kk+0)*n2+jj]*gamma;
                 }
-                Q0[ii][ii] *= 0.5*wt/det; // scale by 0.5 outside
+                //Q0[ii][ii] *= 0.5*wt/det; // scale by 0.5 outside
+                Q0[ii][ii] *= wt/det; // scale by 0.5 outside
             }
 
             Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);

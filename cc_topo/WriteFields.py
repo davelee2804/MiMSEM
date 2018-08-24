@@ -39,10 +39,10 @@ x = np.linspace(-0.75*np.pi, +0.75*np.pi, nx)
 y = np.linspace(-0.45*np.pi, +0.45*np.pi, ny)
 x, y = np.meshgrid(x, y)
 
-yz = np.zeros((6,nk,ny))
+yz = np.zeros((7,nk,ny))
 
 step = int(sys.argv[1])
-fieldnames = ['velocity_h_x_','velocity_h_y_','vorticity_','exner_','rhoTheta_','density_']
+fieldnames = ['velocity_h_x_','velocity_h_y_','vorticity_','exner_','rhoTheta_','density_','ke_']
 field_i = 0
 for fieldname in fieldnames:
 	for kk in np.arange(nk):
@@ -88,7 +88,7 @@ for ii in np.arange(nk+1):
 for ii in np.arange(nk):
 	Zh[ii] = 0.5*(Z[ii]+Z[ii+1])
 
-for field_i in np.arange(6):
+for field_i in np.arange(7):
 	tmp = yz[field_i,:,:]
 	tmp.flatten()
 	t_min = np.min(tmp)
