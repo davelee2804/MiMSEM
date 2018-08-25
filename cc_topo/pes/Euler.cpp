@@ -37,8 +37,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     topo = _topo;
     geom = _geom;
 
-    grav = GRAVITY;
-    omega = OMEGA;
     do_visc = true;
     del2 = viscosity();
     vert_visc = viscosity_vert();
@@ -133,11 +131,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     MatSetSizes(VB, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
     MatSeqAIJSetPreallocation(VB, n2, PETSC_NULL);
 
-    MatCreate(MPI_COMM_SELF, &Vmass);
-    MatSetType(Vmass, MATSEQAIJ);
-    MatSetSizes(Vmass, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(Vmass, 2*n2, PETSC_NULL);
-
     KSPCreate(MPI_COMM_SELF, &kspColA);
     KSPSetOperators(kspColA, VA, VA);
     KSPSetTolerances(kspColA, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
@@ -159,7 +152,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetFromOptions(kspE);
 
     KSPCreate(MPI_COMM_SELF, &kspMass);
-    KSPSetOperators(kspMass, Vmass, Vmass);
+    KSPSetOperators(kspMass, VB, VB);
     KSPSetTolerances(kspMass, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(kspMass, KSPGMRES);
     KSPGetPC(kspMass, &pc);
@@ -229,7 +222,7 @@ void Euler::coriolis() {
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
-        fArray[ii] = 2.0*omega*sin(geom->s[ii][1]);
+        fArray[ii] = 2.0*OMEGA*sin(geom->s[ii][1]);
     }
     VecRestoreArray(fxl, &fArray);
 
@@ -268,7 +261,7 @@ void Euler::initGZ() {
     mp12  = (quad->n + 1)*(quad->n + 1);
 
     VecCreateSeq(MPI_COMM_SELF, geom->nk*mp12, &gq);
-    VecSet(gq, grav);
+    VecSet(gq, GRAVITY);
 
     MatCreate(MPI_COMM_SELF, &AQ);
     MatSetType(AQ, MATSEQAIJ);
@@ -372,7 +365,6 @@ Euler::~Euler() {
     MatDestroy(&V10);
     MatDestroy(&VA);
     MatDestroy(&VB);
-    MatDestroy(&Vmass);
 
     delete m0;
     delete M1;
@@ -2177,9 +2169,9 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 } else {
                     MatMatMult(V0_inv, V01_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV01_w);
                 }
-                MatMatMult(V10, V0_invV01_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Vmass);
-                MatScale(Vmass, 0.5*dt);
-                MatShift(Vmass, 1.0);
+                MatMatMult(V10, V0_invV01_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VB);
+                MatScale(VB, 0.5*dt);
+                MatShift(VB, 1.0);
                 KSPSolve(kspMass, rho_n[ei], rho_j);
                 KSPSolve(kspMass, rt_n[ei] , rt_j );
 

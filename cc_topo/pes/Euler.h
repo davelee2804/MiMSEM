@@ -5,8 +5,6 @@ class Euler {
         Euler(Topo* _topo, Geom* _geom, double _dt);
         ~Euler();
         double dt;
-        double grav;
-        double omega;
         double del2;
         double vert_visc;
         bool do_visc;
@@ -39,7 +37,6 @@ class Euler {
         Mat V10;                                     // vertical gradient operator
         Mat VA;
         Mat VB;
-        Mat Vmass;
         KSP ksp1;
         KSP ksp2;
         KSP kspE;
