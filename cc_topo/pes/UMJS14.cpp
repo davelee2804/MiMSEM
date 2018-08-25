@@ -14,7 +14,7 @@
 #include "L2Vecs.h"
 #include "ElMats.h"
 #include "Assembly.h"
-#include "PrimEqns_HEVI3.h"
+#include "Euler.h"
 
 using namespace std;
 
@@ -260,7 +260,7 @@ int main(int argc, char** argv) {
     ofstream file;
     Topo* topo;
     Geom* geom;
-    PrimEqns_HEVI3* pe;
+    Euler* pe;
     Vec *velx, *velz, *rho, *rt, *exner;
     PetscViewer viewer;
 
@@ -275,7 +275,7 @@ int main(int argc, char** argv) {
     geom = new Geom(rank, topo, NK);
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
-    pe   = new PrimEqns_HEVI3(topo, geom, dt);
+    pe   = new Euler(topo, geom, dt);
     pe->step = startStep;
 
     n2 = topo->nElsX*topo->nElsX;
