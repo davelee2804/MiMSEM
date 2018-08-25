@@ -27,6 +27,8 @@
 #define SCALE 1.0e+8
 #define VERT_TOL 1.0e-10
 
+#define VERT_SCALE
+
 using namespace std;
 
 Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
@@ -286,6 +288,9 @@ void Euler::initGZ() {
                     // for linear field we multiply by the vertical jacobian determinant when 
                     // integrating, and do no other trasformations for the basis functions
                     Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
+#ifdef VERT_SCALE
+                    Q0[ii][ii] *= 0.5;
+#endif
                 }
                 Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
                 Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
@@ -456,6 +461,9 @@ void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
                         if(kk < geom->nk - 1) wt += kvArray[(kk+0)*n2+jj]*gamma;
                     }
                     wi = 0.5*(wb + wt);   // quadrature weights are both 1.0, however ke is 0.5*w^2
+#ifdef VERT_SCALE
+                    wi *= 0.5;
+#endif
                     Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
                 }
 
@@ -538,8 +546,13 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu) {
     // add the thermodynamic term (theta is in the same space as the vertical velocity)
     // project theta onto 1 forms
     VecZeroEntries(theta_k);
+#ifdef VERT_SCALE
+    VecAXPY(theta_k, 0.5, theta_l[lev+0]); // quadrature weights
+    VecAXPY(theta_k, 0.5, theta_l[lev+1]); // are both 1.0
+#else
     VecAXPY(theta_k, 1.0, theta_l[lev+0]); // quadrature weights
     VecAXPY(theta_k, 1.0, theta_l[lev+1]); // are both 1.0
+#endif
 
     grad(false, exner, &dExner, lev);
     F->assemble(theta_k, lev, false, SCALE);
@@ -919,6 +932,9 @@ void Euler::AssembleLinear(int ex, int ey, Mat A) {
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
 
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -966,6 +982,9 @@ void Euler::AssembleLinCon(int ex, int ey, Mat AB) {
 
             // multiply by the vertical jacobian, then scale the piecewise constant 
             // basis by the vertical jacobian, so do nothing 
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
 
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1027,9 +1046,13 @@ void Euler::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_inter
             // so these cancel
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
             if(!do_internal) { // TODO: don't understand this scaling?!?
-                rk *= 1.0/geom->thick[kk][inds0[ii]];
+                //rk *= 1.0/geom->thick[kk][inds0[ii]];
+                rk *= 2.0/geom->thick[kk][inds0[ii]];
             }
             Q0[ii][ii] *= rk;
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
         VecRestoreArray(rho[kk], &rArray);
 
@@ -1208,7 +1231,6 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // 2.1 First horiztonal substep
     if(!rank)cout<<"horiztonal step (1).................."<<endl;
     AssembleKEVecs(velx, velz);
-    //HorizRHS(velx, rho_old->vl, rt_old->vl, exner_old->vh, Fu, Fp->vh, Ft->vh);
     HorizRHS(velx, rho_old->vl, rt_old->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
@@ -1234,7 +1256,6 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // 2.2 Second horiztonal step
     if(!rank)cout<<"horiztonal step (2).................."<<endl;
     AssembleKEVecs(velx_new, velz);
-    //HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
     HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
@@ -1270,7 +1291,6 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // 2.3 Third horiztonal step
     if(!rank)cout<<"horiztonal step (3).................."<<endl;
     AssembleKEVecs(velx_new, velz);
-    //HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
     HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
@@ -1805,6 +1825,9 @@ void Euler::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     wb += wArray[(kk-1)*n2+jj]*gamma;
                 }
                 Q0[ii][ii] *= wb/det; // scale by 0.5 outside
+#ifdef VERT_SCALE
+                Q0[ii][ii] *= 0.5;
+#endif
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1833,6 +1856,9 @@ void Euler::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     wt += wArray[(kk+0)*n2+jj]*gamma;
                 }
                 Q0[ii][ii] *= wt/det; // scale by 0.5 outside
+#ifdef VERT_SCALE
+                Q0[ii][ii] *= 0.5;
+#endif
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1890,6 +1916,9 @@ void Euler::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_internal
                 rk *= 1.0/geom->thick[kk][inds0[ii]];
             }
             Q0[ii][ii] *= rk/det;
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
 
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1954,6 +1983,10 @@ void Euler::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
             }
             QB[ii][ii] *= tb/det;
             QT[ii][ii] *= tt/det;
+#ifdef VERT_SCALE
+            QB[ii][ii] *= 0.5;
+            QT[ii][ii] *= 0.5;
+#endif
         }
 
         // assemble the first basis function
