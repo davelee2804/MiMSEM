@@ -28,6 +28,7 @@
 #define VERT_TOL 1.0e-10
 
 #define VERT_SCALE
+//#define THETA_VISC_H
 
 using namespace std;
 
@@ -582,13 +583,21 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu) {
 }
 
 // pi is a local vector
-void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp) {
+void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l) {
     int kk;
     Vec pu, Fh;
+    Vec theta_l, theta_g, dTheta, rho_dTheta_1, rho_dTheta_2, d2Theta;
 
     // compute the horiztonal mass fluxes
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh);
+    if(theta) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_g);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_1);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_2);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &d2Theta);
+    }
 
     for(kk = 0; kk < geom->nk; kk++) {
         F->assemble(pi[kk], kk, true, SCALE);
@@ -596,10 +605,37 @@ void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp) {
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fh);
         MatMult(EtoF->E21, Fh, Fp[kk]);
+
+        // apply horiztonal viscosity
+        if(theta) {
+            VecZeroEntries(theta_l);
+            VecAXPY(theta_l, 1.0, theta[kk+0]);
+            VecAXPY(theta_l, 1.0, theta[kk+1]);
+            VecScatterBegin(topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_FORWARD);
+            VecScatterEnd(  topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_FORWARD);
+
+            M2->assemble(kk, SCALE, false);
+            grad(false, theta_g, &dTheta, kk);
+            F->assemble(rho_l[kk], kk, true, SCALE);
+            MatMult(F->M, dTheta, rho_dTheta_1);
+
+            KSPSolve(ksp1, rho_dTheta_1, rho_dTheta_2);
+            MatMult(EtoF->E21, rho_dTheta_2, d2Theta);
+            VecAXPY(Fp[kk], del2, d2Theta);
+
+            VecDestroy(&dTheta);
+        }
     }
 
     VecDestroy(&pu);
     VecDestroy(&Fh);
+    if(theta) {
+        VecDestroy(&theta_l);
+        VecDestroy(&theta_g);
+        VecDestroy(&rho_dTheta_1);
+        VecDestroy(&rho_dTheta_2);
+        VecDestroy(&d2Theta);
+    }
 }
 
 /*
@@ -1098,8 +1134,12 @@ void Euler::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp,
     for(kk = 0; kk < geom->nk; kk++) {
         horizMomRHS(velx[kk], theta, exner[kk], kk, Fu[kk]);
     }
-    massRHS(velx, rho, Fp);
-    massRHS(velx, rt,  Ft);
+    massRHS(velx, rho, Fp, NULL, NULL);
+#ifdef THETA_VISC_H
+    massRHS(velx, rt,  Ft, theta, rho);
+#else
+    massRHS(velx, rt,  Ft, NULL, NULL);
+#endif
 
     for(kk = 0; kk < geom->nk + 1; kk++) {
         VecDestroy(&theta[kk]);
@@ -1673,6 +1713,9 @@ void Euler::AssembleLinearInv(int ex, int ey, Mat A) {
             // for linear field we multiply by the vertical jacobian determinant when
             // integrating, and do no other trasformations for the basis functions
             Q0[ii][ii] *= (geom->thick[kk+0][inds0[ii]]/2.0 + geom->thick[kk+1][inds0[ii]]/2.0);
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
