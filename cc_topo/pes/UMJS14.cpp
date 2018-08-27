@@ -256,7 +256,7 @@ int main(int argc, char** argv) {
     int startStep = atoi(argv[1]);
     double dt = 60.0;
     int nSteps = 48*60;
-    int dumpEvery = 30;
+    int dumpEvery = 60;
     ofstream file;
     Topo* topo;
     Geom* geom;

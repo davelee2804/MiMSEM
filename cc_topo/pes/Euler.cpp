@@ -153,7 +153,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     PCBJacobiSetTotalBlocks(pc, n2, NULL);
     KSPSetOptionsPrefix(kspE, "exner_");
     KSPSetFromOptions(kspE);
-
+/*
     KSPCreate(MPI_COMM_SELF, &kspMass);
     KSPSetOperators(kspMass, VB, VB);
     KSPSetTolerances(kspMass, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
@@ -163,7 +163,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     PCBJacobiSetTotalBlocks(pc, n2, NULL);
     KSPSetOptionsPrefix(kspMass, "kspMass_");
     KSPSetFromOptions(kspMass);
-
+*/
     exner_pre = new L2Vecs(geom->nk, topo, geom);
 
     Q = new Wii(node->q, geom);
@@ -344,7 +344,7 @@ Euler::~Euler() {
     KSPDestroy(&ksp2);
     KSPDestroy(&kspE);
     KSPDestroy(&kspColA);
-    KSPDestroy(&kspMass);
+    //KSPDestroy(&kspMass);
     VecDestroy(&theta_b);
     VecDestroy(&theta_t);
     VecDestroy(&theta_b_l);
@@ -2242,6 +2242,8 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
 
                 // update the density and the density weighted potential temperature
+                solveMass(0.5*dt, ex, ey, AB, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j);
+/*
                 if(!V01_w) {
                     MatTranspose(V10_w, MAT_INITIAL_MATRIX, &V01_w);
                 } else {
@@ -2257,6 +2259,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 MatShift(VB, 1.0);
                 KSPSolve(kspMass, rho_n[ei], rho_j);
                 KSPSolve(kspMass, rt_n[ei] , rt_j );
+*/
 
                 // check the differences
                 VecCopy(velz_j, velz_d);
@@ -2335,7 +2338,132 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     MatDestroy(&LAP              );
     MatDestroy(&AB               );
     MatDestroy(&DEL2             );
-    MatDestroy(&V01_w            );
-    MatDestroy(&V0_invV01_w      );
+    //MatDestroy(&V01_w            );
+    //MatDestroy(&V0_invV01_w      );
     delete l2_theta;
+}
+
+void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt) {
+    int ii, jj, kk, ei, n2, mp1, mp12;
+    int *inds0;
+    double det, wb, wt, wi, gamma;
+    int rows[99], cols[99];
+    PetscScalar* wArray;
+    Mat DAinv, Op;
+    PC pc;
+    KSP kspMass;
+
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+    n2    = topo->elOrd*topo->elOrd;
+    mp1   = quad->n+1;
+    mp12  = mp1*mp1;
+
+    // 1. assemble the piecewise linear/constant matrix
+    MatZeroEntries(AB);
+    VecGetArray(wz, &wArray);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        // build the 2D mass matrix
+        Q->assemble(ex, ey);
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+
+            // multiply by the vertical jacobian, then scale the piecewise constant
+            // basis by the vertical jacobian, so do nothing
+
+            // interpolate the vertical velocity at the quadrature point
+            wb = wt = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                if(kk > 0)            wb += wArray[(kk-1)*n2+jj]*gamma;
+                if(kk < geom->nk - 1) wt += wArray[(kk+0)*n2+jj]*gamma;
+            }
+            wi = 1.0*(wb + wt);   // quadrature weights are both 1.0
+            Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
+        }
+
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            cols[ii] = ii + kk*W->nDofsJ;
+        }
+        // assemble the first basis function
+        if(kk > 0) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                rows[ii] = ii + (kk-1)*W->nDofsJ;
+            }
+            MatSetValues(AB, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+        }
+        // assemble the second basis function
+        if(kk < geom->nk - 1) {
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                rows[ii] = ii + (kk+0)*W->nDofsJ;
+            }
+            MatSetValues(AB, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+        }
+    }
+    VecGetArray(wz, &wArray);
+    MatAssemblyBegin(AB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(AB, MAT_FINAL_ASSEMBLY);
+
+    // 2. assemble the piecewise linear/linear matrix inverse
+    MatZeroEntries(VA);
+
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        Q->assemble(ex, ey);
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            // for linear field we multiply by the vertical jacobian determinant when
+            // integrating, and do no other trasformations for the basis functions
+            Q0[ii][ii] *= (geom->thick[kk+0][inds0[ii]]/2.0 + geom->thick[kk+1][inds0[ii]]/2.0);
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
+        }
+        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+        // take the inverse
+        Inv(WtQW, WtQWinv, n2);
+        // add to matrix
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(VA, W->nDofsJ, rows, W->nDofsJ, rows, WtQWflat, ADD_VALUES);
+    }
+    MatAssemblyBegin(VA, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(VA, MAT_FINAL_ASSEMBLY);
+
+    MatMatMult(V10, VA, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DAinv);
+    MatMatMult(DAinv, AB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Op);
+    MatScale(Op, _dt);
+    MatShift(Op, 1.0);
+
+    KSPCreate(MPI_COMM_SELF, &kspMass);
+    KSPSetOperators(kspMass, Op, Op);
+    KSPSetTolerances(kspMass, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(kspMass, KSPGMRES);
+    KSPGetPC(kspMass, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, W->nDofsJ, NULL); // TODO: check allocation
+    KSPSetOptionsPrefix(kspMass, "kspMass_");
+    KSPSetFromOptions(kspMass);
+
+    KSPSolve(kspMass, f_rho, rho);
+    KSPSolve(kspMass, f_rt , rt );
+    KSPDestroy(&kspMass);
+
+    MatDestroy(&DAinv);
+    MatDestroy(&Op);
 }

@@ -41,7 +41,7 @@ class Euler {
         KSP ksp2;
         KSP kspE;
         KSP kspColA;
-        KSP kspMass;
+        //KSP kspMass;
 
         Wii* Q;
         M2_j_xy_i* W;
@@ -90,4 +90,6 @@ class Euler {
         void AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA);
 
         void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
+
+        void solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt);
 };
