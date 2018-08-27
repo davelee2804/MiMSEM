@@ -27,7 +27,7 @@
 #define SCALE 1.0e+8
 #define VERT_TOL 1.0e-10
 
-#define VERT_SCALE
+//#define VERT_SCALE
 //#define THETA_VISC_H
 
 using namespace std;
@@ -1082,8 +1082,11 @@ void Euler::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_inter
             // so these cancel
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
             if(!do_internal) { // TODO: don't understand this scaling?!?
-                //rk *= 1.0/geom->thick[kk][inds0[ii]];
+#ifdef VERT_SCALE
                 rk *= 2.0/geom->thick[kk][inds0[ii]];
+#else
+                rk *= 1.0/geom->thick[kk][inds0[ii]];
+#endif
             }
             Q0[ii][ii] *= rk;
 #ifdef VERT_SCALE
@@ -1956,7 +1959,11 @@ void Euler::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_internal
                 rk += rArray[kk*n2+jj]*gamma;
             }
             if(!do_internal) { // TODO: don't understand this scaling ?!?
+#ifdef VERT_SCALE
+                rk *= 2.0/geom->thick[kk][inds0[ii]];
+#else
                 rk *= 1.0/geom->thick[kk][inds0[ii]];
+#endif
             }
             Q0[ii][ii] *= rk/det;
 #ifdef VERT_SCALE

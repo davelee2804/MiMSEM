@@ -29,6 +29,7 @@
 
 //#define THETA_VISC_H
 //#define THETA_VISC_V
+#define VERT_SCALE
 
 using namespace std;
 
@@ -281,6 +282,9 @@ void PrimEqns_HEVI3::initGZ() {
                     // for linear field we multiply by the vertical jacobian determinant when 
                     // integrating, and do no other trasformations for the basis functions
                     Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
+#ifdef VERT_SCALE
+                    Q0[ii][ii] *= 0.5;
+#endif
                 }
                 Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
                 Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
@@ -451,6 +455,9 @@ void PrimEqns_HEVI3::AssembleKEVecs(Vec* velx, Vec* velz) {
                     }
                     wi = 0.5*(wb + wt);   // quadrature weights are both 1.0, however ke is 0.5*w^2
                     Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
+#ifdef VERT_SCALE
+                    Q0[ii][ii] *= 0.5;
+#endif
                 }
 
                 Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -532,8 +539,13 @@ void PrimEqns_HEVI3::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec F
     // add the thermodynamic term (theta is in the same space as the vertical velocity)
     // project theta onto 1 forms
     VecZeroEntries(theta_k);
+#ifdef VERT_SCALE
+    VecAXPY(theta_k, 0.5, theta_l[lev+0]); // quadrature weights
+    VecAXPY(theta_k, 0.5, theta_l[lev+1]); // are both 1.0
+#else
     VecAXPY(theta_k, 1.0, theta_l[lev+0]); // quadrature weights
     VecAXPY(theta_k, 1.0, theta_l[lev+1]); // are both 1.0
+#endif
 
     grad(false, exner, &dExner, lev);
     F->assemble(theta_k, lev, false, SCALE);
@@ -953,6 +965,9 @@ void PrimEqns_HEVI3::AssembleLinear(int ex, int ey, Mat A) {
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
 
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1000,6 +1015,9 @@ void PrimEqns_HEVI3::AssembleLinCon(int ex, int ey, Mat AB) {
 
             // multiply by the vertical jacobian, then scale the piecewise constant 
             // basis by the vertical jacobian, so do nothing 
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
 
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1061,9 +1079,16 @@ void PrimEqns_HEVI3::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool
             // so these cancel
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
             if(!do_internal) { // TODO: don't understand this scaling?!?
+#ifdef VERT_SCALE
+                rk *= 2.0/geom->thick[kk][inds0[ii]];
+#else
                 rk *= 1.0/geom->thick[kk][inds0[ii]];
+#endif
             }
             Q0[ii][ii] *= rk;
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
         VecRestoreArray(rho[kk], &rArray);
 
@@ -2033,6 +2058,9 @@ void PrimEqns_HEVI3::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f
             }
             wi = 1.0*(wb + wt);   // quadrature weights are both 1.0
             Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
 
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -2073,6 +2101,9 @@ void PrimEqns_HEVI3::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f
             // for linear field we multiply by the vertical jacobian determinant when
             // integrating, and do no other trasformations for the basis functions
             Q0[ii][ii] *= (geom->thick[kk+0][inds0[ii]]/2.0 + geom->thick[kk+1][inds0[ii]]/2.0);
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -2149,6 +2180,9 @@ void PrimEqns_HEVI3::AssembleLinearInv(int ex, int ey, Mat A) {
             // for linear field we multiply by the vertical jacobian determinant when
             // integrating, and do no other trasformations for the basis functions
             Q0[ii][ii] *= (geom->thick[kk+0][inds0[ii]]/2.0 + geom->thick[kk+1][inds0[ii]]/2.0);
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -2301,6 +2335,9 @@ void PrimEqns_HEVI3::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     wb += wArray[(kk-1)*n2+jj]*gamma;
                 }
                 Q0[ii][ii] *= wb/det; // scale by 0.5 outside
+#ifdef VERT_SCALE
+                Q0[ii][ii] *= 0.5;
+#endif
             }
 
             Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -2330,6 +2367,9 @@ void PrimEqns_HEVI3::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                 }
                 //Q0[ii][ii] *= 0.5*wt/det; // scale by 0.5 outside
                 Q0[ii][ii] *= wt/det; // scale by 0.5 outside
+#ifdef VERT_SCALE
+                Q0[ii][ii] *= 0.5;
+#endif
             }
 
             Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -2384,9 +2424,16 @@ void PrimEqns_HEVI3::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do
                 rk += rArray[kk*n2+jj]*gamma;
             }
             if(!do_internal) { // TODO: don't understand this scaling ?!?
+#ifdef VERT_SCALE
+                rk *= 2.0/geom->thick[kk][inds0[ii]];
+#else
                 rk *= 1.0/geom->thick[kk][inds0[ii]];
+#endif
             }
             Q0[ii][ii] *= rk/det;
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
 
         Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -2451,6 +2498,10 @@ void PrimEqns_HEVI3::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
             }
             QB[ii][ii] *= tb/det;
             QT[ii][ii] *= tt/det;
+#ifdef VERT_SCALE
+            QB[ii][ii] *= 0.5;
+            QT[ii][ii] *= 0.5;
+#endif
         }
 
         // assemble the first basis function
