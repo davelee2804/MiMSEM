@@ -91,5 +91,5 @@ class Euler {
 
         void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
 
-        void solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt);
+        void solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt);
 };

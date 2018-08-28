@@ -1684,8 +1684,8 @@ void Euler::initTheta(Vec theta, ICfunc3D* func) {
     VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-    M2->assemble(0, SCALE, true); // note: layer thickness must be set to 2.0 for all layers 
-    MatMult(WQ->M, bg, WQb);      //       before M2 matrix is assembled to initialise theta
+    M2->assemble(0, SCALE, false);
+    MatMult(WQ->M, bg, WQb);
     VecScale(WQb, SCALE);
     KSPSolve(ksp2, WQb, theta);
 
@@ -2242,7 +2242,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
 
                 // update the density and the density weighted potential temperature
-                solveMass(0.5*dt, ex, ey, AB, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j);
+                solveMass(0.5*dt, ex, ey, AB, V0_inv, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j);
 /*
                 if(!V01_w) {
                     MatTranspose(V10_w, MAT_INITIAL_MATRIX, &V01_w);
@@ -2343,7 +2343,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     delete l2_theta;
 }
 
-void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt) {
+void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt) {
     int ii, jj, kk, ei, n2, mp1, mp12;
     int *inds0;
     double det, wb, wt, wi, gamma;
@@ -2414,38 +2414,7 @@ void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Vec wz, Vec f_rho, Vec
     MatAssemblyBegin(AB, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(AB, MAT_FINAL_ASSEMBLY);
 
-    // 2. assemble the piecewise linear/linear matrix inverse
-    MatZeroEntries(VA);
-
-    for(kk = 0; kk < geom->nk-1; kk++) {
-        Q->assemble(ex, ey);
-
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
-            // for linear field we multiply by the vertical jacobian determinant when
-            // integrating, and do no other trasformations for the basis functions
-            Q0[ii][ii] *= (geom->thick[kk+0][inds0[ii]]/2.0 + geom->thick[kk+1][inds0[ii]]/2.0);
-#ifdef VERT_SCALE
-            Q0[ii][ii] *= 0.5;
-#endif
-        }
-        Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-
-        // take the inverse
-        Inv(WtQW, WtQWinv, n2);
-        // add to matrix
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            rows[ii] = ii + kk*W->nDofsJ;
-        }
-        MatSetValues(VA, W->nDofsJ, rows, W->nDofsJ, rows, WtQWflat, ADD_VALUES);
-    }
-    MatAssemblyBegin(VA, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(VA, MAT_FINAL_ASSEMBLY);
-
-    MatMatMult(V10, VA, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DAinv);
+    MatMatMult(V10, V0_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DAinv);
     MatMatMult(DAinv, AB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Op);
     MatScale(Op, _dt);
     MatShift(Op, 1.0);

@@ -2007,8 +2007,8 @@ void PrimEqns_HEVI3::initTheta(Vec theta, ICfunc3D* func) {
     VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-    M2->assemble(0, SCALE, true); // note: layer thickness must be set to 2.0 for all layers 
-    MatMult(WQ->M, bg, WQb);      //       before M2 matrix is assembled to initialise theta
+    M2->assemble(0, SCALE, false);
+    MatMult(WQ->M, bg, WQb);
     VecScale(WQb, SCALE);
     KSPSolve(ksp2, WQb, theta);
 

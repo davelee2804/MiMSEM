@@ -297,12 +297,8 @@ int main(int argc, char** argv) {
     }
 
     // initialise the potential temperature top and bottom boundary conditions
-    // these are 2d fields at the top and bottom, so re-set the thicknesses to
-    // unity before initialising, then reset to correct values afterwards
-    geom->initTopog(f_topog, NULL);
     pe->initTheta(pe->theta_b, theta_b_init);
     pe->initTheta(pe->theta_t, theta_t_init);
-    geom->initTopog(f_topog, z_at_level);
 
     if(startStep == 0) {
         pe->init1(velx, u_init, v_init);
