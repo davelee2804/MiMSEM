@@ -287,7 +287,7 @@ void Euler::initGZ() {
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
-                    // for linear field we multiply by the vertical jacobian determinant when 
+                    // for linear field we multiply by the vertical jacobian determinant when
                     // integrating, and do no other trasformations for the basis functions
                     Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
 #ifdef VERT_SCALE
@@ -394,7 +394,7 @@ Euler::~Euler() {
 */
 void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
     int ex, ey, ei, ii, jj, kk, mp1, mp12, n2, rows[99], cols[99];
-    double det, wb, wt, wi, gamma;
+    double det, wi, gamma;
     Mat BA;
     Vec velx_l, *Kh_l, Kv2;
     PetscScalar *kvArray;
@@ -445,55 +445,77 @@ void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
 
             Q->assemble(ex, ey);
 
-            // Assemble the matrices
+            // assemble the matrices
             for(kk = 0; kk < geom->nk; kk++) {
-                // build the 2D mass matrix
-                for(ii = 0; ii < mp12; ii++) {
-                    det = geom->det[ei][ii];
-                    Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
-
-                    // multiply by the vertical jacobian, then scale the piecewise constant 
-                    // basis by the vertical jacobian, so do nothing 
-
-                    // interpolate the vertical velocity at the quadrature point
-                    wb = wt = 0.0;
-                    for(jj = 0; jj < n2; jj++) {
-                        gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
-                        if(kk > 0)            wb += kvArray[(kk-1)*n2+jj]*gamma;
-                        if(kk < geom->nk - 1) wt += kvArray[(kk+0)*n2+jj]*gamma;
-                    }
-                    wi = 0.5*(wb + wt);   // quadrature weights are both 1.0, however ke is 0.5*w^2
-                    Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
-#ifdef HORIZ_SCALE
-                    Q0[ii][ii] *= 0.5;
-#endif
-                }
-
-                Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-                Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-                Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
                 for(ii = 0; ii < W->nDofsJ; ii++) {
                     rows[ii] = ii + kk*W->nDofsJ;
                 }
                 // assemble the first basis function
                 if(kk > 0) {
+                    for(ii = 0; ii < mp12; ii++) {
+                        det = geom->det[ei][ii];
+                        Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+
+                        // multiply by the vertical jacobian, then scale the piecewise constant
+                        // basis by the vertical jacobian, so do nothing
+
+                        // interpolate the vertical velocity at the quadrature point
+                        wi = 0.0;
+                        for(jj = 0; jj < n2; jj++) {
+                            gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                            wi += kvArray[(kk-1)*n2+jj]*gamma;
+                        }
+                        wi *= 0.5;            // quadrature weights are both 1.0, however ke is 0.5*w^2
+                        Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
+#ifdef HORIZ_SCALE
+                        Q0[ii][ii] *= 0.5;
+#endif
+                    }
+                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+                    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+                    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
                     for(ii = 0; ii < W->nDofsJ; ii++) {
                         cols[ii] = ii + (kk-1)*W->nDofsJ;
                     }
                     MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
                 }
+
                 // assemble the second basis function
                 if(kk < geom->nk - 1) {
+                    for(ii = 0; ii < mp12; ii++) {
+                        det = geom->det[ei][ii];
+                        Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+
+                        // multiply by the vertical jacobian, then scale the piecewise constant
+                        // basis by the vertical jacobian, so do nothing
+
+                        // interpolate the vertical velocity at the quadrature point
+                        wi = 0.0;
+                        for(jj = 0; jj < n2; jj++) {
+                            gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                            wi += kvArray[(kk+0)*n2+jj]*gamma;
+                        }
+                        wi *= 0.5;            // quadrature weights are both 1.0, however ke is 0.5*w^2
+                        Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
+#ifdef HORIZ_SCALE
+                        Q0[ii][ii] *= 0.5;
+#endif
+                    }
+                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+                    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+                    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
                     for(ii = 0; ii < W->nDofsJ; ii++) {
                         cols[ii] = ii + (kk+0)*W->nDofsJ;
                     }
                     MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
                 }
             }
+
+            VecRestoreArray(velz[ei], &kvArray);
             MatAssemblyBegin(BA, MAT_FINAL_ASSEMBLY);
             MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
-            VecRestoreArray(velz[ei], &kvArray);
 
             VecZeroEntries(Kv2);
             MatMult(BA, velz[ei], Kv2);
