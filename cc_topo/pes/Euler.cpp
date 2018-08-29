@@ -27,6 +27,7 @@
 #define SCALE 1.0e+8
 #define VERT_TOL 1.0e-10
 
+#define HORIZ_SCALE
 //#define VERT_SCALE
 //#define THETA_VISC_H
 
@@ -463,6 +464,9 @@ void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
                     }
                     wi = 0.5*(wb + wt);   // quadrature weights are both 1.0, however ke is 0.5*w^2
                     Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
+#ifdef HORIZ_SCALE
+                    Q0[ii][ii] *= 0.5;
+#endif
                 }
 
                 Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -544,9 +548,9 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu) {
     // add the thermodynamic term (theta is in the same space as the vertical velocity)
     // project theta onto 1 forms
     VecZeroEntries(theta_k);
-#ifdef VERT_SCALE
-    VecAXPY(theta_k, 0.5, theta_l[lev+0]); // quadrature weights
-    VecAXPY(theta_k, 0.5, theta_l[lev+1]); // are both 1.0
+#ifdef HORIZ_SCALE
+    VecAXPY(theta_k, 0.5, theta_l[lev+0]);
+    VecAXPY(theta_k, 0.5, theta_l[lev+1]);
 #else
     VecAXPY(theta_k, 1.0, theta_l[lev+0]); // quadrature weights
     VecAXPY(theta_k, 1.0, theta_l[lev+1]); // are both 1.0
@@ -855,12 +859,8 @@ constant basis functions
 */
 void Euler::vertOps() {
     int ii, kk, n2, rows[1], cols[2];
-#ifdef VERT_SCALE
     double vm = -1.0;
     double vp = +1.0;
-#else
-    double vals[2] = {+1.0, -1.0};
-#endif
     Mat V10t;
     
     n2 = topo->elOrd*topo->elOrd;
@@ -873,7 +873,6 @@ void Euler::vertOps() {
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < n2; ii++) {
             rows[0] = kk*n2 + ii;
-#ifdef VERT_SCALE
             if(kk > 0) {            // bottom of element
                 cols[0] = (kk-1)*n2 + ii;
                 MatSetValues(V10, 1, rows, 1, cols, &vm, INSERT_VALUES);
@@ -882,21 +881,6 @@ void Euler::vertOps() {
                 cols[0] = (kk+0)*n2 + ii;
                 MatSetValues(V10, 1, rows, 1, cols, &vp, INSERT_VALUES);
             }
-#else
-            if(kk > 0 && kk < geom->nk - 1) {
-                cols[0] = (kk-1)*n2 + ii;
-                cols[1] = (kk+0)*n2 + ii;
-                MatSetValues(V10, 1, rows, 2, cols, vals, INSERT_VALUES);
-            }
-            else if(kk == 0) { // bottom level
-                cols[0] = ii;
-                MatSetValues(V10, 1, rows, 1, cols, &vals[1], INSERT_VALUES);
-            }
-            else {             // top level
-                cols[0] = (kk-1)*n2 + ii;
-                MatSetValues(V10, 1, rows, 1, cols, &vals[0], INSERT_VALUES);
-            }
-#endif
         }
     }
     MatAssemblyBegin(V10, MAT_FINAL_ASSEMBLY);
@@ -2149,11 +2133,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             // assemble the vertical velocity rhs (except the exner term)
             AssembleLinear(ex, ey, VA);
             MatMult(VA, velz_n[ei], rhs);
-#ifdef VERT_SCALE
-            VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the -ve gravity
-#else
-            VecAXPY(rhs, +0.5*dt, gv[ei]); // subtract the -ve gravity
-#endif
+            VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
             MatMult(V01, Kv[ei], tmp);
             VecAXPY(rhs, -0.5*dt, tmp);
 
