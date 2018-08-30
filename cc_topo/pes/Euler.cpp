@@ -28,7 +28,7 @@
 #define VERT_TOL 1.0e-10
 
 #define HORIZ_SCALE
-//#define VERT_SCALE
+#define VERT_SCALE
 //#define THETA_VISC_H
 
 using namespace std;
@@ -281,7 +281,7 @@ void Euler::initGZ() {
 
             Q->assemble(ex, ey);
 
-            // Assemble the matrices
+            // assemble the matrices
             for(kk = 0; kk < geom->nk; kk++) {
                 // build the 2D mass matrix
                 for(ii = 0; ii < mp12; ii++) {
@@ -290,9 +290,6 @@ void Euler::initGZ() {
                     // for linear field we multiply by the vertical jacobian determinant when
                     // integrating, and do no other trasformations for the basis functions
                     Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
-#ifdef VERT_SCALE
-                    Q0[ii][ii] *= 2.0;
-#endif
                 }
                 Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
                 Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
@@ -942,6 +939,9 @@ void Euler::AssembleConst(int ex, int ey, Mat B) {
             // then divide by the vertical jacobian for both the trial and the test functions
             // vertical determinant is dz/2
             Q0[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
 
         // assemble the piecewise constant mass matrix for level k
@@ -959,7 +959,7 @@ void Euler::AssembleConst(int ex, int ey, Mat B) {
 }
 
 /*
-Assemble a 3D mass matrix as a tensor product of 2 forms in the 
+assemble a 3D mass matrix as a tensor product of 2 forms in the 
 horizotnal and linear basis functions in the vertical
 */
 void Euler::AssembleLinear(int ex, int ey, Mat A) {
@@ -976,7 +976,7 @@ void Euler::AssembleLinear(int ex, int ey, Mat A) {
 
     MatZeroEntries(A);
 
-    // Assemble the matrices
+    // assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -984,9 +984,6 @@ void Euler::AssembleLinear(int ex, int ey, Mat A) {
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
-#ifdef VERT_SCALE
-            Q0[ii][ii] *= 2.0;
-#endif
         }
 
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1025,7 +1022,7 @@ void Euler::AssembleLinCon(int ex, int ey, Mat AB) {
 
     MatZeroEntries(AB);
 
-    // Assemble the matrices
+    // assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -1033,6 +1030,9 @@ void Euler::AssembleLinCon(int ex, int ey, Mat AB) {
 
             // multiply by the vertical jacobian, then scale the piecewise constant 
             // basis by the vertical jacobian, so do nothing 
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.5;
+#endif
         }
 
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1077,7 +1077,7 @@ void Euler::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_inter
 
     MatZeroEntries(A);
 
-    // Assemble the matrices
+    // assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
         if(kk > 0 && kk < geom->nk-1 && !do_internal) {
             continue;
@@ -1094,15 +1094,15 @@ void Euler::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_inter
             // so these cancel
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
             if(!do_internal) { // TODO: don't understand this scaling?!?
-#ifdef VERT_SCALE
-                ;
-#else
+//#ifdef VERT_SCALE
+//                ;
+//#else
                 rk *= 1.0/geom->thick[kk][inds0[ii]];
-#endif
+//#endif
             }
             Q0[ii][ii] *= rk;
 #ifdef VERT_SCALE
-            Q0[ii][ii] *= 2.0;
+            Q0[ii][ii] *= 0.5;
 #endif
         }
         VecRestoreArray(rho[kk], &rArray);
@@ -1728,9 +1728,6 @@ void Euler::AssembleLinearInv(int ex, int ey, Mat A) {
             // for linear field we multiply by the vertical jacobian determinant when
             // integrating, and do no other trasformations for the basis functions
             Q0[ii][ii] *= (geom->thick[kk+0][inds0[ii]]/2.0 + geom->thick[kk+1][inds0[ii]]/2.0);
-#ifdef VERT_SCALE
-            Q0[ii][ii] *= 2.0;
-#endif
         }
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -1782,6 +1779,9 @@ void Euler::AssembleConstWithRhoInv(int ex, int ey, Vec rho, Mat B) {
                 rk += rArray[kk*n2+jj]*gamma;
             }
             Q0[ii][ii] *= rk*2.0/(geom->thick[kk][inds0[ii]]*det);
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.25;
+#endif
         }
 
         // assemble the piecewise constant mass matrix for level k
@@ -1834,6 +1834,9 @@ void Euler::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
                 rk += rArray[kk*n2+jj]*gamma;
             }
             Q0[ii][ii] *= rk*2.0/(geom->thick[kk][inds0[ii]]*det);
+#ifdef VERT_SCALE
+            Q0[ii][ii] *= 0.25;
+#endif
         }
 
         // assemble the piecewise constant mass matrix for level k
@@ -1882,6 +1885,9 @@ void Euler::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     wb += wArray[(kk-1)*n2+jj]*gamma;
                 }
                 Q0[ii][ii] *= wb/det; // scale by 0.5 outside
+#ifdef VERT_SCALE
+                Q0[ii][ii] *= 0.5;
+#endif
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1910,6 +1916,9 @@ void Euler::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     wt += wArray[(kk+0)*n2+jj]*gamma;
                 }
                 Q0[ii][ii] *= wt/det; // scale by 0.5 outside
+#ifdef VERT_SCALE
+                Q0[ii][ii] *= 0.5;
+#endif
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1943,7 +1952,7 @@ void Euler::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_internal
 
     MatZeroEntries(A);
 
-    // Assemble the matrices
+    // assemble the matrices
     VecGetArray(rt, &rArray);
     for(kk = 0; kk < geom->nk; kk++) {
         if(kk > 0 && kk < geom->nk-1 && !do_internal) {
@@ -1964,15 +1973,15 @@ void Euler::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_internal
                 rk += rArray[kk*n2+jj]*gamma;
             }
             if(!do_internal) { // TODO: don't understand this scaling ?!?
-#ifdef VERT_SCALE
-                ;
-#else
+//#ifdef VERT_SCALE
+//                ;
+//#else
                 rk *= 1.0/geom->thick[kk][inds0[ii]];
-#endif
+//#endif
             }
             Q0[ii][ii] *= rk/det;
 #ifdef VERT_SCALE
-            Q0[ii][ii] *= 2.0;
+            Q0[ii][ii] *= 0.5;
 #endif
         }
 
@@ -2018,7 +2027,7 @@ void Euler::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
 
     MatZeroEntries(A);
 
-    // Assemble the matrices
+    // assemble the matrices
     VecGetArray(theta, &tArray);
     for(kk = 0; kk < geom->nk; kk++) {
         // build the 2D mass matrix
@@ -2039,10 +2048,6 @@ void Euler::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
             }
             QB[ii][ii] *= tb/det;
             QT[ii][ii] *= tt/det;
-#ifdef VERT_SCALE
-            QB[ii][ii] *= 2.0;
-            QT[ii][ii] *= 2.0;
-#endif
         }
 
         // assemble the first basis function
@@ -2386,6 +2391,9 @@ void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Ve
                     wi += wArray[(kk-1)*n2+jj]*gamma;
                 }
                 Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
+#ifdef VERT_SCALE
+                Q0[ii][ii] *= 0.5;
+#endif
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -2408,6 +2416,9 @@ void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Ve
                     wi += wArray[(kk+0)*n2+jj]*gamma;
                 }
                 Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
+#ifdef VERT_SCALE
+                Q0[ii][ii] *= 0.5;
+#endif
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);

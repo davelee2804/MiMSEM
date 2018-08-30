@@ -322,7 +322,7 @@ void Geom::write0(Vec q, char* fieldname, int tstep, int lev) {
                 qxArray[jj] = qArray[jj];
                 // assume piecewise constant in the vertical, so rescale by
                 // the vertical determinant inverse
-                qxArray[jj] *= 2.0/thick[lev][jj];
+                qxArray[jj] *= 1.0/thick[lev][jj];
             }
         }
     }
@@ -383,8 +383,8 @@ void Geom::write1(Vec u, char* fieldname, int tstep, int lev) {
                 vxArray[inds0[ii]] = val[1];
                 // assume piecewise constant in the vertical, so rescale by
                 // the vertical determinant inverse
-                uxArray[inds0[ii]] *= 2.0/thick[lev][inds0[ii]];
-                vxArray[inds0[ii]] *= 2.0/thick[lev][inds0[ii]];
+                uxArray[inds0[ii]] *= 1.0/thick[lev][inds0[ii]];
+                vxArray[inds0[ii]] *= 1.0/thick[lev][inds0[ii]];
             }
         }
     }
@@ -468,7 +468,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
                 // assume piecewise constant in the vertical, so rescale by
                 // the vertical determinant inverse
                 if(vert_scale) {
-                    hxArray[inds0[ii]] *= 2.0/thick[lev][inds0[ii]];
+                    hxArray[inds0[ii]] *= 1.0/thick[lev][inds0[ii]];
                 }
             }
         }

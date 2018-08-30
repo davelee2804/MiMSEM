@@ -59,6 +59,9 @@ void Umat::assemble(int lev, double scale) {
     mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // incorporate the jacobian transformation for each element
@@ -75,21 +78,18 @@ void Umat::assemble(int lev, double scale) {
                 Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
-                Qbb[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qbb[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
 
-            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
-            Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
-
-            Mult_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
-            Mult_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
-            Mult_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Vt, Qab, VtQba);
-            Mult_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Vt, Qab, VtQba);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
 
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQaa, U->A, UtQU);
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, V->A, UtQV);
@@ -167,6 +167,8 @@ void Wmat::assemble(int lev, double scale, bool vert_scale) {
     mp1 = e->l->q->n + 1;
     mp12 = mp1*mp1;
 
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds = topo->elInds2_g(ex, ey);
@@ -179,12 +181,11 @@ void Wmat::assemble(int lev, double scale, bool vert_scale) {
                 det = geom->det[ei][ii];
                 Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
                 if(vert_scale) {
-                    Qaa[ii][ii] *= 2.0/geom->thick[lev][inds0[ii]];
+                    Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
                 }
             }
 
-            Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
             Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
@@ -254,6 +255,9 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
     MatZeroEntries(M);
     VecGetArray(h2, &h2Array);
 
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // incorporate the jacobian transformation for each element
@@ -268,7 +272,7 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
 
                 // density field is piecewise constant in the vertical
                 if(const_vert) {
-                    hi *= 2.0/geom->thick[lev][inds_0[ii]];
+                    hi *= 1.0/geom->thick[lev][inds_0[ii]];
                 }
 
                 Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
@@ -276,19 +280,16 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
                 Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
-                Qbb[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qbb[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
             }
 
-            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
-            Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
-
             // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
-            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
-            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
-            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qab, VtQba);
-            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
+            Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
+            Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
+            Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qab, VtQba);
+            Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
 
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQaa, U->A, UtQU);
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, V->A, UtQV);
@@ -376,7 +377,7 @@ void Pvec::assemble(int lev, double scale) {
             inds_l = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < np12; ii++) {
                 entries[ii]  = scale*Q->A[ii][ii];
-                entries[ii] *= 2.0/geom->thick[lev][inds_l[ii]];
+                entries[ii] *= 1.0/geom->thick[lev][inds_l[ii]];
             }
             VecSetValues(vl, np12, inds_l, entries, ADD_VALUES);
         }
@@ -662,6 +663,8 @@ void WtQUmat::assemble(Vec u1, int lev, double scale) {
     VecGetArray(u1, &u1Array);
     MatZeroEntries(M);
 
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // incorportate jacobian tranformation for each element
@@ -675,21 +678,20 @@ void WtQUmat::assemble(Vec u1, int lev, double scale) {
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
 
                 // horiztontal velocity is piecewise constant in the vertical
-                ux[0] *= 2.0/geom->thick[lev][inds_0[ii]];
-                ux[1] *= 2.0/geom->thick[lev][inds_0[ii]];
+                ux[0] *= 1.0/geom->thick[lev][inds_0[ii]];
+                ux[1] *= 1.0/geom->thick[lev][inds_0[ii]];
 
                 Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
                 Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
 
                 // rescale by the inverse of the vertical determinant (piecewise 
                 // constant in the vertical)
-                Qaa[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
             }
 
-            Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-            Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQaa);
-            Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qab, WtQab);
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQaa);
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qab, WtQab);
 
             Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQaa, U->A, WtQU);
             Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQab, V->A, WtQV);
@@ -769,6 +771,9 @@ void RotMat::assemble(Vec q0, int lev, double scale) {
     VecGetArray(q0, &q0Array);
     MatZeroEntries(M);
 
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, V->nDofsJ, V->A, Vt);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds_x = topo->elInds1x_g(ex, ey);
@@ -785,20 +790,17 @@ void RotMat::assemble(Vec q0, int lev, double scale) {
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
 
                 // vertical vorticity is piecewise constant in the vertical
-                vort *= 2.0/geom->thick[lev][inds_0[ii]];
+                vort *= 1.0/geom->thick[lev][inds_0[ii]];
 
                 Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
                 Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
 
-                Qab[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
-                Qba[ii][ii] *= 2.0/geom->thick[lev][inds_0[ii]];
+                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qba[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
             }
 
-            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
-            Tran_IP(U->nDofsI, V->nDofsJ, V->A, Vt);
-
-            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qab, UtQab);
-            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Qba, VtQba);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qab, UtQab);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Qba, VtQba);
 
             // take cross product by multiplying the x projection of the row vector with
             // the y component of the column vector and vice versa
@@ -994,6 +996,8 @@ void Whmat::assemble(Vec rho, int lev, double scale) {
     mp1 = e->l->q->n + 1;
     mp12 = mp1*mp1;
 
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
     VecGetArray(rho, &pArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -1008,15 +1012,14 @@ void Whmat::assemble(Vec rho, int lev, double scale) {
 
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &p);
                 // density is piecewise constant in the vertical
-                p *= 2.0/geom->thick[lev][inds0[ii]];
+                p *= 1.0/geom->thick[lev][inds0[ii]];
 
                 Qaa[ii][ii]  = p*Q->A[ii][ii]*(scale/det/det);
                 // W is piecewise constant in the vertical
-                Qaa[ii][ii] *= 2.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
             }
 
-            Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
             Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
