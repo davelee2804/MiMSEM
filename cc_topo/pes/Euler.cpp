@@ -27,8 +27,6 @@
 #define SCALE 1.0e+8
 #define VERT_TOL 1.0e-10
 
-#define HORIZ_SCALE
-#define VERT_SCALE
 //#define THETA_VISC_H
 
 using namespace std;
@@ -464,9 +462,7 @@ void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
                         }
                         wi *= 0.5;            // quadrature weights are both 1.0, however ke is 0.5*w^2
                         Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
-#ifdef HORIZ_SCALE
                         Q0[ii][ii] *= 0.5;
-#endif
                     }
                     Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
                     Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -495,9 +491,7 @@ void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
                         }
                         wi *= 0.5;            // quadrature weights are both 1.0, however ke is 0.5*w^2
                         Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
-#ifdef HORIZ_SCALE
                         Q0[ii][ii] *= 0.5;
-#endif
                     }
                     Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
                     Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -567,16 +561,12 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu) {
     // add the thermodynamic term (theta is in the same space as the vertical velocity)
     // project theta onto 1 forms
     VecZeroEntries(theta_k);
-#ifdef HORIZ_SCALE
     VecAXPY(theta_k, 0.5, theta_l[lev+0]);
     VecAXPY(theta_k, 0.5, theta_l[lev+1]);
-#else
-    VecAXPY(theta_k, 1.0, theta_l[lev+0]); // quadrature weights
-    VecAXPY(theta_k, 1.0, theta_l[lev+1]); // are both 1.0
-#endif
 
     grad(false, exner, &dExner, lev);
-    F->assemble(theta_k, lev, false, SCALE);
+    //F->assemble(theta_k, lev, false, SCALE);
+    F->assemble(theta_k, lev, true, SCALE); // TODO: i don't understand this scaling!
     MatMult(F->M, dExner, dp);
     VecAXPY(Fu, 1.0, dp);
     VecDestroy(&dExner);
@@ -939,9 +929,7 @@ void Euler::AssembleConst(int ex, int ey, Mat B) {
             // then divide by the vertical jacobian for both the trial and the test functions
             // vertical determinant is dz/2
             Q0[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
-#ifdef VERT_SCALE
             Q0[ii][ii] *= 0.5;
-#endif
         }
 
         // assemble the piecewise constant mass matrix for level k
@@ -1030,9 +1018,7 @@ void Euler::AssembleLinCon(int ex, int ey, Mat AB) {
 
             // multiply by the vertical jacobian, then scale the piecewise constant 
             // basis by the vertical jacobian, so do nothing 
-#ifdef VERT_SCALE
             Q0[ii][ii] *= 0.5;
-#endif
         }
 
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1094,16 +1080,10 @@ void Euler::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_inter
             // so these cancel
             geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rk);
             if(!do_internal) { // TODO: don't understand this scaling?!?
-//#ifdef VERT_SCALE
-//                ;
-//#else
                 rk *= 1.0/geom->thick[kk][inds0[ii]];
-//#endif
             }
             Q0[ii][ii] *= rk;
-#ifdef VERT_SCALE
             Q0[ii][ii] *= 0.5;
-#endif
         }
         VecRestoreArray(rho[kk], &rArray);
 
@@ -1779,9 +1759,7 @@ void Euler::AssembleConstWithRhoInv(int ex, int ey, Vec rho, Mat B) {
                 rk += rArray[kk*n2+jj]*gamma;
             }
             Q0[ii][ii] *= rk*2.0/(geom->thick[kk][inds0[ii]]*det);
-#ifdef VERT_SCALE
             Q0[ii][ii] *= 0.25;
-#endif
         }
 
         // assemble the piecewise constant mass matrix for level k
@@ -1834,9 +1812,7 @@ void Euler::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
                 rk += rArray[kk*n2+jj]*gamma;
             }
             Q0[ii][ii] *= rk*2.0/(geom->thick[kk][inds0[ii]]*det);
-#ifdef VERT_SCALE
             Q0[ii][ii] *= 0.25;
-#endif
         }
 
         // assemble the piecewise constant mass matrix for level k
@@ -1885,9 +1861,7 @@ void Euler::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     wb += wArray[(kk-1)*n2+jj]*gamma;
                 }
                 Q0[ii][ii] *= wb/det; // scale by 0.5 outside
-#ifdef VERT_SCALE
                 Q0[ii][ii] *= 0.5;
-#endif
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1916,9 +1890,7 @@ void Euler::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     wt += wArray[(kk+0)*n2+jj]*gamma;
                 }
                 Q0[ii][ii] *= wt/det; // scale by 0.5 outside
-#ifdef VERT_SCALE
                 Q0[ii][ii] *= 0.5;
-#endif
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1973,16 +1945,10 @@ void Euler::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_internal
                 rk += rArray[kk*n2+jj]*gamma;
             }
             if(!do_internal) { // TODO: don't understand this scaling ?!?
-//#ifdef VERT_SCALE
-//                ;
-//#else
                 rk *= 1.0/geom->thick[kk][inds0[ii]];
-//#endif
             }
             Q0[ii][ii] *= rk/det;
-#ifdef VERT_SCALE
             Q0[ii][ii] *= 0.5;
-#endif
         }
 
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -2391,9 +2357,7 @@ void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Ve
                     wi += wArray[(kk-1)*n2+jj]*gamma;
                 }
                 Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
-#ifdef VERT_SCALE
                 Q0[ii][ii] *= 0.5;
-#endif
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -2416,9 +2380,7 @@ void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Ve
                     wi += wArray[(kk+0)*n2+jj]*gamma;
                 }
                 Q0[ii][ii] *= wi/det; // vertical velocity is a 2 form in the horiztonal
-#ifdef VERT_SCALE
                 Q0[ii][ii] *= 0.5;
-#endif
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
