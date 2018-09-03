@@ -261,18 +261,20 @@ void Euler::initGZ() {
     double det;
     int inds2k[99], inds0k[99];
     double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
-    Vec gq;
+    Vec gq, zq;
     Mat AQ;
+    PetscScalar* zArray;
 
     n2    = topo->elOrd*topo->elOrd;
     mp12  = (quad->n + 1)*(quad->n + 1);
 
-    VecCreateSeq(MPI_COMM_SELF, geom->nk*mp12, &gq);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*mp12, &gq);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*mp12, &zq);
     VecSet(gq, GRAVITY);
 
     MatCreate(MPI_COMM_SELF, &AQ);
     MatSetType(AQ, MATSEQAIJ);
-    MatSetSizes(AQ, (geom->nk-1)*n2, (geom->nk+0)*mp12, (geom->nk-1)*n2, (geom->nk+0)*mp12);
+    MatSetSizes(AQ, (geom->nk-1)*n2, (geom->nk-1)*mp12, (geom->nk-1)*n2, (geom->nk-1)*mp12);
     MatSeqAIJSetPreallocation(AQ, 2*mp12, PETSC_NULL);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -297,13 +299,13 @@ void Euler::initGZ() {
                 Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
                 Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
 
-                for(ii = 0; ii < mp12; ii++) {
-                    inds0k[ii] = ii + kk*mp12;
-                }
                 // assemble the first basis function
                 if(kk > 0) {
                     for(ii = 0; ii < W->nDofsJ; ii++) {
                         inds2k[ii] = ii + (kk-1)*W->nDofsJ;
+                    }
+                    for(ii = 0; ii < mp12; ii++) {
+                        inds0k[ii] = ii + (kk-1)*mp12;
                     }
                     MatSetValues(AQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQflat, ADD_VALUES);
                 }
@@ -312,19 +314,31 @@ void Euler::initGZ() {
                     for(ii = 0; ii < W->nDofsJ; ii++) {
                         inds2k[ii] = ii + (kk+0)*W->nDofsJ;
                     }
+                    for(ii = 0; ii < mp12; ii++) {
+                        inds0k[ii] = ii + (kk+0)*mp12;
+                    }
                     MatSetValues(AQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQflat, ADD_VALUES);
                 }
             }
             MatAssemblyBegin(AQ, MAT_FINAL_ASSEMBLY);
             MatAssemblyEnd(AQ, MAT_FINAL_ASSEMBLY);
 
+            VecZeroEntries(zq);
+            VecGetArray(zq, &zArray);
+            for(kk = 0; kk < geom->nk-1; kk++) {
+                for(ii = 0; ii < mp12; ii++) {
+                    zArray[kk*mp12+ii] = geom->levs[kk+1][inds0[ii]];
+                }
+            }
+            VecRestoreArray(zq, &zArray);
+
             MatMult(AQ, gq, gv[ei]);
-            MatMult(AQ, gq, zv[ei]);
-            VecScale(zv[ei], 1.0/SCALE/GRAVITY);
+            MatMult(AQ, zq, zv[ei]);
         }
     }
 
     VecDestroy(&gq);
+    VecDestroy(&zq);
     MatDestroy(&AQ);
     delete[] WtQflat;
 }
@@ -2505,7 +2519,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     int kk, ex, ey, ei, n2, rank;
     double keh, kev, pe, ie, k2p;
     double dot, loc1, loc2;
-    Vec hu, M2Pi, w2, gRho;
+    Vec hu, M2Pi, w2, gRho, gi, zi;
     Mat BA;
     L2Vecs* l2_rho = new L2Vecs(geom->nk, topo, geom);
 
@@ -2515,6 +2529,8 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &w2);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &gRho);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &gi);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &zi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &hu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &M2Pi);
 
@@ -2572,9 +2588,13 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
+            AssembleLinearInv(ex, ey, VA);
+            MatMult(VA, gv[ei], gi);
+            MatMult(VA, zv[ei], zi);
             AssembleLinearWithRT(ex, ey, l2_rho->vz[ei], VA, true);
-            MatMult(VA, gv[ei], gRho);
-            VecDot(zv[ei], gRho, &dot);
+            MatMult(VA, gi, gRho);
+            VecScale(gRho, 1.0/SCALE);
+            VecDot(zi, gRho, &dot);
             loc1 += dot;
         }
     }
@@ -2600,6 +2620,8 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     VecDestroy(&hu);
     VecDestroy(&w2);
     VecDestroy(&gRho);
+    VecDestroy(&gi);
+    VecDestroy(&zi);
     MatDestroy(&BA);
     delete l2_rho;
 }
