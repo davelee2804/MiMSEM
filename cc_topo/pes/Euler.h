@@ -25,6 +25,8 @@ class Euler {
         Whmat* T;
         Vec* fg;                                     // coriolis vector (global)
         bool firstStep;
+        double k2i;                                  // kinetic to internal energy exchange
+        double i2k;                                  // kinetic to internal energy exchange
         Vec theta_b;                                 // bottom potential temperature bc
         Vec theta_t;                                 // top potential temperature bc
         Vec theta_b_l;                               // bottom potential temperature bc
@@ -32,6 +34,7 @@ class Euler {
         Vec* Kv;                                     // kinetic energy vector for each vertical column
         Vec* Kh;                                     // kinetic energy vector for each horiztontal layer
         Vec* gv;
+        Vec* zv;
         L2Vecs* exner_pre;
         Mat V01;                                     // vertical divergence operator
         Mat V10;                                     // vertical gradient operator
@@ -41,7 +44,6 @@ class Euler {
         KSP ksp2;
         KSP kspE;
         KSP kspColA;
-        //KSP kspMass;
 
         Wii* Q;
         M2_j_xy_i* W;
@@ -62,8 +64,9 @@ class Euler {
         void grad(bool assemble, Vec phi, Vec* u, int lev);            // weak form grad operator
         void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
         void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
-        void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho);
-        void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu);
+        void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux);
+        void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l, Vec* exner, bool use_theta);
+        void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu, Vec Flux);
         void thetaBCVec(int ex, int ey, Mat A, Vec* bTheta);
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
         void diagThetaVert(int ex, int ey, Mat AB, Vec rho, Vec rt, Vec theta);
@@ -90,6 +93,6 @@ class Euler {
         void AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA);
 
         void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
-
         void solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt);
+        void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
 };

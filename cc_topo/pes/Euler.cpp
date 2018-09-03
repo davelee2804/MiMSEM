@@ -28,6 +28,7 @@
 #define VERT_TOL 1.0e-10
 
 //#define THETA_VISC_H
+#define NEW_TEMP_FLUX
 
 using namespace std;
 
@@ -118,6 +119,10 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     gv = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &gv[ii]);
+    }
+    zv = new Vec[topo->nElsX*topo->nElsX];
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &zv[ii]);
     }
 
     // initialise the single column mass matrices and solvers
@@ -314,6 +319,8 @@ void Euler::initGZ() {
             MatAssemblyEnd(AQ, MAT_FINAL_ASSEMBLY);
 
             MatMult(AQ, gq, gv[ei]);
+            MatMult(AQ, gq, zv[ei]);
+            VecScale(zv[ei], 1.0/SCALE/GRAVITY);
         }
     }
 
@@ -360,6 +367,10 @@ Euler::~Euler() {
         VecDestroy(&gv[ii]);
     }
     delete[] gv;
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecDestroy(&zv[ii]);
+    }
+    delete[] zv;
 
     delete exner_pre;
 
@@ -533,7 +544,8 @@ compute the right hand side for the momentum equation for a given level
 note that the vertical velocity, uv, is stored as a different vector for 
 each element
 */
-void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu) {
+void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Flux) {
+    double dot;
     Vec wl, wi, Ru, Ku, Mh, d2u, d4u, theta_k, dExner, dp;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
@@ -565,11 +577,16 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu) {
     VecAXPY(theta_k, 0.5, theta_l[lev+1]);
 
     grad(false, exner, &dExner, lev);
-    //F->assemble(theta_k, lev, false, SCALE);
-    F->assemble(theta_k, lev, true, SCALE); // TODO: i don't understand this scaling!
+    F->assemble(theta_k, lev, false, SCALE);
+    //F->assemble(theta_k, lev, true, SCALE); // TODO: i don't understand this scaling!
     MatMult(F->M, dExner, dp);
     VecAXPY(Fu, 1.0, dp);
     VecDestroy(&dExner);
+
+    // evaluate the kinetic to internal energy exchange diagnostic (for this layer)
+    VecScale(dp, 1.0/SCALE);
+    VecDot(Flux, dp, &dot);
+    k2i += dot;
 
     // add in the biharmonic viscosity
     if(do_visc) {
@@ -593,21 +610,13 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu) {
 }
 
 // pi is a local vector
-void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l) {
+void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux) {
     int kk;
     Vec pu, Fh;
-    Vec theta_l, theta_g, dTheta, rho_dTheta_1, rho_dTheta_2, d2Theta;
 
     // compute the horiztonal mass fluxes
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh);
-    if(theta) {
-        VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_g);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_1);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_2);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &d2Theta);
-    }
 
     for(kk = 0; kk < geom->nk; kk++) {
         F->assemble(pi[kk], kk, true, SCALE);
@@ -616,11 +625,60 @@ void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l) {
         KSPSolve(ksp1, pu, Fh);
         MatMult(EtoF->E21, Fh, Fp[kk]);
 
+        VecZeroEntries(Flux[kk]);
+        VecCopy(Fh, Flux[kk]);
+    }
+
+    VecDestroy(&pu);
+    VecDestroy(&Fh);
+}
+
+void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l, Vec* exner, bool use_theta) {
+    int kk;
+    double dot;
+    Vec pu, Fh, dF, theta_l, theta_g, dTheta, rho_dTheta_1, rho_dTheta_2, d2Theta;
+
+    // compute the horiztonal mass fluxes
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dF);
+    if(theta || use_theta) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l);
+    }
+    if(theta) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_g);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_1);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_2);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &d2Theta);
+    }
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        if(!use_theta) {
+            F->assemble(pi[kk], kk, true, SCALE);
+        }
+        else {
+            VecZeroEntries(theta_l);
+            VecAXPY(theta_l, 0.5, pi[kk+0]);
+            VecAXPY(theta_l, 0.5, pi[kk+1]);
+            F->assemble(theta_l, kk, false, SCALE);
+        }
+        M1->assemble(kk, SCALE);
+        MatMult(F->M, uh[kk], pu);
+        KSPSolve(ksp1, pu, Fh);
+        MatMult(EtoF->E21, Fh, Fp[kk]);
+
+        // update the internal to kinetic energy flux diagnostic
+        M2->assemble(kk, SCALE, true);
+        MatMult(M2->M, Fp[kk], dF);
+        VecScale(dF, 1.0/SCALE);
+        VecDot(exner[kk], dF, &dot);
+        i2k += dot;
+
         // apply horiztonal viscosity
         if(theta) {
             VecZeroEntries(theta_l);
-            VecAXPY(theta_l, 1.0, theta[kk+0]);
-            VecAXPY(theta_l, 1.0, theta[kk+1]);
+            VecAXPY(theta_l, 0.5, theta[kk+0]);
+            VecAXPY(theta_l, 0.5, theta[kk+1]);
             VecScatterBegin(topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_FORWARD);
             VecScatterEnd(  topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_FORWARD);
 
@@ -639,8 +697,11 @@ void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l) {
 
     VecDestroy(&pu);
     VecDestroy(&Fh);
-    if(theta) {
+    VecDestroy(&dF);
+    if(theta || use_theta) {
         VecDestroy(&theta_l);
+    }
+    if(theta) {
         VecDestroy(&theta_g);
         VecDestroy(&rho_dTheta_1);
         VecDestroy(&rho_dTheta_2);
@@ -1115,31 +1176,48 @@ void Euler::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_inter
 void Euler::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft) {
     int kk;
     Vec* theta;
+    Vec* Flux;
+
+    k2i = i2k = 0.0;
 
     theta = new Vec[geom->nk+1];
     for(kk = 0; kk < geom->nk + 1; kk++) {
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta[kk]);
     }
+    Flux = new Vec[geom->nk];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Flux[kk]);
+    }
+
     // set the top and bottom potential temperature bcs
     VecCopy(theta_b_l, theta[0]);
     VecCopy(theta_t_l, theta[geom->nk]);
-
     diagTheta(rho, rt, theta);
 
-    for(kk = 0; kk < geom->nk; kk++) {
-        horizMomRHS(velx[kk], theta, exner[kk], kk, Fu[kk]);
-    }
-    massRHS(velx, rho, Fp, NULL, NULL);
-#ifdef THETA_VISC_H
-    massRHS(velx, rt,  Ft, theta, rho);
+    massRHS(velx, rho, Fp, Flux);
+//#ifdef THETA_VISC_H
+//    massRHS(velx, rt,  Ft, theta, rho);
+//#else
+//    massRHS(velx, rt,  Ft, NULL, NULL);
+//#endif
+#ifdef NEW_TEMP_FLUX
+    tempRHS(Flux, theta, Ft, NULL, NULL, exner, true);
 #else
-    massRHS(velx, rt,  Ft, NULL, NULL);
+    tempRHS(velx, rt,    Ft, NULL, NULL, exner, false);
 #endif
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        horizMomRHS(velx[kk], theta, exner[kk], kk, Fu[kk], Flux[kk]);
+    }
 
     for(kk = 0; kk < geom->nk + 1; kk++) {
         VecDestroy(&theta[kk]);
     }
     delete[] theta;
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecDestroy(&Flux[kk]);
+    }
+    delete[] Flux;
 }
 
 // rt and Ft and local vectors
@@ -1397,6 +1475,8 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     exner_new->CopyToHoriz(exner);
 
     firstStep = false;
+
+    diagnostics(velx, velz, rho, rt, exner);
 
     // write output
     if(save) {
@@ -2417,4 +2497,109 @@ void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Ve
 
     MatDestroy(&DAinv);
     MatDestroy(&Op);
+}
+
+void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
+    char filename[80];
+    ofstream file;
+    int kk, ex, ey, ei, n2, rank;
+    double keh, kev, pe, ie, k2p;
+    double dot, loc1, loc2;
+    Vec hu, M2Pi, w2, gRho;
+    Mat BA;
+    L2Vecs* l2_rho = new L2Vecs(geom->nk, topo, geom);
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    keh = kev = pe = ie = k2p = 0.0;
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &w2);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &gRho);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &hu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &M2Pi);
+
+    MatCreate(MPI_COMM_SELF, &BA);
+    MatSetType(BA, MATSEQAIJ);
+    MatSetSizes(BA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(BA, 2*n2, PETSC_NULL);
+
+    l2_rho->CopyFromHoriz(rho);
+    l2_rho->UpdateLocal();
+    l2_rho->HorizToVert();
+
+    // horiztonal kinetic energy
+    for(kk = 0; kk < geom->nk; kk++) {
+        F->assemble(l2_rho->vl[kk], kk, true, SCALE);
+        MatMult(F->M, velx[kk], hu);
+        VecScale(hu, 1.0/SCALE);
+        VecDot(hu, velx[kk], &dot);
+        keh += dot;
+    }
+
+    // vertical kinetic energy and kinetic to potential exchange
+    loc1 = loc2 = 0.0;
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            MatZeroEntries(BA);
+            AssembleConLinWithW(ex, ey, velz[ei], BA);
+            MatMult(BA, velz[ei], w2);
+            VecScale(w2, 1.0/SCALE);
+            VecDot(l2_rho->vz[ei], w2, &dot);
+            loc1 += dot;
+
+            VecZeroEntries(w2);
+            MatMult(BA, gv[ei], w2);
+            VecScale(w2, 1.0/SCALE);
+            VecDot(l2_rho->vz[ei], w2, &dot);
+            loc2 += dot;
+        }
+    }
+    MPI_Allreduce(&loc1, &kev, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&loc2, &k2p, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    // internal energy
+    for(kk = 0; kk < geom->nk; kk++) {
+        M2->assemble(kk, SCALE, true);
+        MatMult(M2->M, exner[kk], M2Pi);
+        VecScale(M2Pi, 1.0/SCALE);
+        VecDot(rt[kk], M2Pi, &dot);
+        ie += (CV/CP)*dot;
+    }
+
+    // potential energy
+    loc1 = 0.0;
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            AssembleLinearWithRT(ex, ey, l2_rho->vz[ei], VA, true);
+            MatMult(VA, gv[ei], gRho);
+            VecDot(zv[ei], gRho, &dot);
+            loc1 += dot;
+        }
+    }
+    MPI_Allreduce(&loc1, &pe,  1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    if(!rank) {
+        sprintf(filename, "output/energetics.dat");
+        file.open(filename, ios::out | ios::app);
+        file.precision(16);
+        file << keh << "\t";
+        file << kev << "\t";
+        file << pe  << "\t";
+        file << ie  << "\t";
+        file << k2p << "\t";
+        file << k2i << "\t";
+        file << i2k << "\t";
+        file << endl;
+        file.close();
+    }
+
+    VecDestroy(&M2Pi);
+    VecDestroy(&hu);
+    VecDestroy(&w2);
+    VecDestroy(&gRho);
+    MatDestroy(&BA);
+    delete l2_rho;
 }
