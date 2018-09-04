@@ -20,10 +20,6 @@ try:
 except OSError:
 	pass
 
-os.popen('ln -s ./src2/Basis.* ./pes')
-os.popen('ln -s ./src2/Topo.* ./pes')
-os.popen('ln -s ./src2/ElMats.* ./pes')
-
 # Generate the topology
 pc = ParaCube(n_procs,pn,ne,path)
 
@@ -53,3 +49,6 @@ for pi in np.arange(n_procs):
 
 	np.savetxt(path + '/input/geom_%.4u'%pi + '.txt', coords, fmt='%.18e')
 
+os.popen('cd ./pes; ln -s ../src2/Basis.* .')
+os.popen('cd ./pes; ln -s ../src2/Topo.* .')
+os.popen('cd ./pes; ln -s ../src2/ElMats.* .')
