@@ -20,6 +20,10 @@ try:
 except OSError:
 	pass
 
+os.popen('ln -s ./src2/Basis.* ./pes')
+os.popen('ln -s ./src2/Topo.* ./pes')
+os.popen('ln -s ./src2/ElMats.* ./pes')
+
 # Generate the topology
 pc = ParaCube(n_procs,pn,ne,path)
 
