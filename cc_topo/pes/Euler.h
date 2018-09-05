@@ -27,6 +27,8 @@ class Euler {
         bool firstStep;
         double k2i;                                  // kinetic to internal energy exchange
         double i2k;                                  // kinetic to internal energy exchange
+        double k2i_z;                                // kinetic to internal energy exchange
+        double i2k_z;                                // kinetic to internal energy exchange
         Vec theta_b;                                 // bottom potential temperature bc
         Vec theta_t;                                 // top potential temperature bc
         Vec theta_b_l;                               // bottom potential temperature bc
@@ -65,7 +67,7 @@ class Euler {
         void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
         void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
         void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux);
-        void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l, Vec* exner, bool use_theta);
+        void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu, Vec Flux);
         void thetaBCVec(int ex, int ey, Mat A, Vec* bTheta);
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);

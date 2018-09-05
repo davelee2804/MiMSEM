@@ -28,7 +28,7 @@
 #define VERT_TOL 1.0e-10
 
 //#define THETA_VISC_H
-#define NEW_TEMP_FLUX
+#define NEW_VERT_TEMP_FLUX
 
 using namespace std;
 
@@ -647,19 +647,17 @@ void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux) {
     VecDestroy(&Fh);
 }
 
-void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l, Vec* exner, bool use_theta) {
+void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
     int kk;
     double dot;
     Vec pu, Fh, dF, theta_l, theta_g, dTheta, rho_dTheta_1, rho_dTheta_2, d2Theta;
 
     // compute the horiztonal mass fluxes
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dF);
-    if(theta || use_theta) {
-        VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l);
-    }
-    if(theta) {
+    if(rho_l) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_g);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_1);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_2);
@@ -667,15 +665,12 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l, Vec* exne
     }
 
     for(kk = 0; kk < geom->nk; kk++) {
-        if(!use_theta) {
-            F->assemble(pi[kk], kk, true, SCALE);
-        }
-        else {
-            VecZeroEntries(theta_l);
-            VecAXPY(theta_l, 0.5, pi[kk+0]);
-            VecAXPY(theta_l, 0.5, pi[kk+1]);
-            F->assemble(theta_l, kk, false, SCALE);
-        }
+        //F->assemble(pi[kk], kk, true, SCALE);
+        VecZeroEntries(theta_l);
+        VecAXPY(theta_l, 0.5, pi[kk+0]);
+        VecAXPY(theta_l, 0.5, pi[kk+1]);
+        F->assemble(theta_l, kk, false, SCALE);
+
         M1->assemble(kk, SCALE);
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fh);
@@ -689,10 +684,7 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l, Vec* exne
         i2k += dot;
 
         // apply horiztonal viscosity
-        if(theta) {
-            VecZeroEntries(theta_l);
-            VecAXPY(theta_l, 0.5, theta[kk+0]);
-            VecAXPY(theta_l, 0.5, theta[kk+1]);
+        if(rho_l) {
             VecScatterBegin(topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_FORWARD);
             VecScatterEnd(  topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_FORWARD);
 
@@ -712,10 +704,8 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* theta, Vec* rho_l, Vec* exne
     VecDestroy(&pu);
     VecDestroy(&Fh);
     VecDestroy(&dF);
-    if(theta || use_theta) {
-        VecDestroy(&theta_l);
-    }
-    if(theta) {
+    VecDestroy(&theta_l);
+    if(rho_l) {
         VecDestroy(&theta_g);
         VecDestroy(&rho_dTheta_1);
         VecDestroy(&rho_dTheta_2);
@@ -1209,15 +1199,10 @@ void Euler::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp,
     diagTheta(rho, rt, theta);
 
     massRHS(velx, rho, Fp, Flux);
-//#ifdef THETA_VISC_H
-//    massRHS(velx, rt,  Ft, theta, rho);
-//#else
-//    massRHS(velx, rt,  Ft, NULL, NULL);
-//#endif
-#ifdef NEW_TEMP_FLUX
-    tempRHS(Flux, theta, Ft, NULL, NULL, exner, true);
+#ifdef THETA_VISC_H
+    tempRHS(Flux, theta, Ft, rho,  exner);
 #else
-    tempRHS(velx, rt,    Ft, NULL, NULL, exner, false);
+    tempRHS(Flux, theta, Ft, NULL, exner);
 #endif
 
     for(kk = 0; kk < geom->nk; kk++) {
@@ -2143,6 +2128,7 @@ void Euler::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
 void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n) {
     int ex, ey, ei, n2, it, rank;
     double eps, max_eps, eps_norm;
+    double loc1, loc2, dot;
     Mat V0_rt, V0_inv, V1_Pi, V1_rt_inv, V0_theta, V10_w, AB;
     Mat DTV10_w           = NULL;
     Mat DTV1              = NULL;
@@ -2159,6 +2145,9 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     Vec rhs, tmp;
     Vec velz_j, exner_j, rho_j, rt_j;
     Vec velz_d, exner_d, rho_d, rt_d;
+#ifdef NEW_VERT_TEMP_FLUX
+    Vec wRho, wRhoTheta, Ftemp, VBFtemp;
+#endif
     L2Vecs* l2_theta = new L2Vecs(geom->nk+1, topo, geom);
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -2175,6 +2164,12 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &exner_d);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rho_d);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rt_d);
+#ifdef NEW_VERT_TEMP_FLUX
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wRho);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wRhoTheta);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Ftemp);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &VBFtemp);
+#endif
 
     // initialise matrices
     MatCreate(MPI_COMM_SELF, &V0_rt);
@@ -2211,6 +2206,8 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     MatSetType(AB, MATSEQAIJ);
     MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
     MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
+
+    loc1 = loc2 = k2i_z = i2k_z = 0.0;
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -2314,6 +2311,22 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
 
                 // update the density and the density weighted potential temperature
                 solveMass(0.5*dt, ex, ey, AB, V0_inv, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j);
+
+#ifdef NEW_VERT_TEMP_FLUX
+                AssembleLinearWithRT(ex, ey, rho_j, V0_rt, true);
+
+                MatZeroEntries(V0_invV0_rt);
+                MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+                MatMult(V0_invV0_rt, velz_j, wRho);
+
+                MatZeroEntries(V0_invV0_rt);
+                MatMatMult(V0_inv, V0_theta, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+                MatMult(V0_invV0_rt, wRho, wRhoTheta);
+
+                MatMult(V10, wRhoTheta, Ftemp);
+                VecCopy(rt_n[ei], rt_j);
+                VecAXPY(rt_j, -0.5*dt, Ftemp);
+#endif
 /*
                 if(!V01_w) {
                     MatTranspose(V10_w, MAT_INITIAL_MATRIX, &V01_w);
@@ -2367,8 +2380,24 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             } while(it < 100 && max_eps > VERT_TOL);
 
             if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
+
+#ifdef NEW_VERT_TEMP_FLUX
+            // kinetic to internal energy exchange diagnostics
+            MatMult(GRAD, exner[ei], wRhoTheta);
+            VecScale(wRhoTheta, 1.0/SCALE);
+            VecDot(wRho, wRhoTheta, &dot);
+            loc1 += dot;
+
+            MatMult(VB, Ftemp, VBFtemp);
+            VecScale(VBFtemp, 1.0/SCALE);
+            VecDot(exner[ei], VBFtemp, &dot);
+            loc2 += dot;
+#endif
         }
     }
+
+    MPI_Allreduce(&loc1, &k2i_z, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&loc2, &i2k_z, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
     // update the initial solutions
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -2392,6 +2421,12 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     VecDestroy(&exner_d);
     VecDestroy(&rho_d);
     VecDestroy(&rt_d);
+#ifdef NEW_VERT_TEMP_FLUX
+    VecDestroy(&wRho);
+    VecDestroy(&wRhoTheta);
+    VecDestroy(&Ftemp);
+    VecDestroy(&VBFtemp);
+#endif
     MatDestroy(&V0_rt            );
     MatDestroy(&V0_inv           );
     MatDestroy(&V1_Pi            );
@@ -2506,7 +2541,9 @@ void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Ve
     KSPSetFromOptions(kspMass);
 
     KSPSolve(kspMass, f_rho, rho);
+#ifndef NEW_VERT_TEMP_FLUX
     KSPSolve(kspMass, f_rt , rt );
+#endif
     KSPDestroy(&kspMass);
 
     MatDestroy(&DAinv);
@@ -2612,6 +2649,8 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
         file << k2p << "\t";
         file << k2i << "\t";
         file << i2k << "\t";
+        file << k2i_z << "\t";
+        file << i2k_z << "\t";
         file << endl;
         file.close();
     }
