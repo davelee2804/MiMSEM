@@ -353,7 +353,6 @@ Pvec::Pvec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &vl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
-    VecZeroEntries(vg);
 
     entries = new PetscScalar[(l->n+1)*(l->n+1)];
 
@@ -364,6 +363,7 @@ void Pvec::assemble(int lev, double scale) {
     int ii, ex, ey, np1, np12, *inds_l;
 
     VecZeroEntries(vl);
+    VecZeroEntries(vg);
 
     np1 = l->n + 1;
     np12 = np1*np1;

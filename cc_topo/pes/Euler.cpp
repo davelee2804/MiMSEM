@@ -675,7 +675,6 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
 
     grad(false, exner, &dExner, lev);
     F->assemble(theta_k, lev, false, SCALE);
-    //F->assemble(theta_k, lev, true, SCALE); // TODO: i don't understand this scaling!
     MatMult(F->M, dExner, dp);
     VecAXPY(Fu, 1.0, dp);
     VecDestroy(&dExner);
@@ -689,7 +688,7 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
     if(do_visc) {
         laplacian(false, uh, &d2u, lev);
         laplacian(false, d2u, &d4u, lev);
-        M1->assemble(lev, SCALE);
+        //M1->assemble(lev, SCALE);
         VecZeroEntries(d2u);
         MatMult(M1->M, d4u, d2u);
         VecAXPY(Fu, 1.0, d2u);
