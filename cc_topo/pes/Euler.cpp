@@ -209,7 +209,8 @@ double Euler::viscosity_vert() {
     }
     MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-    return 32.0*dzMaxG*dzMaxG;
+    //return 32.0*dzMaxG*dzMaxG;
+    return 128.0*dzMaxG*dzMaxG;
 }
 
 // project coriolis term onto 0 forms
@@ -688,7 +689,6 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
     if(do_visc) {
         laplacian(false, uh, &d2u, lev);
         laplacian(false, d2u, &d4u, lev);
-        //M1->assemble(lev, SCALE);
         VecZeroEntries(d2u);
         MatMult(M1->M, d4u, d2u);
         VecAXPY(Fu, 1.0, d2u);
@@ -2462,6 +2462,11 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             } while(it < 100 && max_eps > VERT_TOL);
 
             if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
+
+            if(it==100) {
+                cout << "vertical solve convergence error... aborting.\n";
+                abort();
+            }
 
 #ifdef NEW_VERT_TEMP_FLUX
             // kinetic to internal energy exchange diagnostics
