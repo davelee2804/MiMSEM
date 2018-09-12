@@ -228,35 +228,47 @@ double f_topog(double* x) {
     return 0.0;
 }
 
-void LoadVecs(Vec* vecs, int nk, char* fieldname, int step, bool para) {
+void LoadVecs(Vec* vecs, int nk, char* fieldname, int step) {
     int ki;
     char filename[100];
     PetscViewer viewer;
 
-    for(ki = 0; ki < NK; ki++) {
+    for(ki = 0; ki < nk; ki++) {
         sprintf(filename, "output/%s_%.4u_%.4u.vec", fieldname, ki, step);
-        if(para) {
-            PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
-        }
-        else {
-            PetscViewerBinaryOpen(PETSC_COMM_SELF, fieldname, FILE_MODE_READ, &viewer);
-        }
+        PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
         VecLoad(vecs[ki], viewer);
         PetscViewerDestroy(&viewer);
     }
 }
 
+void LoadVecsVert(Vec* vecs, int nk, char* fieldname, int step, Topo* topo, Geom* geom) {
+    int ki;
+    char filename[100];
+    PetscViewer viewer;
+    L2Vecs* l2Vecs = new L2Vecs(nk, topo, geom);
+
+    for(ki = 0; ki < nk; ki++) {
+        sprintf(filename, "output/%s_%.4u_%.4u.vec", fieldname, ki, step);
+        PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+        VecLoad(l2Vecs->vh[ki], viewer);
+        PetscViewerDestroy(&viewer);
+    }
+    l2Vecs->UpdateLocal();
+    l2Vecs->HorizToVert();
+    l2Vecs->CopyToVert(vecs);
+
+    delete l2Vecs;
+}
+
 int main(int argc, char** argv) {
     int size, rank, step, ii, ki, n2;
     static char help[] = "petsc";
-    //double vort_0, mass_0, ener_0;
-    //double vort_n, mass_n, ener_n;
-    char fieldname[50];//, filename[50];
+    char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 60.0;
-    int nSteps = 8*24*60;
-    int dumpEvery = 120;
+    double dt = 40.0;
+    int nSteps = 8*24*90;
+    int dumpEvery = 180;
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -316,33 +328,18 @@ int main(int argc, char** argv) {
             sprintf(fieldname,"rhoTheta");
             geom->write2(rt[ki],fieldname,0,ki, true);
         }
-        for(ii = 0; ii < n2; ii++) {
-            sprintf(fieldname, "output/velocity_z_%.4u_%.4u.vec", ii, 0);
-            PetscViewerBinaryOpen(MPI_COMM_SELF, fieldname, FILE_MODE_WRITE, &viewer);
-            VecView(velz[ii], viewer);
-            PetscViewerDestroy(&viewer);
-        }
     } else {
         sprintf(fieldname,"density");
-        LoadVecs(rho  , NK, fieldname, startStep, true );
+        LoadVecs(rho  , NK, fieldname, startStep);
         sprintf(fieldname,"velocity_h");
-        LoadVecs(velx , NK, fieldname, startStep, true );
+        LoadVecs(velx , NK, fieldname, startStep);
         sprintf(fieldname,"exner");
-        LoadVecs(exner, NK, fieldname, startStep, true );
+        LoadVecs(exner, NK, fieldname, startStep);
         sprintf(fieldname,"rhoTheta");
-        LoadVecs(rt   , NK, fieldname, startStep, true );
+        LoadVecs(rt   , NK, fieldname, startStep);
         sprintf(fieldname,"velociyt_z");
-        LoadVecs(velz , n2, fieldname, startStep, false);
+        LoadVecsVert(velz , NK-1, fieldname, startStep, topo, geom);
     }
-
-    //vort_0 = mass_0 = ener_0 = 0.0;
-    //for(ki = 0; ki < NK; ki++) {
-    //    pe->curl(velx[ki], &wi, 0, false);
-    //    vort_0 += sw->int0(wi);
-    //    mass_0 += sw->int2(rho[ki]);
-    //    ener_0 += sw->intE(velx[ki], rho[ki]);
-    //    VecDestroy(&wi);
-    //}
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
@@ -350,24 +347,6 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         pe->SolveStrang(velx, velz, rho, rt, exner, dump);
-
-        //if(dump) {
-            //vort_n = mass_n = ener_n = 0.0;
-            //for(ki = 0; ki < NK; ki++) {
-                //pe->curl(velx[ki], &wi, 0, false);
-                //vort_n += sw->int0(wi);
-                //mass_n += sw->int2(rho[ki]);
-                //ener_n += sw->intE(velx[ki], rho[ki]);
-                //VecDestroy(&wi);
-
-                //sprintf(filename, "output/conservation.dat");
-                //file.open(filename, ios::out | ios::app);
-                //file << (step*dt)/60.0/60.0/24.0 << "\t" << (mass_n-mass_0)/mass_0 
-                //                                 << "\t" << (vort_n-vort_0) 
-                //                                 << "\t" << (ener_n-ener_0)/ener_0 << endl;
-                //file.close();
-            //}
-        //}
     }
 
     delete pe;

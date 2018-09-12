@@ -210,7 +210,8 @@ double Euler::viscosity_vert() {
     MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
     //return 32.0*dzMaxG*dzMaxG;
-    return 128.0*dzMaxG*dzMaxG;
+    //return 128.0*dzMaxG*dzMaxG;
+    return 320.0*dzMaxG*dzMaxG;
 }
 
 // project coriolis term onto 0 forms
@@ -1600,8 +1601,6 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         }
         sprintf(fieldname, "velocity_z");
         geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
-        sprintf(fieldname, "velVert");
-        geom->writeSerial(velz, fieldname, topo->nElsX*topo->nElsX, step);
 
         VecDestroy(&kek);
     }

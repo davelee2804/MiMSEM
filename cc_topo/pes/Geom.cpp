@@ -500,24 +500,6 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
     PetscViewerDestroy(&viewer);
 }
 
-void Geom::writeSerial(Vec* vecs, char* fieldname, int nv, int tstep) {
-    int ii;
-    char filename[100];
-    PetscViewer viewer;
-
-    for(ii = 0; ii < nv; ii++) {
-#ifdef WITH_HDF5
-        sprintf(filename, "output/%s_%.3u_%.4u.h5", fieldname, ii, tstep);
-        PetscViewerHDF5Open(MPI_COMM_SELF, filename, FILE_MODE_WRITE, &viewer);
-#else
-        sprintf(filename, "output/%s_%.3u_%.4u.dat", fieldname, ii, tstep);
-        PetscViewerASCIIOpen(MPI_COMM_SELF, filename, &viewer);
-#endif
-        VecView(vecs[ii], viewer);
-        PetscViewerDestroy(&viewer);
-    }
-}
-
 void Geom::writeVertToHoriz(Vec* vecs, char* fieldname, int tstep, int nv) {
     int ex, ey, ei, ii, kk, n2, *inds2;
     PetscScalar *hArray, *vArray;
