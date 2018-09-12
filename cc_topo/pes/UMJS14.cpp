@@ -234,7 +234,7 @@ void LoadVecs(Vec* vecs, int nk, char* fieldname, int step) {
     PetscViewer viewer;
 
     for(ki = 0; ki < nk; ki++) {
-        sprintf(filename, "output/%s_%.4u_%.4u.vec", fieldname, ki, step);
+        sprintf(filename, "output/%s_%.3u_%.4u.vec", fieldname, ki, step);
         PetscViewerBinaryOpen(PETSC_COMM_WORLD, filename, FILE_MODE_READ, &viewer);
         VecLoad(vecs[ki], viewer);
         PetscViewerDestroy(&viewer);
@@ -248,7 +248,7 @@ void LoadVecsVert(Vec* vecs, int nk, char* fieldname, int step, Topo* topo, Geom
     L2Vecs* l2Vecs = new L2Vecs(nk, topo, geom);
 
     for(ki = 0; ki < nk; ki++) {
-        sprintf(filename, "output/%s_%.4u_%.4u.vec", fieldname, ki, step);
+        sprintf(filename, "output/%s_%.3u_%.4u.vec", fieldname, ki, step);
         PetscViewerBinaryOpen(PETSC_COMM_WORLD, filename, FILE_MODE_READ, &viewer);
         VecLoad(l2Vecs->vh[ki], viewer);
         PetscViewerDestroy(&viewer);
