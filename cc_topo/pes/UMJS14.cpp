@@ -235,7 +235,7 @@ void LoadVecs(Vec* vecs, int nk, char* fieldname, int step) {
 
     for(ki = 0; ki < nk; ki++) {
         sprintf(filename, "output/%s_%.4u_%.4u.vec", fieldname, ki, step);
-        PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+        PetscViewerBinaryOpen(PETSC_COMM_WORLD, filename, FILE_MODE_READ, &viewer);
         VecLoad(vecs[ki], viewer);
         PetscViewerDestroy(&viewer);
     }
@@ -249,7 +249,7 @@ void LoadVecsVert(Vec* vecs, int nk, char* fieldname, int step, Topo* topo, Geom
 
     for(ki = 0; ki < nk; ki++) {
         sprintf(filename, "output/%s_%.4u_%.4u.vec", fieldname, ki, step);
-        PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
+        PetscViewerBinaryOpen(PETSC_COMM_WORLD, filename, FILE_MODE_READ, &viewer);
         VecLoad(l2Vecs->vh[ki], viewer);
         PetscViewerDestroy(&viewer);
     }
@@ -274,7 +274,6 @@ int main(int argc, char** argv) {
     Geom* geom;
     Euler* pe;
     Vec *velx, *velz, *rho, *rt, *exner;
-    PetscViewer viewer;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 
@@ -337,7 +336,7 @@ int main(int argc, char** argv) {
         LoadVecs(exner, NK, fieldname, startStep);
         sprintf(fieldname,"rhoTheta");
         LoadVecs(rt   , NK, fieldname, startStep);
-        sprintf(fieldname,"velociyt_z");
+        sprintf(fieldname,"velocity_z");
         LoadVecsVert(velz , NK-1, fieldname, startStep, topo, geom);
     }
 
