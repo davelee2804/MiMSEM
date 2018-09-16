@@ -25,10 +25,11 @@
 #define CP 1004.5
 #define CV 717.5
 #define SCALE 1.0e+8
+#define MAX_IT 200
 #define VERT_TOL 1.0e-10
 
 //#define THETA_VISC_H
-#define NEW_VERT_TEMP_FLUX
+#define NEW_VERT_FLUX
 
 using namespace std;
 
@@ -1426,7 +1427,8 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // 2.1 First horiztonal substep
     if(!rank)cout<<"horiztonal step (1).................."<<endl;
     AssembleKEVecs(velx, velz);
-    HorizRHS(velx, rho_old->vl, rt_old->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+    //HorizRHS(velx, rho_old->vl, rt_old->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+    HorizRHS(velx, rho_old->vl, rt_old->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         M1->assemble(ii, SCALE);
@@ -1451,7 +1453,8 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // 2.2 Second horiztonal step
     if(!rank)cout<<"horiztonal step (2).................."<<endl;
     AssembleKEVecs(velx_new, velz);
-    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+    //HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         VecZeroEntries(xu);
@@ -1486,7 +1489,8 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // 2.3 Third horiztonal step
     if(!rank)cout<<"horiztonal step (3).................."<<endl;
     AssembleKEVecs(velx_new, velz);
-    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+    //HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         VecZeroEntries(xu);
@@ -1596,7 +1600,7 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
 
             M2->assemble(ii, SCALE, true);
             KSPSolve(ksp2, Kh[ii], kek);
-            sprintf(fieldname, "ke");
+            sprintf(fieldname, "kinEn");
             geom->write2(kek, fieldname, step, ii, true);
         }
         sprintf(fieldname, "velocity_z");
@@ -2226,7 +2230,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     Vec rhs, tmp;
     Vec velz_j, exner_j, rho_j, rt_j;
     Vec velz_d, exner_d, rho_d, rt_d;
-#ifdef NEW_VERT_TEMP_FLUX
+#ifdef NEW_VERT_FLUX
     Vec wRho, wRhoTheta, Ftemp, VBFtemp;
 #endif
     L2Vecs* l2_theta = new L2Vecs(geom->nk+1, topo, geom);
@@ -2245,7 +2249,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &exner_d);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rho_d);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rt_d);
-#ifdef NEW_VERT_TEMP_FLUX
+#ifdef NEW_VERT_FLUX
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wRho);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wRhoTheta);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Ftemp);
@@ -2391,19 +2395,27 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
 
                 // update the density and the density weighted potential temperature
+#ifndef NEW_VERT_FLUX
                 solveMass(0.5*dt, ex, ey, AB, V0_inv, velz_j, rho_n[ei], rho_j, rt_n[ei], rt_j);
+#endif
 
-#ifdef NEW_VERT_TEMP_FLUX
+#ifdef NEW_VERT_FLUX
                 AssembleLinearWithRT(ex, ey, rho_j, V0_rt, true);
 
                 MatZeroEntries(V0_invV0_rt);
                 MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
                 MatMult(V0_invV0_rt, velz_j, wRho);
 
+                // update the density
+                MatMult(V10, wRho, Ftemp);
+                VecCopy(rho_n[ei], rho_j);
+                VecAXPY(rho_j, -0.5*dt, Ftemp);
+
                 MatZeroEntries(V0_invV0_rt);
                 MatMatMult(V0_inv, V0_theta, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
                 MatMult(V0_invV0_rt, wRho, wRhoTheta);
 
+                // update the density weighted potential temperature
                 MatMult(V10, wRhoTheta, Ftemp);
                 VecCopy(rt_n[ei], rt_j);
                 VecAXPY(rt_j, -0.5*dt, Ftemp);
@@ -2458,16 +2470,16 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 VecCopy(rt_j   , rt[ei]   );
 
                 it++;
-            } while(it < 100 && max_eps > VERT_TOL);
+            } while(it < MAX_IT && max_eps > VERT_TOL);
 
             if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
 
-            if(it==100) {
+            if(it==MAX_IT) {
                 cout << "vertical solve convergence error... aborting.\n";
                 abort();
             }
 
-#ifdef NEW_VERT_TEMP_FLUX
+#ifdef NEW_VERT_FLUX
             // kinetic to internal energy exchange diagnostics
             MatMult(GRAD, exner[ei], wRhoTheta);
             VecScale(wRhoTheta, 1.0/SCALE);
@@ -2507,7 +2519,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     VecDestroy(&exner_d);
     VecDestroy(&rho_d);
     VecDestroy(&rt_d);
-#ifdef NEW_VERT_TEMP_FLUX
+#ifdef NEW_VERT_FLUX
     VecDestroy(&wRho);
     VecDestroy(&wRhoTheta);
     VecDestroy(&Ftemp);
@@ -2537,7 +2549,6 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
 
 void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt) {
     int ii, jj, kk, ei, n2, mp1, mp12;
-    int *inds0;
     double det, wi, gamma;
     int rows[99], cols[99];
     PetscScalar* wArray;
@@ -2546,7 +2557,6 @@ void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Ve
     KSP kspMass;
 
     ei    = ey*topo->nElsX + ex;
-    inds0 = topo->elInds0_l(ex, ey);
     n2    = topo->elOrd*topo->elOrd;
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
@@ -2627,9 +2637,7 @@ void Euler::solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Ve
     KSPSetFromOptions(kspMass);
 
     KSPSolve(kspMass, f_rho, rho);
-#ifndef NEW_VERT_TEMP_FLUX
     KSPSolve(kspMass, f_rt , rt );
-#endif
     KSPDestroy(&kspMass);
 
     MatDestroy(&DAinv);
