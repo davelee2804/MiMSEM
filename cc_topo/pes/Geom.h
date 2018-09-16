@@ -31,6 +31,7 @@ class Geom {
         void initJacobians();
         void updateGlobalCoords();
         void initTopog(TopogFunc* ft, LevelFunc* fl);
+        void writeColumn(char* filename, int ei, int nv, Vec vecs, bool vert_scale);
     private:
         void jacobian(int ex, int ey, int qx, int qy, double** J);
         double jacDet(int ex, int ey, int qx, int qy, double** J);

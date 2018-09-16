@@ -25,7 +25,7 @@
 #define CP 1004.5
 #define CV 717.5
 #define SCALE 1.0e+8
-#define MAX_IT 200
+#define MAX_IT 100
 #define VERT_TOL 1.0e-10
 
 //#define THETA_VISC_H
@@ -2213,7 +2213,8 @@ void Euler::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
 void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n) {
     int ex, ey, ei, n2, it, rank;
     double eps, max_eps, eps_norm;
-    double loc1, loc2, dot;
+    double loc1, loc2, dot, eps_1, eps_2, eps_3, eps_4;
+    char filename[100];
     Mat V0_rt, V0_inv, V1_Pi, V1_rt_inv, V0_theta, V10_w, AB;
     Mat DTV10_w           = NULL;
     Mat DTV1              = NULL;
@@ -2444,23 +2445,27 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 VecNorm(velz_d, NORM_2, &eps);
                 VecNorm(velz_j, NORM_2, &eps_norm);
                 max_eps = eps/eps_norm;
+                eps_1 = eps/eps_norm;
 
                 VecCopy(exner_j, exner_d);
                 VecAXPY(exner_d, -1.0, exner[ei]);
                 VecNorm(exner_d, NORM_2, &eps);
                 VecNorm(exner_j, NORM_2, &eps_norm);
+                eps_2 = eps/eps_norm;
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
 
                 VecCopy(rho_j, rho_d);
                 VecAXPY(rho_d, -1.0, rho[ei]);
                 VecNorm(rho_d, NORM_2, &eps);
                 VecNorm(rho_j, NORM_2, &eps_norm);
+                eps_3 = eps/eps_norm;
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
 
                 VecCopy(rt_j, rt_d);
                 VecAXPY(rt_d, -1.0, rt[ei]);
                 VecNorm(rt_d, NORM_2, &eps);
                 VecNorm(rt_j, NORM_2, &eps_norm);
+                eps_4 = eps/eps_norm;
                 if(eps/eps_norm > max_eps) max_eps = eps/eps_norm;
 
                 // copy over the new solutions at this iteration
@@ -2475,7 +2480,19 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
 
             if(it==MAX_IT) {
+                sprintf(filename, "velocity_z_%.4u_%.5u_%.5u.dat", rank, ei, step);
+                geom->writeColumn(filename, ei, geom->nk-1, velz[ei], false);
+                sprintf(filename, "density_%.4u_%.5u_%.5u.dat", rank, ei, step);
+                geom->writeColumn(filename, ei, geom->nk, rho[ei], true);
+                sprintf(filename, "rhoTheta_%.4u_%.5u_%.5u.dat", rank, ei, step);
+                geom->writeColumn(filename, ei, geom->nk, rt[ei], true);
+                sprintf(filename, "exner_%.4u_%.5u_%.5u.dat", rank, ei, step);
+                geom->writeColumn(filename, ei, geom->nk, exner[ei], true);
                 cout << "vertical solve convergence error... aborting.\n";
+                cout << "\t|eps_w|:        " << eps_1 << endl;
+                cout << "\t|eps_exner|:    " << eps_2 << endl;
+                cout << "\t|eps_rho|:      " << eps_3 << endl;
+                cout << "\t|eps_rhoTheta|: " << eps_4 << endl;
                 abort();
             }
 

@@ -629,3 +629,36 @@ void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
         }
     }
 }
+
+void Geom::writeColumn(char* filename, int ei, int nv, Vec vec, bool vert_scale) {
+    int ii, jj, kk, n2, mp1, mp12;
+    double gamma, vq;
+    PetscScalar* vArray;
+    ofstream file;
+
+    n2   = topo->elOrd*topo->elOrd;
+    mp1  = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    file.open(filename);
+
+    VecGetArray(vec, &vArray);
+    for(kk = 0; kk < nv; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            vq = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = edge->ejxi[ii%mp1][jj%topo->elOrd]*edge->ejxi[ii/mp1][jj/topo->elOrd];
+                vq += vArray[kk*n2+jj]*gamma;
+            }
+            vq /= det[ei][ii];
+
+            if(vert_scale) vq /= thick[kk][ii];
+
+            file << vq << "\t";
+        }
+        file << endl;
+    }
+    VecRestoreArray(vec, &vArray);
+
+    file.close();
+}
