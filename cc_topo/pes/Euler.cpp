@@ -124,7 +124,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     }
     zv = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        //VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &zv[ii]);
         VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &zv[ii]);
     }
 
@@ -161,18 +160,10 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     PCBJacobiSetTotalBlocks(pc, n2, NULL);
     KSPSetOptionsPrefix(kspE, "exner_");
     KSPSetFromOptions(kspE);
-/*
-    KSPCreate(MPI_COMM_SELF, &kspMass);
-    KSPSetOperators(kspMass, VB, VB);
-    KSPSetTolerances(kspMass, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(kspMass, KSPGMRES);
-    KSPGetPC(kspMass, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, n2, NULL);
-    KSPSetOptionsPrefix(kspMass, "kspMass_");
-    KSPSetFromOptions(kspMass);
-*/
+
+#ifdef EXTRAPOLATE_EXNER
     exner_pre = new L2Vecs(geom->nk, topo, geom);
+#endif
 
     Q = new Wii(node->q, geom);
     W = new M2_j_xy_i(edge);
@@ -261,95 +252,6 @@ void Euler::coriolis() {
     VecDestroy(&PtQfxg);
 }
 
-/*
-void Euler::initGZ() {
-    int ii, kk, ex, ey, ei, n2, mp12;
-    int *inds0;
-    double det;
-    int inds2k[99], inds0k[99];
-    double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
-    Vec gq, zq;
-    Mat AQ;
-    PetscScalar* zArray;
-
-    n2    = topo->elOrd*topo->elOrd;
-    mp12  = (quad->n + 1)*(quad->n + 1);
-
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*mp12, &gq);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*mp12, &zq);
-    VecSet(gq, GRAVITY);
-
-    MatCreate(MPI_COMM_SELF, &AQ);
-    MatSetType(AQ, MATSEQAIJ);
-    MatSetSizes(AQ, (geom->nk-1)*n2, (geom->nk-1)*mp12, (geom->nk-1)*n2, (geom->nk-1)*mp12);
-    MatSeqAIJSetPreallocation(AQ, 2*mp12, PETSC_NULL);
-
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            MatZeroEntries(AQ);
-
-            ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
-
-            Q->assemble(ex, ey);
-
-            // assemble the matrices
-            for(kk = 0; kk < geom->nk; kk++) {
-                // build the 2D mass matrix
-                for(ii = 0; ii < mp12; ii++) {
-                    det = geom->det[ei][ii];
-                    Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
-                    // for linear field we multiply by the vertical jacobian determinant when
-                    // integrating, and do no other trasformations for the basis functions
-                    Q0[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
-                }
-                Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-                Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
-
-                // assemble the first basis function
-                if(kk > 0) {
-                    for(ii = 0; ii < W->nDofsJ; ii++) {
-                        inds2k[ii] = ii + (kk-1)*W->nDofsJ;
-                    }
-                    for(ii = 0; ii < mp12; ii++) {
-                        inds0k[ii] = ii + (kk-1)*mp12;
-                    }
-                    MatSetValues(AQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQflat, ADD_VALUES);
-                }
-                // assemble the second basis function
-                if(kk < geom->nk - 1) {
-                    for(ii = 0; ii < W->nDofsJ; ii++) {
-                        inds2k[ii] = ii + (kk+0)*W->nDofsJ;
-                    }
-                    for(ii = 0; ii < mp12; ii++) {
-                        inds0k[ii] = ii + (kk+0)*mp12;
-                    }
-                    MatSetValues(AQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQflat, ADD_VALUES);
-                }
-            }
-            MatAssemblyBegin(AQ, MAT_FINAL_ASSEMBLY);
-            MatAssemblyEnd(AQ, MAT_FINAL_ASSEMBLY);
-
-            VecZeroEntries(zq);
-            VecGetArray(zq, &zArray);
-            for(kk = 0; kk < geom->nk-1; kk++) {
-                for(ii = 0; ii < mp12; ii++) {
-                    zArray[kk*mp12+ii] = geom->levs[kk+1][inds0[ii]];
-                }
-            }
-            VecRestoreArray(zq, &zArray);
-
-            MatMult(AQ, gq, gv[ei]);
-            MatMult(AQ, zq, zv[ei]);
-        }
-    }
-
-    VecDestroy(&gq);
-    VecDestroy(&zq);
-    MatDestroy(&AQ);
-    delete[] WtQflat;
-}
-*/
 void Euler::initGZ() {
     int ex, ey, ei, ii, kk, n2, mp12;
     int* inds0;
@@ -449,7 +351,6 @@ Euler::~Euler() {
     KSPDestroy(&ksp2);
     KSPDestroy(&kspE);
     KSPDestroy(&kspColA);
-    //KSPDestroy(&kspMass);
     VecDestroy(&theta_b);
     VecDestroy(&theta_t);
     VecDestroy(&theta_b_l);
@@ -474,7 +375,9 @@ Euler::~Euler() {
     }
     delete[] zv;
 
+#ifdef EXTRAPOLATE_EXNER
     delete exner_pre;
+#endif
 
     MatDestroy(&V01);
     MatDestroy(&V10);
@@ -1355,7 +1258,6 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecScatterEnd(  topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterBegin(topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(  topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
-
 #ifdef EXTRAPOLATE_EXNER
         exner_pre->CopyFromHoriz(exner);
         exner_hlf->CopyFromHoriz(exner);
@@ -2245,8 +2147,6 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     Mat DIV               = NULL;
     Mat LAP               = NULL;
     Mat DEL2              = NULL;
-    //Mat V01_w             = NULL;
-    //Mat V0_invV01_w       = NULL;
     Vec rhs, tmp;
     Vec velz_j, exner_j, rho_j, rt_j;
     Vec velz_d, exner_d, rho_d, rt_d;
@@ -2440,23 +2340,6 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 VecCopy(rt_n[ei], rt_j);
                 VecAXPY(rt_j, -0.5*dt, Ftemp);
 #endif
-/*
-                if(!V01_w) {
-                    MatTranspose(V10_w, MAT_INITIAL_MATRIX, &V01_w);
-                } else {
-                    MatTranspose(V10_w, MAT_REUSE_MATRIX, &V01_w);
-                }
-                if(!V0_invV01_w) {
-                    MatMatMult(V0_inv, V01_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invV01_w);
-                } else {
-                    MatMatMult(V0_inv, V01_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV01_w);
-                }
-                MatMatMult(V10, V0_invV01_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VB);
-                MatScale(VB, 0.5*dt);
-                MatShift(VB, 1.0);
-                KSPSolve(kspMass, rho_n[ei], rho_j);
-                KSPSolve(kspMass, rt_n[ei] , rt_j );
-*/
 
                 // check the differences
                 VecCopy(velz_j, velz_d);
@@ -2578,8 +2461,6 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     MatDestroy(&LAP              );
     MatDestroy(&AB               );
     MatDestroy(&DEL2             );
-    //MatDestroy(&V01_w            );
-    //MatDestroy(&V0_invV01_w      );
     delete l2_theta;
 }
 
@@ -2730,13 +2611,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
             VecScale(w2, 1.0/SCALE);
             VecDot(l2_rho->vz[ei], w2, &dot);
             loc1 += dot;
-/*
-            VecZeroEntries(w2);
-            MatMult(BA, gv[ei], w2);
-            VecScale(w2, 1.0/SCALE);
-            VecDot(l2_rho->vz[ei], w2, &dot);
-            loc2 += dot;
-*/
+
             AssembleLinearWithRT(ex, ey, l2_rho->vz[ei], VA, true);
             MatMult(VA, velz[ei], zi);
             AssembleLinearInv(ex, ey, VA);
@@ -2767,16 +2642,6 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-/*
-            AssembleLinearInv(ex, ey, VA);
-            MatMult(VA, gv[ei], gi);
-            MatMult(VA, zv[ei], zi);
-            AssembleLinearWithRT(ex, ey, l2_rho->vz[ei], VA, true);
-            MatMult(VA, gi, gRho);
-            VecScale(gRho, 1.0/SCALE);
-            VecDot(zi, gRho, &dot);
-            loc1 += dot;
-*/
             VecDot(zv[ei], l2_rho->vz[ei], &dot);
             loc1 += dot/SCALE;
         }
