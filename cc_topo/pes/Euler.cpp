@@ -30,6 +30,7 @@
 
 //#define THETA_VISC_H
 #define NEW_VERT_FLUX
+//#define EXTRAPOLATE_EXNER
 
 using namespace std;
 
@@ -142,11 +143,12 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
 
     KSPCreate(MPI_COMM_SELF, &kspColA);
     KSPSetOperators(kspColA, VA, VA);
-    KSPSetTolerances(kspColA, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(kspColA, KSPGMRES);
+    //KSPSetTolerances(kspColA, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    //KSPSetType(kspColA, KSPGMRES);
     KSPGetPC(kspColA, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    //PCSetType(pc, PCBJACOBI);
+    //PCBJacobiSetTotalBlocks(pc, n2, NULL);
+    PCSetType(pc, PCLU);
     KSPSetOptionsPrefix(kspColA, "kspColA_");
     KSPSetFromOptions(kspColA);
 
@@ -1340,7 +1342,9 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     L2Vecs* exner_old = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_new = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_tmp = new L2Vecs(geom->nk, topo, geom);
+#ifdef EXTRAPOLATE_EXNER
     L2Vecs* exner_hlf = new L2Vecs(geom->nk, topo, geom);
+#endif
     L2Vecs* Fp        = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* Ft        = new L2Vecs(geom->nk, topo, geom);
 
@@ -1352,9 +1356,12 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecScatterBegin(topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(  topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
 
+#ifdef EXTRAPOLATE_EXNER
         exner_pre->CopyFromHoriz(exner);
         exner_hlf->CopyFromHoriz(exner);
+#endif
     }
+#ifdef EXTRAPOLATE_EXNER
     else {
         for(ii = 0; ii < geom->nk; ii++) {
             VecZeroEntries(exner_hlf->vh[ii]);
@@ -1363,6 +1370,7 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         }
         exner_pre->CopyFromHoriz(exner);
     }
+#endif
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &xu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
@@ -1427,8 +1435,11 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // 2.1 First horiztonal substep
     if(!rank)cout<<"horiztonal step (1).................."<<endl;
     AssembleKEVecs(velx, velz);
-    //HorizRHS(velx, rho_old->vl, rt_old->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+#ifdef EXTRAPOLATE_EXNER
+    HorizRHS(velx, rho_old->vl, rt_old->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+#else
     HorizRHS(velx, rho_old->vl, rt_old->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
+#endif
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         M1->assemble(ii, SCALE);
@@ -1453,8 +1464,11 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // 2.2 Second horiztonal step
     if(!rank)cout<<"horiztonal step (2).................."<<endl;
     AssembleKEVecs(velx_new, velz);
-    //HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+#ifdef EXTRAPOLATE_EXNER
+    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+#else
     HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
+#endif
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         VecZeroEntries(xu);
@@ -1489,8 +1503,11 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // 2.3 Third horiztonal step
     if(!rank)cout<<"horiztonal step (3).................."<<endl;
     AssembleKEVecs(velx_new, velz);
-    //HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+#ifdef EXTRAPOLATE_EXNER
+    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
+#else
     HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
+#endif
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         VecZeroEntries(xu);
@@ -1628,7 +1645,9 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete exner_old;
     delete exner_new;
     delete exner_tmp;
+#ifdef EXTRAPOLATE_EXNER
     delete exner_hlf;
+#endif
     delete Fp;
     delete Ft;
 }
@@ -2665,15 +2684,15 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     char filename[80];
     ofstream file;
     int kk, ex, ey, ei, n2, rank;
-    double keh, kev, pe, ie, k2p;
-    double dot, loc1, loc2;
+    double keh, kev, pe, ie, k2p, p2k;
+    double dot, loc1, loc2, loc3;
     Vec hu, M2Pi, w2, gRho, gi, zi;
     Mat BA;
     L2Vecs* l2_rho = new L2Vecs(geom->nk, topo, geom);
 
     n2 = topo->elOrd*topo->elOrd;
 
-    keh = kev = pe = ie = k2p = 0.0;
+    keh = kev = pe = ie = k2p = p2k = 0.0;
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &w2);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &gRho);
@@ -2701,7 +2720,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     }
 
     // vertical kinetic energy and kinetic to potential exchange
-    loc1 = loc2 = 0.0;
+    loc1 = loc2 = loc3 = 0.0;
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -2724,10 +2743,15 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
             MatMult(VA, zi, gi);
             VecDot(gi, gv[ei], &dot);
             loc2 += dot/SCALE;
+
+            MatMult(V10, gi, w2);
+            VecDot(w2, zv[ei], &dot);
+            loc3 += dot/SCALE;
         }
     }
     MPI_Allreduce(&loc1, &kev, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(&loc2, &k2p, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&loc3, &p2k, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
     // internal energy
     for(kk = 0; kk < geom->nk; kk++) {
@@ -2769,6 +2793,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
         file << pe  << "\t";
         file << ie  << "\t";
         file << k2p << "\t";
+        file << p2k << "\t";
         file << k2i << "\t";
         file << i2k << "\t";
         file << k2i_z << "\t";

@@ -19,7 +19,7 @@
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define NK 30
+#define NK 20
 #define P0 100000.0
 #define RD 287.0
 #define GAMMA 0.005
@@ -266,9 +266,9 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 40.0;
-    int nSteps = 8*24*90;
-    int dumpEvery = 180;
+    double dt = 30.0;
+    int nSteps = 8*24*120;
+    int dumpEvery = 240;
     ofstream file;
     Topo* topo;
     Geom* geom;
