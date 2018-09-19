@@ -95,6 +95,5 @@ class Euler {
         void AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA);
 
         void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
-        void solveMass(double _dt, int ex, int ey, Mat AB, Mat V0_inv, Vec wz, Vec f_rho, Vec rho, Vec f_rt, Vec rt);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
 };
