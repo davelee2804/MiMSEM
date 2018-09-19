@@ -266,9 +266,9 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 30.0;
+    double dt = 60.0;
     int nSteps = 8*24*120;
-    int dumpEvery = 240;
+    int dumpEvery = 180;
     ofstream file;
     Topo* topo;
     Geom* geom;
