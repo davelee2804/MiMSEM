@@ -26,7 +26,8 @@
 #define CV 717.5
 #define SCALE 1.0e+8
 #define MAX_IT 100
-#define VERT_TOL 1.0e-9
+//#define VERT_TOL 1.0e-9
+#define VERT_TOL 1.0e-8
 
 //#define THETA_VISC_H
 //#define EXTRAPOLATE_EXNER
@@ -204,7 +205,8 @@ double Euler::viscosity_vert() {
 
     //return 32.0*dzMaxG*dzMaxG;
     //return 128.0*dzMaxG*dzMaxG;
-    return 320.0*dzMaxG*dzMaxG;
+    //return 320.0*dzMaxG*dzMaxG;
+    return 4.0*300.0*dzMax/M_PI;
 }
 
 // project coriolis term onto 0 forms
@@ -2371,20 +2373,20 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
 
             if(it==MAX_IT) {
-                sprintf(filename, "velocity_z_%.4u_%.5u_%.5u.dat", rank, ei, step);
-                geom->writeColumn(filename, ei, geom->nk-1, velz[ei], false);
-                sprintf(filename, "density_%.4u_%.5u_%.5u.dat", rank, ei, step);
-                geom->writeColumn(filename, ei, geom->nk, rho[ei], true);
-                sprintf(filename, "rhoTheta_%.4u_%.5u_%.5u.dat", rank, ei, step);
-                geom->writeColumn(filename, ei, geom->nk, rt[ei], true);
-                sprintf(filename, "exner_%.4u_%.5u_%.5u.dat", rank, ei, step);
-                geom->writeColumn(filename, ei, geom->nk, exner[ei], true);
-                cout << "vertical solve convergence error... aborting.\n";
+                //sprintf(filename, "velocity_z_%.4u_%.5u_%.5u.dat", rank, ei, step);
+                //geom->writeColumn(filename, ei, geom->nk-1, velz[ei], false);
+                //sprintf(filename, "density_%.4u_%.5u_%.5u.dat", rank, ei, step);
+                //geom->writeColumn(filename, ei, geom->nk, rho[ei], true);
+                //sprintf(filename, "rhoTheta_%.4u_%.5u_%.5u.dat", rank, ei, step);
+                //geom->writeColumn(filename, ei, geom->nk, rt[ei], true);
+                //sprintf(filename, "exner_%.4u_%.5u_%.5u.dat", rank, ei, step);
+                //geom->writeColumn(filename, ei, geom->nk, exner[ei], true);
+                cout << "vertical solve convergence error on rank: " << rank << "... aborting.\n";
                 cout << "\t|eps_w|:        " << eps_1 << endl;
                 cout << "\t|eps_exner|:    " << eps_2 << endl;
                 cout << "\t|eps_rho|:      " << eps_3 << endl;
                 cout << "\t|eps_rhoTheta|: " << eps_4 << endl;
-                abort();
+                //abort();
             }
 
             // kinetic to internal energy exchange diagnostics
