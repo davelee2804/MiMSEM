@@ -138,7 +138,8 @@ double gc_dist(double* x) {
     double phi    = asin(x[2]/RAD_EARTH);
     double lambda = atan2(x[1], x[0]);
 
-    return RAD_EARTH/cos(sin(PHI_C)*sin(phi) + cos(PHI_C)*cos(phi)*cos(lambda - LAMBDA_C));
+    //return RAD_EARTH/cos(sin(PHI_C)*sin(phi) + cos(PHI_C)*cos(phi)*cos(lambda - LAMBDA_C));
+    return RAD_EARTH*acos(sin(PHI_C)*sin(phi) + cos(PHI_C)*cos(phi)*cos(lambda - LAMBDA_C));
 }
 
 double u_pert(double* x, int ki) {
@@ -154,6 +155,8 @@ double u_pert(double* x, int ki) {
     if(fabs(gc - 0.0           ) < 1.0e-4) return 0.0;
     if(fabs(gc - RAD_EARTH*M_PI) < 1.0e-4) return 0.0;
 
+    if(gc > D0) return 0.0;
+
     return -16.0*VP*zt/(3.0*sqrt(3.0))*ct*ct*ct*st*fac/sin(gc/RAD_EARTH);
 }
 
@@ -168,6 +171,8 @@ double v_pert(double* x, int ki) {
 
     if(fabs(gc - 0.0           ) < 1.0e-4) return 0.0;
     if(fabs(gc - RAD_EARTH*M_PI) < 1.0e-4) return 0.0;
+
+    if(gc > D0) return 0.0;
 
     return +16.0*VP*zt/(3.0*sqrt(3.0))*ct*ct*ct*st*fac/sin(gc/RAD_EARTH);
 }
@@ -267,8 +272,8 @@ int main(int argc, char** argv) {
     bool dump;
     int startStep = atoi(argv[1]);
     double dt = 120.0;
-    int nSteps = 8*24*120;
-    int dumpEvery = 120;
+    int nSteps = 12*24*30;
+    int dumpEvery = 180;
     ofstream file;
     Topo* topo;
     Geom* geom;
