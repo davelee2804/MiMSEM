@@ -204,7 +204,9 @@ double Euler::viscosity_vert() {
     MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
     //return 4.0*300.0*dzMax/M_PI;
-    return 1.0*300.0*dzMax/M_PI;
+    //return 1.0*300.0*dzMax/M_PI;
+    //return 4.0*1.0*dzMax/M_PI;
+    return 1.0*1.0*dzMax/M_PI;
 }
 
 // project coriolis term onto 0 forms
@@ -451,6 +453,8 @@ void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             MatZeroEntries(BA);
             ei = ey*topo->nElsX + ex;
+AssembleConLinWithW(ex, ey, velz[ei], BA);
+/*
             VecGetArray(velz[ei], &kvArray);
 
             Q->assemble(ex, ey);
@@ -522,9 +526,11 @@ void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
             VecRestoreArray(velz[ei], &kvArray);
             MatAssemblyBegin(BA, MAT_FINAL_ASSEMBLY);
             MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
+*/
 
             VecZeroEntries(Kv2);
             MatMult(BA, velz[ei], Kv2);
+VecScale(Kv2, 0.5);
 
             // add the vertical contribution to the horiztonal vector
             VertToHoriz2(ex, ey, 0, geom->nk, Kv2, Kh_l);
@@ -2266,14 +2272,14 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                     MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
                 }
 
-                AssembleConstWithRho(ex, ey, exner_n[ei], V1_Pi);
+                if(it == 0) AssembleConstWithRho(ex, ey, exner_n[ei], V1_Pi);
                 if(!V1_PiDV0_invV0_rt) {
                     MatMatMult(V1_Pi, DV0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V1_PiDV0_invV0_rt);
                 } else {
                     MatMatMult(V1_Pi, DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V1_PiDV0_invV0_rt);
                 }
 
-                AssembleConstWithRhoInv(ex, ey, rt_n[ei], V1_rt_inv);
+                if(it == 0) AssembleConstWithRhoInv(ex, ey, rt_n[ei], V1_rt_inv);
                 if(!DIV) {
                     MatMatMult(V1_rt_inv, V1_PiDV0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DIV);
                 } else {
@@ -2310,7 +2316,8 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 VecAYPX(exner_j, -0.5*dt*RD/CV, exner_n[ei]);
 
                 // update the density and the density weighted potential temperature
-                AssembleLinearWithRT(ex, ey, rho_j, V0_rt, true);
+                //AssembleLinearWithRT(ex, ey, rho_j, V0_rt, true);
+                AssembleLinearWithRT(ex, ey, rho[ei], V0_rt, true);
 
                 MatZeroEntries(V0_invV0_rt);
                 MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
@@ -2379,11 +2386,12 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 //geom->writeColumn(filename, ei, geom->nk, rt[ei], true);
                 //sprintf(filename, "exner_%.4u_%.5u_%.5u.dat", rank, ei, step);
                 //geom->writeColumn(filename, ei, geom->nk, exner[ei], true);
-                cout << "vertical solve convergence error on rank: " << rank << "... aborting.\n";
-                cout << "\t|eps_w|:        " << eps_1 << endl;
-                cout << "\t|eps_exner|:    " << eps_2 << endl;
-                cout << "\t|eps_rho|:      " << eps_3 << endl;
-                cout << "\t|eps_rhoTheta|: " << eps_4 << endl;
+                //cout << "vertical solve convergence error on rank: " << rank << "... aborting.\n";
+                //cout << "\t|eps_w|:        " << eps_1 << endl;
+                //cout << "\t|eps_exner|:    " << eps_2 << endl;
+                //cout << "\t|eps_rho|:      " << eps_3 << endl;
+                //cout << "\t|eps_rhoTheta|: " << eps_4 << endl;
+                cout << "vertical solve convergence error on rank: " << rank << "\t|eps_w|: " << eps_1 << endl;
                 //abort();
             }
 
