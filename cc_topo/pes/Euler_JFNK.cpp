@@ -410,13 +410,11 @@ Euler::~Euler() {
 /*
 */
 void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
-    int ex, ey, ei, kk, mp1, mp12, n2;
+    int ex, ey, ei, kk, n2;
     Mat BA;
     Vec velx_l, *Kh_l, Kv2;
 
     n2   = topo->elOrd*topo->elOrd;
-    mp1  = quad->n + 1;
-    mp12 = mp1*mp1;
 
     VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &Kv2);
 
@@ -2600,11 +2598,13 @@ void Euler::DestroyVertOps() {
 }
 
 void UnpackX(Vec x, Vec w, Vec rho, Vec rt, Vec exner, int n2, int nk) {
-    int ii, kk, shift_exner;
+    int ii, kk, shift_exner, shift_rho, shift_rt;
     const PetscScalar *xArray;
-    PetscScalar *wArray, *exnerArray;
+    PetscScalar *wArray, *exnerArray, *rhoArray, *rtArray;
 
     shift_exner = n2*(nk-1);
+    shift_rho   = n2*(2*nk-1);
+    shift_rt    = n2*(3*nk-1);
 
     VecGetArrayRead(x, &xArray);
 
@@ -2619,21 +2619,29 @@ void UnpackX(Vec x, Vec w, Vec rho, Vec rt, Vec exner, int n2, int nk) {
 
     // get the other arrays
     VecGetArray(exner, &exnerArray);
+    VecGetArray(rho, &rhoArray);
+    VecGetArray(rt, &rtArray);
     for(kk = 0; kk < nk; kk++) {
         for(ii = 0; ii < n2; ii++) {
             exnerArray[kk*n2+ii] = xArray[shift_exner + kk*n2 + ii];
+            rhoArray[kk*n2+ii]   = xArray[shift_rho   + kk*n2 + ii];
+            rtArray[kk*n2+ii]    = xArray[shift_rt    + kk*n2 + ii];
         }
     }
     VecRestoreArray(exner, &exnerArray);
+    VecRestoreArray(rho, &rhoArray);
+    VecRestoreArray(rt, &rtArray);
 
     VecRestoreArrayRead(x, &xArray);
 }
 
 void RepackX(Vec x, Vec w, Vec rho, Vec rt, Vec exner, int n2, int nk) {
-    int ii, kk, shift_exner;
-    PetscScalar *xArray, *wArray, *exnerArray;
+    int ii, kk, shift_exner, shift_rho, shift_rt;
+    PetscScalar *xArray, *wArray, *exnerArray, *rhoArray, *rtArray;
 
     shift_exner = n2*(nk-1);
+    shift_rho   = n2*(2*nk-1);
+    shift_rt    = n2*(3*nk-1);
 
     VecGetArray(x, &xArray);
 
@@ -2648,12 +2656,18 @@ void RepackX(Vec x, Vec w, Vec rho, Vec rt, Vec exner, int n2, int nk) {
 
     // get the other arrays
     VecGetArray(exner, &exnerArray);
+    VecGetArray(rho, &rhoArray);
+    VecGetArray(rt, &rtArray);
     for(kk = 0; kk < nk; kk++) {
         for(ii = 0; ii < n2; ii++) {
             xArray[shift_exner + kk*n2 + ii] = exnerArray[kk*n2+ii];
+            xArray[shift_rho   + kk*n2 + ii] = rhoArray[kk*n2+ii];
+            xArray[shift_rt    + kk*n2 + ii] = rtArray[kk*n2+ii];
         }
     }
     VecRestoreArray(exner, &exnerArray);
+    VecRestoreArray(rho, &rhoArray);
+    VecRestoreArray(rt, &rtArray);
 
     VecRestoreArray(x, &xArray);
 }
@@ -2696,8 +2710,8 @@ PetscErrorCode _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
     VecAXPY(euler->fw, 0.5*euler->dt, euler->wTmp);
 
     // viscous term 
-    MatMult(euler->VISC, euler->wNew, euler->wTmp);
-    VecAXPY(euler->fw, -0.5*euler->dt*euler->vert_visc, euler->wTmp);
+    //MatMult(euler->VISC, euler->wNew, euler->wTmp);
+    //VecAXPY(euler->fw, -0.5*euler->dt*euler->vert_visc, euler->wTmp);
 
     // assemble the density
     euler->AssembleLinearWithRT(euler->eX, euler->eY, euler->rhoNew, euler->VA_rho, true);
@@ -2708,7 +2722,6 @@ PetscErrorCode _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
     KSPSolve(euler->kspColA, euler->wTmp, euler->wRho);
 #endif
     MatMult(euler->V10, euler->wRho, euler->pTmp);
-/*
 #ifdef ADV_MASS_MAT
     VecAYPX(euler->pTmp, 0.5*euler->dt, euler->rhoNew);
     MatMult(euler->VB, euler->pTmp, euler->fRho);
@@ -2716,9 +2729,8 @@ PetscErrorCode _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
     VecCopy(euler->rhoNew, euler->fRho);
     VecAXPY(euler->fRho, 0.5*euler->dt, euler->pTmp);
 #endif
-*/
-    VecCopy(euler->rhoOld, euler->rhoNew);
-    VecAXPY(euler->rhoNew, -0.5*euler->dt, euler->pTmp);
+    //VecCopy(euler->rhoOld, euler->rhoNew);
+    //VecAXPY(euler->rhoNew, -0.5*euler->dt, euler->pTmp);
 
     // assemble the density weighted potential temperature
     MatMult(euler->VA_theta, euler->wRho, euler->wTmp);
@@ -2728,7 +2740,6 @@ PetscErrorCode _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
     KSPSolve(euler->kspColA, euler->wTmp, euler->wTheta);
 #endif
     MatMult(euler->V10, euler->wTheta, euler->dwTheta);
-/*
 #ifdef ADV_MASS_MAT
     VecAYPX(euler->dwTheta, 0.5*euler->dt, euler->rtNew);
     MatMult(euler->VB, euler->dwTheta, euler->fRT);
@@ -2736,9 +2747,8 @@ PetscErrorCode _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
     VecCopy(euler->rtNew, euler->fRT);
     VecAXPY(euler->fRT, 0.5*euler->dt, euler->dwTheta);
 #endif
-*/
-    VecCopy(euler->rtOld, euler->rtNew);
-    VecAXPY(euler->rtNew, -0.5*euler->dt, euler->dwTheta);
+    //VecCopy(euler->rtOld, euler->rtNew);
+    //VecAXPY(euler->rtNew, -0.5*euler->dt, euler->dwTheta);
 
     // assemble the exner pressure
     MatMult(euler->VB_Pi, euler->dwTheta, euler->pTmp);
@@ -2760,8 +2770,8 @@ PetscErrorCode _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
 void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n) {
     int ei, rank, its;
     int n2 = topo->elOrd*topo->elOrd;
-    int nf = (2*geom->nk - 1)*n2;
-    double loc1, loc2, dot;
+    int nf = (4*geom->nk - 1)*n2;
+    double loc1, loc2, dot, norm;
     Vec x, b, f;
     Mat J;
     Mat DTV1 = NULL;
@@ -2784,7 +2794,7 @@ void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n
     SNESCreate(MPI_COMM_SELF, &snes);
     SNESSetFunction(snes, f, _snes_function, (void*)this);
     SNESSetJacobian(snes, J, J, _snes_jacobian, (void*)this);
-    SNESSetTolerances(snes, 1.0e-12, 1.0e-12, 1.0e-8, 200, 2000);
+    //SNESSetTolerances(snes, 1.0e-12, 1.0e-12, 1.0e-8, 200, 2000);
     SNESSetFromOptions(snes);
 
     loc1 = loc2 = k2i_z = i2k_z = 0.0;
@@ -2827,8 +2837,8 @@ void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n
             VecCopy(rt_n[ei], bRT);
 #endif
 
-            AssembleConstWithRho(eX, eY, exnerOld, VB_Pi);
-            AssembleConstWithRhoInv(eX, eY, rt_n[ei], VB_rt);
+            AssembleConstWithRho(eX, eY, exner_n[ei], VB_Pi);
+            AssembleConstWithRho(eX, eY, rt_n[ei], VB_rt);
             MatMult(VB_rt, exner_n[ei], bExner);
 
             VecCopy(rho[ei], rhoNew);
@@ -2854,7 +2864,8 @@ void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n
             if(!rank) {
                 SNESGetIterationNumber(snes, &its);
                 SNESGetConvergedReason(snes, &reason);
-                cout << "SNES converged as " << SNESConvergedReasons[reason] << "\t iteration: " << its << endl;
+                VecNorm(velz[ei], NORM_2, &norm);
+                cout << "SNES converged as " << SNESConvergedReasons[reason] << "\titeration: " << its << "\t|w|: " << norm << endl;
             }
         }
     }
