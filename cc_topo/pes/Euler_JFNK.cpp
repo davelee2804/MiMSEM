@@ -2752,8 +2752,10 @@ PetscErrorCode _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
 
     // assemble the exner pressure
     MatMult(euler->VB_Pi, euler->dwTheta, euler->pTmp);
-    MatMult(euler->VB_rt, euler->exnerNew, euler->fExner);
-    VecAXPY(euler->fExner, 0.5*euler->dt*RD/CV, euler->pTmp);
+    //MatMult(euler->VB_rt, euler->exnerNew, euler->fExner);
+    //VecAXPY(euler->fExner, 0.5*euler->dt*RD/CV, euler->pTmp);
+    MatMult(euler->VB_rt, euler->pTmp, euler->fExner);
+    VecAYPX(euler->fExner, 0.5*euler->dt*RD/CV, euler->exnerNew);
 
     // assemble f
     RepackX(f, euler->fw, euler->fRho, euler->fRT, euler->fExner, n2, geom->nk);
@@ -2838,8 +2840,9 @@ void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n
 #endif
 
             AssembleConstWithRho(eX, eY, exner_n[ei], VB_Pi);
-            AssembleConstWithRho(eX, eY, rt_n[ei], VB_rt);
-            MatMult(VB_rt, exner_n[ei], bExner);
+            AssembleConstWithRhoInv(eX, eY, rt_n[ei], VB_rt);
+            //MatMult(VB_rt, exner_n[ei], bExner);
+            VecCopy(exner_n[ei], bExner);
 
             VecCopy(rho[ei], rhoNew);
             VecCopy(rt[ei], rtNew);
