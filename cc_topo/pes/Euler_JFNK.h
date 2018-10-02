@@ -94,9 +94,7 @@ class Euler {
         void AssembleConstWithRho(int ex, int ey, Vec rho, Mat A);
         void AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA);
 
-        void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
-
 
         Mat VBA_w;
         Mat DTVBA_w;
