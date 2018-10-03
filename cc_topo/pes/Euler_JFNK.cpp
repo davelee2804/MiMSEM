@@ -1866,8 +1866,7 @@ void Euler::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                     wb += wArray[(kk-1)*n2+jj]*gamma;
                 }
-                Q0[ii][ii] *= wb/det; // scale by 0.5 outside
-                Q0[ii][ii] *= 0.5;
+                Q0[ii][ii] *= 0.5*wb/det; // scale by 0.5 outside
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1895,8 +1894,7 @@ void Euler::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                     wt += wArray[(kk+0)*n2+jj]*gamma;
                 }
-                Q0[ii][ii] *= wt/det; // scale by 0.5 outside
-                Q0[ii][ii] *= 0.5;
+                Q0[ii][ii] *= 0.5*wt/det; // scale by 0.5 outside
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -1953,8 +1951,7 @@ void Euler::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_internal
             if(!do_internal) { // TODO: don't understand this scaling ?!?
                 rk *= 1.0/geom->thick[kk][inds0[ii]];
             }
-            Q0[ii][ii] *= rk/det;
-            Q0[ii][ii] *= 0.5;
+            Q0[ii][ii] *= 0.5*rk/det;
         }
 
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -2175,12 +2172,6 @@ void Euler::SetupVertOps() {
     MatSetSizes(VBA_w, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(VBA_w, (geom->nk-1)*n2, PETSC_NULL);
 
-    //MatCreate(MPI_COMM_SELF, &DTVBA_w);
-    //MatSetType(DTVBA_w, MATSEQAIJ);
-    //MatSetSizes(DTVBA_w, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    //MatSeqAIJSetPreallocation(DTVBA_w, 3*n2, PETSC_NULL);
-    DTVBA_w = NULL;
-
     MatCreate(MPI_COMM_SELF, &VA_inv);
     MatSetType(VA_inv, MATSEQAIJ);
     MatSetSizes(VA_inv, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
@@ -2214,7 +2205,7 @@ void Euler::SetupVertOps() {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &pTmp);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &pTmp2);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wTmp);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wTmp2);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &pGrad);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wRho);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wTheta);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &dwTheta);
@@ -2239,7 +2230,6 @@ void Euler::SetupVertOps() {
 
 void Euler::DestroyVertOps() {
     MatDestroy(&VBA_w);
-    MatDestroy(&DTVBA_w);
     MatDestroy(&VA_inv);
     MatDestroy(&VAB);
     MatDestroy(&VA_theta);
@@ -2250,7 +2240,7 @@ void Euler::DestroyVertOps() {
     VecDestroy(&pTmp);
     VecDestroy(&pTmp2);
     VecDestroy(&wTmp);
-    VecDestroy(&wTmp2);
+    VecDestroy(&pGrad);
     VecDestroy(&wRho);
     VecDestroy(&wTheta);
     VecDestroy(&dwTheta);
@@ -2375,25 +2365,21 @@ if(!rank)cout<<euler->eY*euler->topo->nElsX+euler->eX<<":\t|w|: "<<norm_1<<"\t|p
 
     // second term
     euler->AssembleConLinWithW(euler->eX, euler->eY, euler->wNew, euler->VBA_w);
-    if(!euler->DTVBA_w) {
-        MatMatMult(euler->V01, euler->VBA_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &euler->DTVBA_w);
-    } else {
-        MatMatMult(euler->V01, euler->VBA_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &euler->DTVBA_w);
-    }
-    MatMult(euler->DTVBA_w, euler->wNew, euler->wTmp);
+    MatMult(euler->VBA_w, euler->wNew, euler->pTmp);
+    MatMult(euler->V01, euler->pTmp, euler->wTmp);
     VecAXPY(euler->fw, +0.25*euler->dt, euler->wTmp);
 
     // pressure gradient term
     MatMult(euler->VB, euler->exnerNew, euler->pTmp);
     MatMult(euler->V01, euler->pTmp, euler->wTmp);
 #ifdef VERT_MASS_INV
-    MatMult(euler->VA_inv, euler->wTmp, euler->wTmp2);
+    MatMult(euler->VA_inv, euler->wTmp, euler->pGrad);
 #else
-    KSPSolve(euler->kspColA, euler->wTmp, euler->wTmp2);
+    KSPSolve(euler->kspColA, euler->wTmp, euler->pGrad);
 #endif
     euler->diagThetaVert(euler->eX, euler->eY, euler->VAB, euler->rhoNew, euler->rtNew, euler->theta);
     euler->AssembleLinearWithTheta(euler->eX, euler->eY, euler->theta, euler->VA_theta);
-    MatMult(euler->VA_theta, euler->wTmp2, euler->wTmp);
+    MatMult(euler->VA_theta, euler->pGrad, euler->wTmp);
     VecAXPY(euler->fw, 0.5*euler->dt, euler->wTmp);
 
     // viscous term 
@@ -2428,8 +2414,9 @@ if(!rank)cout<<euler->eY*euler->topo->nElsX+euler->eX<<":\t|w|: "<<norm_1<<"\t|p
 #endif
     MatMult(euler->V10, euler->wTheta, euler->dwTheta);
 #ifdef ADV_MASS_MAT
-    VecAYPX(euler->dwTheta, 0.5*euler->dt, euler->rtNew);
-    MatMult(euler->VB, euler->dwTheta, euler->fRT);
+    VecCopy(euler->rtNew, euler->pTmp);
+    VecAXPY(euler->pTmp, 0.5*euler->dt, euler->dwTheta);
+    MatMult(euler->VB, euler->pTmp, euler->fRT);
 #else
     VecCopy(euler->rtNew, euler->fRT);
     VecAXPY(euler->fRT, 0.5*euler->dt, euler->dwTheta);
@@ -2501,18 +2488,17 @@ void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n
             VecCopy(exner_n[ei], exnerOld);
 
             AssembleLinear(eX, eY, VA);
+#ifdef VERT_MASS_INV
             AssembleLinearInv(eX, eY, VA_inv);
+#endif
             AssembleConst(eX, eY, VB);
             AssembleLinCon(eX, eY, VAB);
 
-            if(!DTV1) {
+            if(!ei) {
                 MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
-            } else {
-                MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
-            }
-            if(!VISC) {
                 MatMatMult(DTV1, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VISC);
             } else {
+                MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
                 MatMatMult(DTV1, V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VISC);
             }
 
@@ -2552,7 +2538,7 @@ void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n
             VecCopy(exnerNew, exner[ei]);
 
             // kinetic to internal energy exchange diagnostics
-            MatMult(VA, wTmp2, wTmp);
+            MatMult(VA, pGrad, wTmp);
             VecScale(wTmp, 1.0/SCALE);
             VecDot(wTmp, wTheta, &dot);
             loc1 += dot;
