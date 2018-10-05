@@ -2417,7 +2417,7 @@ if(!rank)cout<<euler->eY*euler->topo->nElsX+euler->eX<<":\t|w|: "<<norm_1<<"\t|p
     MatMult(euler->VB, euler->exnerNew, euler->fExner);
     euler->Assemble_EOS_RHS(euler->eX, euler->eY, euler->rtNew, euler->eosRhs);
     VecAXPY(euler->fExner, -1.0, euler->eosRhs);
-    VecScale(euler->fExner, 0.5*euler->dt);
+    //VecScale(euler->fExner, 0.5*euler->dt);
 
     // assemble f
     RepackX(f, euler->fw, euler->fRho, euler->fRT, euler->fExner, n2, geom->nk);
@@ -2625,14 +2625,9 @@ void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n
 
             VecScale(x, 1.0/SCALE);
             VecScale(b, 1.0/SCALE);
-
             SNESSolve(snes, b, x);
-            //UnpackX(x, velz[ei], rho[ei], rt[ei], exner[ei], n2, geom->nk);
-
-            VecCopy(wNew, velz[ei]);
-            VecCopy(rhoNew, rho[ei]);
-            VecCopy(rtNew, rt[ei]);
-            VecCopy(exnerNew, exner[ei]);
+            VecScale(x, SCALE);
+            UnpackX(x, velz[ei], rho[ei], rt[ei], exner[ei], n2, geom->nk);
 
             // kinetic to internal energy exchange diagnostics
             MatMult(VA, pGrad, wTmp);
