@@ -17,7 +17,7 @@
 #include "L2Vecs.h"
 #include "ElMats.h"
 #include "Assembly.h"
-#include "Euler.h"
+#include "Euler_JFNK.h"
 
 #define RAD_EARTH 6371220.0
 #define GRAVITY 9.80616
@@ -1240,6 +1240,7 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     // 1.  First vertical half step
     if(!rank)cout<<"vertical half step (1)..............."<<endl;
     AssembleKEVecs(velx, velz);
+    DiagExner(rt_old, exner_old);
     VertSolve_JFNK(velz_new, rho_new->vz, rt_new->vz, exner_new->vz, velz, rho_old->vz, rt_old->vz, exner_old->vz);
 
     rho_new->VertToHoriz();
@@ -1269,6 +1270,7 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
 #ifdef EXTRAPOLATE_EXNER
     HorizRHS(velx, rho_old->vl, rt_old->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
 #else
+    DiagExner(rt_old, exner_new);
     HorizRHS(velx, rho_old->vl, rt_old->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
 #endif
     for(ii = 0; ii < geom->nk; ii++) {
@@ -1287,7 +1289,7 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecAXPY(rt_new->vh[ii], -dt, Ft->vh[ii]);
     }
     Ft->UpdateLocal();
-    SolveExner(rt_old->vl, Ft->vl, exner_old->vh, exner_new->vh, dt);
+    //SolveExner(rt_old->vl, Ft->vl, exner_old->vh, exner_new->vh, dt);
 
     rho_new->UpdateLocal();
     rt_new->UpdateLocal();
@@ -1298,6 +1300,7 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
 #ifdef EXTRAPOLATE_EXNER
     HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
 #else
+    DiagExner(rt_new, exner_new);
     HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
 #endif
     for(ii = 0; ii < geom->nk; ii++) {
@@ -1321,12 +1324,12 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecAXPY(rt_new->vh[ii], -0.25*dt, Ft->vh[ii]);
     }
     Ft->UpdateLocal();
-    for(ii = 0; ii < geom->nk; ii++) {
-        VecZeroEntries(exner_tmp->vh[ii]);
-        VecAXPY(exner_tmp->vh[ii], 0.75, exner_old->vh[ii]);
-        VecAXPY(exner_tmp->vh[ii], 0.25, exner_new->vh[ii]);
-    }
-    SolveExner(rt_old->vl, Ft->vl, exner_tmp->vh, exner_new->vh, 0.25*dt);
+    //for(ii = 0; ii < geom->nk; ii++) {
+    //    VecZeroEntries(exner_tmp->vh[ii]);
+    //    VecAXPY(exner_tmp->vh[ii], 0.75, exner_old->vh[ii]);
+    //    VecAXPY(exner_tmp->vh[ii], 0.25, exner_new->vh[ii]);
+    //}
+    //SolveExner(rt_old->vl, Ft->vl, exner_tmp->vh, exner_new->vh, 0.25*dt);
 
     rho_new->UpdateLocal();
     rt_new->UpdateLocal();
@@ -1337,6 +1340,7 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
 #ifdef EXTRAPOLATE_EXNER
     HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_hlf->vh, Fu, Fp->vh, Ft->vh);
 #else
+    DiagExner(rt_new, exner_new);
     HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
 #endif
     for(ii = 0; ii < geom->nk; ii++) {
@@ -1360,12 +1364,12 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecAXPY(rt_new->vh[ii], (-2.0/3.0)*dt, Ft->vh[ii]);
     }
     Ft->UpdateLocal();
-    for(ii = 0; ii < geom->nk; ii++) {
-        VecZeroEntries(exner_tmp->vh[ii]);
-        VecAXPY(exner_tmp->vh[ii], 1.0/3.0, exner_old->vh[ii]);
-        VecAXPY(exner_tmp->vh[ii], 2.0/3.0, exner_new->vh[ii]);
-    }
-    SolveExner(rt_old->vl, Ft->vl, exner_tmp->vh, exner_new->vh, (2.0/3.0)*dt);
+    //for(ii = 0; ii < geom->nk; ii++) {
+    //    VecZeroEntries(exner_tmp->vh[ii]);
+    //    VecAXPY(exner_tmp->vh[ii], 1.0/3.0, exner_old->vh[ii]);
+    //    VecAXPY(exner_tmp->vh[ii], 2.0/3.0, exner_new->vh[ii]);
+    //}
+    //SolveExner(rt_old->vl, Ft->vl, exner_tmp->vh, exner_new->vh, (2.0/3.0)*dt);
 
     for(ii = 0; ii < geom->nk; ii++) {
         VecCopy(velx_new[ii], velx[ii]);
@@ -1394,6 +1398,7 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
 
     if(!rank)cout<<"vertical half step (2)..............."<<endl;
     AssembleKEVecs(velx, velz);
+    DiagExner(rt_old, exner_old);
     VertSolve_JFNK(velz_new, rho_new->vz, rt_new->vz, exner_new->vz, velz, rho_old->vz, rt_old->vz, exner_old->vz);
 
     rho_new->VertToHoriz();
@@ -2715,4 +2720,67 @@ void Euler::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs) {
     }
     VecRestoreArray(rt, &rArray);
     VecRestoreArray(eos_rhs, &eArray);
+}
+
+void Euler::AssembleConstInv(int ex, int ey, Mat B) {
+    int ii, kk, ei, mp1, mp12, n2;
+    int *inds0;
+    double det;
+    int inds2k[99];
+
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+    n2    = topo->elOrd*topo->elOrd;
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    Q->assemble(ex, ey);
+
+    MatZeroEntries(B);
+
+    // assemble the matrices
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+        }
+        // assemble the piecewise constant mass matrix for level k
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Inv(WtQW, WtQWinv, n2);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+    }
+    MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+}
+
+void Euler::DiagExner(L2Vecs* rt, L2Vecs* exner) {
+    int ex, ey, ei;
+    int n2 = topo->elOrd*topo->elOrd;
+    Vec eos_rhs;
+
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*n2, &eos_rhs);
+
+    rt->UpdateLocal();
+    rt->HorizToVert();
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            Assemble_EOS_RHS(ex, ey, rt->vz[ei], eos_rhs);
+            AssembleConstInv(ex, ey, VB);
+            MatMult(VB, eos_rhs, exner->vz[ei]);
+        }
+    }
+
+    VecDestroy(&eos_rhs);
+
+    exner->VertToHoriz();
+    exner->UpdateGlobal();
 }

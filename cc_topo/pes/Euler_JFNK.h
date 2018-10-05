@@ -135,4 +135,6 @@ class Euler {
         void VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
         void AssemblePreconditioner(Vec rt, Mat P);
         void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs);
+        void AssembleConstInv(int ex, int ey, Mat B);
+        void DiagExner(L2Vecs* rt, L2Vecs* exner);
 };
