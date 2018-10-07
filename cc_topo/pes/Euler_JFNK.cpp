@@ -28,8 +28,6 @@
 #define P0 100000.0
 #define SCALE 1.0e+8
 
-//#define THETA_VISC_H
-
 using namespace std;
 
 Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
@@ -558,22 +556,16 @@ void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux) {
     VecDestroy(&Fh);
 }
 
-void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
+void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* exner) {
     int kk;
     double dot;
-    Vec pu, Fh, dF, theta_l, theta_g, dTheta, rho_dTheta_1, rho_dTheta_2, d2Theta;
+    Vec pu, Fh, dF, theta_l;
 
     // compute the horiztonal mass fluxes
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dF);
-    if(rho_l) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_g);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_1);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_2);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &d2Theta);
-    }
 
     for(kk = 0; kk < geom->nk; kk++) {
         VecZeroEntries(theta_l);
@@ -592,35 +584,12 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
         VecScale(dF, 1.0/SCALE);
         VecDot(exner[kk], dF, &dot);
         i2k += dot;
-
-        // apply horiztonal viscosity
-        if(rho_l) {
-            VecScatterBegin(topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_FORWARD);
-            VecScatterEnd(  topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_FORWARD);
-
-            M2->assemble(kk, SCALE, false);
-            grad(false, theta_g, &dTheta, kk);
-            F->assemble(rho_l[kk], kk, true, SCALE);
-            MatMult(F->M, dTheta, rho_dTheta_1);
-
-            KSPSolve(ksp1, rho_dTheta_1, rho_dTheta_2);
-            MatMult(EtoF->E21, rho_dTheta_2, d2Theta);
-            VecAXPY(Fp[kk], del2, d2Theta);
-
-            VecDestroy(&dTheta);
-        }
     }
 
     VecDestroy(&pu);
     VecDestroy(&Fh);
     VecDestroy(&dF);
     VecDestroy(&theta_l);
-    if(rho_l) {
-        VecDestroy(&theta_g);
-        VecDestroy(&rho_dTheta_1);
-        VecDestroy(&rho_dTheta_2);
-        VecDestroy(&d2Theta);
-    }
 }
 
 /*
@@ -1107,11 +1076,7 @@ void Euler::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp,
     diagTheta(rho, rt, theta);
 
     massRHS(velx, rho, Fp, Flux);
-#ifdef THETA_VISC_H
-    tempRHS(Flux, theta, Ft, rho,  exner);
-#else
-    tempRHS(Flux, theta, Ft, NULL, exner);
-#endif
+    tempRHS(Flux, theta, Ft, exner);
 
     for(kk = 0; kk < geom->nk; kk++) {
         horizMomRHS(velx[kk], theta, exner[kk], kk, Fu[kk], Flux[kk]);
@@ -2147,6 +2112,17 @@ void Euler::SetupVertOps() {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rtOld);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &exnerOld);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &eosRhs);
+
+    // preconditioner matrices
+    DW2 = NULL;
+    DTVB = NULL;
+    VA_invDTVB = NULL;
+    GRAD = NULL;
+    VA_invVA_rt = NULL;
+    DVA_invVA_rt = NULL;
+    VB_PiDVA_invVA_rt = NULL;
+    DIV = NULL;
+    LAP = NULL;
 }
 
 void Euler::DestroyVertOps() {
@@ -2182,6 +2158,17 @@ void Euler::DestroyVertOps() {
     VecDestroy(&rtOld);
     VecDestroy(&exnerOld);
     VecDestroy(&eosRhs);
+
+    // preconditioner matrices
+    MatDestroy(&DW2);
+    MatDestroy(&DTVB);
+    MatDestroy(&VA_invDTVB);
+    MatDestroy(&GRAD);
+    MatDestroy(&VA_invVA_rt);
+    MatDestroy(&DVA_invVA_rt);
+    MatDestroy(&VB_PiDVA_invVA_rt);
+    MatDestroy(&DIV);
+    MatDestroy(&LAP);
 }
 
 void UnpackX(Vec x, Vec w, Vec rho, Vec rt, Vec exner, int n2, int nk) {
@@ -2263,19 +2250,6 @@ PetscErrorCode _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
     VecScale(euler->rtNew, SCALE);
     VecScale(euler->exnerNew, SCALE);
 
-/*{
-int rank;
-double norm_1, norm_2, norm_3, norm_4;
-MPI_Comm_rank(MPI_COMM_WORLD,&rank);
-//VecNorm(euler->wNew,NORM_2,&norm_1);
-//VecNorm(euler->rhoNew,NORM_2,&norm_2);
-//VecNorm(euler->rtNew,NORM_2,&norm_3);
-//VecNorm(euler->exnerNew,NORM_2,&norm_4);
-//if(!rank)cout<<euler->eY*euler->topo->nElsX+euler->eX<<":\t|w|: "<<norm_1<<"\t|p|: "<<norm_2<<"\t|T|: "<<norm_3<<"\t|E|: "<<norm_4<<endl;
-SNESGetFunctionNorm(snes,&norm_1);
-if(!rank)cout<<euler->eY*euler->topo->nElsX+euler->eX<<"\t|x|: "<<norm_1<<endl;
-}*/
-
     // assemble the vertical velocity - first term
     MatMult(euler->VA, euler->wNew, euler->fw);
 
@@ -2337,16 +2311,6 @@ if(!rank)cout<<euler->eY*euler->topo->nElsX+euler->eX<<"\t|x|: "<<norm_1<<endl;
 #endif
 
     // assemble the exner pressure
-/*
-#ifdef ADV_MASS_MAT
-    MatMult(euler->VB_rt, euler->exnerNew, euler->fExner);
-    MatMult(euler->VB_Pi, euler->dwTheta, euler->pTmp);
-    VecAXPY(euler->fExner, 0.5*euler->dt*RD/CV, euler->pTmp);
-#else
-    MatMult(euler->VB_rt, euler->pTmp, euler->fExner);
-    VecAYPX(euler->fExner, 0.5*euler->dt*RD/CV, euler->exnerNew);
-#endif
-*/
     MatMult(euler->VB, euler->exnerNew, euler->fExner);
     euler->Assemble_EOS_RHS(euler->eX, euler->eY, euler->rtNew, euler->eosRhs);
     VecAXPY(euler->fExner, -1.0, euler->eosRhs);
@@ -2369,7 +2333,6 @@ void Euler::AssemblePreconditioner(Mat P) {
     const PetscInt *colInds;
     const PetscScalar *colVals;
     double vals2[100];
-    Mat DW2;
 
     // generate index sets
     index = 0;
@@ -2387,34 +2350,41 @@ void Euler::AssemblePreconditioner(Mat P) {
     }
 
     // assemble the velocity PC
-    Mat DTVB;
-    Mat VA_invDTVB;
-    Mat GRAD;
-    Mat VA_invVA_rt;
-    Mat DVA_invVA_rt;
-    Mat VB_PiDVA_invVA_rt;
-    Mat DIV;
-    Mat LAP;
-
     diagThetaVert(eX, eY, VAB, rhoNew, rtNew, theta);
     AssembleLinearWithTheta(eX, eY, theta, VA_theta);
     AssembleLinearWithRT(eX, eY, rtNew, VA_rho, true);
-    AssembleConstWithRho(eX, eY, exnerOld, VB_Pi);
-    AssembleConstWithRhoInv(eX, eY, rtOld, VB_rt);
+    if(!iT) AssembleConstWithRho(eX, eY, exnerOld, VB_Pi);
+    if(!iT) AssembleConstWithRhoInv(eX, eY, rtOld, VB_rt);
 
-    MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTVB);
-    MatMatMult(VA_inv, DTVB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VA_invDTVB);
-    MatMatMult(VA_theta, VA_invDTVB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GRAD);
+    if(!DTVB) {    
+        MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTVB);
+        MatMatMult(VA_inv, DTVB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VA_invDTVB);
+        MatMatMult(VA_theta, VA_invDTVB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GRAD);
 
-    MatMatMult(VA_inv, VA_rho, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VA_invVA_rt);
-    MatMatMult(V10, VA_invVA_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DVA_invVA_rt);
-    MatMatMult(VB_Pi, DVA_invVA_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VB_PiDVA_invVA_rt);
-    MatMatMult(VB_rt, VB_PiDVA_invVA_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DIV);
+        MatMatMult(VA_inv, VA_rho, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VA_invVA_rt);
+        MatMatMult(V10, VA_invVA_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DVA_invVA_rt);
+        MatMatMult(VB_Pi, DVA_invVA_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VB_PiDVA_invVA_rt);
+        MatMatMult(VB_rt, VB_PiDVA_invVA_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DIV);
 
-    MatMatMult(GRAD, DIV, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &LAP);
+        MatMatMult(GRAD, DIV, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &LAP);
+
+        MatMatMult(V01, VBA_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DW2);
+    } else {
+        MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTVB);
+        MatMatMult(VA_inv, DTVB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VA_invDTVB);
+        MatMatMult(VA_theta, VA_invDTVB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &GRAD);
+
+        MatMatMult(VA_inv, VA_rho, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VA_invVA_rt);
+        MatMatMult(V10, VA_invVA_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DVA_invVA_rt);
+        MatMatMult(VB_Pi, DVA_invVA_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VB_PiDVA_invVA_rt);
+        MatMatMult(VB_rt, VB_PiDVA_invVA_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DIV);
+
+        MatMatMult(GRAD, DIV, MAT_REUSE_MATRIX, PETSC_DEFAULT, &LAP);
+
+        MatMatMult(V01, VBA_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DW2);
+    }
+
     MatAYPX(LAP, -0.25*dt*dt*RD/CV, VA, SAME_NONZERO_PATTERN);
-
-    MatMatMult(V01, VBA_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DW2);
 
     MatZeroEntries(P);
 
@@ -2457,84 +2427,8 @@ void Euler::AssemblePreconditioner(Mat P) {
         MatRestoreRow(VB, kk, &nc, &colInds, &colVals);
     }
 
-/*
-    ei = eY*topo->nElsX + eX;
-    inds0 = topo->elInds0_l(eX, eY);
-    Q->assemble(eX, eY);
-
-    for(kk = 0; kk < geom->nk; kk++) {
-        // assemble the vertical velocity mass matrix preconditioner
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
-            Q0[ii][ii] *= dt*0.5*geom->thick[kk][inds0[ii]];
-        }
-        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
-        if(kk > 0) {
-            for(ii = 0; ii < W->nDofsJ; ii++) {
-                inds2[ii] = inds_w[(kk-1)*n2+ii];
-            }
-            MatSetValues(P, W->nDofsJ, inds2, W->nDofsJ, inds2, WtQWflat, ADD_VALUES);
-        }
-        if(kk < geom->nk - 1) {
-            for(ii = 0; ii < W->nDofsJ; ii++) {
-                inds2[ii] = inds_w[(kk+0)*n2+ii];
-            }
-            MatSetValues(P, W->nDofsJ, inds2, W->nDofsJ, inds2, WtQWflat, ADD_VALUES);
-        }
-
-        // assemble the exner pressure matrix perconditioner
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
-            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
-        }
-        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2[ii] = inds_exner[kk*n2+ii];
-        }
-        MatSetValues(P, W->nDofsJ, inds2, W->nDofsJ, inds2, WtQWflat, ADD_VALUES);
-
-        // assemble the piecewise constant mass matrix (for both the density and
-        // the density weighted potential temperature preconditioners)
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
-            Q0[ii][ii] *= dt/geom->thick[kk][inds0[ii]];
-            //Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
-        }
-        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2[ii] = inds_rho[kk*n2+ii];
-        }
-        MatSetValues(P, W->nDofsJ, inds2, W->nDofsJ, inds2, WtQWflat, ADD_VALUES);
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2[ii] = inds_rt[kk*n2+ii];
-        }
-        MatSetValues(P, W->nDofsJ, inds2, W->nDofsJ, inds2, WtQWflat, ADD_VALUES);
-    }
-*/
     MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(P, MAT_FINAL_ASSEMBLY);
-
-    MatDestroy(&DW2);
-    MatDestroy(&DTVB);
-    MatDestroy(&VA_invDTVB);
-    MatDestroy(&GRAD);
-    MatDestroy(&VA_invVA_rt);
-    MatDestroy(&DVA_invVA_rt);
-    MatDestroy(&VB_PiDVA_invVA_rt);
-    MatDestroy(&DIV);
-    MatDestroy(&LAP);
 }
 
 PetscErrorCode _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
@@ -2543,9 +2437,10 @@ PetscErrorCode _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
     MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
 
-    //if(!euler->iT) euler->AssemblePreconditioner(P);
     euler->AssemblePreconditioner(P);
+
     euler->iT++;
+
     return 0;
 }
 
@@ -2619,16 +2514,6 @@ void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n
             VecCopy(rt_n[ei], bRT);
 #endif
 
-/*
-            AssembleConstWithRho(eX, eY, exner_n[ei], VB_Pi);
-#ifdef ADV_MASS_MAT
-            AssembleConstWithRho(eX, eY, rt_n[ei], VB_rt);
-            MatMult(VB_rt, exner_n[ei], bExner);
-#else
-            AssembleConstWithRhoInv(eX, eY, rt_n[ei], VB_rt);
-            VecCopy(exner_n[ei], bExner);
-#endif
-*/
             VecZeroEntries(bExner);
 
             VecCopy(rho_n[ei], rhoOld);

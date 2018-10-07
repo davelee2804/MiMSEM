@@ -66,7 +66,7 @@ class Euler {
         void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
         void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
         void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux);
-        void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner);
+        void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* exner);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu, Vec Flux);
         void thetaBCVec(int ex, int ey, Mat A, Vec* bTheta);
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
@@ -102,6 +102,17 @@ class Euler {
         Mat VB_Pi;
         Mat VB_rt;
         Mat VISC;
+
+        Mat DW2;
+        Mat DTVB;
+        Mat VA_invDTVB;
+        Mat GRAD;
+        Mat VA_invVA_rt;
+        Mat DVA_invVA_rt;
+        Mat VB_PiDVA_invVA_rt;
+        Mat DIV;
+        Mat LAP;
+
         Vec pTmp;
         Vec pTmp2;
         Vec wTmp;
