@@ -11,7 +11,7 @@ include ${PETSC_DIR}/lib/petsc/conf/rules
 
 CXX = mpicxx
 
-CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -O3 -Wall
+CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -g -Wall
 
 OBJS = LinAlg.o \
        Basis.o \
@@ -20,17 +20,17 @@ OBJS = LinAlg.o \
        L2Vecs.o \
        ElMats.o \
        Assembly.o \
-       Euler.o \
+       Euler_JFNK.o \
        UMJS14.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-UMJS14.o: UMJS14.cpp Euler.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+UMJS14.o: UMJS14.cpp Euler_JFNK.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c UMJS14.cpp ${CXXFLAGS}
 
-Euler.o: Euler.cpp Euler.h Assembly.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c Euler.cpp ${CXXFLAGS}
+Euler_JFNK.o: Euler_JFNK.cpp Euler_JFNK.h Assembly.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Euler_JFNK.cpp ${CXXFLAGS}
 
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}

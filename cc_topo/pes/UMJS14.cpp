@@ -14,7 +14,7 @@
 #include "L2Vecs.h"
 #include "ElMats.h"
 #include "Assembly.h"
-#include "Euler.h"
+#include "Euler_JFNK.h"
 
 using namespace std;
 
