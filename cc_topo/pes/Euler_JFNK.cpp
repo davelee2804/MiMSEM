@@ -2387,7 +2387,6 @@ void Euler::AssemblePreconditioner(Mat P) {
     }
 
     // assemble the velocity PC
-/*
     Mat DTVB;
     Mat VA_invDTVB;
     Mat GRAD;
@@ -2414,7 +2413,6 @@ void Euler::AssemblePreconditioner(Mat P) {
 
     MatMatMult(GRAD, DIV, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &LAP);
     MatAYPX(LAP, -0.25*dt*dt*RD/CV, VA, SAME_NONZERO_PATTERN);
-*/
 
     MatMatMult(V01, VBA_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DW2);
 
@@ -2422,7 +2420,6 @@ void Euler::AssemblePreconditioner(Mat P) {
 
     // copy the vertical velocity preconditioner
     for(kk = 0; kk < n2*(geom->nk - 1); kk++) {
-/*
         MatGetRow(DW2, kk, &nc, &colInds, &colVals);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_w[colInds[ii]];
@@ -2430,14 +2427,14 @@ void Euler::AssemblePreconditioner(Mat P) {
         }
         MatSetValues(P, 1, &inds_w[kk], nc, inds2, vals2, ADD_VALUES);
         MatRestoreRow(DW2, kk, &nc, &colInds, &colVals);
-*/
-        MatGetRow(VA, kk, &nc, &colInds, &colVals);
+
+        MatGetRow(LAP, kk, &nc, &colInds, &colVals);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_w[colInds[ii]];
             vals2[ii] = dt*colVals[ii];
         }
         MatSetValues(P, 1, &inds_w[kk], nc, inds2, vals2, ADD_VALUES);
-        MatRestoreRow(VA, kk, &nc, &colInds, &colVals);
+        MatRestoreRow(LAP, kk, &nc, &colInds, &colVals);
     }
 
     for(kk = 0; kk < n2*(geom->nk); kk++) {
@@ -2530,7 +2527,6 @@ void Euler::AssemblePreconditioner(Mat P) {
     MatAssemblyEnd(P, MAT_FINAL_ASSEMBLY);
 
     MatDestroy(&DW2);
-/*
     MatDestroy(&DTVB);
     MatDestroy(&VA_invDTVB);
     MatDestroy(&GRAD);
@@ -2539,7 +2535,6 @@ void Euler::AssemblePreconditioner(Mat P) {
     MatDestroy(&VB_PiDVA_invVA_rt);
     MatDestroy(&DIV);
     MatDestroy(&LAP);
-*/
 }
 
 PetscErrorCode _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
@@ -2548,7 +2543,8 @@ PetscErrorCode _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
     MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
 
-    if(!euler->iT) euler->AssemblePreconditioner(P);
+    //if(!euler->iT) euler->AssemblePreconditioner(P);
+    euler->AssemblePreconditioner(P);
     euler->iT++;
     return 0;
 }
