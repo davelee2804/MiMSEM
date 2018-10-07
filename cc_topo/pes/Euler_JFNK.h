@@ -37,7 +37,6 @@ class Euler {
         Vec* Kh;                                     // kinetic energy vector for each horiztontal layer
         Vec* gv;
         Vec* zv;
-        L2Vecs* exner_pre;
         Mat V01;                                     // vertical divergence operator
         Mat V10;                                     // vertical gradient operator
         Mat VA;
@@ -80,7 +79,6 @@ class Euler {
         void init2(Vec* p, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
         void HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft);
-        void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
         void SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
         void AssembleConst(int ex, int ey, Mat A);      // piecewise constant (in vertical) mass matrix
@@ -126,6 +124,7 @@ class Euler {
         Vec bExner;
         Vec rhoOld;
         Vec rtOld;
+        Vec exnerOld;
         Vec eosRhs;
         void SetupVertOps();
         void DestroyVertOps();
@@ -133,7 +132,7 @@ class Euler {
         int eY;
         int iT;
         void VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
-        void AssemblePreconditioner(Vec rt, Mat P);
+        void AssemblePreconditioner(Mat P);
         void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs);
         void AssembleConstInv(int ex, int ey, Mat B);
         void DiagExner(L2Vecs* rt, L2Vecs* exner);
