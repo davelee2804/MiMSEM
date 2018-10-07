@@ -2393,7 +2393,8 @@ void Euler::AssemblePreconditioner(Mat P) {
         MatGetRow(DW2, kk, &nc, &colInds, &colVals);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_w[colInds[ii]];
-            vals2[ii] = dt*colVals[ii];
+            //vals2[ii] = dt*colVals[ii];
+            vals2[ii] = colVals[ii];
         }
         MatSetValues(P, 1, &inds_w[kk], nc, inds2, vals2, ADD_VALUES);
         MatRestoreRow(DW2, kk, &nc, &colInds, &colVals);
@@ -2401,7 +2402,8 @@ void Euler::AssemblePreconditioner(Mat P) {
         MatGetRow(LAP, kk, &nc, &colInds, &colVals);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_w[colInds[ii]];
-            vals2[ii] = dt*colVals[ii];
+            //vals2[ii] = dt*colVals[ii];
+            vals2[ii] = colVals[ii];
         }
         MatSetValues(P, 1, &inds_w[kk], nc, inds2, vals2, ADD_VALUES);
         MatRestoreRow(LAP, kk, &nc, &colInds, &colVals);
@@ -2411,12 +2413,14 @@ void Euler::AssemblePreconditioner(Mat P) {
         MatGetRow(VB, kk, &nc, &colInds, &colVals);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_rho[colInds[ii]];
-            vals2[ii] = dt*colVals[ii];
+            //vals2[ii] = dt*colVals[ii];
+            vals2[ii] = colVals[ii];
         }
         MatSetValues(P, 1, &inds_rho[kk], nc, inds2, vals2, ADD_VALUES);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_rt[colInds[ii]];
-            vals2[ii] = dt*colVals[ii];
+            //vals2[ii] = dt*colVals[ii];
+            vals2[ii] = colVals[ii];
         }
         MatSetValues(P, 1, &inds_rt[kk], nc, inds2, vals2, ADD_VALUES);
         for(ii = 0; ii < nc; ii++) {
