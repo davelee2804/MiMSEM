@@ -96,4 +96,8 @@ class Euler {
 
         void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
+
+        void AssembleConstInv(int ex, int ey, Mat B);
+        void DiagExner(L2Vecs* rt, L2Vecs* exner);
+        void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs);
 };
