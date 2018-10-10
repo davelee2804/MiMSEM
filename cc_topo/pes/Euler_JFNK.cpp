@@ -197,10 +197,9 @@ double Euler::viscosity_vert() {
     }
     MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-    //return 4.0*300.0*dzMax/M_PI;
-    //return 1.0*300.0*dzMax/M_PI;
     //return 4.0*1.0*dzMax/M_PI;
-    return 1.0*1.0*dzMax/M_PI;
+    //return 1.0*1.0*dzMax/M_PI;
+    return 0.0;
 }
 
 // project coriolis term onto 0 forms
@@ -2160,7 +2159,7 @@ void Euler::DestroyVertOps() {
     VecDestroy(&eosRhs);
 
     // preconditioner matrices
-    MatDestroy(&DW2);
+    //MatDestroy(&DW2);
     MatDestroy(&DTVB);
     MatDestroy(&VA_invDTVB);
     MatDestroy(&GRAD);
@@ -2353,8 +2352,10 @@ void Euler::AssemblePreconditioner(Mat P) {
     diagThetaVert(eX, eY, VAB, rhoNew, rtNew, theta);
     AssembleLinearWithTheta(eX, eY, theta, VA_theta);
     AssembleLinearWithRT(eX, eY, rtNew, VA_rho, true);
-    if(!iT) AssembleConstWithRho(eX, eY, exnerOld, VB_Pi);
-    if(!iT) AssembleConstWithRhoInv(eX, eY, rtOld, VB_rt);
+    //if(!iT) AssembleConstWithRho(eX, eY, exnerOld, VB_Pi);
+    //if(!iT) AssembleConstWithRhoInv(eX, eY, rtOld, VB_rt);
+    AssembleConstWithRho(eX, eY, exnerNew, VB_Pi);
+    AssembleConstWithRhoInv(eX, eY, rtNew, VB_rt);
 
     if(!DTVB) {    
         MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTVB);
@@ -2368,7 +2369,7 @@ void Euler::AssemblePreconditioner(Mat P) {
 
         MatMatMult(GRAD, DIV, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &LAP);
 
-        MatMatMult(V01, VBA_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DW2);
+        //MatMatMult(V01, VBA_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DW2);
     } else {
         MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTVB);
         MatMatMult(VA_inv, DTVB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VA_invDTVB);
@@ -2381,7 +2382,7 @@ void Euler::AssemblePreconditioner(Mat P) {
 
         MatMatMult(GRAD, DIV, MAT_REUSE_MATRIX, PETSC_DEFAULT, &LAP);
 
-        MatMatMult(V01, VBA_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DW2);
+        //MatMatMult(V01, VBA_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DW2);
     }
 
     MatAYPX(LAP, -0.25*dt*dt*RD/CV, VA, SAME_NONZERO_PATTERN);
@@ -2390,6 +2391,7 @@ void Euler::AssemblePreconditioner(Mat P) {
 
     // copy the vertical velocity preconditioner
     for(kk = 0; kk < n2*(geom->nk - 1); kk++) {
+/*
         MatGetRow(DW2, kk, &nc, &colInds, &colVals);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_w[colInds[ii]];
@@ -2398,11 +2400,10 @@ void Euler::AssemblePreconditioner(Mat P) {
         }
         MatSetValues(P, 1, &inds_w[kk], nc, inds2, vals2, ADD_VALUES);
         MatRestoreRow(DW2, kk, &nc, &colInds, &colVals);
-
+*/
         MatGetRow(LAP, kk, &nc, &colInds, &colVals);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_w[colInds[ii]];
-            //vals2[ii] = dt*colVals[ii];
             vals2[ii] = colVals[ii];
         }
         MatSetValues(P, 1, &inds_w[kk], nc, inds2, vals2, ADD_VALUES);
@@ -2413,13 +2414,11 @@ void Euler::AssemblePreconditioner(Mat P) {
         MatGetRow(VB, kk, &nc, &colInds, &colVals);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_rho[colInds[ii]];
-            //vals2[ii] = dt*colVals[ii];
             vals2[ii] = colVals[ii];
         }
         MatSetValues(P, 1, &inds_rho[kk], nc, inds2, vals2, ADD_VALUES);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_rt[colInds[ii]];
-            //vals2[ii] = dt*colVals[ii];
             vals2[ii] = colVals[ii];
         }
         MatSetValues(P, 1, &inds_rt[kk], nc, inds2, vals2, ADD_VALUES);
@@ -2491,9 +2490,7 @@ void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n
             iT = 0;
 
             AssembleLinear(eX, eY, VA);
-#ifdef VERT_MASS_INV
             AssembleLinearInv(eX, eY, VA_inv);
-#endif
             AssembleConst(eX, eY, VB);
             AssembleLinCon(eX, eY, VAB);
 
