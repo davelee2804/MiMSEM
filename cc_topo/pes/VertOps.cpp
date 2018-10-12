@@ -355,7 +355,7 @@ void VertOps::AssembleLinearInv(int ex, int ey, Mat A) {
             Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
             // for linear field we multiply by the vertical jacobian determinant when
             // integrating, and do no other trasformations for the basis functions
-            Q0[ii][ii] *= (geom->thick[kk+0][inds0[ii]]/2.0 + geom->thick[kk+1][inds0[ii]]/2.0);
+            Q0[ii][ii] *= 0.5*(geom->thick[kk+0][inds0[ii]] + geom->thick[kk+1][inds0[ii]]);
         }
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -398,15 +398,14 @@ void VertOps::AssembleConstWithRhoInv(int ex, int ey, Vec rho, Mat B) {
             // for constant field we multiply by the vertical jacobian determinant when integrating, 
             // then divide by the vertical jacobian for both the trial and the test functions
             // vertical determinant is dz/2
-            Q0[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
 
             rk = 0.0;
             for(jj = 0; jj < n2; jj++) {
                 gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                 rk += rArray[kk*n2+jj]*gamma;
             }
-            Q0[ii][ii] *= rk*2.0/(geom->thick[kk][inds0[ii]]*det);
-            Q0[ii][ii] *= 0.25;
+            Q0[ii][ii] *= rk/(geom->thick[kk][inds0[ii]]*det);
         }
 
         // assemble the piecewise constant mass matrix for level k
@@ -450,15 +449,14 @@ void VertOps::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
             // for constant field we multiply by the vertical jacobian determinant when integrating, 
             // then divide by the vertical jacobian for both the trial and the test functions
             // vertical determinant is dz/2
-            Q0[ii][ii] *= 2.0/geom->thick[kk][inds0[ii]];
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
 
             rk = 0.0;
             for(jj = 0; jj < n2; jj++) {
                 gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                 rk += rArray[kk*n2+jj]*gamma;
             }
-            Q0[ii][ii] *= rk*2.0/(geom->thick[kk][inds0[ii]]*det);
-            Q0[ii][ii] *= 0.25;
+            Q0[ii][ii] *= rk/(geom->thick[kk][inds0[ii]]*det);
         }
 
         // assemble the piecewise constant mass matrix for level k
@@ -505,8 +503,7 @@ void VertOps::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                     wb += wArray[(kk-1)*n2+jj]*gamma;
                 }
-                Q0[ii][ii] *= wb/det; // scale by 0.5 outside
-                Q0[ii][ii] *= 0.5;
+                Q0[ii][ii] *= 0.5*wb/det; // scale by 0.5 outside for the 0.5 w^2
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -591,8 +588,7 @@ void VertOps::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_intern
             if(!do_internal) { // TODO: don't understand this scaling ?!?
                 rk *= 1.0/geom->thick[kk][inds0[ii]];
             }
-            Q0[ii][ii] *= rk/det;
-            Q0[ii][ii] *= 0.5;
+            Q0[ii][ii] *= 0.5*rk/det;
         }
 
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -646,7 +642,7 @@ void VertOps::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
             QB[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
-            QB[ii][ii] *= geom->thick[kk][inds0[ii]]/2.0;
+            QB[ii][ii] *= 0.5*geom->thick[kk][inds0[ii]];
             QT[ii][ii]  = QB[ii][ii];
 
             tb = tt = 0.0;
@@ -749,14 +745,13 @@ void VertOps::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs) {
 }
 
 void VertOps::AssembleConstInv(int ex, int ey, Mat B) {
-    int ii, kk, ei, mp1, mp12, n2;
+    int ii, kk, ei, mp1, mp12;
     int *inds0;
     double det;
     int inds2k[99];
 
     ei    = ey*topo->nElsX + ex;
     inds0 = topo->elInds0_l(ex, ey);
-    n2    = topo->elOrd*topo->elOrd;
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
