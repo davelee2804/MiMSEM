@@ -93,11 +93,18 @@ class Euler {
         void AssembleConstWithRhoInv(int ex, int ey, Vec theta, Mat B);
         void AssembleConstWithRho(int ex, int ey, Vec rho, Mat A);
         void AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA);
+        void AssembleRayleigh(int ex, int ey, Mat B);
 
         void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
+        void VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
 
         void AssembleConstInv(int ex, int ey, Mat B);
         void DiagExner(L2Vecs* rt, L2Vecs* exner);
         void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs);
+
+        L2Vecs* velz_prev;
+        L2Vecs* rho_prev;
+        L2Vecs* rt_prev;
+        L2Vecs* exner_prev;
 };

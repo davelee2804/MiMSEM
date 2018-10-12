@@ -29,6 +29,7 @@
 #define MAX_IT 100
 //#define VERT_TOL 1.0e-9
 #define VERT_TOL 1.0e-8
+#define RAYLEIGH 0.1
 
 //#define THETA_VISC_H
 //#define EXTRAPOLATE_EXNER
@@ -180,6 +181,11 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
     initGZ();
+
+    velz_prev  = new L2Vecs(geom->nk-1, topo, geom);
+    rho_prev   = new L2Vecs(geom->nk, topo, geom);
+    rt_prev    = new L2Vecs(geom->nk, topo, geom);
+    exner_prev = new L2Vecs(geom->nk, topo, geom);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -400,6 +406,11 @@ Euler::~Euler() {
     delete edge;
     delete node;
     delete quad;
+
+    delete velz_prev;
+    delete rho_prev;
+    delete rt_prev;
+    delete exner_prev;
 }
 
 /*
@@ -1243,7 +1254,11 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     if(!rank)cout<<"vertical half step (1)..............."<<endl;
     AssembleKEVecs(velx, velz);
     DiagExner(rt_old, exner_old);
-    VertSolve(velz_new, rho_new->vz, rt_new->vz, exner_new->vz, velz, rho_old->vz, rt_old->vz, exner_old->vz);
+    //if(firstStep) {
+        VertSolve(velz_new, rho_new->vz, rt_new->vz, exner_new->vz, velz, rho_old->vz, rt_old->vz, exner_old->vz);
+    //} else {
+    //    VertSolve_Explicit(velz_new, rho_new->vz, rt_new->vz, exner_new->vz, velz_prev->vz, rho_prev->vz, rt_prev->vz, exner_prev->vz);
+    //}
 
     rho_new->VertToHoriz();
     rt_new->VertToHoriz();
@@ -1396,6 +1411,11 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rho_old->HorizToVert();
     rt_old->HorizToVert();
     exner_old->HorizToVert();
+
+    velz_prev->CopyFromVert(velz_new);
+    rho_prev->CopyFromVert(rho_old->vz);
+    rt_prev->CopyFromVert(rt_old->vz);
+    exner_prev->CopyFromVert(exner_old->vz);
 
     if(!rank)cout<<"vertical half step (2)..............."<<endl;
     AssembleKEVecs(velx, velz);
@@ -2073,6 +2093,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     Mat DIV               = NULL;
     Mat LAP               = NULL;
     Mat DEL2              = NULL;
+    Mat VR;
     Vec rhs, tmp;
     Vec velz_j, exner_j, rho_j, rt_j;
     Vec velz_d, exner_d, rho_d, rt_d;
@@ -2134,6 +2155,11 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
     MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
 
+    MatCreate(MPI_COMM_SELF, &VR);
+    MatSetType(VR, MATSEQAIJ);
+    MatSetSizes(VR, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(VR, 2*n2, PETSC_NULL);
+
     loc1 = loc2 = k2i_z = i2k_z = 0.0;
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -2147,6 +2173,8 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
             MatMult(V01, Kv[ei], tmp);
             VecAXPY(rhs, -0.5*dt, tmp);
+
+            AssembleRayleigh(ex, ey, VR);
 
             do {
                 // assemble the operators
@@ -2230,7 +2258,8 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 }
                 MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
                 MatAXPY(VA, +0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
-                MatAXPY(VA, -0.25*dt*dt*RD/CV, LAP, SAME_NONZERO_PATTERN);
+                MatAXPY(VA, -0.25*dt*dt*RD/CV, LAP, DIFFERENT_NONZERO_PATTERN);
+                //MatAXPY(VA, +0.5*dt*RAYLEIGH, VR, DIFFERENT_NONZERO_PATTERN);
 
                 KSPSolve(kspColA, tmp, velz_j);
 
@@ -2250,12 +2279,13 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 VecCopy(rho_n[ei], rho_j);
                 VecAXPY(rho_j, -0.5*dt, Ftemp);
 
-                MatZeroEntries(V0_invV0_rt);
-                MatMatMult(V0_inv, V0_theta, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
-                MatMult(V0_invV0_rt, wRho, wRhoTheta);
-
                 // update the density weighted potential temperature
-                MatMult(V10, wRhoTheta, Ftemp);
+                //MatZeroEntries(V0_invV0_rt);
+                //MatMatMult(V0_inv, V0_theta, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+                //MatMult(V0_invV0_rt, wRho, wRhoTheta);
+
+                //MatMult(V10, wRhoTheta, Ftemp);
+                MatMult(DV0_invV0_rt, velz_j, Ftemp);
                 VecCopy(rt_n[ei], rt_j);
                 VecAXPY(rt_j, -0.5*dt, Ftemp);
 
@@ -2376,6 +2406,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     MatDestroy(&LAP              );
     MatDestroy(&AB               );
     MatDestroy(&DEL2             );
+    MatDestroy(&VR);
     delete l2_theta;
 }
 
@@ -2616,4 +2647,275 @@ void Euler::DiagExner(L2Vecs* rt, L2Vecs* exner) {
 
     exner->VertToHoriz();
     exner->UpdateGlobal();
+}
+
+/*
+Assemble the top layer rayleigh friction operator
+*/
+void Euler::AssembleRayleigh(int ex, int ey, Mat A) {
+    int ii, ei, mp12;
+    int *inds0;
+    double det;
+    int inds2k[99];
+
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+    mp12  = (quad->n + 1)*(quad->n + 1);
+
+    Q->assemble(ex, ey);
+
+    MatZeroEntries(A);
+
+    for(ii = 0; ii < mp12; ii++) {
+        det = geom->det[ei][ii];
+        Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+        // assembly the contributions from the top two levels only
+        Q0[ii][ii] *= 0.5*(geom->thick[geom->nk-1][inds0[ii]] + geom->thick[geom->nk-2][inds0[ii]]);
+    }
+    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+    for(ii = 0; ii < W->nDofsJ; ii++) {
+        // interface between top two levels
+        inds2k[ii] = ii + (geom->nk-2)*W->nDofsJ;
+    }
+    MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+}
+
+void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n) {
+    int ex, ey, ei, n2, rank;
+    Mat V0_rt, V0_inv, V1_Pi, V1_rt_inv, V0_theta, V10_w, AB;
+    Mat DTV10_w           = NULL;
+    Mat DTV1              = NULL;
+    Mat V0_invDTV1        = NULL;
+    Mat GRAD              = NULL;
+    Mat V0_invV0_rt       = NULL;
+    Mat DV0_invV0_rt      = NULL;
+    Mat V1_PiDV0_invV0_rt = NULL;
+    Mat DIV               = NULL;
+    Mat LAP               = NULL;
+    Mat DEL2              = NULL;
+    Mat VR;
+    Vec rhs, tmp;
+    Vec wRho, wRhoTheta, Ftemp;
+    L2Vecs* l2_theta = new L2Vecs(geom->nk+1, topo, geom);
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &rhs);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &tmp);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wRho);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &wRhoTheta);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &Ftemp);
+
+    // initialise matrices
+    MatCreate(MPI_COMM_SELF, &V0_rt);
+    MatSetType(V0_rt, MATSEQAIJ);
+    MatSetSizes(V0_rt, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(V0_rt, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &V0_inv);
+    MatSetType(V0_inv, MATSEQAIJ);
+    MatSetSizes(V0_inv, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(V0_inv, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &V1_Pi);
+    MatSetType(V1_Pi, MATSEQAIJ);
+    MatSetSizes(V1_Pi, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2);
+    MatSeqAIJSetPreallocation(V1_Pi, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &V1_rt_inv);
+    MatSetType(V1_rt_inv, MATSEQAIJ);
+    MatSetSizes(V1_rt_inv, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2);
+    MatSeqAIJSetPreallocation(V1_rt_inv, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &V0_theta);
+    MatSetType(V0_theta, MATSEQAIJ);
+    MatSetSizes(V0_theta, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(V0_theta, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &V10_w);
+    MatSetType(V10_w, MATSEQAIJ);
+    MatSetSizes(V10_w, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(V10_w, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &AB);
+    MatSetType(AB, MATSEQAIJ);
+    MatSetSizes(AB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
+    MatSeqAIJSetPreallocation(AB, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &VR);
+    MatSetType(VR, MATSEQAIJ);
+    MatSetSizes(VR, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(VR, 2*n2, PETSC_NULL);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+            // assemble the vertical velocity rhs (except the exner term)
+            AssembleLinear(ex, ey, VA);
+            MatMult(VA, velz_n[ei], rhs);
+            VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
+            MatMult(V01, Kv[ei], tmp);
+            VecAXPY(rhs, -0.5*dt, tmp);
+
+            AssembleRayleigh(ex, ey, VR);
+
+            // assemble the operators
+            AssembleConLinWithW(ex, ey, velz_n[ei], V10_w);
+            if(!DTV10_w) {
+                MatMatMult(V01, V10_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV10_w);
+            } else {
+                MatMatMult(V01, V10_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV10_w);
+            }
+
+            AssembleConst(ex, ey, VB);
+            if(!DTV1) {
+                MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
+            } else {
+                MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
+            }
+
+            AssembleLinearInv(ex, ey, V0_inv);
+            if(!V0_invDTV1) {
+                MatMatMult(V0_inv, DTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
+            } else {
+                MatMatMult(V0_inv, DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
+            }
+
+            diagThetaVert(ex, ey, AB, rho_n[ei], rt_n[ei], l2_theta->vz[ei]);
+            AssembleLinearWithTheta(ex, ey, l2_theta->vz[ei], V0_theta);
+            if(!GRAD) {
+                MatMatMult(V0_theta, V0_invDTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GRAD);
+            } else {
+                MatMatMult(V0_theta, V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &GRAD);
+            }
+
+            AssembleLinearWithRT(ex, ey, rt_n[ei], V0_rt, true);
+            if(!V0_invV0_rt) {
+                MatMatMult(V0_inv, V0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+            } else {
+                MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+            }
+            if(!DV0_invV0_rt) {
+                MatMatMult(V10, V0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+            } else {
+                MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+            }
+
+            AssembleConstWithRho(ex, ey, exner_n[ei], V1_Pi);
+            if(!V1_PiDV0_invV0_rt) {
+                MatMatMult(V1_Pi, DV0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &V1_PiDV0_invV0_rt);
+            } else {
+                MatMatMult(V1_Pi, DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V1_PiDV0_invV0_rt);
+            }
+
+            AssembleConstWithRhoInv(ex, ey, rt_n[ei], V1_rt_inv);
+            if(!DIV) {
+                MatMatMult(V1_rt_inv, V1_PiDV0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DIV);
+            } else {
+                MatMatMult(V1_rt_inv, V1_PiDV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DIV);
+            }
+
+            if(!LAP) {
+                MatMatMult(GRAD, DIV, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &LAP);
+            } else {
+                MatMatMult(GRAD, DIV, MAT_REUSE_MATRIX, PETSC_DEFAULT, &LAP);
+            }
+
+            // add the exner pressure at the previous time level to the rhs
+            MatMult(GRAD, exner_n[ei], tmp);
+            VecAXPY(rhs, -0.5*dt, tmp);
+
+            AssembleLinear(ex, ey, VA);
+            // assemble the vertical lapcalian viscosity
+            if(!DEL2) {
+                MatMatMult(DTV1, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DEL2);
+            } else {
+                MatMatMult(DTV1, V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
+            }
+            MatMult(DEL2, velz_n[ei], tmp);
+            VecAXPY(rhs, +0.5*dt*vert_visc, tmp);
+            MatMult(DTV10_w, velz_n[ei], tmp);
+            VecAXPY(rhs, -0.25*dt, tmp); // 0.5 for the nonlinear term and 0.5 for the time step
+
+            //MatMult(LAP, velz_n[ei], tmp);
+            //VecAXPY(rhs, +0.25*dt*dt*RD/CV, tmp);
+
+            //MatMult(VR, velz_n[ei], tmp);
+            //VecAXPY(rhs, -0.5*dt*RAYLEIGH, tmp);
+
+            KSPSolve(kspColA, rhs, velz[ei]);
+
+            // update the exner pressure
+            MatMult(DIV, velz_n[ei], exner[ei]);
+            VecAYPX(exner[ei], -0.5*dt*RD/CV, exner_n[ei]);
+
+            // update the density and the density weighted potential temperature
+            AssembleLinearWithRT(ex, ey, rho_n[ei], V0_rt, true);
+
+            MatZeroEntries(V0_invV0_rt);
+            MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+            MatMult(V0_invV0_rt, velz_n[ei], wRho);
+
+            // update the density
+            MatMult(V10, wRho, Ftemp);
+            VecCopy(rho_n[ei], rho[ei]);
+            VecAXPY(rho[ei], -0.5*dt, Ftemp);
+
+            // update the density weighted potential temperature
+            //MatZeroEntries(V0_invV0_rt);
+            //MatMatMult(V0_inv, V0_theta, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+            //MatMult(V0_invV0_rt, wRho, wRhoTheta);
+
+            //MatMult(V10, wRhoTheta, Ftemp);
+            MatMult(DV0_invV0_rt, velz_n[ei], Ftemp);
+            VecCopy(rt_n[ei], rt[ei]);
+            VecAXPY(rt[ei], -0.5*dt, Ftemp);
+        }
+    }
+
+    // update the initial solutions
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            VecCopy(velz[ei] , velz_n[ei] );
+            VecCopy(exner[ei], exner_n[ei]);
+            VecCopy(rt[ei]   , rt_n[ei]   );
+            VecCopy(rho[ei]  , rho_n[ei]  );
+        }
+    }
+
+    // deallocate
+    VecDestroy(&rhs);
+    VecDestroy(&tmp);
+    VecDestroy(&wRho);
+    VecDestroy(&wRhoTheta);
+    VecDestroy(&Ftemp);
+    MatDestroy(&V0_rt            );
+    MatDestroy(&V0_inv           );
+    MatDestroy(&V1_Pi            );
+    MatDestroy(&V1_rt_inv        );
+    MatDestroy(&V0_theta         );
+    MatDestroy(&V10_w            );
+    MatDestroy(&DTV10_w          );
+    MatDestroy(&DTV1             );
+    MatDestroy(&V0_invDTV1       );
+    MatDestroy(&GRAD             );
+    MatDestroy(&V0_invV0_rt      );
+    MatDestroy(&DV0_invV0_rt     );
+    MatDestroy(&V1_PiDV0_invV0_rt);
+    MatDestroy(&DIV              );
+    MatDestroy(&LAP              );
+    MatDestroy(&AB               );
+    MatDestroy(&DEL2             );
+    MatDestroy(&VR);
+    delete l2_theta;
 }
