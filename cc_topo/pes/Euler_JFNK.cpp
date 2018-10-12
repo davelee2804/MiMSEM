@@ -173,6 +173,11 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     initGZ();
 
     SetupVertOps();
+
+    velz_prev  = new L2Vecs(geom->nk-1, topo, geom);
+    rho_prev   = new L2Vecs(geom->nk, topo, geom);
+    rt_prev    = new L2Vecs(geom->nk, topo, geom);
+    exner_prev = new L2Vecs(geom->nk, topo, geom);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -391,6 +396,11 @@ Euler::~Euler() {
     delete quad;
 
     DestroyVertOps();
+
+    delete velz_prev;
+    delete rho_prev;
+    delete rt_prev;
+    delete exner_prev;
 }
 
 /*
@@ -1157,7 +1167,11 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     if(!rank)cout<<"vertical half step (1)..............."<<endl;
     AssembleKEVecs(velx, velz);
     DiagExner(rt_old, exner_old);
-    VertSolve_JFNK(velz_new, rho_new->vz, rt_new->vz, exner_new->vz, velz, rho_old->vz, rt_old->vz, exner_old->vz);
+    //if(firstStep) {
+        VertSolve_JFNK(velz_new, rho_new->vz, rt_new->vz, exner_new->vz, velz, rho_old->vz, rt_old->vz, exner_old->vz);
+    //} else {
+    //    VertSolve_Explicit(velz_new, rho_new->vz, rt_new->vz, exner_new->vz, velz_prev->vz, rho_prev->vz, rt_prev->vz, exner_prev->vz);
+    //}
 
     rho_new->VertToHoriz();
     rt_new->VertToHoriz();
@@ -1200,7 +1214,6 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecCopy(rt_old->vh[ii], rt_new->vh[ii]);
         VecAXPY(rt_new->vh[ii], -dt, Ft->vh[ii]);
     }
-    Ft->UpdateLocal();
 
     rho_new->UpdateLocal();
     rt_new->UpdateLocal();
@@ -1230,7 +1243,6 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecAXPY(rt_new->vh[ii], 0.75, rt_old->vh[ii]);
         VecAXPY(rt_new->vh[ii], -0.25*dt, Ft->vh[ii]);
     }
-    Ft->UpdateLocal();
 
     rho_new->UpdateLocal();
     rt_new->UpdateLocal();
@@ -1260,7 +1272,6 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecAXPY(rt_new->vh[ii], 1.0/3.0, rt_old->vh[ii]);
         VecAXPY(rt_new->vh[ii], (-2.0/3.0)*dt, Ft->vh[ii]);
     }
-    Ft->UpdateLocal();
 
     for(ii = 0; ii < geom->nk; ii++) {
         VecCopy(velx_new[ii], velx[ii]);
@@ -1286,6 +1297,11 @@ void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rho_old->HorizToVert();
     rt_old->HorizToVert();
     exner_old->HorizToVert();
+
+    velz_prev->CopyFromVert(velz_new);
+    rho_prev->CopyFromVert(rho_old->vz);
+    rt_prev->CopyFromVert(rt_old->vz);
+    exner_prev->CopyFromVert(exner_old->vz);
 
     if(!rank)cout<<"vertical half step (2)..............."<<endl;
     AssembleKEVecs(velx, velz);
@@ -2107,9 +2123,6 @@ void Euler::SetupVertOps() {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &exnerNew);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &fExner);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &bExner);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rhoOld);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rtOld);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &exnerOld);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &eosRhs);
 
     // preconditioner matrices
@@ -2153,9 +2166,6 @@ void Euler::DestroyVertOps() {
     VecDestroy(&exnerNew);
     VecDestroy(&fExner);
     VecDestroy(&bExner);
-    VecDestroy(&rhoOld);
-    VecDestroy(&rtOld);
-    VecDestroy(&exnerOld);
     VecDestroy(&eosRhs);
 
     // preconditioner matrices
@@ -2352,8 +2362,6 @@ void Euler::AssemblePreconditioner(Mat P) {
     diagThetaVert(eX, eY, VAB, rhoNew, rtNew, theta);
     AssembleLinearWithTheta(eX, eY, theta, VA_theta);
     AssembleLinearWithRT(eX, eY, rtNew, VA_rho, true);
-    //if(!iT) AssembleConstWithRho(eX, eY, exnerOld, VB_Pi);
-    //if(!iT) AssembleConstWithRhoInv(eX, eY, rtOld, VB_rt);
     AssembleConstWithRho(eX, eY, exnerNew, VB_Pi);
     AssembleConstWithRhoInv(eX, eY, rtNew, VB_rt);
 
@@ -2517,10 +2525,6 @@ void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n
 
             VecZeroEntries(bExner);
 
-            VecCopy(rho_n[ei], rhoOld);
-            VecCopy(rt_n[ei], rtOld);
-            VecCopy(exner_n[ei], exnerOld);
-
             RepackX(b, bw, bRho, bRT, bExner, n2, geom->nk);
             RepackX(x, velz[ei], rho[ei], rt[ei], exner[ei], n2, geom->nk);
 
@@ -2679,4 +2683,101 @@ void Euler::DiagExner(L2Vecs* rt, L2Vecs* exner) {
 
     exner->VertToHoriz();
     exner->UpdateGlobal();
+}
+
+void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n) {
+    int ex, ey, ei;
+    int n2    = topo->elOrd*topo->elOrd;
+    Vec rhs, tmp;
+    Mat VB_inv;
+
+    VecCreateSeq(MPI_COMM_SELF, n2*(geom->nk-1), &rhs);
+    VecCreateSeq(MPI_COMM_SELF, n2*(geom->nk-1), &tmp);
+
+    MatCreate(MPI_COMM_SELF, &VB_inv);
+    MatSetType(VB_inv, MATSEQAIJ);
+    MatSetSizes(VB_inv, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2);
+    MatSeqAIJSetPreallocation(VB_inv, (geom->nk+0)*n2, PETSC_NULL);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+            AssembleLinear(ex, ey, VA);
+            AssembleLinearInv(ex, ey, VA_inv);
+            AssembleConst(ex, ey, VB);
+            AssembleConstInv(ex, ey, VB_inv);
+
+            // solve for the vertical velocity
+            MatMult(VA, velz_n[ei], rhs);
+
+            VecAXPY(rhs, -0.5*dt, gv[ei]);
+
+            MatMult(V01, Kv[ei], tmp);
+            VecAXPY(rhs, -0.5*dt, tmp);
+
+            AssembleConLinWithW(ex, ey, velz_n[ei], VBA_w);
+            MatMult(VBA_w, velz_n[ei], pTmp);
+            MatMult(V01, pTmp, tmp);
+            VecAXPY(rhs, -0.25*dt, tmp);
+
+            MatMult(VB, exner_n[ei], pTmp);
+            MatMult(V01, pTmp, wTmp);
+#ifdef VERT_MASS_INV
+            MatMult(VA_inv, wTmp, pGrad);
+#else
+            KSPSolve(kspColA, wTmp, pGrad);
+#endif
+            diagThetaVert(ex, ey, VAB, rho_n[ei], rt_n[ei], theta);
+            AssembleLinearWithTheta(ex, ey, theta, VA_theta);
+            MatMult(VA_theta, pGrad, tmp);
+            VecAXPY(rhs, -0.5*dt, tmp);
+
+            if(!ei) {
+                MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTVB);
+                MatMatMult(DTVB, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VISC);
+            } else {
+                MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTVB);
+                MatMatMult(DTVB, V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VISC);
+            }
+            MatMult(VISC, velz_n[ei], tmp);
+            VecAXPY(rhs, +0.5*dt*vert_visc, tmp);
+
+#ifdef VERT_MASS_INV
+            MatMult(VA_inv, rhs, velz[ei]);
+#else
+            KSPSolve(kspColA, rhs, velz[ei]);
+#endif
+
+            // solve for the density
+            AssembleLinearWithRT(ex, ey, rho_n[ei], VA_rho, true);
+            MatMult(VA_rho, velz_n[ei], wTmp);
+#ifdef VERT_MASS_INV
+            MatMult(VA_inv, wTmp, wRho);
+#else
+            KSPSolve(kspColA, wTmp, wRho);
+#endif
+            MatMult(V10, wRho, rho[ei]);
+            VecAYPX(rho[ei], -0.5*dt, rho_n[ei]);
+
+            // solve for the density weighted potential temperature
+            MatMult(VA_theta, wRho, wTmp);
+#ifdef VERT_MASS_INV
+            MatMult(VA_inv, wTmp, wTheta);
+#else
+            KSPSolve(kspColA, wTmp, wTheta);
+#endif
+            MatMult(V10, wTheta, rt[ei]);
+            VecAYPX(rt[ei], -0.5*dt, rt_n[ei]);
+
+            // diagnose the exner pressure
+            Assemble_EOS_RHS(ex, ey, rt_n[ei], eosRhs);
+            MatMult(VB_inv, eosRhs, exner[ei]);
+        }
+    }
+    MatDestroy(&DTVB);
+    MatDestroy(&VISC);
+    MatDestroy(&VB_inv);
+    VecDestroy(&rhs);
+    VecDestroy(&tmp);
 }

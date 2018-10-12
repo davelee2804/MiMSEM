@@ -133,9 +133,6 @@ class Euler {
         Vec exnerNew;
         Vec fExner;
         Vec bExner;
-        Vec rhoOld;
-        Vec rtOld;
-        Vec exnerOld;
         Vec eosRhs;
         void SetupVertOps();
         void DestroyVertOps();
@@ -143,8 +140,14 @@ class Euler {
         int eY;
         int iT;
         void VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
+        void VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
         void AssemblePreconditioner(Mat P);
         void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs);
         void AssembleConstInv(int ex, int ey, Mat B);
         void DiagExner(L2Vecs* rt, L2Vecs* exner);
+
+        L2Vecs* velz_prev;
+        L2Vecs* rho_prev;
+        L2Vecs* rt_prev;
+        L2Vecs* exner_prev;
 };
