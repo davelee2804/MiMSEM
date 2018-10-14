@@ -28,6 +28,8 @@ class VertOps {
         Mat VB;
         Mat VA_inv;
         Mat VB_inv;
+        Mat VAB;
+        Mat VBA;
 
         void vertOps();
 

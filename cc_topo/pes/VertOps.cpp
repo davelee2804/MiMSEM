@@ -64,6 +64,16 @@ VertOps::VertOps(Topo* _topo, Geom* _geom) {
     MatSetSizes(VB_inv, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
     MatSeqAIJSetPreallocation(VB_inv, n2, PETSC_NULL);
 
+    MatCreate(MPI_COMM_SELF, &VAB);
+    MatSetType(VAB, MATSEQAIJ);
+    MatSetSizes(VAB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
+    MatSeqAIJSetPreallocation(VAB, 2*n2, PETSC_NULL);
+
+    MatCreate(MPI_COMM_SELF, &VBA);
+    MatSetType(VBA, MATSEQAIJ);
+    MatSetSizes(VBA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(VBA, 2*n2, PETSC_NULL);
+
     vertOps();
 }
 
@@ -89,6 +99,8 @@ VertOps::~VertOps() {
     MatDestroy(&VB);
     MatDestroy(&VA_inv);
     MatDestroy(&VB_inv);
+    MatDestroy(&VAB);
+    MatDestroy(&VBA);
 }
 
 /*
@@ -685,14 +697,13 @@ void VertOps::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
 }
 
 void VertOps::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs) {
-    int ii, jj, kk, ei, mp1, mp12, n2;
+    int ii, jj, kk, ei, mp1, mp12;
     int *inds0;
     double det, rk, fac;
     double rtq[99], rtj[99];
     PetscScalar *rArray, *eArray;
 
     inds0 = topo->elInds0_l(ex, ey);
-    n2    = topo->elOrd*topo->elOrd;
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
