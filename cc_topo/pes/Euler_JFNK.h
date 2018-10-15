@@ -8,12 +8,14 @@ class Euler {
         double del2;
         double vert_visc;
         bool do_visc;
+        int rank;
         int step;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
         Topo* topo;
         Geom* geom;
+        VertOps* vo;
         Pvec* m0;
         Umat* M1;
         Wmat* M2;
@@ -37,30 +39,14 @@ class Euler {
         Vec* Kh;                                     // kinetic energy vector for each horiztontal layer
         Vec* gv;
         Vec* zv;
-        Mat V01;                                     // vertical divergence operator
-        Mat V10;                                     // vertical gradient operator
-        Mat VA;
-        Mat VB;
         KSP ksp1;
         KSP ksp2;
         KSP kspE;
         KSP kspColA;
 
-        Wii* Q;
-        M2_j_xy_i* W;
-        double** Q0;
-        double** QT;
-        double** QB;
-        double** Wt;
-        double** WtQ;
-        double** WtQW;
-        double** WtQWinv;
-        double* WtQWflat;
-
         double viscosity();
         double viscosity_vert();
         void coriolis();
-        void vertOps();
         void initGZ();
         void grad(bool assemble, Vec phi, Vec* u, int lev);            // weak form grad operator
         void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
@@ -80,23 +66,10 @@ class Euler {
         void initTheta(Vec theta, ICfunc3D* func);
         void HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft);
         void SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
-
-        void AssembleConst(int ex, int ey, Mat A);      // piecewise constant (in vertical) mass matrix
-        void AssembleLinear(int ex, int ey, Mat B);     // piecewise linear (in vertical) mass matrix
-        void AssembleLinCon(int ex, int ey, Mat AB);
-        void AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A);
-        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_internal);
-        void AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_internal);
-        void AssembleLinearInv(int ex, int ey, Mat A);
-        void AssembleConstWithRhoInv(int ex, int ey, Vec theta, Mat B);
-        void AssembleConstWithRho(int ex, int ey, Vec rho, Mat A);
-        void AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA);
+        void StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
 
-        Mat VBA_w;
-        Mat VA_inv;
-        Mat VAB;
         Mat VA_theta;
         Mat VA_rho;
         Mat VB_Pi;
@@ -140,11 +113,11 @@ class Euler {
         int eY;
         int iT;
         void VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
-        void VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
+        void VertSolve_Explicit(Vec* velz,   Vec* rho,   Vec* rt,   Vec* exner, 
+                                Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n,
+                                Vec* velz_p, Vec* rho_p, Vec* rt_p, Vec* exner_p);
         void AssemblePreconditioner(Mat P);
-        void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs);
-        void AssembleConstInv(int ex, int ey, Mat B);
-        void DiagExner(L2Vecs* rt, L2Vecs* exner);
+        void DiagExner(Vec* rtz, L2Vecs* exner);
 
         L2Vecs* velz_prev;
         L2Vecs* rho_prev;
