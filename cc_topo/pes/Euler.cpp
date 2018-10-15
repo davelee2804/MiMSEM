@@ -15,6 +15,7 @@
 #include "Geom.h"
 #include "L2Vecs.h"
 #include "ElMats.h"
+#include "VertOps.h"
 #include "Assembly.h"
 #include "Euler.h"
 

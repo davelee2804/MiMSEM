@@ -13,6 +13,7 @@
 #include "Geom.h"
 #include "L2Vecs.h"
 #include "ElMats.h"
+#include "VertOps.h"
 #include "Assembly.h"
 #include "Euler_JFNK.h"
 
@@ -351,6 +352,7 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         pe->SolveStrang(velx, velz, rho, rt, exner, dump);
+        //pe->StrangCarryover(velx, velz, rho, rt, exner, dump);
     }
 
     delete pe;
