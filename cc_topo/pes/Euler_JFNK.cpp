@@ -28,6 +28,7 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
+#define RAYLEIGH 0.1
 
 using namespace std;
 
@@ -812,289 +813,6 @@ void Euler::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp,
     delete[] Flux;
 }
 
-void Euler::SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
-    int     ii;
-    char    fieldname[100];
-    Vec     wi;
-    Vec     bu, xu;
-    Vec*    Fu        = new Vec[geom->nk];
-    Vec*    velx_new  = new Vec[geom->nk];
-    Vec*    velz_new  = new Vec[topo->nElsX*topo->nElsX];
-    L2Vecs* rho_old   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rho_new   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_old    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_new    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* exner_old = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* exner_new = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* Fp        = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* Ft        = new L2Vecs(geom->nk, topo, geom);
-
-    if(firstStep) {
-        VecScatterBegin(topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterBegin(topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
-    }
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &xu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
-    for(ii = 0; ii < geom->nk; ii++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fu[ii]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_new[ii]);
-    }
-    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &velz_new[ii]);
-        VecCopy(velz[ii], velz_new[ii]);
-    }
-
-    rho_old->CopyFromHoriz(rho);
-    rt_old->CopyFromHoriz(rt);
-    exner_old->CopyFromHoriz(exner);
-
-    rho_old->UpdateLocal();
-    rt_old->UpdateLocal();
-    exner_old->UpdateLocal();
-
-    rho_old->HorizToVert();
-    rt_old->HorizToVert();
-    exner_old->HorizToVert();
-
-    rho_new->CopyFromHoriz(rho);
-    rt_new->CopyFromHoriz(rt);
-    exner_new->CopyFromHoriz(exner);
-
-    rho_new->UpdateLocal();
-    rt_new->UpdateLocal();
-    exner_new->UpdateLocal();
-
-    rho_new->HorizToVert();
-    rt_new->HorizToVert();
-    exner_new->HorizToVert();
-
-    // 1.  First vertical half step
-    if(!rank)cout<<"vertical half step (1)..............."<<endl;
-    DiagExner(rt_old->vz, exner_old);
-    if(firstStep) {
-        AssembleKEVecs(velx, velz);
-        VertSolve_JFNK(velz_new, rho_new->vz, rt_new->vz, exner_new->vz, velz, rho_old->vz, rt_old->vz, exner_old->vz);
-    } else {
-        VertSolve_Explicit(velz_new, rho_new->vz, rt_new->vz, exner_new->vz, 
-                           velz,     rho_old->vz, rt_old->vz, exner_old->vz,
-                           velz_prev->vz, rho_prev->vz, rt_prev->vz, exner_prev->vz);
-    }
-
-    rho_new->VertToHoriz();
-    rt_new->VertToHoriz();
-    exner_new->VertToHoriz();
-
-    rho_new->UpdateGlobal();
-    rt_new->UpdateGlobal();
-    exner_new->UpdateGlobal();
-
-    rho_old->CopyFromHoriz(rho_new->vh);
-    rt_old->CopyFromHoriz(rt_new->vh);
-    exner_old->CopyFromHoriz(exner_new->vh);
-
-    rho_old->UpdateLocal();
-    rt_old->UpdateLocal();
-    exner_old->UpdateLocal();
-
-    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecCopy(velz_new[ii], velz[ii]);
-    }
-
-/**/
-    // 2.1 First horiztonal substep
-    if(!rank)cout<<"horiztonal step (1).................."<<endl;
-    AssembleKEVecs(velx, velz);
-    //DiagExner(rt_old->vz, exner_new);
-    HorizRHS(velx, rho_old->vl, rt_old->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
-    for(ii = 0; ii < geom->nk; ii++) {
-        // momentum
-        M1->assemble(ii, SCALE);
-        MatMult(M1->M, velx[ii], bu);
-        VecAXPY(bu, -dt, Fu[ii]);
-        KSPSolve(ksp1, bu, velx_new[ii]);
-
-        // continuity
-        VecCopy(rho_old->vh[ii], rho_new->vh[ii]);
-        VecAXPY(rho_new->vh[ii], -dt, Fp->vh[ii]);
-
-        // internal energy
-        VecCopy(rt_old->vh[ii], rt_new->vh[ii]);
-        VecAXPY(rt_new->vh[ii], -dt, Ft->vh[ii]);
-    }
-    rho_new->UpdateLocal();
-    rt_new->UpdateLocal();
-    rt_new->HorizToVert();
-
-    // 2.2 Second horiztonal step
-    if(!rank)cout<<"horiztonal step (2).................."<<endl;
-    AssembleKEVecs(velx_new, velz);
-    DiagExner(rt_new->vz, exner_new);
-    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
-    for(ii = 0; ii < geom->nk; ii++) {
-        // momentum
-        VecZeroEntries(xu);
-        VecAXPY(xu, 0.75, velx[ii]);
-        VecAXPY(xu, 0.25, velx_new[ii]);
-        M1->assemble(ii, SCALE);
-        MatMult(M1->M, xu, bu);
-        VecAXPY(bu, -0.25*dt, Fu[ii]);
-        KSPSolve(ksp1, bu, velx_new[ii]);
-
-        // continuity
-        VecScale(rho_new->vh[ii], 0.25);
-        VecAXPY(rho_new->vh[ii], 0.75, rho_old->vh[ii]);
-        VecAXPY(rho_new->vh[ii], -0.25*dt, Fp->vh[ii]);
-
-        // internal energy
-        VecScale(rt_new->vh[ii], 0.25);
-        VecAXPY(rt_new->vh[ii], 0.75, rt_old->vh[ii]);
-        VecAXPY(rt_new->vh[ii], -0.25*dt, Ft->vh[ii]);
-    }
-
-    rho_new->UpdateLocal();
-    rt_new->UpdateLocal();
-    rt_new->HorizToVert();
-
-    // 2.3 Third horiztonal step
-    if(!rank)cout<<"horiztonal step (3).................."<<endl;
-    AssembleKEVecs(velx_new, velz);
-    DiagExner(rt_new->vz, exner_new);
-    HorizRHS(velx_new, rho_new->vl, rt_new->vl, exner_new->vh, Fu, Fp->vh, Ft->vh);
-    for(ii = 0; ii < geom->nk; ii++) {
-        // momentum
-        VecZeroEntries(xu);
-        VecAXPY(xu, 1.0/3.0, velx[ii]);
-        VecAXPY(xu, 2.0/3.0, velx_new[ii]);
-        M1->assemble(ii, SCALE);
-        MatMult(M1->M, xu, bu);
-        VecAXPY(bu, (-2.0/3.0)*dt, Fu[ii]);
-        KSPSolve(ksp1, bu, velx_new[ii]);
-
-        // continuity
-        VecScale(rho_new->vh[ii], 2.0/3.0);
-        VecAXPY(rho_new->vh[ii], 1.0/3.0, rho_old->vh[ii]);
-        VecAXPY(rho_new->vh[ii], (-2.0/3.0)*dt, Fp->vh[ii]);
-
-        // internal energy
-        VecScale(rt_new->vh[ii], 2.0/3.0);
-        VecAXPY(rt_new->vh[ii], 1.0/3.0, rt_old->vh[ii]);
-        VecAXPY(rt_new->vh[ii], (-2.0/3.0)*dt, Ft->vh[ii]);
-    }
-
-    for(ii = 0; ii < geom->nk; ii++) {
-        VecCopy(velx_new[ii], velx[ii]);
-    }
-
-    // 3.0  Second vertical half step
-    rho_new->UpdateLocal();
-    rt_new->UpdateLocal();
-    exner_new->UpdateLocal();
-
-    rho_new->HorizToVert();
-    rt_new->HorizToVert();
-    exner_new->HorizToVert();
-
-    rho_old->CopyFromHoriz(rho_new->vh);
-    rt_old->CopyFromHoriz(rt_new->vh);
-    exner_old->CopyFromHoriz(exner_new->vh);
-
-    rho_old->UpdateLocal();
-    rt_old->UpdateLocal();
-    exner_old->UpdateLocal();
-
-    rho_old->HorizToVert();
-    rt_old->HorizToVert();
-    exner_old->HorizToVert();
-
-    velz_prev->CopyFromVert(velz_new);
-    rho_prev->CopyFromVert(rho_old->vz);
-    rt_prev->CopyFromVert(rt_old->vz);
-    exner_prev->CopyFromVert(exner_old->vz);
-
-    if(!rank)cout<<"vertical half step (2)..............."<<endl;
-    AssembleKEVecs(velx, velz);
-    //DiagExner(rt_old->vz, exner_old);
-    DiagExner(rt_new->vz, exner_new);//!!!
-    VertSolve_JFNK(velz_new, rho_new->vz, rt_new->vz, exner_new->vz, velz, rho_old->vz, rt_old->vz, exner_old->vz);
-
-    rho_new->VertToHoriz();
-    rt_new->VertToHoriz();
-    exner_new->VertToHoriz();
-
-    rho_new->UpdateGlobal();
-    rt_new->UpdateGlobal();
-    exner_new->UpdateGlobal();
-
-    rho_new->CopyToHoriz(rho);
-    rt_new->CopyToHoriz(rt);
-    exner_new->CopyToHoriz(exner);
-/**/
-
-    firstStep = false;
-
-    diagnostics(velx, velz, rho, rt, exner);
-
-    // write output
-    if(save) {
-        step++;
-
-        L2Vecs* l2Theta = new L2Vecs(geom->nk+1, topo, geom);
-        VecCopy(theta_b_l, l2Theta->vl[0]       );
-        VecCopy(theta_t_l, l2Theta->vl[geom->nk]);
-        diagTheta(rho_new->vl, rt_new->vl, l2Theta->vl);
-
-        l2Theta->UpdateGlobal();
-        for(ii = 0; ii < geom->nk+1; ii++) {
-            sprintf(fieldname, "theta");
-            geom->write2(l2Theta->vh[ii], fieldname, step, ii, false);
-        }
-        delete l2Theta;
-
-        for(ii = 0; ii < geom->nk; ii++) {
-            curl(true, velx[ii], &wi, ii, false);
-
-            sprintf(fieldname, "vorticity");
-            geom->write0(wi, fieldname, step, ii);
-            sprintf(fieldname, "velocity_h");
-            geom->write1(velx[ii], fieldname, step, ii);
-            sprintf(fieldname, "density");
-            geom->write2(rho[ii], fieldname, step, ii, true);
-            sprintf(fieldname, "rhoTheta");
-            geom->write2(rt[ii], fieldname, step, ii, true);
-            sprintf(fieldname, "exner");
-            geom->write2(exner[ii], fieldname, step, ii, true);
-
-            VecDestroy(&wi);
-        }
-        sprintf(fieldname, "velocity_z");
-        geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
-    }
-
-    VecDestroy(&xu);
-    VecDestroy(&bu);
-    for(ii = 0; ii < geom->nk; ii++) {
-        VecDestroy(&Fu[ii]);
-        VecDestroy(&velx_new[ii]);
-    }
-    delete[] Fu;
-    delete[] velx_new;
-    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecDestroy(&velz_new[ii]);
-    }
-    delete[] velz_new;
-    delete rho_old;
-    delete rho_new;
-    delete rt_old;
-    delete rt_new;
-    delete exner_old;
-    delete exner_new;
-    delete Fp;
-    delete Ft;
-}
-
 Vec* CreateHorizVecs(Topo* topo, Geom* geom) {
     Vec* vecs = new Vec[geom->nk];
 
@@ -1110,6 +828,9 @@ void DestroyHorizVecs(Vec* vecs, Geom* geom) {
     }
     delete[] vecs;
 }
+
+#define FIRST_STEP_EXPLICIT
+//#define PROGNOSE_EXNER
 
 void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int     ii;
@@ -1128,6 +849,14 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     L2Vecs* rt_3    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_4    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_5    = new L2Vecs(geom->nk, topo, geom);
+#ifdef PROGNOSE_EXNER
+    L2Vecs* rt_e    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_1 = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_2 = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_3 = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_4 = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_e = new L2Vecs(geom->nk, topo, geom);
+#endif
     L2Vecs* exner_i = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* Fp      = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* Ft      = new L2Vecs(geom->nk, topo, geom);
@@ -1158,7 +887,9 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     exner_i->UpdateLocal();
     exner_i->HorizToVert();
 
-    //if(firstStep) {
+#ifdef FIRST_STEP_EXPLICIT
+    if(firstStep) {
+#endif
         AssembleKEVecs(velx, velz);
 
         velz_1->CopyFromVert(velz);
@@ -1166,24 +897,48 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         rt_1->CopyFromVert(rt_0->vz);
 
         VertSolve_JFNK(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz, velz, rho_0->vz, rt_0->vz, exner_i->vz);
-    /*} else {
-        // pass in the current time level as well for q^{1} = q^{n} + F(q^{prev})
+#ifdef FIRST_STEP_EXPLICIT
+    } else {
         // use the same horizontal kinetic energy as the previous horizontal solve, so don't assemble here
-        VertSolve_Explicit(velz_1->vz,    rho_1->vz,    rt_1->vz,    exner_i->vz, 
-                           velz,          rho_0->vz,    rt_0->vz,    exner_i->vz,
-                           velz_prev->vz, rho_prev->vz, rt_prev->vz, exner_prev->vz);
-    }*/
+        //VertSolve_Explicit(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz, 
+        //                   velz,       rho_0->vz, rt_0->vz, exner_i->vz,
+        //                   velz,       rho_0->vz, rt_0->vz, exner_i->vz);
+        for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            VecCopy(velz[ii], velz_1->vz[ii]);
+            VecCopy(rho_0->vz[ii], rho_1->vz[ii]);
+            VecCopy(rt_0->vz[ii],  rt_1->vz[ii] );
+            VecScale(velz_1->vz[ii],  2.0);
+            VecScale(rho_1->vz[ii],   2.0);
+            VecScale(rt_1->vz[ii],    2.0);
+            VecScale(exner_i->vz[ii], 2.0);
+            VecAXPY(velz_1->vz[ii],  -1.0, velz_prev->vz[ii] );
+            VecAXPY(rho_1->vz[ii],   -1.0, rho_prev->vz[ii]  );
+            VecAXPY(rt_1->vz[ii],    -1.0, rt_prev->vz[ii]   );
+            VecAXPY(exner_i->vz[ii], -1.0, exner_prev->vz[ii]);
+        }
+    }
+#endif
     rho_1->VertToHoriz();
     rho_1->UpdateGlobal();
     rt_1->VertToHoriz();
     rt_1->UpdateGlobal();
+#ifdef PROGNOSE_EXNER
+    exner_1->CopyFromVert(exner_i->vz);
+    exner_1->VertToHoriz();
+    exner_1->UpdateGlobal();
+#else
     exner_i->VertToHoriz();
     exner_i->UpdateGlobal();
+#endif
 
     // 2.1 first horiztonal substep
     if(!rank) cout << "horiztonal step (1).................." << endl;
     AssembleKEVecs(velx, velz_1->vz);
+#ifdef PROGNOSE_EXNER
+    HorizRHS(velx, rho_1->vl, rt_1->vl, exner_1->vh, Fu, Fp->vh, Ft->vh);
+#else
     HorizRHS(velx, rho_1->vl, rt_1->vl, exner_i->vh, Fu, Fp->vh, Ft->vh);
+#endif
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         M1->assemble(ii, SCALE);
@@ -1203,11 +958,20 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rt_2->UpdateLocal();
     rt_2->HorizToVert();
 
+#ifdef PROGNOSE_EXNER
+    Ft->UpdateLocal();
+    SolveExner(rt_1->vl, Ft->vl, exner_1->vh, exner_2->vh, dt);
+#endif
+
     // 2.2 second horiztonal step
     if(!rank) cout << "horiztonal step (2).................." << endl;
     AssembleKEVecs(velx_2, velz_1->vz);
+#ifdef PROGNOSE_EXNER
+    HorizRHS(velx_2, rho_2->vl, rt_2->vl, exner_2->vh, Fu, Fp->vh, Ft->vh);
+#else
     DiagExner(rt_2->vz, exner_i);
     HorizRHS(velx_2, rho_2->vl, rt_2->vl, exner_i->vh, Fu, Fp->vh, Ft->vh);
+#endif
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         VecZeroEntries(xu);
@@ -1234,11 +998,28 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rt_3->UpdateLocal();
     rt_3->HorizToVert();
 
+#ifdef PROGNOSE_EXNER
+    Ft->UpdateLocal();
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecZeroEntries(exner_e->vh[ii]);
+        VecAXPY(exner_e->vh[ii], 0.75, exner_1->vh[ii]);
+        VecAXPY(exner_e->vh[ii], 0.25, exner_2->vh[ii]);
+        VecZeroEntries(rt_e->vl[ii]);
+        VecAXPY(rt_e->vl[ii], 0.75, rt_1->vl[ii]);
+        VecAXPY(rt_e->vl[ii], 0.25, rt_2->vl[ii]);
+    }
+    SolveExner(rt_e->vl, Ft->vl, exner_e->vh, exner_3->vh, dt);
+#endif
+
     // 2.3 third horiztonal step
     if(!rank) cout << "horiztonal step (3).................." << endl;
     AssembleKEVecs(velx_3, velz_1->vz);
+#ifdef PROGNOSE_EXNER
+    HorizRHS(velx_3, rho_3->vl, rt_3->vl, exner_3->vh, Fu, Fp->vh, Ft->vh);
+#else
     DiagExner(rt_3->vz, exner_i);
     HorizRHS(velx_3, rho_3->vl, rt_3->vl, exner_i->vh, Fu, Fp->vh, Ft->vh);
+#endif
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         VecZeroEntries(xu);
@@ -1266,12 +1047,32 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rt_4->UpdateLocal();
     rt_4->HorizToVert();
 
+#ifdef PROGNOSE_EXNER
+    Ft->UpdateLocal();
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecZeroEntries(exner_e->vh[ii]);
+        VecAXPY(exner_e->vh[ii], 1.0/3.0, exner_1->vh[ii]);
+        VecAXPY(exner_e->vh[ii], 2.0/3.0, exner_3->vh[ii]);
+        VecZeroEntries(rt_e->vl[ii]);
+        VecAXPY(rt_e->vl[ii], 1.0/3.0, rt_1->vl[ii]);
+        VecAXPY(rt_e->vl[ii], 2.0/3.0, rt_3->vl[ii]);
+    }
+    SolveExner(rt_e->vl, Ft->vl, exner_e->vh, exner_4->vh, dt);
+    exner_4->UpdateLocal();
+    exner_4->HorizToVert();
+    exner_4->CopyToVert(exner_i->vz);
+#endif
+
     // carry over the vertical fields to the next time level
     velz_prev->CopyFromVert(velz_1->vz);
     rho_prev->CopyFromVert(rho_4->vz);
     rt_prev->CopyFromVert(rt_4->vz);
+#ifdef PROGNOSE_EXNER
+    exner_prev->CopyFromVert(exner_4->vz);
+#else
     DiagExner(rt_4->vz, exner_i);
     exner_prev->CopyFromVert(exner_i->vz);
+#endif
 
     // 3.  second vertical half step
     if(!rank) cout << "vertical half step (2)..............." << endl;
@@ -1347,6 +1148,14 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     delete rt_3;
     delete rt_4;
     delete rt_5;
+#ifdef PROGNOSE_EXNER
+    delete rt_e;
+    delete exner_1;
+    delete exner_2;
+    delete exner_3;
+    delete exner_4;
+    delete exner_e;
+#endif
     delete exner_i;
     delete Fp;
     delete Ft;
@@ -1891,6 +1700,10 @@ PetscErrorCode _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
     MatMult(euler->VISC, euler->wNew, euler->wTmp);
     VecAXPY(euler->fw, -0.5*euler->dt*euler->vert_visc, euler->wTmp);
 
+    // rayleigh friction
+    MatMult(vo->VR, euler->wNew, euler->wTmp);
+    VecAXPY(euler->fw, +0.5*euler->dt*RAYLEIGH, euler->wTmp);
+
     // assemble the density
     vo->AssembleLinearWithRT(euler->eX, euler->eY, euler->rhoNew, euler->VA_rho, true);
     MatMult(euler->VA_rho, euler->wNew, euler->wTmp);
@@ -1910,6 +1723,8 @@ PetscErrorCode _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
 
     // assemble the density weighted potential temperature
     MatMult(euler->VA_theta, euler->wRho, euler->wTmp);
+    //vo->AssembleLinearWithRT(euler->eX, euler->eY, euler->rtNew, euler->VA_rho, true);
+    //MatMult(euler->VA_rho, euler->wNew, euler->wTmp);
 #ifdef VERT_MASS_INV
     MatMult(vo->VA_inv, euler->wTmp, euler->wTheta);
 #else
@@ -1970,6 +1785,7 @@ void Euler::AssemblePreconditioner(Mat P) {
     vo->AssembleLinearWithRT(eX, eY, rtNew, VA_rho, true);
     vo->AssembleConstWithRho(eX, eY, exnerNew, VB_Pi);
     vo->AssembleConstWithRhoInv(eX, eY, rtNew, VB_rt);
+    vo->AssembleConLinWithW(eX, eY, wNew, vo->VBA);
 
     if(!DTVB) {    
         MatMatMult(vo->V01, vo->VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTVB);
@@ -2009,8 +1825,8 @@ void Euler::AssemblePreconditioner(Mat P) {
         MatGetRow(DW2, kk, &nc, &colInds, &colVals);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_w[colInds[ii]];
-            //vals2[ii] = dt*colVals[ii];
-            vals2[ii] = colVals[ii];
+            vals2[ii] = 0.5*dt*colVals[ii];
+            //vals2[ii] = colVals[ii];
         }
         MatSetValues(P, 1, &inds_w[kk], nc, inds2, vals2, ADD_VALUES);
         MatRestoreRow(DW2, kk, &nc, &colInds, &colVals);
@@ -2028,12 +1844,20 @@ void Euler::AssemblePreconditioner(Mat P) {
         MatGetRow(vo->VB, kk, &nc, &colInds, &colVals);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_rho[colInds[ii]];
+#ifdef ADV_MASS_MAT
             vals2[ii] = colVals[ii];
+#else
+            vals2[ii] = 1.0;
+#endif
         }
         MatSetValues(P, 1, &inds_rho[kk], nc, inds2, vals2, ADD_VALUES);
         for(ii = 0; ii < nc; ii++) {
             inds2[ii] = inds_rt[colInds[ii]];
+#ifdef ADV_MASS_MAT
             vals2[ii] = colVals[ii];
+#else
+            vals2[ii] = 1.0;
+#endif
         }
         MatSetValues(P, 1, &inds_rt[kk], nc, inds2, vals2, ADD_VALUES);
         for(ii = 0; ii < nc; ii++) {
@@ -2105,6 +1929,7 @@ void Euler::VertSolve_JFNK(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n
             vo->AssembleLinearInv(eX, eY, vo->VA_inv);
             vo->AssembleConst(eX, eY, vo->VB);
             vo->AssembleLinCon(eX, eY, vo->VAB);
+            vo->AssembleRayleigh(eX, eY, vo->VR);
 
             if(!ei) {
                 MatMatMult(vo->V01, vo->VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
@@ -2205,6 +2030,7 @@ void Euler::VertSolve_Explicit(Vec* velz,   Vec* rho,   Vec* rt,   Vec* exner,
             vo->AssembleLinearInv(ex, ey, vo->VA_inv);
             vo->AssembleConst(ex, ey, vo->VB);
             vo->AssembleConstInv(ex, ey, vo->VB_inv);
+            vo->AssembleRayleigh(ex, ey, vo->VR);
 
             // solve for the vertical velocity
             MatMult(vo->VA, velz_n[ei], rhs);
@@ -2241,6 +2067,9 @@ void Euler::VertSolve_Explicit(Vec* velz,   Vec* rho,   Vec* rt,   Vec* exner,
             MatMult(VISC, velz_p[ei], tmp);
             VecAXPY(rhs, +0.5*dt*vert_visc, tmp);
 
+            MatMult(vo->VR, velz_p[ei], tmp);
+            VecAXPY(rhs, -0.5*dt*RAYLEIGH, tmp);
+
 #ifdef VERT_MASS_INV
             MatMult(vo->VA_inv, rhs, velz[ei]);
 #else
@@ -2260,6 +2089,8 @@ void Euler::VertSolve_Explicit(Vec* velz,   Vec* rho,   Vec* rt,   Vec* exner,
 
             // solve for the density weighted potential temperature
             MatMult(VA_theta, wRho, wTmp);
+            //vo->AssembleLinearWithRT(ex, ey, rt_p[ei], VA_rho, true);
+            //MatMult(VA_rho, velz_p[ei], wTmp);
 #ifdef VERT_MASS_INV
             MatMult(vo->VA_inv, wTmp, wTheta);
 #else
@@ -2269,7 +2100,8 @@ void Euler::VertSolve_Explicit(Vec* velz,   Vec* rho,   Vec* rt,   Vec* exner,
             VecAYPX(rt[ei], -0.5*dt, rt_n[ei]);
 
             // diagnose the exner pressure
-            vo->Assemble_EOS_RHS(ex, ey, rt[ei], eosRhs);
+            //vo->Assemble_EOS_RHS(ex, ey, rt[ei], eosRhs);
+            vo->Assemble_EOS_RHS(ex, ey, rt_n[ei], eosRhs);
             MatMult(vo->VB_inv, eosRhs, exner[ei]);
         }
     }
@@ -2277,4 +2109,26 @@ void Euler::VertSolve_Explicit(Vec* velz,   Vec* rho,   Vec* rt,   Vec* exner,
     MatDestroy(&VISC);
     VecDestroy(&rhs);
     VecDestroy(&tmp);
+}
+
+// rt and Ft and local vectors
+void Euler::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt) {
+    int ii;
+    Vec rt_sum, rhs;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rt_sum);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs);
+
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecCopy(Ft[ii], rt_sum);
+        VecScale(rt_sum, -_dt*RD/CV);
+        VecAXPY(rt_sum, 1.0, rt[ii]);
+        T->assemble(rt_sum, ii, SCALE);
+        MatMult(T->M, exner_i[ii], rhs);
+
+        T->assemble(rt[ii], ii, SCALE);
+        KSPSolve(kspE, rhs, exner_f[ii]);
+    }
+    VecDestroy(&rt_sum);
+    VecDestroy(&rhs);
 }

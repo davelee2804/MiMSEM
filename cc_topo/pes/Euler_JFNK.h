@@ -65,7 +65,6 @@ class Euler {
         void init2(Vec* p, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
         void HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft);
-        void SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
         void StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
@@ -118,6 +117,7 @@ class Euler {
                                 Vec* velz_p, Vec* rho_p, Vec* rt_p, Vec* exner_p);
         void AssemblePreconditioner(Mat P);
         void DiagExner(Vec* rtz, L2Vecs* exner);
+        void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
 
         L2Vecs* velz_prev;
         L2Vecs* rho_prev;

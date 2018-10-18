@@ -8,6 +8,7 @@ class Euler {
         double del2;
         double vert_visc;
         bool do_visc;
+        int rank;
         int step;
         GaussLobatto* quad;
         LagrangeNode* node;
@@ -82,6 +83,7 @@ class Euler {
         void HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft);
         void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
         void SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
+        void StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
         void AssembleConst(int ex, int ey, Mat A);      // piecewise constant (in vertical) mass matrix
         void AssembleLinear(int ex, int ey, Mat B);     // piecewise linear (in vertical) mass matrix
@@ -100,7 +102,7 @@ class Euler {
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
 
         void AssembleConstInv(int ex, int ey, Mat B);
-        void DiagExner(L2Vecs* rt, L2Vecs* exner);
+        void DiagExner(Vec* rtz, L2Vecs* exner);
         void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs);
 
         L2Vecs* velz_prev;
