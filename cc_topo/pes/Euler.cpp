@@ -30,7 +30,7 @@
 #define MAX_IT 100
 //#define VERT_TOL 1.0e-9
 #define VERT_TOL 1.0e-8
-#define RAYLEIGH 0.1
+#define RAYLEIGH 0.2
 
 //#define THETA_VISC_H
 //#define EXTRAPOLATE_EXNER
@@ -2816,8 +2816,9 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             } else {
                 MatMatMult(DTV1, V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
             }
-            MatMult(DEL2, velz_n[ei], tmp);
-            VecAXPY(rhs, +0.5*dt*vert_visc, tmp);
+            // apply laplacian viscosity implicitly to avoid diffusive cfl
+            MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
+
             MatMult(DTV10_w, velz_n[ei], tmp);
             VecAXPY(rhs, -0.25*dt, tmp); // 0.5 for the nonlinear term and 0.5 for the time step
 
@@ -2907,6 +2908,8 @@ void DestroyHorizVecs(Vec* vecs, Geom* geom) {
     delete[] vecs;
 }
 
+#define FIRST_STEP_EXPLICIT
+
 void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int     ii;
     char    fieldname[100];
@@ -2954,7 +2957,9 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     exner_i->UpdateLocal();
     exner_i->HorizToVert();
 
+#ifdef FIRST_STEP_EXPLICIT
     exner_prev->CopyFromVert(exner_i->vz);
+#endif
 
     if(firstStep) {
         AssembleKEVecs(velx, velz);
@@ -2967,12 +2972,13 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     } else {
         // pass in the current time level as well for q^{1} = q^{n} + F(q^{prev})
         // use the same horizontal kinetic energy as the previous horizontal solve, so don't assemble here
+#ifdef FIRST_STEP_EXPLICIT
         VertSolve_Explicit(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz, velz, rho_0->vz, rt_0->vz, exner_prev->vz);
-/*
+#else
         for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-            VecCopy(velz[ii], velz_1->vz[ii]);
-            VecCopy(rho_0->vz[ii], rho_1->vz[ii]);
-            VecCopy(rt_0->vz[ii],  rt_1->vz[ii] );
+            VecCopy(velz[ii],      velz_1->vz[ii]);
+            VecCopy(rho_0->vz[ii], rho_1->vz[ii] );
+            VecCopy(rt_0->vz[ii],  rt_1->vz[ii]  );
             VecScale(velz_1->vz[ii],  2.0);
             VecScale(rho_1->vz[ii],   2.0);
             VecScale(rt_1->vz[ii],    2.0);
@@ -2982,7 +2988,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
             VecAXPY(rt_1->vz[ii],    -1.0, rt_prev->vz[ii]   );
             VecAXPY(exner_i->vz[ii], -1.0, exner_prev->vz[ii]);
         }
-*/
+#endif
     }
     rho_1->VertToHoriz();
     rho_1->UpdateGlobal();
