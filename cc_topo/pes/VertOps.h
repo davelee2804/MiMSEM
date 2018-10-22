@@ -30,6 +30,7 @@ class VertOps {
         Mat VB_inv;
         Mat VAB;
         Mat VBA;
+        Mat VR;  // rayleigh friction operator
 
         void vertOps();
 

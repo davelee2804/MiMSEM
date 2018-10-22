@@ -28,7 +28,7 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-#define RAYLEIGH 0.1
+#define RAYLEIGH 0.2
 
 using namespace std;
 
@@ -183,9 +183,9 @@ double Euler::viscosity_vert() {
     }
     MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-    //return 4.0*1.0*dzMax/M_PI;
+    return 4.0*1.0*dzMax/M_PI;
     //return 1.0*1.0*dzMax/M_PI;
-    return 0.0;
+    //return 0.0;
 }
 
 // project coriolis term onto 0 forms
@@ -900,13 +900,13 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
 #ifdef FIRST_STEP_EXPLICIT
     } else {
         // use the same horizontal kinetic energy as the previous horizontal solve, so don't assemble here
-        //VertSolve_Explicit(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz, 
+        //VertSolve_Explicit(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz,
         //                   velz,       rho_0->vz, rt_0->vz, exner_i->vz,
         //                   velz,       rho_0->vz, rt_0->vz, exner_i->vz);
         for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-            VecCopy(velz[ii], velz_1->vz[ii]);
-            VecCopy(rho_0->vz[ii], rho_1->vz[ii]);
-            VecCopy(rt_0->vz[ii],  rt_1->vz[ii] );
+            VecCopy(velz[ii],      velz_1->vz[ii]);
+            VecCopy(rho_0->vz[ii], rho_1->vz[ii] );
+            VecCopy(rt_0->vz[ii],  rt_1->vz[ii]  );
             VecScale(velz_1->vz[ii],  2.0);
             VecScale(rho_1->vz[ii],   2.0);
             VecScale(rt_1->vz[ii],    2.0);
@@ -2064,8 +2064,7 @@ void Euler::VertSolve_Explicit(Vec* velz,   Vec* rho,   Vec* rt,   Vec* exner,
                 MatMatMult(vo->V01, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTVB);
                 MatMatMult(DTVB, vo->V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &VISC);
             }
-            MatMult(VISC, velz_p[ei], tmp);
-            VecAXPY(rhs, +0.5*dt*vert_visc, tmp);
+            MatAXPY(vo->VA, -0.5*dt*vert_visc, VISC, DIFFERENT_NONZERO_PATTERN);
 
             MatMult(vo->VR, velz_p[ei], tmp);
             VecAXPY(rhs, -0.5*dt*RAYLEIGH, tmp);

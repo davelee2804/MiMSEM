@@ -74,6 +74,11 @@ VertOps::VertOps(Topo* _topo, Geom* _geom) {
     MatSetSizes(VBA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(VBA, 2*n2, PETSC_NULL);
 
+    MatCreate(MPI_COMM_SELF, &VR);
+    MatSetType(VR, MATSEQAIJ);
+    MatSetSizes(VR, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
+    MatSeqAIJSetPreallocation(VR, 2*n2, PETSC_NULL);
+
     vertOps();
 }
 
@@ -101,6 +106,7 @@ VertOps::~VertOps() {
     MatDestroy(&VB_inv);
     MatDestroy(&VAB);
     MatDestroy(&VBA);
+    MatDestroy(&VR);
 }
 
 /*
@@ -809,6 +815,26 @@ void VertOps::AssembleRayleigh(int ex, int ey, Mat A) {
 
     MatZeroEntries(A);
 
+    // bottom level
+/*
+    for(ii = 0; ii < mp12; ii++) {
+        det = geom->det[ei][ii];
+        Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+        // assembly the contributions from the top two levels only
+        Q0[ii][ii] *= 0.5*(geom->thick[0][inds0[ii]] + geom->thick[1][inds0[ii]]);
+    }
+    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+    Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+    for(ii = 0; ii < W->nDofsJ; ii++) {
+        // interface between top two levels
+        inds2k[ii] = ii + (0)*W->nDofsJ;
+    }
+    MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+*/
+
+    // top level
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
         Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
