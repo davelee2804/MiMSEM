@@ -10,7 +10,8 @@ from Geom2 import *
 
 pn = 3
 ne = 24
-nk = 20
+nk = 24
+path = './output/'
 print 'generate geometry...'
 xg, yg, zg = init_geom(pn,ne,False,False)
 
@@ -42,13 +43,13 @@ yn = (+0.5*np.pi*5.0/9.0)*np.ones((256))
 ys = (-0.5*np.pi*5.0/9.0)*np.ones((256))
 
 step = int(sys.argv[1])
-fieldnames = ['velocity_h_x_','velocity_h_y_','vorticity_','exner_','rhoTheta_','density_','kinEn_']
+fieldnames = ['velocity_h_x_','velocity_h_y_','vorticity_','exner_','rhoTheta_','density_']
 yz = np.zeros((len(fieldnames),nk,ny))
 ex = np.zeros((nk,256));
 field_i = 0
 for fieldname in fieldnames:
 	for kk in np.arange(nk):
-		filename = './' + fieldname + '%.3d'%kk + '_%.4d'%step + '.dat'
+		filename = path + fieldname + '%.3d'%kk + '_%.4d'%step + '.dat'
 		print filename
 
 		#delete text lines
@@ -63,7 +64,7 @@ for fieldname in fieldnames:
 
 		w=np.loadtxt(filename)
 
-		picname = './' + fieldname + '%.3d'%kk + '_%.4d'%step + '.png'
+		picname = path + fieldname + '%.3d'%kk + '_%.4d'%step + '.png'
 
 		tmp = w[:]
 		tmp.flatten()
@@ -115,7 +116,7 @@ levs = np.linspace(t_min, t_max, 13, endpoint=True)
 plt.contourf(x2,Zh,ex,100)
 plt.colorbar(orientation='horizontal')
 plt.contour(x2,Zh,ex,levs,colors='k')
-picname = './pressure_' + '%.4d'%step + '_merid_avg.png'
+picname = path + 'pressure_' + '%.4d'%step + '_merid_avg.png'
 plt.savefig(picname)
 
 for field_i in np.arange(len(fieldnames)):
@@ -129,14 +130,14 @@ for field_i in np.arange(len(fieldnames)):
 	plt.contourf(np.linspace(-0.4*np.pi,+0.4*np.pi,ny),Zh,yz[field_i,:,:],100)
 	plt.colorbar(orientation='horizontal')
 	plt.contour(np.linspace(-0.4*np.pi,+0.4*np.pi,ny),Zh,yz[field_i,:,:],levs,colors='k')
-	picname = './' + fieldnames[field_i] + '%.4d'%step + '_zonal_avg.png'
+	picname = path + fieldnames[field_i] + '%.4d'%step + '_zonal_avg.png'
 	plt.savefig(picname)
 
 fieldnames = ['velocity_z_']
 velz_yz = np.zeros((nk-1,ny))
 for fieldname in fieldnames:
 	for kk in np.arange(nk-1):
-		filename = './' + fieldname + '%.3d'%kk + '_%.4d'%step + '.dat'
+		filename = path + fieldname + '%.3d'%kk + '_%.4d'%step + '.dat'
 		print filename
 
 		#delete text lines
@@ -151,7 +152,7 @@ for fieldname in fieldnames:
 
 		w=np.loadtxt(filename)
 
-		picname = './' + fieldname + '%.3d'%kk + '_%.4d'%step + '.png'
+		picname = path + fieldname + '%.3d'%kk + '_%.4d'%step + '.png'
 
 		tmp = w[:]
 		tmp.flatten()
@@ -191,14 +192,14 @@ fig = plt.figure()
 plt.contourf(np.linspace(-0.4*np.pi,+0.4*np.pi,ny),Z[1:-1],velz_yz[:,:],100)
 plt.colorbar(orientation='horizontal')
 plt.contour(np.linspace(-0.4*np.pi,+0.4*np.pi,ny),Z[1:-1],velz_yz[:,:],levs,colors='k')
-picname = './velocity_z_' + '%.4d'%step + '_zonal_avg.png'
+picname = path + 'velocity_z_' + '%.4d'%step + '_zonal_avg.png'
 plt.savefig(picname)
 
 fieldnames = ['theta_']
 theta_yz = np.zeros((nk+1,ny))
 for fieldname in fieldnames:
 	for kk in np.arange(nk+1):
-		filename = './' + fieldname + '%.3d'%kk + '_%.4d'%step + '.dat'
+		filename = path + fieldname + '%.3d'%kk + '_%.4d'%step + '.dat'
 		print filename
 
 		#delete text lines
@@ -219,7 +220,7 @@ for fieldname in fieldnames:
 		t_max = np.max(tmp)
 		levs = np.linspace(t_min, t_max, 13, endpoint=True)
 
-		picname = './' + fieldname + '%.3d'%kk + '_%.4d'%step + '.png'
+		picname = path + fieldname + '%.3d'%kk + '_%.4d'%step + '.png'
 
 		fig = plt.figure()
 		plt.tricontourf(triang, w, 100)
@@ -244,6 +245,6 @@ fig = plt.figure()
 plt.contourf(np.linspace(-0.4*np.pi,+0.4*np.pi,ny),Z,theta_yz[:,:],100)
 plt.colorbar(orientation='horizontal')
 plt.contour(np.linspace(-0.4*np.pi,+0.4*np.pi,ny),Z,theta_yz[:,:],levs,colors='k')
-picname = './theta_' + '%.4d'%step + '_zonal_avg.png'
+picname = path + 'theta_' + '%.4d'%step + '_zonal_avg.png'
 plt.savefig(picname)
 

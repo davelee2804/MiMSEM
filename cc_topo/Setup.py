@@ -12,7 +12,7 @@ pn = int(sys.argv[1])
 ne = int(sys.argv[2])
 n_procs = int(sys.argv[3])
 
-path = './pes/'
+path = './eul/'
 
 try:
 	os.makedirs(path + '/input')
@@ -49,6 +49,6 @@ for pi in np.arange(n_procs):
 
 	np.savetxt(path + '/input/geom_%.4u'%pi + '.txt', coords, fmt='%.18e')
 
-os.popen('cd ./pes; ln -s ../src2/Basis.* .')
-os.popen('cd ./pes; ln -s ../src2/Topo.* .')
-os.popen('cd ./pes; ln -s ../src2/ElMats.* .')
+os.popen('cd ./eul; ln -s ../src2/Basis.* .')
+os.popen('cd ./eul; ln -s ../src2/Topo.* .')
+os.popen('cd ./eul; ln -s ../src2/ElMats.* .')
