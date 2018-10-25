@@ -176,7 +176,19 @@ class Whmat {
         void assemble(Vec rho, int lev, double scale);
 };
 
-/*class UtQWmat {
+class Ut_mat {
+    public:
+        Ut_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~Ut_mat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(int lev, double scale);
+};
+
+class UtQWmat {
     public:
         UtQWmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
         ~UtQWmat();
@@ -190,14 +202,39 @@ class Whmat {
         double** Ut;
         double** Vt;
         double** Qaa;
-        double** Qab;
+        double** Qba;
         double** UtQaa;
-        double** VtQab;
+        double** VtQba;
         double** UtQW;
         double** VtQW;
         M1x_j_xy_i* U;
         M1y_j_xy_i* V;
         M2_j_xy_i* W;
         Wii* Q;
-        void assemble(int lev);
-};*/
+        void assemble(Vec u1, double scale);
+};
+
+class WtQdUdz_mat {
+    public:
+        WtQdUdz_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~WtQdUdz_mat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        double* WtQUflat;
+        double* WtQVflat;
+        double** Wt;
+        double** Qaa;
+        double** Qab;
+        double** WtQaa;
+        double** WtQab;
+        double** WtQU;
+        double** WtQV;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        M2_j_xy_i* W;
+        Wii* Q;
+        void assemble(Vec u1, int lev, double scale);
+};
