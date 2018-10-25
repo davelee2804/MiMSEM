@@ -1222,7 +1222,7 @@ void UtQWmat::assemble(Vec u1, double scale) {
                 // horizontal velocity is piecewise constant, and vertical velocity is 
                 // piecewise linear, so vertical transformations cancel
 
-                // TODO: check the application of H(div) Piola transform for the test function here
+                // 0.5 scaling done outside
                 Qaa[ii][ii] = (ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
                 Qba[ii][ii] = (ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
             }
@@ -1320,15 +1320,10 @@ void WtQdUdz_mat::assemble(Vec u1, int lev, double scale) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
-                // horiztontal velocity is piecewise constant in the vertical
-                ux[0] *= 1.0/geom->thick[lev][inds_0[ii]];
-                ux[1] *= 1.0/geom->thick[lev][inds_0[ii]];
+                // vertical scalings cancel between piecewise constant velocity and jacobian
 
-                // TODO: check the application of H(curl) Piola transform for the trial function here
-                //Qaa[ii][ii] = (+ux[0]*J[1][1] - ux[1]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
-                //Qab[ii][ii] = (-ux[0]*J[1][0] + ux[1]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
-                Qaa[ii][ii] = (+ux[1]*J[1][1] - ux[0]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
-                Qab[ii][ii] = (-ux[1]*J[1][0] + ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
+                Qaa[ii][ii] = (+ux[0]*J[1][1] - ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qab[ii][ii] = (-ux[0]*J[0][1] + ux[1]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
                 // vertical rescaling of jacobian determinant cancels with scaling of
                 // the H(curl) test function
             }
