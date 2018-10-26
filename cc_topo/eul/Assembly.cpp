@@ -1327,9 +1327,11 @@ void WtQdUdz_mat::assemble(Vec u1, int lev, double scale) {
 
                 // vorticity = [a,b,c], velocity = [u,v,w]
                 // +J^{-T}.v.a
-                Qaa[ii][ii] = +1.0*(+ux[1]*J[1][1] - ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                //Qaa[ii][ii] = +1.0*(+ux[1]*J[1][1] - ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qaa[ii][ii] = (+ux[1]*J[1][1] + ux[0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
                 // -J^{-T}.u.b
-                Qab[ii][ii] = -1.0*(-ux[0]*J[0][1] + ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
+                //Qab[ii][ii] = -1.0*(-ux[0]*J[0][1] + ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
+                Qab[ii][ii] = (-ux[1]*J[0][1] - ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
                 // vertical rescaling of jacobian determinant cancels with scaling of
                 // the H(curl) test function
             }
