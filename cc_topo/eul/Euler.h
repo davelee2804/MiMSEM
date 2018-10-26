@@ -44,8 +44,6 @@ class Euler {
         Vec* uz;                 // dudz and dvdz vorticity components
         L2Vecs* uuz;             // u.dudz + v.dvdz vorticity velocity product
         L2Vecs* exner_pre;
-        Mat V01;                 // vertical divergence operator
-        Mat V10;                 // vertical gradient operator
         Mat VA;
         Mat VB;
         KSP ksp1;
@@ -64,7 +62,6 @@ class Euler {
         double viscosity();
         double viscosity_vert();
         void coriolis();
-        void vertOps();
         void initGZ();
         void grad(bool assemble, Vec phi, Vec* u, int lev);            // weak form grad operator
         void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator

@@ -90,9 +90,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     // coriolis vector (projected onto 0 forms)
     coriolis();
 
-    // assemble the vertical gradient and divergence incidence matrices
-    vertOps();
-
     // initialize the 1 form linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp1);
     KSPSetOperators(ksp1, M1->M, M1->M);
@@ -330,9 +327,9 @@ void Euler::initGZ() {
             MatAssemblyEnd(BQ, MAT_FINAL_ASSEMBLY);
 
             if(!ei) {
-                MatMatMult(V01, BQ, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GRAD);
+                MatMatMult(vo->V01, BQ, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GRAD);
             } else {
-                MatMatMult(V01, BQ, MAT_REUSE_MATRIX, PETSC_DEFAULT, &GRAD);
+                MatMatMult(vo->V01, BQ, MAT_REUSE_MATRIX, PETSC_DEFAULT, &GRAD);
             }
 
             VecZeroEntries(gz);
@@ -398,8 +395,6 @@ Euler::~Euler() {
     delete exner_pre;
 #endif
 
-    MatDestroy(&V01);
-    MatDestroy(&V10);
     MatDestroy(&VA);
     MatDestroy(&VB);
 
@@ -886,47 +881,6 @@ void Euler::laplacian(bool assemble, Vec ui, Vec* ddu, int lev) {
     VecDestroy(&Cu);
     VecDestroy(&RCu);
     VecDestroy(&Du);
-}
-
-/*
-assemble the vertical gradient and divergence orientation matrices
-V10 is the strong form vertical divergence from the linear to the
-constant basis functions
-*/
-void Euler::vertOps() {
-    int ii, kk, n2, rows[1], cols[2];
-    double vm = -1.0;
-    double vp = +1.0;
-    Mat V10t;
-    
-    n2 = topo->elOrd*topo->elOrd;
-
-    MatCreate(MPI_COMM_SELF, &V10);
-    MatSetType(V10, MATSEQAIJ);
-    MatSetSizes(V10, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(V10, 2, PETSC_NULL);
-
-    for(kk = 0; kk < geom->nk; kk++) {
-        for(ii = 0; ii < n2; ii++) {
-            rows[0] = kk*n2 + ii;
-            if(kk > 0) {            // bottom of element
-                cols[0] = (kk-1)*n2 + ii;
-                MatSetValues(V10, 1, rows, 1, cols, &vm, INSERT_VALUES);
-            }
-            if(kk < geom->nk - 1) { // top of element
-                cols[0] = (kk+0)*n2 + ii;
-                MatSetValues(V10, 1, rows, 1, cols, &vp, INSERT_VALUES);
-            }
-        }
-    }
-    MatAssemblyBegin(V10, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(V10, MAT_FINAL_ASSEMBLY);
-
-    MatTranspose(V10, MAT_INITIAL_MATRIX, &V10t);
-    MatDuplicate(V10t, MAT_DO_NOT_COPY_VALUES, &V01);
-    MatZeroEntries(V01);
-    MatAXPY(V01, -1.0, V10t, SAME_NONZERO_PATTERN);
-    MatDestroy(&V10t);
 }
 
 // rho and rt are local vectors, and exner is a global vector
@@ -1659,7 +1613,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             vo->AssembleLinear(ex, ey, VA);
             MatMult(VA, velz_n[ei], rhs);
             VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
-            MatMult(V01, Kv[ei], tmp);
+            MatMult(vo->V01, Kv[ei], tmp);
             VecAXPY(rhs, -0.5*dt, tmp);
 #ifdef HORIZ_VORT
             VecAXPY(rhs, -dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
@@ -1671,17 +1625,17 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 // assemble the operators
                 vo->AssembleConLinWithW(ex, ey, velz[ei], V10_w);
                 if(!DTV10_w) {
-                    MatMatMult(V01, V10_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV10_w);
+                    MatMatMult(vo->V01, V10_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV10_w);
                 } else {
-                    MatMatMult(V01, V10_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV10_w);
+                    MatMatMult(vo->V01, V10_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV10_w);
                 }
 
                 if(it == 0) {
                     vo->AssembleConst(ex, ey, VB);
                     if(!DTV1) {
-                        MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
+                        MatMatMult(vo->V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
                     } else {
-                        MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
+                        MatMatMult(vo->V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
                     }
 
                     vo->AssembleLinearInv(ex, ey, V0_inv);
@@ -1707,9 +1661,9 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                     MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
                 }
                 if(!DV0_invV0_rt) {
-                    MatMatMult(V10, V0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+                    MatMatMult(vo->V10, V0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
                 } else {
-                    MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+                    MatMatMult(vo->V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
                 }
 
                 vo->AssembleConstWithRho(ex, ey, exner[ei], V1_Pi);
@@ -1740,9 +1694,9 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 // assemble the vertical lapcalian viscosity
                 if(it == 0) {
                     if(!DEL2) {
-                        MatMatMult(DTV1, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DEL2);
+                        MatMatMult(DTV1, vo->V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DEL2);
                     } else {
-                        MatMatMult(DTV1, V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
+                        MatMatMult(DTV1, vo->V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
                     }
                 }
                 MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
@@ -1764,7 +1718,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 MatMult(V0_invV0_rt, velz_j, wRho);
 
                 // update the density
-                MatMult(V10, wRho, Ftemp);
+                MatMult(vo->V10, wRho, Ftemp);
                 VecCopy(rho_n[ei], rho_j);
                 VecAXPY(rho_j, -0.5*dt, Ftemp);
 
@@ -1773,7 +1727,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 MatMatMult(V0_inv, V0_theta, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
                 MatMult(V0_invV0_rt, wRho, wRhoTheta);
 
-                MatMult(V10, wRhoTheta, Ftemp);
+                MatMult(vo->V10, wRhoTheta, Ftemp);
                 //MatMult(DV0_invV0_rt, velz_j, Ftemp);
                 VecCopy(rt_n[ei], rt_j);
                 VecAXPY(rt_j, -0.5*dt, Ftemp);
@@ -1947,7 +1901,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
             VecDot(gi, gv[ei], &dot);
             loc2 += dot/SCALE;
 
-            MatMult(V10, gi, w2);
+            MatMult(vo->V10, gi, w2);
             VecDot(w2, zv[ei], &dot);
             loc3 += dot/SCALE;
         }
@@ -2100,7 +2054,7 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             vo->AssembleLinear(ex, ey, VA);
             MatMult(VA, velz_n[ei], rhs);
             VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
-            MatMult(V01, Kv[ei], tmp);
+            MatMult(vo->V01, Kv[ei], tmp);
             VecAXPY(rhs, -0.5*dt, tmp);
 #ifdef HORIZ_VORT
             VecAXPY(rhs, -dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
@@ -2111,16 +2065,16 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             // assemble the operators
             vo->AssembleConLinWithW(ex, ey, velz_n[ei], V10_w);
             if(!DTV10_w) {
-                MatMatMult(V01, V10_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV10_w);
+                MatMatMult(vo->V01, V10_w, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV10_w);
             } else {
-                MatMatMult(V01, V10_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV10_w);
+                MatMatMult(vo->V01, V10_w, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV10_w);
             }
 
             vo->AssembleConst(ex, ey, VB);
             if(!DTV1) {
-                MatMatMult(V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
+                MatMatMult(vo->V01, VB, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTV1);
             } else {
-                MatMatMult(V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
+                MatMatMult(vo->V01, VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DTV1);
             }
 
             vo->AssembleLinearInv(ex, ey, V0_inv);
@@ -2145,9 +2099,9 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
             }
             if(!DV0_invV0_rt) {
-                MatMatMult(V10, V0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+                MatMatMult(vo->V10, V0_invV0_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
             } else {
-                MatMatMult(V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
+                MatMatMult(vo->V10, V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DV0_invV0_rt);
             }
 
             vo->AssembleConstWithRho(ex, ey, exner_n[ei], V1_Pi);
@@ -2171,9 +2125,9 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             vo->AssembleLinear(ex, ey, VA);
             // assemble the vertical lapcalian viscosity
             if(!DEL2) {
-                MatMatMult(DTV1, V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DEL2);
+                MatMatMult(DTV1, vo->V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DEL2);
             } else {
-                MatMatMult(DTV1, V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
+                MatMatMult(DTV1, vo->V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
             }
             // apply laplacian viscosity implicitly to avoid diffusive cfl
             MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
@@ -2198,7 +2152,7 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             MatMult(V0_invV0_rt, velz_n[ei], wRho);
 
             // update the density
-            MatMult(V10, wRho, Ftemp);
+            MatMult(vo->V10, wRho, Ftemp);
             VecCopy(rho_n[ei], rho[ei]);
             VecAXPY(rho[ei], -0.5*dt, Ftemp);
 
@@ -2207,7 +2161,7 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             MatMatMult(V0_inv, V0_theta, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
             MatMult(V0_invV0_rt, wRho, wRhoTheta);
 
-            MatMult(V10, wRhoTheta, Ftemp);
+            MatMult(vo->V10, wRhoTheta, Ftemp);
             //MatMult(DV0_invV0_rt, velz_n[ei], Ftemp);
             VecCopy(rt_n[ei], rt[ei]);
             VecAXPY(rt[ei], -0.5*dt, Ftemp);
