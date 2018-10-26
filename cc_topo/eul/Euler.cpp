@@ -33,7 +33,7 @@
 
 //#define THETA_VISC_H
 //#define EXTRAPOLATE_EXNER
-//#define HORIZ_VORT
+#define HORIZ_VORT
 
 using namespace std;
 
@@ -1616,7 +1616,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             MatMult(vo->V01, Kv[ei], tmp);
             VecAXPY(rhs, -0.5*dt, tmp);
 #ifdef HORIZ_VORT
-            VecAXPY(rhs, -dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
+            VecAXPY(rhs, -0.5*dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
 #endif
 
             vo->AssembleRayleigh(ex, ey, VR);
@@ -2057,7 +2057,7 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             MatMult(vo->V01, Kv[ei], tmp);
             VecAXPY(rhs, -0.5*dt, tmp);
 #ifdef HORIZ_VORT
-            VecAXPY(rhs, -dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
+            VecAXPY(rhs, -0.5*dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
 #endif
 
             vo->AssembleRayleigh(ex, ey, VR);
@@ -2522,8 +2522,9 @@ void Euler::HorizVort(Vec* velx) {
     }
 
     for(ii = 0; ii < geom->nk-1; ii++) {
-        VecCopy(Mu[ii+1], du);
-        VecAXPY(du, -1.0, Mu[ii]);
+        VecZeroEntries(du);
+        VecAXPY(du, +0.5, Mu[ii+1]);
+        VecAXPY(du, -0.5, Mu[ii+0]);
         M1t->assemble(ii, SCALE);
         KSPSolve(ksp1_t, du, uz[ii]);
     }

@@ -1224,8 +1224,10 @@ void UtQWmat::assemble(Vec u1, double scale) {
                 // piecewise linear, so vertical transformations cancel
 
                 // 0.5 scaling done outside
-                Qaa[ii][ii] = (ux[1]*J[0][0] - ux[0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
-                Qba[ii][ii] = (ux[1]*J[0][1] - ux[0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qaa[ii][ii] = (ux[1]*J[0][0] - ux[0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                //Qba[ii][ii] = (ux[1]*J[0][1] - ux[0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                Qaa[ii][ii] = (ux[1]*J[0][0] - ux[0]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
+                Qba[ii][ii] = (ux[1]*J[1][0] - ux[0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
             }
 
             Mult_FD_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qaa, UtQaa);
@@ -1323,7 +1325,10 @@ void WtQdUdz_mat::assemble(Vec u1, int lev, double scale) {
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
                 // vertical scalings cancel between piecewise constant velocity and jacobian
 
+                // vorticity = [a,b,c], velocity = [u,v,w]
+                // +J^{-T}.v.a
                 Qaa[ii][ii] = +1.0*(+ux[1]*J[1][1] - ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                // -J^{-T}.u.b
                 Qab[ii][ii] = -1.0*(-ux[0]*J[0][1] + ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
                 // vertical rescaling of jacobian determinant cancels with scaling of
                 // the H(curl) test function
