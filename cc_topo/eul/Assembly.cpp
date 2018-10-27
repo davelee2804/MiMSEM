@@ -1223,6 +1223,8 @@ void UtQWmat::assemble(Vec u1, double scale) {
                 // horizontal velocity is piecewise constant, and vertical velocity is 
                 // piecewise linear, so vertical transformations cancel
 
+                //Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                //Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 // 0.5 scaling done outside
                 //Qaa[ii][ii] = (ux[1]*J[0][0] - ux[0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
                 //Qba[ii][ii] = (ux[1]*J[0][1] - ux[0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
@@ -1233,8 +1235,8 @@ void UtQWmat::assemble(Vec u1, double scale) {
             Mult_FD_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qaa, UtQaa);
             Mult_FD_IP(V->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Qba, VtQba);
 
-            Mult_IP(U->nDofsJ, W->nDofsJ, W->nDofsI, UtQaa, U->A, UtQW);
-            Mult_IP(V->nDofsJ, W->nDofsJ, W->nDofsI, VtQba, V->A, VtQW);
+            Mult_IP(U->nDofsJ, W->nDofsJ, W->nDofsI, UtQaa, W->A, UtQW);
+            Mult_IP(V->nDofsJ, W->nDofsJ, W->nDofsI, VtQba, W->A, VtQW);
 
             Flat2D_IP(U->nDofsJ, W->nDofsJ, UtQW, UtQWflat);
             Flat2D_IP(V->nDofsJ, W->nDofsJ, VtQW, VtQWflat);
@@ -1325,13 +1327,17 @@ void WtQdUdz_mat::assemble(Vec u1, int lev, double scale) {
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
                 // vertical scalings cancel between piecewise constant velocity and jacobian
 
+                //Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                //Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 // vorticity = [a,b,c], velocity = [u,v,w]
                 // +J^{-T}.v.a
                 //Qaa[ii][ii] = +1.0*(+ux[1]*J[1][1] - ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
-                Qaa[ii][ii] = (+ux[1]*J[1][1] + ux[0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                //Qaa[ii][ii] = (+ux[1]*J[1][1] + ux[0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qaa[ii][ii] = (+ux[1]*J[1][1] + ux[0]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
                 // -J^{-T}.u.b
                 //Qab[ii][ii] = -1.0*(-ux[0]*J[0][1] + ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
-                Qab[ii][ii] = (-ux[1]*J[0][1] - ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
+                //Qab[ii][ii] = (-ux[1]*J[0][1] - ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
+                Qab[ii][ii] = (-ux[1]*J[1][0] - ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
                 // vertical rescaling of jacobian determinant cancels with scaling of
                 // the H(curl) test function
             }
