@@ -49,6 +49,6 @@ for pi in np.arange(n_procs):
 
 	np.savetxt(path + '/input/geom_%.4u'%pi + '.txt', coords, fmt='%.18e')
 
-os.popen('cd ./eul; ln -s ../src2/Basis.* .')
-os.popen('cd ./eul; ln -s ../src2/Topo.* .')
-os.popen('cd ./eul; ln -s ../src2/ElMats.* .')
+os.popen('cd ./eul; ln -s ../src/Basis.* .')
+os.popen('cd ./eul; ln -s ../src/Topo.* .')
+os.popen('cd ./eul; ln -s ../src/ElMats.* .')
