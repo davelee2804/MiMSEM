@@ -2523,8 +2523,8 @@ void Euler::HorizVort(Vec* velx) {
 
     for(ii = 0; ii < geom->nk-1; ii++) {
         VecZeroEntries(du);
-        VecAXPY(du, +0.5, Mu[ii+1]);
-        VecAXPY(du, -0.5, Mu[ii+0]);
+        VecAXPY(du, +1.0, Mu[ii+1]);
+        VecAXPY(du, -1.0, Mu[ii+0]);
         M1t->assemble(ii, SCALE);
         KSPSolve(ksp1_t, du, uz[ii]);
     }
@@ -2549,6 +2549,7 @@ void Euler::AssembleVertMomVort(Vec* velx) {
         VecZeroEntries(uuz->vh[kk]);
     }
 
+/*
     for(kk = 0; kk < geom->nk; kk++) {
         VecScatterBegin(topo->gtol_1, velx[kk], ul, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(  topo->gtol_1, velx[kk], ul, INSERT_VALUES, SCATTER_FORWARD);
@@ -2561,6 +2562,20 @@ void Euler::AssembleVertMomVort(Vec* velx) {
             MatMult(Rz->M, uz[kk+0], tmp);
             VecAXPY(uuz->vh[kk+0], 0.5, tmp);
         }
+    }
+*/
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        VecScatterBegin(topo->gtol_1, velx[kk+0], ul, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, velx[kk+0], ul, INSERT_VALUES, SCATTER_FORWARD);
+        Rz->assemble(ul, kk, SCALE);
+        MatMult(Rz->M, uz[kk], tmp);
+        VecAXPY(uuz->vh[kk], 0.5, tmp);
+
+        VecScatterBegin(topo->gtol_1, velx[kk+1], ul, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, velx[kk+1], ul, INSERT_VALUES, SCATTER_FORWARD);
+        Rz->assemble(ul, kk, SCALE);
+        MatMult(Rz->M, uz[kk], tmp);
+        VecAXPY(uuz->vh[kk], 0.5, tmp);
     }
     uuz->UpdateLocal();
     uuz->HorizToVert();

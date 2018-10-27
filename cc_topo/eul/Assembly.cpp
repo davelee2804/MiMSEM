@@ -1228,8 +1228,10 @@ void UtQWmat::assemble(Vec u1, double scale) {
                 // 0.5 scaling done outside
                 //Qaa[ii][ii] = (ux[1]*J[0][0] - ux[0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
                 //Qba[ii][ii] = (ux[1]*J[0][1] - ux[0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                Qaa[ii][ii] = (ux[1]*J[0][0] - ux[0]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
-                Qba[ii][ii] = (ux[1]*J[1][0] - ux[0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qaa[ii][ii] = (ux[1]*J[0][0] - ux[0]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qba[ii][ii] = (ux[1]*J[1][0] - ux[0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                Qaa[ii][ii] = (ux[1]*J[0][0] - ux[0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qba[ii][ii] = (ux[1]*J[0][1] - ux[0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
             }
 
             Mult_FD_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qaa, UtQaa);
