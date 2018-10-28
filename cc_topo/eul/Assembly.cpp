@@ -1102,9 +1102,12 @@ void Ut_mat::assemble(int lev, double scale) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii][ii] = (+J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qaa[ii][ii] = (+J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qab[ii][ii] = (-J[0][0]*J[0][1] - J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qbb[ii][ii] = (+J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qbb[ii][ii] = (+J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 Qab[ii][ii] = (-J[0][0]*J[0][1] - J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                Qbb[ii][ii] = (+J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qaa[ii][ii] = (+J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
                 Qaa[ii][ii] *= 0.5*(geom->thick[lev][inds_0[ii]] + geom->thick[lev+1][inds_0[ii]]);
