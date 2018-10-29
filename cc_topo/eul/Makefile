@@ -21,17 +21,17 @@ OBJS = LinAlg.o \
        ElMats.o \
        VertOps.o \
        Assembly.o \
-       Euler_JFNK.o \
+       Euler.o \
        UMJS14.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-UMJS14.o: UMJS14.cpp Euler_JFNK.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+UMJS14.o: UMJS14.cpp Euler.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c UMJS14.cpp ${CXXFLAGS}
 
-Euler_JFNK.o: Euler_JFNK.cpp Euler_JFNK.h Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c Euler_JFNK.cpp ${CXXFLAGS}
+Euler.o: Euler.cpp Euler.h Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Euler.cpp ${CXXFLAGS}
 
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}

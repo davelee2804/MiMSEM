@@ -458,6 +458,7 @@ void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
     VecDestroy(&velx_l);
 
     // update the vertical vector with the horiztonal vector
+/*
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -491,12 +492,13 @@ void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
         VecScatterEnd(  topo->gtol_2, Kh_l[kk], Kh[kk], INSERT_VALUES, SCATTER_REVERSE);
     }
 
+    MatDestroy(&BA);
+*/
     VecDestroy(&Kv2);
     for(kk = 0; kk < geom->nk; kk++) {
         VecDestroy(&Kh_l[kk]);
     }
     delete[] Kh_l;
-    MatDestroy(&BA);
 }
 
 /*
@@ -1613,10 +1615,10 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             vo->AssembleLinear(ex, ey, VA);
             MatMult(VA, velz_n[ei], rhs);
             VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
-            MatMult(vo->V01, Kv[ei], tmp);
-            VecAXPY(rhs, -0.5*dt, tmp);
+            //MatMult(vo->V01, Kv[ei], tmp);
+            //VecAXPY(rhs, -0.5*dt, tmp);
 #ifdef HORIZ_VORT
-            VecAXPY(rhs, -0.5*dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
+            //VecAXPY(rhs, -0.5*dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
 #endif
 
             vo->AssembleRayleigh(ex, ey, VR);
@@ -2054,10 +2056,10 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             vo->AssembleLinear(ex, ey, VA);
             MatMult(VA, velz_n[ei], rhs);
             VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
-            MatMult(vo->V01, Kv[ei], tmp);
-            VecAXPY(rhs, -0.5*dt, tmp);
+            //MatMult(vo->V01, Kv[ei], tmp);
+            //VecAXPY(rhs, -0.5*dt, tmp);
 #ifdef HORIZ_VORT
-            VecAXPY(rhs, -0.5*dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
+            //VecAXPY(rhs, -0.5*dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
 #endif
 
             vo->AssembleRayleigh(ex, ey, VR);

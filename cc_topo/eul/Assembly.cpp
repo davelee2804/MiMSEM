@@ -1105,9 +1105,12 @@ void Ut_mat::assemble(int lev, double scale) {
                 //Qaa[ii][ii] = (+J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 //Qab[ii][ii] = (-J[0][0]*J[0][1] - J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 //Qbb[ii][ii] = (+J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
-                Qbb[ii][ii] = (+J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qbb[ii][ii] = (+J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qab[ii][ii] = (-J[0][0]*J[0][1] - J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qaa[ii][ii] = (+J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qaa[ii][ii] = (+J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 Qab[ii][ii] = (-J[0][0]*J[0][1] - J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                Qaa[ii][ii] = (+J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qbb[ii][ii] = (+J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
                 Qaa[ii][ii] *= 0.5*(geom->thick[lev][inds_0[ii]] + geom->thick[lev+1][inds_0[ii]]);
@@ -1220,7 +1223,6 @@ void UtQWmat::assemble(Vec u1, double scale) {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
-                // components are [-dv/dz, +du/dz]
                 geom->interp1_g_t(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
 
                 // horizontal velocity is piecewise constant, and vertical velocity is 
@@ -1332,17 +1334,21 @@ void WtQdUdz_mat::assemble(Vec u1, int lev, double scale) {
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
                 // vertical scalings cancel between piecewise constant velocity and jacobian
 
+                // TODO: make sure that the metric terms are applied to the degrees of freedom
+                // as being inner oriented
                 // vorticity = [a,b,c], velocity = [u,v,w]
+                // metric term: [v, u][ dy/db, -dy/da][dv/dz]
+                //                    [-dx/db,  dx/da][du/dz]
                 // +J^{-T}.v.a
-                //Qaa[ii][ii] = +1.0*(+ux[1]*J[1][1] - ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
                 //Qaa[ii][ii] = (+ux[1]*J[1][1] + ux[0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
                 //Qaa[ii][ii] = (+ux[1]*J[1][1] + ux[0]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
-                Qaa[ii][ii] = (-ux[0]*J[1][1] + ux[1]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qaa[ii][ii] = (-ux[0]*J[1][1] + ux[1]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
+                Qab[ii][ii] = (-ux[1]*J[1][1] + ux[0]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
                 // -J^{-T}.u.b
-                //Qab[ii][ii] = -1.0*(-ux[0]*J[0][1] + ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
                 //Qab[ii][ii] = (-ux[1]*J[0][1] - ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
                 //Qab[ii][ii] = (-ux[1]*J[1][0] - ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
-                Qab[ii][ii] = (+ux[0]*J[1][0] - ux[1]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
+                //Qab[ii][ii] = (+ux[0]*J[1][0] - ux[1]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
+                Qaa[ii][ii] = (+ux[1]*J[1][0] - ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
                 // vertical rescaling of jacobian determinant cancels with scaling of
                 // the H(curl) test function
             }

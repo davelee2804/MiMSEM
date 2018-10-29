@@ -15,12 +15,12 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
-#include "Euler_JFNK.h"
+#include "Euler.h"
 
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define NK 20
+#define NK 24
 #define P0 100000.0
 #define RD 287.0
 #define GAMMA 0.005
@@ -139,7 +139,6 @@ double gc_dist(double* x) {
     double phi    = asin(x[2]/RAD_EARTH);
     double lambda = atan2(x[1], x[0]);
 
-    //return RAD_EARTH/cos(sin(PHI_C)*sin(phi) + cos(PHI_C)*cos(phi)*cos(lambda - LAMBDA_C));
     return RAD_EARTH*acos(sin(PHI_C)*sin(phi) + cos(PHI_C)*cos(phi)*cos(lambda - LAMBDA_C));
 }
 
@@ -351,8 +350,7 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->SolveStrang(velx, velz, rho, rt, exner, dump);
-        //pe->StrangCarryover(velx, velz, rho, rt, exner, dump);
+        pe->StrangCarryover(velx, velz, rho, rt, exner, dump);
     }
 
     delete pe;
