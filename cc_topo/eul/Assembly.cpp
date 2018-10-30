@@ -1102,15 +1102,18 @@ void Ut_mat::assemble(int lev, double scale) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
+                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 //Qaa[ii][ii] = (+J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 //Qab[ii][ii] = (-J[0][0]*J[0][1] - J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 //Qbb[ii][ii] = (+J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
                 //Qbb[ii][ii] = (+J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 //Qab[ii][ii] = (-J[0][0]*J[0][1] - J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 //Qaa[ii][ii] = (+J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
-                Qaa[ii][ii] = (+J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                Qab[ii][ii] = (-J[0][0]*J[0][1] - J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                Qbb[ii][ii] = (+J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                //Qaa[ii][ii] = (+J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qab[ii][ii] = (-J[0][0]*J[0][1] - J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qbb[ii][ii] = (+J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
                 Qaa[ii][ii] *= 0.5*(geom->thick[lev][inds_0[ii]] + geom->thick[lev+1][inds_0[ii]]);
@@ -1228,13 +1231,9 @@ void UtQWmat::assemble(Vec u1, double scale) {
                 // horizontal velocity is piecewise constant, and vertical velocity is 
                 // piecewise linear, so vertical transformations cancel
 
-                // 0.5 scaling done outside
-                //Qaa[ii][ii] = (ux[1]*J[0][0] - ux[0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
-                //Qba[ii][ii] = (ux[1]*J[0][1] - ux[0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                //Qaa[ii][ii] = (ux[1]*J[0][0] - ux[0]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
-                //Qba[ii][ii] = (ux[1]*J[1][0] - ux[0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                //Qaa[ii][ii] = (ux[1]*J[0][0] - ux[0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
-                //Qba[ii][ii] = (ux[1]*J[0][1] - ux[0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                // once we have mapped degrees of freedom from inner orientations
+                // to outer orientations, this transformation is the same as for
+                // the H(div) space, and so the mass matrix is the same in the horizontal
                 Qaa[ii][ii] = (ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
                 Qba[ii][ii] = (ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
             }

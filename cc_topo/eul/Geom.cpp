@@ -293,14 +293,11 @@ void Geom::interp1_g_t(int ex, int ey, int px, int py, double* vec, double* val)
 
     interp1_l(ex, ey, px, py, vec, val_l);
 
-    // TODO: make sure that the metric terms are applied to
-    // the degrees of freedom as inner oriented
-    //val[0] = (+jac[1][1]*val_l[0] - jac[1][0]*val_l[1])/dj;
-    //val[1] = (-jac[0][1]*val_l[0] + jac[0][0]*val_l[1])/dj;
-    //val[1] = -1.0*(+jac[1][1]*val_l[1] - jac[1][0]*val_l[0])/dj;
-    //val[0] = +1.0*(-jac[0][1]*val_l[1] + jac[0][0]*val_l[0])/dj;
-    val[0] = +1.0*(-jac[0][1]*val_l[0] + jac[0][0]*val_l[1])/dj;
-    val[1] = -1.0*(+jac[1][1]*val_l[0] - jac[1][0]*val_l[1])/dj;
+    // once we have mapped degrees of freedom from inner orientations
+    // to outer orientations, this transformation is the same as for
+    // the H(div) space, and so may be depricated
+    val[0] = (jac[0][0]*val_l[0] + jac[0][1]*val_l[1])/dj;
+    val[1] = (jac[1][0]*val_l[0] + jac[1][1]*val_l[1])/dj;
 }
 
 void Geom::interp2_g(int ex, int ey, int px, int py, double* vec, double* val) {
