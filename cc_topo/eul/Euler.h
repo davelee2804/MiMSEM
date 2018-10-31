@@ -43,7 +43,6 @@ class Euler {
         Vec* zv;
         Vec* uz;                 // dudz and dvdz vorticity components
         L2Vecs* uuz;             // u.dudz + v.dvdz vorticity velocity product
-        L2Vecs* exner_pre;
         Mat VA;
         Mat VB;
         KSP ksp1;
@@ -81,7 +80,6 @@ class Euler {
         void initTheta(Vec theta, ICfunc3D* func);
         void HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft, Vec* velz);
         void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
-        void SolveStrang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
         void StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
         void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
