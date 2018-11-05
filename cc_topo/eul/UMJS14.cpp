@@ -273,7 +273,7 @@ int main(int argc, char** argv) {
     int startStep = atoi(argv[1]);
     double dt = 120.0;
     int nSteps = 12*24*30;
-    int dumpEvery = 180;
+    int dumpEvery = 360; //dump evert 12 hours
     ofstream file;
     Topo* topo;
     Geom* geom;

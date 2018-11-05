@@ -31,7 +31,7 @@
 #define VERT_TOL 1.0e-8
 #define RAYLEIGH 0.2
 
-//#define THETA_VISC_H
+#define THETA_VISC_H
 #define HORIZ_VORT
 
 using namespace std;
@@ -601,7 +601,7 @@ void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux) {
 void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
     int kk;
     double dot;
-    Vec pu, Fh, dF, theta_l, theta_g, dTheta, rho_dTheta_1, rho_dTheta_2, d2Theta;
+    Vec pu, Fh, dF, theta_l, theta_g, dTheta, rho_dTheta_1, rho_dTheta_2, d2Theta, d3Theta;
 
     // compute the horiztonal mass fluxes
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l);
@@ -645,9 +645,13 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
 
             KSPSolve(ksp1, rho_dTheta_1, rho_dTheta_2);
             MatMult(EtoF->E21, rho_dTheta_2, d2Theta);
-            VecAXPY(Fp[kk], del2, d2Theta);
+
+            grad(false, d2Theta, &d3Theta, kk);
+            MatMult(EtoF->E21, d3Theta, d2Theta);
+            VecAXPY(Fp[kk], 0.001*del2*del2, d2Theta);
 
             VecDestroy(&dTheta);
+            VecDestroy(&d3Theta);
         }
     }
 
@@ -1941,9 +1945,9 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
 
     if(firstStep) {
         AssembleKEVecs(velx, velz);
-#ifdef HORIZ_VORT
-        AssembleVertMomVort(velx);
-#endif
+//#ifdef HORIZ_VORT
+//        AssembleVertMomVort(velx);
+//#endif
 
         velz_1->CopyFromVert(velz);
         rho_1->CopyFromVert(rho_0->vz);
@@ -2079,9 +2083,9 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     // 3.  second vertical half step
     if(!rank) cout << "vertical half step (2)..............." << endl;
     AssembleKEVecs(velx, velz_1->vz);
-#ifdef HORIZ_VORT
-    AssembleVertMomVort(velx);
-#endif
+//#ifdef HORIZ_VORT
+//    AssembleVertMomVort(velx);
+//#endif
     velz_1->CopyToVert(velz);
     rho_5->CopyFromVert(rho_4->vz);
     rt_5->CopyFromVert(rt_4->vz);
