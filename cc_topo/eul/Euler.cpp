@@ -31,9 +31,6 @@
 #define VERT_TOL 1.0e-8
 #define RAYLEIGH 0.2
 
-#define THETA_VISC_H
-#define HORIZ_VORT
-
 using namespace std;
 
 Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
@@ -77,11 +74,9 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     K = new WtQUmat(topo, geom, node, edge);
 
     // additional vorticity operator
-#ifdef HORIZ_VORT
     M1t = new Ut_mat(topo, geom, node, edge);
     Rh = new UtQWmat(topo, geom, node, edge);
     Rz = new WtQdUdz_mat(topo, geom, node, edge);
-#endif
 
     // potential temperature projection operator
     T = new Whmat(topo, geom, edge);
@@ -132,13 +127,11 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &zv[ii]);
     }
-#ifdef HORIZ_VORT
     uz = new Vec[geom->nk-1];
     uuz = new L2Vecs(geom->nk-1, topo, geom);
     for(ii = 0; ii < geom->nk - 1; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uz[ii]);
     }
-#endif
 
     // initialise the single column mass matrices and solvers
     n2 = topo->elOrd*topo->elOrd;
@@ -378,13 +371,11 @@ Euler::~Euler() {
     delete[] Kv;
     delete[] gv;
     delete[] zv;
-#ifdef HORIZ_VORT
     for(ii = 0; ii < geom->nk-1; ii++) {
         VecDestroy(&uz[ii]);
     }
     delete[] uz;
     delete uuz;
-#endif
 
     MatDestroy(&VA);
     MatDestroy(&VB);
@@ -400,11 +391,9 @@ Euler::~Euler() {
     delete F;
     delete K;
     delete T;
-#ifdef HORIZ_VORT
     delete M1t;
     delete Rh;
     delete Rz;
-#endif
 
     delete edge;
     delete node;
@@ -536,7 +525,6 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
     VecDestroy(&dExner);
 
     // second voritcity term
-#ifdef HORIZ_VORT
     if(velz_b) {
         Rh->assemble(uzb, SCALE);
         MatMult(Rh->M, velz_b, Ru);
@@ -547,7 +535,6 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
         MatMult(Rh->M, velz_t, Ru);
         VecAXPY(Fu, 0.5, Ru);
     }
-#endif
 
     // evaluate the kinetic to internal energy exchange diagnostic (for this layer)
     VecScale(dp, 1.0/SCALE);
@@ -897,12 +884,8 @@ void Euler::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp,
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Flux[kk]);
     }
-#ifdef HORIZ_VORT
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &uzt);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &uzb);
-#else
-    uzb = uzt = NULL;
-#endif
 
     // set the top and bottom potential temperature bcs
     VecCopy(theta_b_l, theta[0]);
@@ -910,18 +893,11 @@ void Euler::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp,
     diagTheta(rho, rt, theta);
 
     massRHS(velx, rho, Fp, Flux);
-#ifdef THETA_VISC_H
-    tempRHS(Flux, theta, Ft, rho,  exner);
-#else
-    tempRHS(Flux, theta, Ft, NULL, exner);
-#endif
+    tempRHS(Flux, theta, Ft, rho, exner);
 
-#ifdef HORIZ_VORT
     HorizVort(velx);
-#endif
     for(kk = 0; kk < geom->nk; kk++) {
         velz_t = velz_b = NULL;
-#ifdef HORIZ_VORT
         if(kk > 0) {
             VecScatterBegin(topo->gtol_1, uz[kk-1], uzb, INSERT_VALUES, SCATTER_FORWARD);
             VecScatterEnd(  topo->gtol_1, uz[kk-1], uzb, INSERT_VALUES, SCATTER_FORWARD);
@@ -932,7 +908,6 @@ void Euler::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp,
             VecScatterEnd(  topo->gtol_1, uz[kk+0], uzt, INSERT_VALUES, SCATTER_FORWARD);
             velz_t = velz[kk+0];
         }
-#endif
         horizMomRHS(velx[kk], theta, exner[kk], kk, Fu[kk], Flux[kk], uzb, uzt, velz_b, velz_t);
     }
 
@@ -944,10 +919,8 @@ void Euler::HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp,
         VecDestroy(&Flux[kk]);
     }
     delete[] Flux;
-#ifdef HORIZ_VORT
     VecDestroy(&uzt);
     VecDestroy(&uzb);
-#endif
 }
 
 // rt and Ft and local vectors
@@ -1284,9 +1257,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
             //MatMult(vo->V01, Kv[ei], tmp);
             //VecAXPY(rhs, -0.5*dt, tmp);
-#ifdef HORIZ_VORT
             //VecAXPY(rhs, -0.5*dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
-#endif
 
             vo->AssembleRayleigh(ex, ey, VR);
 
@@ -1438,14 +1409,6 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             if(!rank)cout << "\t\t" << it << "\t|eps|: " << max_eps << endl;
 
             if(it==MAX_IT) {
-                //sprintf(filename, "velocity_z_%.4u_%.5u_%.5u.dat", rank, ei, step);
-                //geom->writeColumn(filename, ei, geom->nk-1, velz[ei], false);
-                //sprintf(filename, "density_%.4u_%.5u_%.5u.dat", rank, ei, step);
-                //geom->writeColumn(filename, ei, geom->nk, rho[ei], true);
-                //sprintf(filename, "rhoTheta_%.4u_%.5u_%.5u.dat", rank, ei, step);
-                //geom->writeColumn(filename, ei, geom->nk, rt[ei], true);
-                //sprintf(filename, "exner_%.4u_%.5u_%.5u.dat", rank, ei, step);
-                //geom->writeColumn(filename, ei, geom->nk, exner[ei], true);
                 cout << "vertical solve convergence error on rank: " << rank << "\t|eps_w|: " << eps << endl;
             }
 
@@ -1548,7 +1511,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
         MatMult(F->M, velx[kk], hu);
         VecScale(hu, 1.0/SCALE);
         VecDot(hu, velx[kk], &dot);
-        keh += dot;
+        keh += 0.5*dot;
     }
 
     // vertical kinetic energy and kinetic to potential exchange
@@ -1561,7 +1524,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
             MatMult(BA, velz[ei], w2);
             VecScale(w2, 1.0/SCALE);
             VecDot(l2_rho->vz[ei], w2, &dot);
-            loc1 += dot;
+            loc1 += 0.5*dot;
 
             vo->AssembleLinearWithRT(ex, ey, l2_rho->vz[ei], VA, true);
             MatMult(VA, velz[ei], zi);
@@ -1725,9 +1688,7 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
             //MatMult(vo->V01, Kv[ei], tmp);
             //VecAXPY(rhs, -0.5*dt, tmp);
-#ifdef HORIZ_VORT
             //VecAXPY(rhs, -0.5*dt, uuz->vz[ei]);// vertical component of the vorticity velocity cross product
-#endif
 
             vo->AssembleRayleigh(ex, ey, VR);
 
@@ -1945,9 +1906,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
 
     if(firstStep) {
         AssembleKEVecs(velx, velz);
-//#ifdef HORIZ_VORT
 //        AssembleVertMomVort(velx);
-//#endif
 
         velz_1->CopyFromVert(velz);
         rho_1->CopyFromVert(rho_0->vz);
@@ -1976,10 +1935,8 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         }
 #endif
     }
-#ifdef HORIZ_VORT
     velz_1->VertToHoriz();
     velz_1->UpdateGlobal();
-#endif
     rho_1->VertToHoriz();
     rho_1->UpdateGlobal();
     rt_1->VertToHoriz();
@@ -2083,9 +2040,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     // 3.  second vertical half step
     if(!rank) cout << "vertical half step (2)..............." << endl;
     AssembleKEVecs(velx, velz_1->vz);
-//#ifdef HORIZ_VORT
 //    AssembleVertMomVort(velx);
-//#endif
     velz_1->CopyToVert(velz);
     rho_5->CopyFromVert(rho_4->vz);
     rt_5->CopyFromVert(rt_4->vz);
