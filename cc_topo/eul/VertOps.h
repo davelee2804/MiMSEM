@@ -31,6 +31,7 @@ class VertOps {
         Mat VAB;
         Mat VBA;
         Mat VR;  // rayleigh friction operator
+        Mat VAB_w;
 
         void vertOps();
 
@@ -47,4 +48,5 @@ class VertOps {
         void AssembleRayleigh(int ex, int ey, Mat B);
         void AssembleConstInv(int ex, int ey, Mat B);
         void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs);
+        void AssembleLinConWithTheta(int ex, int ey, Mat AB, Vec theta);
 };
