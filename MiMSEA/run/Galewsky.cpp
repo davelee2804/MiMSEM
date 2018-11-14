@@ -81,13 +81,13 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 120.0;//0.1*(2.0*M_PI/(4.0*12))/80.0;
+    double dt = 40.0;
     double vort_0, mass_0, ener_0;
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 5040;
-    int dumpEvery = 30;
+    int nSteps = 25920;   // 12 days
+    int dumpEvery = 2160; //  1 day
     Topo* topo;
     Geom* geom;
     SWEqn* sw;

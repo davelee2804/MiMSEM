@@ -226,7 +226,9 @@ void SWEqn::_momentumTend(Vec ui, Vec hi, Vec *Fu) {
     if(do_visc) {
         laplacian(ui, &d2u);
         laplacian(d2u, &d4u);
-        VecAXPY(*Fu, 1.0, d4u);
+        //VecAXPY(*Fu, 1.0, d4u);
+        MatMult(M1->M, d4u, d2u);
+        VecAXPY(*Fu, 1.0, d2u);
     }
 
     VecDestroy(&wl);

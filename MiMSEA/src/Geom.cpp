@@ -319,6 +319,12 @@ void Geom::write0(Vec q, char* fieldname, int tstep) {
     VecDestroy(&ql);
     VecDestroy(&qxl);
     VecDestroy(&qxg);
+
+    // also write the vector itself
+    sprintf(filename, "output/%s_%.4u.vec", fieldname, tstep);
+    PetscViewerBinaryOpen(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer);
+    VecView(q, viewer);
+    PetscViewerDestroy(&viewer);
 }
 
 void Geom::write1(Vec u, char* fieldname, int tstep) {
