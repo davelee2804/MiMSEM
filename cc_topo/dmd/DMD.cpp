@@ -15,6 +15,7 @@
 
 #define OFFSET 1
 #define NQ 12
+#define ZERO_FORM
 
 using namespace std;
 
@@ -41,8 +42,8 @@ int main(int argc, char** argv) {
     Topo* topo;
     Geom* geom;
     Vec* vecs;
-    Vec lVec, rVec;
-    Mat A;
+    Vec lVec, rVec, vLocal;
+    Mat X;
     PetscScalar* vArray;
     SVD svd;
 
@@ -55,42 +56,71 @@ int main(int argc, char** argv) {
 
     vecs  = new Vec[NQ];
     for(ki = 0; ki < NQ; ki++) {
+#ifdef ZERO_FORM
+        VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vecs[ki]);
+#else
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vecs[ki]);
+#endif
     }
+#ifdef ZERO_FORM
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &vLocal);
+#else
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &vLocal);
+#endif
 
     LoadVecs(vecs, NQ, fieldname);
 
     // pack the time slice data into a dense matrix
-    MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ, topo->nDofs2G, NULL, &A);
+#ifdef ZERO_FORM
+    MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ, topo->nDofs0G, NULL, &X);
+#else
+    MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ, topo->nDofs2G, NULL, &X);
+#endif
     for(ki = 0; ki < NQ; ki++) {
-        VecGetArray(vecs[ki], &vArray);
-        MatSetValues(A, 1, &ki, topo->n2, topo->loc2, vArray, INSERT_VALUES);
-        VecRestoreArray(vecs[ki], &vArray);
+#ifdef ZERO_FORM
+        VecScatterBegin(topo->gtol_0, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_0, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
+#else
+        VecScatterBegin(topo->gtol_2, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
+#endif
+
+        VecGetArray(vLocal, &vArray);
+#ifdef ZERO_FORM
+        MatSetValues(X, 1, &ki, topo->n0, topo->loc0, vArray, INSERT_VALUES);
+#else
+        MatSetValues(X, 1, &ki, topo->n2, topo->loc2, vArray, INSERT_VALUES);
+#endif
+        VecRestoreArray(vLocal, &vArray);
     }
-    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-    MatCreateVecs(A, &rVec, &lVec);
+    MatAssemblyBegin(X, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  X, MAT_FINAL_ASSEMBLY);
+    MatCreateVecs(X, &rVec, &lVec);
 
     // compute the svd
     SVDCreate(MPI_COMM_WORLD, &svd);
-    SVDSetOperator(svd, A);
+    SVDSetOperator(svd, X);
     SVDSetFromOptions(svd);
     SVDSolve(svd);
     SVDGetConverged(svd, &nEig);
 
     if(!rank) cout << "number of eigenvalues: " << nEig << endl;
-
     for(ii = 0; ii < nEig; ii++) {
         SVDGetSingularTriplet(svd, ii, &sigma, lVec, rVec);
         if(!rank) cout << ii << "\tsigma: " << sigma << endl;
         sprintf(eigvecname, "%s_eigvec", fieldname);
+#ifdef ZERO_FORM
+        geom->write0(rVec, eigvecname, ii);
+#else
         geom->write2(rVec, eigvecname, ii);
+#endif
     }
 
     SVDDestroy(&svd);
-    MatDestroy(&A);
+    MatDestroy(&X);
     VecDestroy(&lVec);
     VecDestroy(&rVec);
+    VecDestroy(&vLocal);
     for(ki = 0; ki < NQ; ki++) {
         VecDestroy(&vecs[ki]);
     }
