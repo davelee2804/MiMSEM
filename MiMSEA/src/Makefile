@@ -21,6 +21,9 @@ objs_w2: LinAlg.o \
 SWEqn_w2.o: SWEqn.cpp SWEqn.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c SWEqn.cpp ${CXXFLAGS} -DW2_ALPHA
 
+SWEqn.o: SWEqn.cpp SWEqn.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c SWEqn.cpp ${CXXFLAGS}
+
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}
 

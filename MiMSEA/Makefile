@@ -6,10 +6,10 @@ MPI_INCLUDE=-I${MPI_DIR}/include
 
 HDF5_INCLUDE=-I${HDF5_DIR}/include
 
-include ${PETSC_DIR}/conf/variables
-include ${PETSC_DIR}/conf/rules
+include ${PETSC_DIR}/lib/petsc/conf/variables
+include ${PETSC_DIR}/lib/petsc/conf/rules
 
-CXX = mpic++
+CXX = mpicxx
 
 CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -O3 -Wall
 

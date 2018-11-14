@@ -8,7 +8,7 @@ galewsky:
 	cd ../src; \
 		make objs; \
 	cd ../run; \
-	${CC} -o galewsky Galewsky.cpp ${OBJ} \
+	${CXX} -o galewsky Galewsky.cpp ${OBJ} \
 		${PETSC_LIB} ${HDF5_LIB} ${CXXFLAGS} -L${LIB} -I${INC}
 
 williamson2:
@@ -16,7 +16,7 @@ williamson2:
 	cd ../src; \
 		make objs_w2; \
 	cd ../run; \
-	${CC} -o williamson2 Williamson2.cpp ${OBJ} \
+	${CXX} -o williamson2 Williamson2.cpp ${OBJ} \
 		${PETSC_LIB} ${HDF5_LIB} ${CXXFLAGS} -DW2_ALPHA -L${LIB} -I${INC}
 
 williamson6:
@@ -24,7 +24,7 @@ williamson6:
 	cd ../src; \
 		make objs; \
 	cd ../run; \
-	${CC} -o williamson6 Williamson6.cpp ${OBJ} \
+	${CXX} -o williamson6 Williamson6.cpp ${OBJ} \
 		${PETSC_LIB} ${HDF5_LIB} ${CXXFLAGS} -L${LIB} -I${INC}
 
 keLatLon:
@@ -32,5 +32,5 @@ keLatLon:
 	cd ../src; \
 		make objs; \
 	cd ../run; \
-	${CC} -o keLatLon KEAtLatLon.cpp ${OBJ} \
+	${CXX} -o keLatLon KEAtLatLon.cpp ${OBJ} \
 		${PETSC_LIB} ${HDF5_LIB} ${CXXFLAGS} -L${LIB} -I${INC}
