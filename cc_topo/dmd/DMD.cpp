@@ -36,6 +36,7 @@ int main(int argc, char** argv) {
     double sigma;
     static char help[] = "petsc";
     char* fieldname = argv[1];
+    char eigvecname[100];
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -54,7 +55,7 @@ int main(int argc, char** argv) {
 
     vecs  = new Vec[NQ];
     for(ki = 0; ki < NQ; ki++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vecs[ki] );
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vecs[ki]);
     }
 
     LoadVecs(vecs, NQ, fieldname);
@@ -82,8 +83,8 @@ int main(int argc, char** argv) {
     for(ii = 0; ii < nEig; ii++) {
         SVDGetSingularTriplet(svd, ii, &sigma, lVec, rVec);
         if(!rank) cout << ii << "\tsigma: " << sigma << endl;
-        sprintf(fieldname, "right_eigenvector");
-        geom->write2(rVec, fieldname, ii);
+        sprintf(eigvecname, "%s_eigvec", fieldname);
+        geom->write2(rVec, eigvecname, ii);
     }
 
     SVDDestroy(&svd);
