@@ -43,7 +43,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
 
     do_visc = true;
     del2 = viscosity();
-    vert_visc = viscosity_vert();
     step = 0;
     firstStep = true;
 
@@ -194,24 +193,6 @@ double Euler::viscosity() {
     double del4 = 0.072*pow(dx,3.2);
 
     return -sqrt(del4);
-}
-
-double Euler::viscosity_vert() {
-    int ii, kk;
-    double dzMaxG, dzMax = 1.0e-6;
-
-    for(kk = 0; kk < geom->nk; kk++) {
-        for(ii = 0; ii < topo->n0; ii++) {
-            if(geom->thick[kk][ii] > dzMax) {
-                dzMax = geom->thick[kk][ii];
-            }
-        }
-    }
-    MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-
-    //return 4.0*1.0*dzMax/M_PI;
-    //return 1.0*1.0*dzMax/M_PI;
-    return 0.0;
 }
 
 // project coriolis term onto 0 forms
@@ -635,7 +616,8 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
 
             grad(false, d2Theta, &d3Theta, kk);
             MatMult(EtoF->E21, d3Theta, d2Theta);
-            VecAXPY(Fp[kk], 0.001*del2*del2, d2Theta);
+            //VecAXPY(Fp[kk], 0.001*del2*del2, d2Theta);
+            VecAXPY(Fp[kk], 0.002*del2*del2, d2Theta);
 
             VecDestroy(&dTheta);
             VecDestroy(&d3Theta);
@@ -1178,7 +1160,6 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     Mat V1_PiDV0_invV0_rt = NULL;
     Mat DIV               = NULL;
     Mat LAP               = NULL;
-    Mat DEL2              = NULL;
     Mat VR;
     Vec rhs, tmp;
     Vec velz_j, exner_j, rho_j, rt_j;
@@ -1331,15 +1312,6 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 VecAYPX(tmp, -0.5*dt, rhs);
 
                 vo->AssembleLinear(ex, ey, VA);
-                // assemble the vertical lapcalian viscosity
-                if(it == 0) {
-                    if(!DEL2) {
-                        MatMatMult(DTV1, vo->V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DEL2);
-                    } else {
-                        MatMatMult(DTV1, vo->V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
-                    }
-                }
-                MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
                 MatAXPY(VA, +0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
                 MatAXPY(VA, -0.25*dt*dt*RD/CV, LAP, DIFFERENT_NONZERO_PATTERN);
                 MatAXPY(VA, +0.5*dt*RAYLEIGH, VR, DIFFERENT_NONZERO_PATTERN);
@@ -1470,7 +1442,6 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     MatDestroy(&DIV              );
     MatDestroy(&LAP              );
     MatDestroy(&AB               );
-    MatDestroy(&DEL2             );
     MatDestroy(&VR);
     delete l2_theta;
 }
@@ -1623,7 +1594,6 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
     Mat DV0_invV0_rt      = NULL;
     Mat V1_PiDV0_invV0_rt = NULL;
     Mat DIV               = NULL;
-    Mat DEL2              = NULL;
     Mat VR;
     Vec rhs, tmp;
     Vec wRho, wRhoTheta, Ftemp;
@@ -1752,22 +1722,13 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             MatMult(GRAD, exner_n[ei], tmp);
             VecAXPY(rhs, -0.5*dt, tmp);
 
-            vo->AssembleLinear(ex, ey, VA);
-            // assemble the vertical lapcalian viscosity
-            if(!DEL2) {
-                MatMatMult(DTV1, vo->V10, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DEL2);
-            } else {
-                MatMatMult(DTV1, vo->V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DEL2);
-            }
-            // apply laplacian viscosity implicitly to avoid diffusive cfl
-            MatAXPY(VA, -0.5*dt*vert_visc, DEL2, DIFFERENT_NONZERO_PATTERN);
-
             MatMult(DTV10_w, velz_n[ei], tmp);
             VecAXPY(rhs, -0.25*dt, tmp); // 0.5 for the nonlinear term and 0.5 for the time step
 
             MatMult(VR, velz_n[ei], tmp);
             VecAXPY(rhs, -0.5*dt*RAYLEIGH, tmp);
 
+            vo->AssembleLinear(ex, ey, VA);
             KSPSolve(kspColA, rhs, velz[ei]);
 
             // update the exner pressure
@@ -1830,7 +1791,6 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
     MatDestroy(&V1_PiDV0_invV0_rt);
     MatDestroy(&DIV              );
     MatDestroy(&AB               );
-    MatDestroy(&DEL2             );
     MatDestroy(&VR);
     delete l2_theta;
 }

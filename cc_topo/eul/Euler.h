@@ -6,7 +6,6 @@ class Euler {
         ~Euler();
         double dt;
         double del2;
-        double vert_visc;
         bool do_visc;
         int rank;
         int step;
@@ -59,7 +58,6 @@ class Euler {
         double** WtQ;
 
         double viscosity();
-        double viscosity_vert();
         void coriolis();
         void initGZ();
         void grad(bool assemble, Vec phi, Vec* u, int lev);            // weak form grad operator
