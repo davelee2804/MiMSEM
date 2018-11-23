@@ -36,7 +36,6 @@ class Euler {
         Vec theta_t;             // top potential temperature bc
         Vec theta_b_l;           // bottom potential temperature bc
         Vec theta_t_l;           // top potential temperature bc
-        Vec* Kv;                 // kinetic energy vector for each vertical column
         Vec* Kh;                 // kinetic energy vector for each horiztontal layer
         Vec* gv;
         Vec* zv;
