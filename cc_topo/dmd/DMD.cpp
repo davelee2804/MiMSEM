@@ -13,13 +13,13 @@
 #include "Topo.h"
 #include "Geom.h"
 
-#define OFFSET 1
+#define OFFSET 48
 //#define OFFSET 9
 //#define NQ 12
-#define NQ 40
+#define NQ 54
 //#define TIMESTEP (24.0*60.0*60.0)
 //#define TIMESTEP (12.0*60.0*60.0)
-#define TIMESTEP (6.0*60.0*60.0)
+#define TIMESTEP (4.0*60.0*60.0)
 #define SHIFT 1
 
 using namespace std;
@@ -177,6 +177,8 @@ int main(int argc, char** argv) {
     MatZeroEntries(VSI);
 
     for(ki = 0; ki < nEig; ki++) {
+        SVDGetSingularTriplet(svd, ki, &sigma[ki], lVec, rVec);
+
         if(form == 2) {
             VecScatterBegin(topo->gtol_2, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
             VecScatterEnd(  topo->gtol_2, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
@@ -201,9 +203,11 @@ int main(int argc, char** argv) {
         VecGetOwnershipRange(lVec, &index_i, &index_f);
         VecGetArray(lVec, &vArray);
         for(ii = index_i; ii < index_f; ii++) {
-            vSigmaInv = vArray[ii-index_i]/sigma[ii];
+            //vSigmaInv = vArray[ii-index_i]/sigma[ii];
+            vSigmaInv = vArray[ii-index_i]/sigma[ki];
 if(ii<nEig) {
-            MatSetValues(VSI, 1, &ki, 1, &ii, &vArray[ii-index_i], INSERT_VALUES);
+            //MatSetValues(VSI, 1, &ki, 1, &ii, &vArray[ii-index_i], INSERT_VALUES);
+            MatSetValues(VSI, 1, &ki, 1, &ii, &vSigmaInv, INSERT_VALUES);
 }
         }
         VecRestoreArray(lVec, &vArray);
