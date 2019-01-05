@@ -494,37 +494,70 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
 
 */
 void SWEqn::jfnk_precon(Mat P) {
-    int ri, rj, rr, cc, col, ncols;
+    int ri, rj, rr, cc, ncols;
+    int pCols[99];
     const int* cols;
     const PetscScalar* vals;
+    Mat S;
+    Mat GM2;
+    Mat GM2D;
 
     if(precon_assembled) return;
+
+    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+    MatScale(GM2, grav);
+    MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2D);
+
+    MatCreate(MPI_COMM_WORLD, &S);
+    MatSetSizes(S, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(S, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(S, 8*M1h->U->nDofsJ, PETSC_NULL, 8*M1h->U->nDofsJ, PETSC_NULL);
+
+    MatZeroEntries(S);
+    MatAXPY(S, -1.0e+4, GM2D, DIFFERENT_NONZERO_PATTERN); // H = 1.0e+4
+    MatAXPY(S, +1.0, M1->M, DIFFERENT_NONZERO_PATTERN);
+
+    MatAssemblyBegin(S, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  S, MAT_FINAL_ASSEMBLY);
 
     MatZeroEntries(P);
 
     // [u,u] block
-    MatGetOwnershipRange(M1->M, &ri, &rj);
+    MatGetOwnershipRange(S, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
-        MatGetRow(M1->M, rr, &ncols, &cols, &vals);
+        MatGetRow(S, rr, &ncols, &cols, &vals);
         MatSetValues(P, 1, &rr, ncols, cols, vals, INSERT_VALUES);
-        MatRestoreRow(M1->M, rr, &ncols, &cols, &vals);
+        MatRestoreRow(S, rr, &ncols, &cols, &vals);
     }
 
     // [u,h] block
+    MatGetOwnershipRange(GM2, &ri, &rj);
+    for(rr = ri; rr < rj; rr++) {
+        MatGetRow(S, rr, &ncols, &cols, &vals);
+        for(cc = 0; cc < ncols; cc++) {
+            pCols[cc] = cols[cc] + topo->nDofs1G;
+        }
+        MatSetValues(P, 1, &rr, ncols, pCols, vals, INSERT_VALUES);
+        MatRestoreRow(S, rr, &ncols, &cols, &vals);
+    }
 
     // [h,h] block
     MatGetOwnershipRange(M2->M, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
         MatGetRow(M2->M, rr, &ncols, &cols, &vals);
         for(cc = 0; cc < ncols; cc++) {
-            col = cols[cc] + topo->nDofs1G;
-            MatSetValues(P, 1, &rr, 1, &col, &vals[cc], INSERT_VALUES);
+            pCols[cc] = cols[cc] + topo->nDofs1G;
         }
+        MatSetValues(P, 1, &rr, ncols, pCols, &vals[cc], INSERT_VALUES);
         MatRestoreRow(M2->M, rr, &ncols, &cols, &vals);
     }
 
     MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  P, MAT_FINAL_ASSEMBLY);
+
+    MatDestroy(&GM2);
+    MatDestroy(&GM2D);
+    MatDestroy(&S);
 
     precon_assembled = true;
 }
@@ -554,6 +587,7 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
     Vec x, f, b, bu, bh;
     Mat J, P;
     SNES snes;
+    KSP kspFromSnes;
     SNESConvergedReason reason;
 
     dt = _dt;
@@ -591,9 +625,9 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
     SNESCreate(MPI_COMM_WORLD, &snes);
     SNESSetFunction(snes, f,    _snes_function, (void*)this);
     SNESSetJacobian(snes, J, P, _snes_jacobian, (void*)this);
-    SNESGetKSP(snes, &ksp);
-    //KSPGetTolerances(ksp, &rtol, &atol, &dtol, &maxits);
-    //KSPSetTolerances(ksp, 1.0e-4, atol, dtol, maxits);
+    SNESGetKSP(snes, &kspFromSnes);
+    //KSPGetTolerances(kspFromSnes, &rtol, &atol, &dtol, &maxits);
+    //KSPSetTolerances(kspFromSnes, 1.0e-4, atol, dtol, maxits);
     SNESSetFromOptions(snes);
     SNESSolve(snes, b, x);
 
