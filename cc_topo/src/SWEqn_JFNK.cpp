@@ -457,6 +457,8 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
     MatMult(M2->M, htmp1, htmp2);
     VecAXPY(fh, dt, htmp2);
 
+    repack(f, fu, fh);
+
     // clean up
     VecDestroy(&uj);
     VecDestroy(&hj);
