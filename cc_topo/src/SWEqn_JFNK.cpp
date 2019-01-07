@@ -498,29 +498,26 @@ void SWEqn::jfnk_precon(Mat P) {
     int pCols[99];
     const int* cols;
     const PetscScalar* vals;
-    Mat S;
     Mat GM2;
-    Mat GM2D;
+    Mat S;
 
     if(precon_assembled) return;
 
+    if(!rank) cout << "into preconditioner assembly...(1)\n";
+
     MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
-    MatScale(GM2, grav);
-    MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2D);
-
-    MatCreate(MPI_COMM_WORLD, &S);
-    MatSetSizes(S, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
-    MatSetType(S, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(S, 8*M1h->U->nDofsJ, PETSC_NULL, 8*M1h->U->nDofsJ, PETSC_NULL);
-
-    MatZeroEntries(S);
-    MatAXPY(S, -1.0e+4, GM2D, DIFFERENT_NONZERO_PATTERN); // H = 1.0e+4
+    MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
+    MatScale(S, -dt*dt*grav*1.0e+4); // H=1.0e+4
     MatAXPY(S, +1.0, M1->M, DIFFERENT_NONZERO_PATTERN);
+
+    if(!rank) cout << "into preconditioner assembly...(4)\n";
 
     MatAssemblyBegin(S, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  S, MAT_FINAL_ASSEMBLY);
 
     MatZeroEntries(P);
+
+    if(!rank) cout << "...assemblying [u,u] block\n";
 
     // [u,u] block
     MatGetOwnershipRange(S, &ri, &rj);
@@ -530,16 +527,20 @@ void SWEqn::jfnk_precon(Mat P) {
         MatRestoreRow(S, rr, &ncols, &cols, &vals);
     }
 
+    if(!rank) cout << "...assemblying [u,h] block\n";
+
     // [u,h] block
     MatGetOwnershipRange(GM2, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
-        MatGetRow(S, rr, &ncols, &cols, &vals);
+        MatGetRow(GM2, rr, &ncols, &cols, &vals);
         for(cc = 0; cc < ncols; cc++) {
             pCols[cc] = cols[cc] + topo->nDofs1G;
         }
         MatSetValues(P, 1, &rr, ncols, pCols, vals, INSERT_VALUES);
-        MatRestoreRow(S, rr, &ncols, &cols, &vals);
+        MatRestoreRow(GM2, rr, &ncols, &cols, &vals);
     }
+
+    if(!rank) cout << "...assemblying [h,h] block\n";
 
     // [h,h] block
     MatGetOwnershipRange(M2->M, &ri, &rj);
@@ -555,8 +556,9 @@ void SWEqn::jfnk_precon(Mat P) {
     MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  P, MAT_FINAL_ASSEMBLY);
 
+    if(!rank) cout << "into preconditioner assembly...(5)\n";
+
     MatDestroy(&GM2);
-    MatDestroy(&GM2D);
     MatDestroy(&S);
 
     precon_assembled = true;
