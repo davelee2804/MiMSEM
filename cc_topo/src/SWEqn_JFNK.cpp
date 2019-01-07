@@ -191,8 +191,6 @@ void SWEqn::curl(Vec u, Vec *w) {
 void SWEqn::diagnose_F(Vec ui, Vec uj, Vec hi, Vec hj, Vec* F) {
     Vec hu, b, hil, hjl;
 
-    if(!rank) cout << "into F diagnosis...(1)\n";
-
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hil);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hjl);
 
@@ -207,7 +205,6 @@ void SWEqn::diagnose_F(Vec ui, Vec uj, Vec hi, Vec hj, Vec* F) {
     VecZeroEntries(*F);
     VecZeroEntries(hu);
 
-    if(!rank) cout << "into F diagnosis...(2)\n";
     // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
     M1h->assemble(hil);
 
@@ -225,10 +222,8 @@ void SWEqn::diagnose_F(Vec ui, Vec uj, Vec hi, Vec hj, Vec* F) {
     MatMult(M1h->M, uj, b);
     VecAXPY(hu, 1.0/3.0, b);
 
-    if(!rank) cout << "into F diagnosis...(3)\n";
     // solve the linear system
     KSPSolve(ksp, hu, *F);
-    if(!rank) cout << "into F diagnosis...(4)\n";
 
     VecDestroy(&hu);
     VecDestroy(&b);
@@ -422,8 +417,6 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 void SWEqn::jfnk_vector(Vec x, Vec f) {
     Vec uj, hj, F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u;
 
-    if(!rank) cout << "into vector assembly.... (1)\n";
-
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uj);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
@@ -434,16 +427,11 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
 
     unpack(x, uj, hj);
 
-    if(!rank) cout << "into vector assembly.... (2)\n";
-
     // momentum equation
     VecZeroEntries(fu);
 
-    if(!rank) cout << "into vector assembly.... (3)\n";
     diagnose_F(un, uj, hn, hj, &F);
-    if(!rank) cout << "into vector assembly.... (4)\n";
     diagnose_Phi(un, uj, hn, hj, &Phi);
-    if(!rank) cout << "into vector assembly.... (5)\n";
     diagnose_wxu(un, uj, &wxu);
 
     MatMult(M1->M, uj, fu);
@@ -452,7 +440,6 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
     MatMult(EtoF->E12, Phi, utmp);
     VecAXPY(fu, dt, utmp);
 
-    if(!rank) cout << "into vector assembly.... (6)\n";
     if(do_visc) {
         laplacian(uj, &d2u);
         laplacian(d2u, &d4u);
@@ -465,13 +452,10 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
     // continuity equation
     VecZeroEntries(fh);
 
-    if(!rank) cout << "into vector assembly.... (7)\n";
     MatMult(M2->M, hj, fh);
     MatMult(EtoF->E21, F, htmp1);
     MatMult(M2->M, htmp1, htmp2);
     VecAXPY(fh, dt, htmp2);
-
-    if(!rank) cout << "done vector assembly....\n";
 
     // clean up
     VecDestroy(&uj);
@@ -495,7 +479,7 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
 */
 void SWEqn::jfnk_precon(Mat P) {
     int ri, rj, rr, cc, ncols;
-    int pCols[99];
+    int pRow, pCols[99];
     const int* cols;
     const PetscScalar* vals;
     Mat GM2;
@@ -503,21 +487,15 @@ void SWEqn::jfnk_precon(Mat P) {
 
     if(precon_assembled) return;
 
-    if(!rank) cout << "into preconditioner assembly...(1)\n";
-
     MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
     MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
     MatScale(S, -dt*dt*grav*1.0e+4); // H=1.0e+4
     MatAXPY(S, +1.0, M1->M, DIFFERENT_NONZERO_PATTERN);
 
-    if(!rank) cout << "into preconditioner assembly...(4)\n";
-
     MatAssemblyBegin(S, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  S, MAT_FINAL_ASSEMBLY);
 
     MatZeroEntries(P);
-
-    if(!rank) cout << "...assemblying [u,u] block\n";
 
     // [u,u] block
     MatGetOwnershipRange(S, &ri, &rj);
@@ -526,8 +504,6 @@ void SWEqn::jfnk_precon(Mat P) {
         MatSetValues(P, 1, &rr, ncols, cols, vals, INSERT_VALUES);
         MatRestoreRow(S, rr, &ncols, &cols, &vals);
     }
-
-    if(!rank) cout << "...assemblying [u,h] block\n";
 
     // [u,h] block
     MatGetOwnershipRange(GM2, &ri, &rj);
@@ -540,23 +516,20 @@ void SWEqn::jfnk_precon(Mat P) {
         MatRestoreRow(GM2, rr, &ncols, &cols, &vals);
     }
 
-    if(!rank) cout << "...assemblying [h,h] block\n";
-
     // [h,h] block
     MatGetOwnershipRange(M2->M, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
         MatGetRow(M2->M, rr, &ncols, &cols, &vals);
+        pRow = rr + topo->nDofs1G;
         for(cc = 0; cc < ncols; cc++) {
             pCols[cc] = cols[cc] + topo->nDofs1G;
         }
-        MatSetValues(P, 1, &rr, ncols, pCols, &vals[cc], INSERT_VALUES);
+        MatSetValues(P, 1, &pRow, ncols, pCols, vals, INSERT_VALUES);
         MatRestoreRow(M2->M, rr, &ncols, &cols, &vals);
     }
 
     MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  P, MAT_FINAL_ASSEMBLY);
-
-    if(!rank) cout << "into preconditioner assembly...(5)\n";
 
     MatDestroy(&GM2);
     MatDestroy(&S);
