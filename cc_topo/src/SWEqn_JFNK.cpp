@@ -95,7 +95,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
             loc[ii] = topo->loc1[ii];
         }
         for(ii = 0; ii < topo->n2; ii++) {
-            loc[ii+topo->n1] = topo->loc2[ii] + topo->n1;
+            loc[ii+topo->n1] = topo->loc2[ii] + topo->nDofs1G;
         }
 
         ISCreateStride(MPI_COMM_SELF, topo->n1+topo->n2, 0, 1, &is_l);
@@ -249,26 +249,26 @@ void SWEqn::diagnose_Phi(Vec ui, Vec uj, Vec hi, Vec hj, Vec* Phi) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Phi);
     VecZeroEntries(*Phi);
 
-    // u^2 terms
+    // u^2 terms (0.5 factor incorportated into the matrix assembly)
     K->assemble(uil);
 
     MatMult(K->M, ui, b);
-    VecAXPY(*Phi, 1.0/6.0, b);
+    VecAXPY(*Phi, 1.0/3.0, b);
 
     MatMult(K->M, uj, b);
-    VecAXPY(*Phi, 1.0/6.0, b);
+    VecAXPY(*Phi, 1.0/3.0, b);
 
     K->assemble(ujl);
 
     MatMult(K->M, uj, b);
-    VecAXPY(*Phi, 1.0/6.0, b);
+    VecAXPY(*Phi, 1.0/3.0, b);
 
     // gh terms
     MatMult(M2->M, hi, b);
-    VecAXPY(*Phi, 1.0/2.0, b);
+    VecAXPY(*Phi, grav/2.0, b);
 
     MatMult(M2->M, hj, b);
-    VecAXPY(*Phi, 1.0/2.0, b);
+    VecAXPY(*Phi, grav/2.0, b);
 
     VecDestroy(&uil);
     VecDestroy(&ujl);
@@ -417,6 +417,12 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 void SWEqn::jfnk_vector(Vec x, Vec f) {
     Vec uj, hj, F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u;
 
+    {
+        double norm;
+        VecNorm(f, NORM_2, &norm);
+        if(!rank) cout << "vector assembly, |f|: " << norm << endl;
+    }
+
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uj);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
@@ -536,7 +542,7 @@ void SWEqn::jfnk_precon(Mat P) {
     MatDestroy(&GM2);
     MatDestroy(&S);
 
-    precon_assembled = true;
+    //precon_assembled = true;
 }
 
 int _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
@@ -605,6 +611,7 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
     SNESGetKSP(snes, &kspFromSnes);
     //KSPGetTolerances(kspFromSnes, &rtol, &atol, &dtol, &maxits);
     //KSPSetTolerances(kspFromSnes, 1.0e-4, atol, dtol, maxits);
+    KSPSetOptionsPrefix(kspFromSnes, "snes_ksp_");
     SNESSetFromOptions(snes);
     SNESSolve(snes, b, x);
 
