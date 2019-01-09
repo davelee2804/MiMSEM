@@ -26,6 +26,12 @@
 
 using namespace std;
 
+/*
+use as:
+
+mpirun --oversubscribe -np 6 ./mimsem 0 -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-4
+*/
+
 SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     PC pc;
 
@@ -458,10 +464,12 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
     // continuity equation
     VecZeroEntries(fh);
 
-    MatMult(M2->M, hj, fh);
+    //MatMult(M2->M, hj, fh);
+VecCopy(hj, fh);
     MatMult(EtoF->E21, F, htmp1);
     MatMult(M2->M, htmp1, htmp2);
-    VecAXPY(fh, dt, htmp2);
+    //VecAXPY(fh, dt, htmp2);
+VecAXPY(fh, dt, htmp1);
 
     repack(f, fu, fh);
 
@@ -495,9 +503,11 @@ void SWEqn::jfnk_precon(Mat P) {
 
     if(precon_assembled) return;
 
-    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+    //MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+MatConvert(EtoF->E12, MATSAME, MAT_INITIAL_MATRIX, &GM2);
+    MatScale(GM2, dt*grav);
     MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
-    MatScale(S, -dt*dt*grav*1.0e+4); // H=1.0e+4
+    MatScale(S, -dt*1.0e+4); // H=1.0e+4
     MatAXPY(S, +1.0, M1->M, DIFFERENT_NONZERO_PATTERN);
 
     MatAssemblyBegin(S, MAT_FINAL_ASSEMBLY);
@@ -601,7 +611,8 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
 
     // rhs vector
     MatMult(M1->M, ui, bu);
-    MatMult(M2->M, hi, bh);
+    //MatMult(M2->M, hi, bh);
+VecCopy(hi, bh);
     repack(b, bu, bh);
 
     // setup solver
@@ -609,6 +620,7 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
     SNESSetFunction(snes, f,    _snes_function, (void*)this);
     SNESSetJacobian(snes, J, P, _snes_jacobian, (void*)this);
     SNESGetKSP(snes, &kspFromSnes);
+//SNESSetNPCSide(snes, PC_LEFT);
     //KSPGetTolerances(kspFromSnes, &rtol, &atol, &dtol, &maxits);
     //KSPSetTolerances(kspFromSnes, 1.0e-4, atol, dtol, maxits);
     KSPSetOptionsPrefix(kspFromSnes, "snes_ksp_");
