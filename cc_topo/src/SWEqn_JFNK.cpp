@@ -24,6 +24,8 @@
 //#define RAD_SPHERE 1.0
 //#define W2_ALPHA (0.25*M_PI)
 
+#define WEAK_FORM_H
+
 using namespace std;
 
 /*
@@ -350,6 +352,9 @@ void SWEqn::laplacian(Vec ui, Vec* ddu) {
     VecDestroy(&MDu);
 }
 
+#define SCALE 1.0e+8
+//#define SCALE 1.0e+3
+
 void SWEqn::unpack(Vec x, Vec u, Vec h) {
     Vec xl, ul, hl;
     PetscScalar *xArray, *uArray, *hArray;
@@ -369,7 +374,7 @@ void SWEqn::unpack(Vec x, Vec u, Vec h) {
         uArray[ii] = xArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
-        hArray[ii] = xArray[ii+topo->n1];
+        hArray[ii] = (1.0*SCALE)*xArray[ii+topo->n1];
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
@@ -406,7 +411,7 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
         xArray[ii] = uArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
-        xArray[ii+topo->n1] = hArray[ii];
+        xArray[ii+topo->n1] = (1.0/SCALE)*hArray[ii];
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
@@ -423,12 +428,6 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 void SWEqn::jfnk_vector(Vec x, Vec f) {
     Vec uj, hj, F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u;
 
-    {
-        double norm;
-        VecNorm(f, NORM_2, &norm);
-        if(!rank) cout << "vector assembly, |f|: " << norm << endl;
-    }
-
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uj);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
@@ -438,6 +437,14 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp2);
 
     unpack(x, uj, hj);
+
+    {
+        double norm_f, norm_u, norm_h;
+        VecNorm(f, NORM_2, &norm_f);
+        VecNorm(uj, NORM_2, &norm_u);
+        VecNorm(hj, NORM_2, &norm_h);
+        if(!rank) cout << "vector assembly, |f|: " << norm_f << ", |u|: " << norm_u << ", |h|: " << norm_h << endl;
+    }
 
     // momentum equation
     VecZeroEntries(fu);
@@ -464,12 +471,18 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
     // continuity equation
     VecZeroEntries(fh);
 
-    //MatMult(M2->M, hj, fh);
-VecCopy(hj, fh);
+#ifdef WEAK_FORM_H
+    MatMult(M2->M, hj, fh);
+#else
+    VecCopy(hj, fh);
+#endif
     MatMult(EtoF->E21, F, htmp1);
+#ifdef WEAK_FORM_H
     MatMult(M2->M, htmp1, htmp2);
-    //VecAXPY(fh, dt, htmp2);
-VecAXPY(fh, dt, htmp1);
+    VecAXPY(fh, dt, htmp2);
+#else
+    VecAXPY(fh, dt, htmp1);
+#endif
 
     repack(f, fu, fh);
 
@@ -528,8 +541,11 @@ void SWEqn::jfnk_precon(Mat P) {
     MatMatMult(M0, CM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0invCM1);
     MatMatMult(NtoE->E10, M0invCM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &RC);
 
-    //MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+#ifdef WEAK_FORM_H
+    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+#else
     MatConvert(EtoF->E12, MATSAME, MAT_INITIAL_MATRIX, &GM2);
+#endif
     MatScale(GM2, dt*grav);
     MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
     MatScale(S, -dt*1.0e+4); // H=1.0e+4
@@ -646,8 +662,11 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
 
     // rhs vector
     MatMult(M1->M, ui, bu);
-    //MatMult(M2->M, hi, bh);
-VecCopy(hi, bh);
+#ifdef WEAK_FORM_H
+    MatMult(M2->M, hi, bh);
+#else
+    VecCopy(hi, bh);
+#endif
     repack(b, bu, bh);
 
     // setup solver
@@ -655,7 +674,7 @@ VecCopy(hi, bh);
     SNESSetFunction(snes, f,    _snes_function, (void*)this);
     SNESSetJacobian(snes, J, P, _snes_jacobian, (void*)this);
     SNESGetKSP(snes, &kspFromSnes);
-//SNESSetNPCSide(snes, PC_LEFT);
+    //SNESSetNPCSide(snes, PC_LEFT);
     //KSPGetTolerances(kspFromSnes, &rtol, &atol, &dtol, &maxits);
     //KSPSetTolerances(kspFromSnes, 1.0e-4, atol, dtol, maxits);
     KSPSetOptionsPrefix(kspFromSnes, "snes_ksp_");
