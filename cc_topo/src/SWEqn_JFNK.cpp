@@ -500,15 +500,43 @@ void SWEqn::jfnk_precon(Mat P) {
     const PetscScalar* vals;
     Mat GM2;
     Mat S;
+    Mat M2D, GD, M0, CM1, M0invCM1, RC;
+    Vec w, wl;
 
     if(precon_assembled) return;
 
+    // (nonlinear) rotational term
+    curl(un, &w);
+    VecAXPY(w, 1.0, fg);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
+    VecScatterBegin(topo->gtol_0, w, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, w, wl, INSERT_VALUES, SCATTER_FORWARD);
+    R->assemble(wl);
+
+    // laplacian term (via helmholtz decomposition)
+    MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
+    MatMatMult(EtoF->E12, M2D, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GD);
+
+    MatCreate(MPI_COMM_WORLD, &M0);
+    MatSetSizes(M0, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
+    MatSetType(M0, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M0, 1, PETSC_NULL, 1, PETSC_NULL);
+    MatZeroEntries(M0);
+    MatDiagonalSet(M0, m0->vgInv, INSERT_VALUES);
+
+    MatMatMult(NtoE->E01, M1->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &CM1);
+    MatMatMult(M0, CM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0invCM1);
+    MatMatMult(NtoE->E10, M0invCM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &RC);
+
     //MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
-MatConvert(EtoF->E12, MATSAME, MAT_INITIAL_MATRIX, &GM2);
+    MatConvert(EtoF->E12, MATSAME, MAT_INITIAL_MATRIX, &GM2);
     MatScale(GM2, dt*grav);
     MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
     MatScale(S, -dt*1.0e+4); // H=1.0e+4
     MatAXPY(S, +1.0, M1->M, DIFFERENT_NONZERO_PATTERN);
+    MatAYPX(S, dt, R->M, DIFFERENT_NONZERO_PATTERN);
+    MatAYPX(S, dt*del2, GD, DIFFERENT_NONZERO_PATTERN);
+    MatAYPX(S, dt*del2, RC, DIFFERENT_NONZERO_PATTERN);
 
     MatAssemblyBegin(S, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  S, MAT_FINAL_ASSEMBLY);
@@ -551,6 +579,13 @@ MatConvert(EtoF->E12, MATSAME, MAT_INITIAL_MATRIX, &GM2);
 
     MatDestroy(&GM2);
     MatDestroy(&S);
+    MatDestroy(&M2D);
+    MatDestroy(&GD);
+    MatDestroy(&M0);
+    MatDestroy(&M0invCM1);
+    MatDestroy(&RC);
+    VecDestroy(&w);
+    VecDestroy(&wl);
 
     //precon_assembled = true;
 }
