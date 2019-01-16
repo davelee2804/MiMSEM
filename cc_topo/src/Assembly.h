@@ -61,6 +61,8 @@ class Pvec {
         PetscScalar* entries;
         Vec vl;
         Vec vg;
+        Vec vlInv;
+        Vec vgInv;
         void assemble();
 };
 

@@ -327,6 +327,9 @@ Pvec::Pvec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
     VecZeroEntries(vg);
 
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &vlInv);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vgInv);
+
     entries = new PetscScalar[(l->n+1)*(l->n+1)];
 
     Q = new Wii(l->q, geom);
@@ -337,6 +340,7 @@ Pvec::Pvec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
 void Pvec::assemble() {
     int ii, ex, ey, np1, np12;
     int *inds_x;
+    PetscScalar *p1Array, *p2Array;
 
     VecZeroEntries(vl);
 
@@ -359,17 +363,29 @@ void Pvec::assemble() {
 
     // scatter values to global vector
     VecScatterBegin(topo->gtol_0, vl, vg, ADD_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_0, vl, vg, ADD_VALUES, SCATTER_REVERSE);
 
     // and back to local vector
     VecScatterBegin(topo->gtol_0, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_0, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecGetArray(vl, &p1Array);
+    VecGetArray(vlInv, &p2Array);
+    for(ii = 0; ii < topo->n0; ii++) {
+        p2Array[ii] = 1.0/p1Array[ii];
+    }
+    VecRestoreArray(vl, &p1Array);
+    VecRestoreArray(vlInv, &p2Array);
+    VecScatterBegin(topo->gtol_0, vlInv, vgInv, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_0, vlInv, vgInv, ADD_VALUES, SCATTER_REVERSE);
 }
 
 Pvec::~Pvec() {
     delete[] entries;
     VecDestroy(&vl);
     VecDestroy(&vg);
+    VecDestroy(&vlInv);
+    VecDestroy(&vgInv);
     delete Q;
 }
 
