@@ -124,6 +124,9 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     precon_assembled = false;
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &un);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hn);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_uj);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &_hj);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -293,8 +296,7 @@ void SWEqn::diagnose_wxu(Vec ui, Vec uj, Vec* wxu) {
     curl(ui, &wi);
     curl(uj, &wj);
     VecAXPY(wi, 1.0, wj);
-    VecScale(wi, 0.5);
-    VecAXPY(wi, 1.0, fg);
+    VecAYPX(wi, 0.5, fg);
 
     VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
@@ -352,8 +354,8 @@ void SWEqn::laplacian(Vec ui, Vec* ddu) {
     VecDestroy(&MDu);
 }
 
-#define SCALE 1.0e+8
-//#define SCALE 1.0e+3
+//#define SCALE 1.0e+8
+#define SCALE 1.0e+3
 
 void SWEqn::unpack(Vec x, Vec u, Vec h) {
     Vec xl, ul, hl;
@@ -372,9 +374,11 @@ void SWEqn::unpack(Vec x, Vec u, Vec h) {
     VecGetArray(hl, &hArray);
     for(ii = 0; ii < topo->n1; ii++) {
         uArray[ii] = xArray[ii];
+        //uArray[ii] = (1.0/SCALE)*xArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
         hArray[ii] = (1.0*SCALE)*xArray[ii+topo->n1];
+        //hArray[ii] = xArray[ii+topo->n1];
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
@@ -409,9 +413,11 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
     VecGetArray(hl, &hArray);
     for(ii = 0; ii < topo->n1; ii++) {
         xArray[ii] = uArray[ii];
+        //xArray[ii] = (1.0*SCALE)*uArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
         xArray[ii+topo->n1] = (1.0/SCALE)*hArray[ii];
+        //xArray[ii+topo->n1] = hArray[ii];
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
@@ -426,6 +432,7 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 }
 
 void SWEqn::jfnk_vector(Vec x, Vec f) {
+    double norm_f, norm_u, norm_h;
     Vec uj, hj, F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uj);
@@ -438,13 +445,13 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
 
     unpack(x, uj, hj);
 
-    {
-        double norm_f, norm_u, norm_h;
-        VecNorm(f, NORM_2, &norm_f);
-        VecNorm(uj, NORM_2, &norm_u);
-        VecNorm(hj, NORM_2, &norm_h);
-        if(!rank) cout << "vector assembly, |f|: " << norm_f << ", |u|: " << norm_u << ", |h|: " << norm_h << endl;
-    }
+    VecCopy(uj, _uj);
+    VecCopy(hj, _hj);
+
+    VecNorm(f, NORM_2, &norm_f);
+    VecNorm(uj, NORM_2, &norm_u);
+    VecNorm(hj, NORM_2, &norm_h);
+    if(!rank) cout << "vector assembly, |f|: " << norm_f << "\t|u_k|: " << norm_u << "\t|h_k|: " << norm_h << endl;
 
     // momentum equation
     VecZeroEntries(fu);
@@ -505,6 +512,8 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
     [B  G][u] = [B-GC^{-1}D  G][   I     0]
     [D  C][h]   [     0      C][C^{-1}D  I]
 
+    [ U   GW ][u] = [ U-GWW^{-1}WD  GW ][    I      0 ] = [ U - GWD  GW ][ I  0 ]
+    [ WD   W ][h]   [      0         W ][ W^{-1}WD  I ]   [    0      W ][ D  I ]
 */
 void SWEqn::jfnk_precon(Mat P) {
     int ri, rj, rr, cc, ncols;
@@ -514,17 +523,29 @@ void SWEqn::jfnk_precon(Mat P) {
     Mat GM2;
     Mat S;
     Mat M2D, GD, M0, CM1, M0invCM1, RC;
-    Vec w, wl;
+    Vec w, wl, hl;
+    Whmat* M2h;
+    U0mat* U0;
+    W0mat* W0;
 
     if(precon_assembled) return;
 
+    M2h = new Whmat(topo, geom, edge);
+    U0 = new U0mat(topo, geom, node, edge);
+    W0 = new W0mat(topo, geom, edge);
+
     // (nonlinear) rotational term
-    curl(un, &w);
+    curl(_uj, &w);
     VecAXPY(w, 1.0, fg);
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecScatterBegin(topo->gtol_0, w, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, w, wl, INSERT_VALUES, SCATTER_FORWARD);
     R->assemble(wl);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
+    VecScatterBegin(topo->gtol_2, _hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, _hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+    M2h->assemble(hl);
 
     // laplacian term (via helmholtz decomposition)
     MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
@@ -542,17 +563,21 @@ void SWEqn::jfnk_precon(Mat P) {
     MatMatMult(NtoE->E10, M0invCM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &RC);
 
 #ifdef WEAK_FORM_H
-    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+    //MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+    MatMatMult(EtoF->E12, W0->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+    //MatMatMult(EtoF->E12, M2h->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
 #else
     MatConvert(EtoF->E12, MATSAME, MAT_INITIAL_MATRIX, &GM2);
 #endif
     MatScale(GM2, dt*grav);
     MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
     MatScale(S, -dt*1.0e+4); // H=1.0e+4
-    MatAXPY(S, +1.0, M1->M, DIFFERENT_NONZERO_PATTERN);
-    MatAYPX(S, dt, R->M, DIFFERENT_NONZERO_PATTERN);
-    MatAYPX(S, dt*del2, GD, DIFFERENT_NONZERO_PATTERN);
-    MatAYPX(S, dt*del2, RC, DIFFERENT_NONZERO_PATTERN);
+    //MatScale(S, -dt); // H=1.0e+4
+    //MatAXPY(S, +1.0, M1->M, DIFFERENT_NONZERO_PATTERN);
+    MatAXPY(S, +1.0, U0->M, DIFFERENT_NONZERO_PATTERN);
+    //MatAYPX(S, dt, R->M, DIFFERENT_NONZERO_PATTERN);
+    //MatAYPX(S, dt*del2, GD, DIFFERENT_NONZERO_PATTERN);
+    //MatAYPX(S, dt*del2, RC, DIFFERENT_NONZERO_PATTERN);
 
     MatAssemblyBegin(S, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  S, MAT_FINAL_ASSEMBLY);
@@ -563,7 +588,7 @@ void SWEqn::jfnk_precon(Mat P) {
     MatGetOwnershipRange(S, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
         MatGetRow(S, rr, &ncols, &cols, &vals);
-        MatSetValues(P, 1, &rr, ncols, cols, vals, INSERT_VALUES);
+        MatSetValues(P, 1, &rr, ncols, cols, vals, ADD_VALUES);
         MatRestoreRow(S, rr, &ncols, &cols, &vals);
     }
 
@@ -574,20 +599,22 @@ void SWEqn::jfnk_precon(Mat P) {
         for(cc = 0; cc < ncols; cc++) {
             pCols[cc] = cols[cc] + topo->nDofs1G;
         }
-        MatSetValues(P, 1, &rr, ncols, pCols, vals, INSERT_VALUES);
+        MatSetValues(P, 1, &rr, ncols, pCols, vals, ADD_VALUES);
         MatRestoreRow(GM2, rr, &ncols, &cols, &vals);
     }
 
     // [h,h] block
     MatGetOwnershipRange(M2->M, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
-        MatGetRow(M2->M, rr, &ncols, &cols, &vals);
+        //MatGetRow(M2->M, rr, &ncols, &cols, &vals);
+        MatGetRow(W0->M, rr, &ncols, &cols, &vals);
         pRow = rr + topo->nDofs1G;
         for(cc = 0; cc < ncols; cc++) {
             pCols[cc] = cols[cc] + topo->nDofs1G;
         }
-        MatSetValues(P, 1, &pRow, ncols, pCols, vals, INSERT_VALUES);
-        MatRestoreRow(M2->M, rr, &ncols, &cols, &vals);
+        MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
+        //MatRestoreRow(M2->M, rr, &ncols, &cols, &vals);
+        MatRestoreRow(W0->M, rr, &ncols, &cols, &vals);
     }
 
     MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
@@ -602,6 +629,11 @@ void SWEqn::jfnk_precon(Mat P) {
     MatDestroy(&RC);
     VecDestroy(&w);
     VecDestroy(&wl);
+    VecDestroy(&hl);
+
+    delete U0;
+    delete W0;
+    delete M2h;
 
     //precon_assembled = true;
 }
@@ -627,7 +659,7 @@ int _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
 
 void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
     int its;
-    double norm;
+    double norm_u, norm_h;
     Vec x, f, b, bu, bh;
     Mat J, P;
     SNES snes;
@@ -681,14 +713,18 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
     SNESSetFromOptions(snes);
     SNESSolve(snes, b, x);
 
-    VecNorm(f, NORM_2, &norm);
+    unpack(x, ui, hi);
+
+    VecAYPX(un, -1.0, ui);
+    VecAYPX(hn, -1.0, hi);
+    VecNorm(un, NORM_2, &norm_u);
+    VecNorm(hn, NORM_2, &norm_h);
     SNESGetNumberFunctionEvals(snes, &its);
     SNESGetConvergedReason(snes, &reason);
     if(!rank) {
-        cout << "SNES converged as " << SNESConvergedReasons[reason] << "\titeration: " << its << "\t|f|: " << norm << endl;
+        cout << "SNES converged as " << SNESConvergedReasons[reason] << "\titeration: " << its << 
+                "\t|u_j-u_i|: " << norm_u << "\t|h_j-h_i|: " << norm_h << endl;
     }
-
-    unpack(x, ui, hi);
 
     if(save) {
         Vec wi;
@@ -725,6 +761,8 @@ SWEqn::~SWEqn() {
     VecScatterDestroy(&gtol_x);
     VecDestroy(&un);
     VecDestroy(&hn);
+    VecDestroy(&_uj);
+    VecDestroy(&_hj);
 
     delete m0;
     delete M1;

@@ -1085,3 +1085,272 @@ void Krhs::assemble(Vec kq, Vec* F) {
 Krhs::~Krhs() {
 }
 
+// 2 form mass matrix with pressure
+Whmat::Whmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
+    M2_j_xy_i* W;
+
+    topo = _topo;
+    geom = _geom;
+    e = _e;
+
+    W = new M2_j_xy_i(e);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+
+    delete W;
+}
+
+void Whmat::assemble(Vec h2) {
+    int ex, ey, ei, mp1, mp12, ii, *inds;
+    double det, hi;
+    Wii* Q = new Wii(e->l->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar* hArray;
+
+    mp1 = e->l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    MatZeroEntries(M);
+    VecGetArray(h2, &hArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds = topo->elInds2_g(ex, ey);
+            // incorporate the jacobian transformation for each element
+            Q->assemble(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &hi);
+                det = geom->det[ei][ii];
+                Qaa[ii][ii] = hi*Q->A[ii][ii]/det/det;
+            }
+
+            Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(h2, &hArray);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete W;
+    delete Q;
+    delete[] WtQWflat;
+}
+
+Whmat::~Whmat() {
+    MatDestroy(&M);
+}
+
+// piecewise constant 2 form mass matrix
+W0mat::W0mat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    e = _e;
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 1, PETSC_NULL, 1, PETSC_NULL);
+
+    assemble();
+}
+
+void W0mat::assemble() {
+    int ex, ey, ei, ii, jj, *inds;
+    double** W = Alloc2D(4, 1);
+    double** Wt = Alloc2D(1, 4);
+    double** Qaa = Alloc2D(4, 4);
+    double** WtQ = Alloc2D(1, 4);
+    double** WtQW = Alloc2D(1, 1);
+    double* WtQWflat = new double[1*1];
+    int nx = e->l->q->n;
+    int nxp1 = nx+1;
+    int faceInds[4];
+
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+            inds = topo->elInds2_g(ex, ey);
+
+            for(ii = 0; ii < nx*nx; ii++) {
+                faceInds[0] = (ii/nx)*nxp1 + ii%nx;
+                faceInds[1] = faceInds[0] + 1;
+                faceInds[2] = faceInds[0] + nxp1;
+                faceInds[3] = faceInds[2] + 1;
+
+                for(jj = 0; jj < 4; jj++) {
+                    W[jj][0] = 0.25;
+                    Qaa[jj][jj] = geom->det[ei][faceInds[jj]];
+                }
+
+                Tran_IP(4, 1, W, Wt);
+                Mult_IP(1, 4, 4, Wt, Qaa, WtQ);
+                Mult_IP(1, 1, 4, WtQ, W, WtQW);
+                Flat2D_IP(1, 1, WtQW, WtQWflat);
+                MatSetValues(M, 1, &inds[ii], 1, &inds[ii], WtQWflat, ADD_VALUES);
+            }
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(4, W);
+    Free2D(1, Wt);
+    Free2D(4, Qaa);
+    Free2D(1, WtQ);
+    Free2D(1, WtQW);
+    delete[] WtQWflat;
+}
+
+W0mat::~W0mat() {
+    MatDestroy(&M);
+}
+
+// piecewise constant 1 form mass matrix
+U0mat::U0mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    l = _l;
+    e = _e;
+
+    assemble();
+}
+
+void U0mat::assemble() {
+    int ex, ey, ei, ii, jj, nx, nxp1;
+    int *inds_x, *inds_y;
+    double det, **J;
+    double** U = Alloc2D(4, 2);
+    double** V = Alloc2D(4, 2);
+    double** Ut = Alloc2D(2, 4);
+    double** Vt = Alloc2D(2, 4);
+    double** UtQaa = Alloc2D(2, 4);
+    double** UtQab = Alloc2D(2, 4);
+    double** VtQba = Alloc2D(2, 4);
+    double** VtQbb = Alloc2D(2, 4);
+    double** UtQU = Alloc2D(2, 4);
+    double** UtQV = Alloc2D(2, 4);
+    double** VtQU = Alloc2D(2, 4);
+    double** VtQV = Alloc2D(2, 4);
+    double** Qaa = Alloc2D(4, 4);
+    double** Qab = Alloc2D(4, 4);
+    double** Qbb = Alloc2D(4, 4);
+    double* UtQUflat = new double[2*2];
+    int vertInds[4], edgeIndsX[2], edgeIndsY[2];
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 32, PETSC_NULL, 32, PETSC_NULL);
+    MatZeroEntries(M);
+
+    nx = l->q->n;
+    nxp1 = nx+1;
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
+            for(ii = 0; ii < nx*nx; ii++) {
+                vertInds[0] = (ii/nx)*nxp1 + ii%nx;
+                vertInds[1] = vertInds[0] + 1;
+                vertInds[2] = vertInds[0] + nxp1;
+                vertInds[3] = vertInds[2] + 1;
+
+                edgeIndsX[0] = inds_x[(ii/nx)*nxp1 + ii%nx];
+                edgeIndsX[1] = inds_x[(ii/nx)*nxp1 + ii%nx + 1];
+
+                edgeIndsY[0] = inds_y[(ii/nx)*nx + ii%nx];
+                edgeIndsY[1] = inds_y[(ii/nx)*nx + ii%nx + nx];
+
+                for(jj = 0; jj < 4; jj++) {
+                    det = geom->det[ei][vertInds[jj]];
+                    J = geom->J[ei][vertInds[jj]];
+
+                    Qaa[jj][jj] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])/det/det;
+                    Qab[jj][jj] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])/det/det;
+                    Qbb[jj][jj] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])/det/det;
+
+                    U[jj][0] = (jj%2==0) ? 0.5 : 0.0; // left
+                    U[jj][1] = (jj%2==1) ? 0.5 : 0.0; // right
+                    V[jj][0] = (jj/2==0) ? 0.5 : 0.0; // bottom
+                    V[jj][1] = (jj/2==1) ? 0.5 : 0.0; // top
+                }
+ 
+                Tran_IP(4, 2, U, Ut);
+                Tran_IP(4, 2, V, Vt);
+
+                Mult_IP(2, 4, 4, Ut, Qaa, UtQaa);
+                Mult_IP(2, 4, 4, Ut, Qab, UtQab);
+                Mult_IP(2, 4, 4, Vt, Qab, VtQba);
+                Mult_IP(2, 4, 4, Vt, Qbb, VtQbb);
+
+                Mult_IP(2, 2, 4, UtQaa, U, UtQU);
+                Mult_IP(2, 2, 4, UtQab, V, UtQV);
+                Mult_IP(2, 2, 4, VtQba, U, VtQU);
+                Mult_IP(2, 2, 4, VtQbb, V, VtQV);
+
+                Flat2D_IP(2, 2, UtQU, UtQUflat);
+                MatSetValues(M, 2, edgeIndsX, 2, edgeIndsX, UtQUflat, ADD_VALUES);
+
+                Flat2D_IP(2, 2, UtQV, UtQUflat);
+                MatSetValues(M, 2, edgeIndsX, 2, edgeIndsY, UtQUflat, ADD_VALUES);
+
+                Flat2D_IP(2, 2, VtQU, UtQUflat);
+                MatSetValues(M, 2, edgeIndsY, 2, edgeIndsX, UtQUflat, ADD_VALUES);
+
+                Flat2D_IP(2, 2, VtQV, UtQUflat);
+                MatSetValues(M, 2, edgeIndsY, 2, edgeIndsY, UtQUflat, ADD_VALUES);
+            }
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(4, U);
+    Free2D(4, V);
+    Free2D(2, Ut);
+    Free2D(2, Vt);
+    Free2D(2, UtQaa);
+    Free2D(2, UtQab);
+    Free2D(2, VtQba);
+    Free2D(2, VtQbb);
+    Free2D(2, UtQU);
+    Free2D(2, UtQV);
+    Free2D(2, VtQU);
+    Free2D(2, VtQV);
+    Free2D(4, Qaa);
+    Free2D(4, Qab);
+    Free2D(4, Qbb);
+    delete[] UtQUflat;
+}
+
+U0mat::~U0mat() {
+    MatDestroy(&M);
+}
