@@ -7,13 +7,19 @@
 #include <petsc.h>
 #include <petscvec.h>
 
+#define JFNK
+
 #include "LinAlg.h"
 #include "Basis.h"
 #include "Topo.h"
 #include "Geom.h"
 #include "ElMats.h"
 #include "Assembly.h"
+#ifdef JFNK
+#include "SWEqn_JFNK.h"
+#else
 #include "SWEqn.h"
+#endif
 #include "Test.h"
 
 using namespace std;
@@ -64,17 +70,29 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
+#ifdef JFNK
+    double dt = 60.0*60.0;
+#else
     double dt = 1.0*6.0*60.0; // time step for 4 3rd order elements per dimension per face
+#endif
     double vort_0, mass_0, ener_0, err_w[3], err_u[3], err_h[3];
     char fieldname[20], filename[50];
     bool dump;
+#ifdef JFNK
+    int nSteps = 120;
+    int dumpEvery = 1;
+#else
     int nSteps = 1*1200;
     int dumpEvery = 1*10;
+#endif
     ofstream file;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
-    Vec wi, ui, hi, uf, hf;
+    Vec wi, ui, hi;
+#ifndef JFNK
+    Vec uf, hf;
+#endif
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 
@@ -90,9 +108,11 @@ int main(int argc, char** argv) {
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &wi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uf);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
+#ifndef JFNK
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uf);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hf);
+#endif
 
     sw->init0(wi, w_init);
     sw->init1(ui, u_init, v_init);
@@ -107,7 +127,11 @@ int main(int argc, char** argv) {
 
     VecDestroy(&wi);
 
+#ifdef JFNK
+    sw->curl(ui, &wi);
+#else
     sw->diagnose_w(ui, &wi, false);
+#endif
     vort_0 = sw->int0(wi);
     mass_0 = sw->int2(hi);
     ener_0 = sw->intE(ui, hi);
@@ -118,13 +142,22 @@ int main(int argc, char** argv) {
             cout << "doing step: " << step << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
+#ifdef JFNK
+        sw->solve(ui, hi, dt, dump);
+#else
         sw->solve_RK2_SS(ui, hi, uf, hf, dt, dump);
         VecCopy(uf,ui);
         VecCopy(hf,hi);
+#endif
         if(dump) {
             sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
 
+#ifdef JFNK
+            sw->curl(ui, &wi);
+            VecAXPY(wi, 1.0, sw->fg);
+#else
             sw->diagnose_w(ui, &wi, true);
+#endif
             sw->err0(wi, w_init, NULL, NULL, err_w);
             sw->err1(ui, u_init, v_init, NULL, err_u);
             sw->err2(hi, h_init, err_h);
@@ -146,9 +179,11 @@ int main(int argc, char** argv) {
     delete sw;
 
     VecDestroy(&ui);
-    VecDestroy(&uf);
     VecDestroy(&hi);
+#ifndef JFNK
+    VecDestroy(&uf);
     VecDestroy(&hf);
+#endif
 
     PetscFinalize();
 
