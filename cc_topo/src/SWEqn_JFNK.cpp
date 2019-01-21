@@ -524,19 +524,19 @@ void SWEqn::jfnk_precon(Mat P) {
     int pRow, pCols[99];
     const int* cols;
     const PetscScalar* vals;
-    Mat GM2;
+    Mat GM2, GM2h;
     Mat S;
     Mat M2D, GD, M0, CM1, M0invCM1, RC;
     Vec w, wl, hl;
-    Whmat* M2h;
     U0mat* U0;
     W0mat* W0;
+    W0hmat* W0h;
 
     if(precon_assembled) return;
 
-    M2h = new Whmat(topo, geom, edge);
     U0 = new U0mat(topo, geom, node, edge);
     W0 = new W0mat(topo, geom, edge);
+    W0h = new W0hmat(topo, geom, edge);
 
     // (nonlinear) rotational term
     curl(_uj, &w);
@@ -549,7 +549,7 @@ void SWEqn::jfnk_precon(Mat P) {
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
     VecScatterBegin(topo->gtol_2, _hj, hl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, _hj, hl, INSERT_VALUES, SCATTER_FORWARD);
-    M2h->assemble(hl);
+    W0h->assemble(hl);
 
     // laplacian term (via helmholtz decomposition)
     MatMatMult(W0->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
@@ -566,21 +566,15 @@ void SWEqn::jfnk_precon(Mat P) {
     MatMatMult(M0, CM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0invCM1);
     MatMatMult(NtoE->E10, M0invCM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &RC);
 
-#ifdef WEAK_FORM_H
     MatMatMult(EtoF->E12, W0->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
-    //MatMatMult(EtoF->E12, M2h->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
-#else
-    MatConvert(EtoF->E12, MATSAME, MAT_INITIAL_MATRIX, &GM2);
-#endif
+    MatMatMult(EtoF->E12, W0h->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2h);
     MatScale(GM2, dt*grav);
-    MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
-    MatScale(S, -dt*1.0e+4); // H=1.0e+4
-    //MatScale(S, -dt); // H=1.0e+4
-    MatAXPY(S, +1.0, U0->M, DIFFERENT_NONZERO_PATTERN);
-    //MatAYPX(S, dt, R->M, DIFFERENT_NONZERO_PATTERN);
-    //MatAYPX(S, dt*del2, GD, DIFFERENT_NONZERO_PATTERN);
-    //MatAYPX(S, dt*del2, RC, DIFFERENT_NONZERO_PATTERN);
-
+    MatScale(GM2h, dt*grav);
+    MatMatMult(GM2h, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
+    MatAYPX(S, +dt, U0->M, DIFFERENT_NONZERO_PATTERN);
+    //MatAXPY(S, dt, R->M, DIFFERENT_NONZERO_PATTERN);
+    //MatAXPY(S, dt*del2, GD, DIFFERENT_NONZERO_PATTERN);
+    //MatAXPY(S, dt*del2, RC, DIFFERENT_NONZERO_PATTERN);
     MatAssemblyBegin(S, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  S, MAT_FINAL_ASSEMBLY);
 
@@ -617,7 +611,7 @@ void SWEqn::jfnk_precon(Mat P) {
 #endif
 
     // [h,h] block
-    MatGetOwnershipRange(M2->M, &ri, &rj);
+    MatGetOwnershipRange(W0->M, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
         MatGetRow(W0->M, rr, &ncols, &cols, &vals);
         pRow = rr + topo->nDofs1G;
@@ -632,6 +626,7 @@ void SWEqn::jfnk_precon(Mat P) {
     MatAssemblyEnd(  P, MAT_FINAL_ASSEMBLY);
 
     MatDestroy(&GM2);
+    MatDestroy(&GM2h);
     MatDestroy(&S);
     MatDestroy(&M2D);
     MatDestroy(&GD);
@@ -644,7 +639,7 @@ void SWEqn::jfnk_precon(Mat P) {
 
     delete U0;
     delete W0;
-    delete M2h;
+    delete W0h;
 
     //precon_assembled = true;
 }

@@ -212,3 +212,14 @@ class U0mat {
         Mat M;
         void assemble();
 };
+
+class W0hmat {
+    public:
+        W0hmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~W0hmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(Vec h);
+};

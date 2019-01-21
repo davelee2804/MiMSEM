@@ -1354,3 +1354,77 @@ void U0mat::assemble() {
 U0mat::~U0mat() {
     MatDestroy(&M);
 }
+
+// piecewise constant 2 form mass matrix with height field
+W0hmat::W0hmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    e = _e;
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 1, PETSC_NULL, 1, PETSC_NULL);
+}
+
+void W0hmat::assemble(Vec h) {
+    int ex, ey, ei, ii, jj, *inds;
+    double** W = Alloc2D(4, 1);
+    double** Wt = Alloc2D(1, 4);
+    double** Qaa = Alloc2D(4, 4);
+    double** WtQ = Alloc2D(1, 4);
+    double** WtQW = Alloc2D(1, 1);
+    double* WtQWflat = new double[1*1];
+    int nx = e->l->q->n;
+    int nxp1 = nx+1;
+    int faceInds[4];
+    double hi;
+    PetscScalar* hArray;
+
+    VecGetArray(h, &hArray);
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+            inds = topo->elInds2_g(ex, ey);
+
+            for(ii = 0; ii < nx*nx; ii++) {
+                faceInds[0] = (ii/nx)*nxp1 + ii%nx;
+                faceInds[1] = faceInds[0] + 1;
+                faceInds[2] = faceInds[0] + nxp1;
+                faceInds[3] = faceInds[2] + 1;
+
+                for(jj = 0; jj < 4; jj++) {
+                    W[jj][0] = 0.25;
+                    Qaa[jj][jj] = geom->det[ei][faceInds[jj]];
+
+                    geom->interp2_g(ex, ey, faceInds[jj]%nxp1, faceInds[jj]/nxp1, hArray, &hi);
+                    Qaa[jj][jj] *= hi;
+                }
+
+                Tran_IP(4, 1, W, Wt);
+                Mult_IP(1, 4, 4, Wt, Qaa, WtQ);
+                Mult_IP(1, 1, 4, WtQ, W, WtQW);
+                Flat2D_IP(1, 1, WtQW, WtQWflat);
+                MatSetValues(M, 1, &inds[ii], 1, &inds[ii], WtQWflat, ADD_VALUES);
+            }
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    VecRestoreArray(h, &hArray);
+
+    Free2D(4, W);
+    Free2D(1, Wt);
+    Free2D(4, Qaa);
+    Free2D(1, WtQ);
+    Free2D(1, WtQW);
+    delete[] WtQWflat;
+}
+
+W0hmat::~W0hmat() {
+    MatDestroy(&M);
+}
