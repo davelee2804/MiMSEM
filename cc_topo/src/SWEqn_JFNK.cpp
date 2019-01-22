@@ -32,7 +32,12 @@ using namespace std;
 /*
 use as:
 
-mpirun --oversubscribe -np 6 ./mimsem 0 -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-4
+matrix free:
+    mpirun -np 6 ./mimsem 0 -snes_mf -snes_type newtontr -snes_stol 1.0e-4
+
+preconditioned:
+    mpirun -np 6 ./mimsem 0 -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-8 \
+        -ksp_rtol 1.0e-7 -ksp_converged_reason -ksp_monitor
 */
 
 SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
@@ -87,10 +92,10 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     KSPSetOperators(ksp, M1->M, M1->M);
     KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
-    KSPGetPC(ksp,&pc);
+    KSPGetPC(ksp, &pc);
     PCSetType(pc, PCBJACOBI);
     PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
-    KSPSetOptionsPrefix(ksp,"sw_");
+    KSPSetOptionsPrefix(ksp, "sw_");
     KSPSetFromOptions(ksp);
 
     // create the [u,h] -> [x] vec scatter
@@ -356,7 +361,8 @@ void SWEqn::laplacian(Vec ui, Vec* ddu) {
 }
 
 //#define SCALE 1.0e+8
-#define SCALE 1.0e+3
+//#define SCALE 1.0e+3
+#define SCALE 1.0
 
 void SWEqn::unpack(Vec x, Vec u, Vec h) {
     Vec xl, ul, hl;
@@ -433,7 +439,6 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 }
 
 void SWEqn::jfnk_vector(Vec x, Vec f) {
-    double norm_f, norm_u, norm_h;
     Vec uj, hj, F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uj);
@@ -448,11 +453,6 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
 
     VecCopy(uj, _uj);
     VecCopy(hj, _hj);
-
-    VecNorm(f, NORM_2, &norm_f);
-    VecNorm(uj, NORM_2, &norm_u);
-    VecNorm(hj, NORM_2, &norm_h);
-    if(!rank) cout << "vector assembly, |f|: " << norm_f << "\t|u_k|: " << norm_u << "\t|h_k|: " << norm_h << endl;
 
     // momentum equation
     VecZeroEntries(fu);
@@ -531,12 +531,14 @@ void SWEqn::jfnk_precon(Mat P) {
     U0mat* U0;
     W0mat* W0;
     W0hmat* W0h;
+    Whmat* Wh;
 
     if(precon_assembled) return;
 
     U0 = new U0mat(topo, geom, node, edge);
     W0 = new W0mat(topo, geom, edge);
     W0h = new W0hmat(topo, geom, edge);
+    Wh = new Whmat(topo, geom, edge);
 
     // (nonlinear) rotational term
     curl(_uj, &w);
@@ -550,9 +552,10 @@ void SWEqn::jfnk_precon(Mat P) {
     VecScatterBegin(topo->gtol_2, _hj, hl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, _hj, hl, INSERT_VALUES, SCATTER_FORWARD);
     W0h->assemble(hl);
+    Wh->assemble(hl);
 
     // laplacian term (via helmholtz decomposition)
-    MatMatMult(W0->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
+    MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
     MatMatMult(EtoF->E12, M2D, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GD);
 
     MatCreate(MPI_COMM_WORLD, &M0);
@@ -566,12 +569,14 @@ void SWEqn::jfnk_precon(Mat P) {
     MatMatMult(M0, CM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0invCM1);
     MatMatMult(NtoE->E10, M0invCM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &RC);
 
-    MatMatMult(EtoF->E12, W0->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
-    MatMatMult(EtoF->E12, W0h->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2h);
+    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+    MatMatMult(EtoF->E12, Wh->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2h);
     MatScale(GM2, dt*grav);
     MatScale(GM2h, dt*grav);
-    MatMatMult(GM2h, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
-    MatAYPX(S, +dt, U0->M, DIFFERENT_NONZERO_PATTERN);
+    //MatMatMult(GM2h, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
+    MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
+    //MatAYPX(S, +dt, U0->M, DIFFERENT_NONZERO_PATTERN);
+    MatAYPX(S, +dt*10000.0, U0->M, DIFFERENT_NONZERO_PATTERN);
     //MatAXPY(S, dt, R->M, DIFFERENT_NONZERO_PATTERN);
     //MatAXPY(S, dt*del2, GD, DIFFERENT_NONZERO_PATTERN);
     //MatAXPY(S, dt*del2, RC, DIFFERENT_NONZERO_PATTERN);
@@ -601,6 +606,7 @@ void SWEqn::jfnk_precon(Mat P) {
     }
 #else
     // [h,u] block
+    MatScale(M2D, 10000.0);
     MatGetOwnershipRange(M2D, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
         MatGetRow(M2D, rr, &ncols, &cols, &vals);
@@ -611,6 +617,7 @@ void SWEqn::jfnk_precon(Mat P) {
 #endif
 
     // [h,h] block
+    MatScale(W0->M, 1.0e-3);
     MatGetOwnershipRange(W0->M, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
         MatGetRow(W0->M, rr, &ncols, &cols, &vals);
@@ -621,9 +628,7 @@ void SWEqn::jfnk_precon(Mat P) {
         MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
         MatRestoreRow(W0->M, rr, &ncols, &cols, &vals);
     }
-
-    MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  P, MAT_FINAL_ASSEMBLY);
+    MatScale(W0->M, 1.0e+3);
 
     MatDestroy(&GM2);
     MatDestroy(&GM2h);
@@ -640,6 +645,7 @@ void SWEqn::jfnk_precon(Mat P) {
     delete U0;
     delete W0;
     delete W0h;
+    delete Wh;
 
     //precon_assembled = true;
 }
@@ -659,6 +665,9 @@ int _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
     MatAssemblyEnd(  J, MAT_FINAL_ASSEMBLY);
 
     sw->jfnk_precon(P);
+
+    MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  P, MAT_FINAL_ASSEMBLY);
 
     return 0;
 }
@@ -713,7 +722,7 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
 #endif
     //KSPGetTolerances(kspFromSnes, &rtol, &atol, &dtol, &maxits);
     //KSPSetTolerances(kspFromSnes, 1.0e-4, atol, dtol, maxits);
-    KSPSetOptionsPrefix(kspFromSnes, "snes_ksp_");
+    //KSPSetOptionsPrefix(kspFromSnes, "snes_ksp_");
     SNESSetFromOptions(snes);
     SNESSolve(snes, b, x);
 
@@ -910,7 +919,7 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     KSPSetOperators(ksp2, M2->M, M2->M);
     KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp2, KSPGMRES);
-    KSPSetOptionsPrefix(ksp2,"init2_");
+    KSPSetOptionsPrefix(ksp2, "init2_");
     KSPSetFromOptions(ksp2);
     KSPSolve(ksp2, WQb, h);
 

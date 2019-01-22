@@ -22,14 +22,18 @@
 #define RAD_EARTH 6371220.0
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
-#define W2_ALPHA (0.25*M_PI)
+//#define W2_ALPHA (0.25*M_PI)
 
 using namespace std;
 
 /*
 use as:
 
-mpirun --oversubscribe -np 6 ./mimsem 0 -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-4
+  matrix free:
+    mpirun -np 6 ./mimsem 0 -snes_mf -snes_type newtontr -snes_stol 1.0e-10 -ksp_rtol 1.0e-3 -ksp_converged_reason -ksp_monitor -ksp_max_its 50
+
+  preconditioned:
+    mpirun -np 6 ./mimsem 0 -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-10 -ksp_rtol 1.0e-6 -ksp_converged_reason -ksp_monitor -ksp_max_its 50
 */
 
 SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
@@ -428,8 +432,6 @@ void SWEqn::jfnk_precon(Mat P) {
     MatMatMult(M0, CM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0invCM1);
     MatMatMult(NtoE->E10, M0invCM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &RC);
 
-    //MatMatMult(EtoF->E12, W0->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
-    //MatMatMult(EtoF->E12, W0h->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2h);
     MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
     MatMatMult(EtoF->E12, Wh->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2h);
     MatScale(GM2, dt*grav*10000.0);
@@ -445,15 +447,12 @@ void SWEqn::jfnk_precon(Mat P) {
 
     MatZeroEntries(P);
 
-    // [u,u] block
     MatGetOwnershipRange(S, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
         MatGetRow(S, rr, &ncols, &cols, &vals);
         MatSetValues(P, 1, &rr, ncols, cols, vals, ADD_VALUES);
         MatRestoreRow(S, rr, &ncols, &cols, &vals);
     }
-    MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  P, MAT_FINAL_ASSEMBLY);
 
     MatDestroy(&GM2);
     MatDestroy(&GM2h);
@@ -490,6 +489,9 @@ int _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
     MatAssemblyEnd(  J, MAT_FINAL_ASSEMBLY);
 
     sw->jfnk_precon(P);
+
+    MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  P, MAT_FINAL_ASSEMBLY);
 
     return 0;
 }
