@@ -390,12 +390,14 @@ void SWEqn::jfnk_precon(Mat P) {
     U0mat* U0;
     W0mat* W0;
     W0hmat* W0h;
+    Whmat* Wh;
 
     if(precon_assembled) return;
 
     U0 = new U0mat(topo, geom, node, edge);
     W0 = new W0mat(topo, geom, edge);
     W0h = new W0hmat(topo, geom, edge);
+    Wh = new Whmat(topo, geom, edge);
 
     // (nonlinear) rotational term
     curl(uj, &w);
@@ -409,6 +411,7 @@ void SWEqn::jfnk_precon(Mat P) {
     VecScatterBegin(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
     W0h->assemble(hl);
+    Wh->assemble(hl);
 
     // laplacian term (via helmholtz decomposition)
     MatMatMult(W0->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
@@ -425,12 +428,14 @@ void SWEqn::jfnk_precon(Mat P) {
     MatMatMult(M0, CM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0invCM1);
     MatMatMult(NtoE->E10, M0invCM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &RC);
 
-    MatMatMult(EtoF->E12, W0->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
-    MatMatMult(EtoF->E12, W0h->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2h);
-    MatScale(GM2, dt*grav);
+    //MatMatMult(EtoF->E12, W0->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+    //MatMatMult(EtoF->E12, W0h->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2h);
+    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+    MatMatMult(EtoF->E12, Wh->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2h);
+    MatScale(GM2, dt*grav*10000.0);
     MatScale(GM2h, dt*grav);
-    MatMatMult(GM2h, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
-MatZeroEntries(S);
+    MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
+    //MatMatMult(GM2h, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
     MatAYPX(S, +dt, U0->M, DIFFERENT_NONZERO_PATTERN);
     //MatAXPY(S, dt, R->M, DIFFERENT_NONZERO_PATTERN);
     //MatAXPY(S, dt*del2, GD, DIFFERENT_NONZERO_PATTERN);
@@ -465,6 +470,7 @@ MatZeroEntries(S);
     delete U0;
     delete W0;
     delete W0h;
+    delete Wh;
 
     //precon_assembled = true;
 }
