@@ -91,11 +91,14 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     KSPSetFromOptions(ksp);
 
     precon_assembled = false;
+
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
-
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uj);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
+    VecZeroEntries(_F);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -245,12 +248,10 @@ void SWEqn::diagnose_Phi(Vec* Phi) {
 
     // gh terms
     MatMult(M2->M, hi, b);
-    //VecAXPY(*Phi, grav/2.0, b);
-VecAXPY(*Phi, 1.0*grav, b);
+    VecAXPY(*Phi, grav/2.0, b);
 
     MatMult(M2->M, hj, b);
-    //VecAXPY(*Phi, grav/2.0, b);
-VecAXPY(*Phi, 0.0*grav, b);
+    VecAXPY(*Phi, grav/2.0, b);
 
     VecDestroy(&uil);
     VecDestroy(&ujl);
@@ -327,22 +328,20 @@ void SWEqn::laplacian(Vec u, Vec* ddu) {
 }
 
 void SWEqn::jfnk_vector(Vec x, Vec f) {
-    double norm_f, norm_u, norm_h;
     Vec F, Phi, wxu, utmp, d2u, d4u;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
 
+    // udpate solution vectors to current iteration
     VecCopy(x, uj);
-
-    VecNorm(f, NORM_2, &norm_f);
-    VecNorm(uj, NORM_2, &norm_u);
-    VecNorm(hj, NORM_2, &norm_h);
-    //if(!rank) cout << "vector assembly, |f|: " << norm_f << "\t|u_k|: " << norm_u << "\t|h_k|: " << norm_h << endl;
+    MatMult(EtoF->E21, _F, hj);
+    VecAYPX(hj, -dt, hi);
 
     // momentum equation
     VecZeroEntries(f);
 
     diagnose_F(&F);
+    VecCopy(F, _F);
     diagnose_Phi(&Phi);
     diagnose_wxu(&wxu);
 
@@ -360,11 +359,6 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
         VecDestroy(&d2u);
         VecDestroy(&d4u);
     }
-
-    // continuity equation
-    VecZeroEntries(hj);
-    MatMult(EtoF->E21, F, hj);
-    VecAYPX(hj, -dt, hi);
 
     // clean up
     VecDestroy(&utmp);
@@ -436,6 +430,7 @@ void SWEqn::jfnk_precon(Mat P) {
     MatScale(GM2, dt*grav);
     MatScale(GM2h, dt*grav);
     MatMatMult(GM2h, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
+MatZeroEntries(S);
     MatAYPX(S, +dt, U0->M, DIFFERENT_NONZERO_PATTERN);
     //MatAXPY(S, dt, R->M, DIFFERENT_NONZERO_PATTERN);
     //MatAXPY(S, dt*del2, GD, DIFFERENT_NONZERO_PATTERN);
@@ -496,7 +491,7 @@ int _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
 void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     int its;
     double norm_u, norm_h;
-    Vec x, f, b;
+    Vec x, f, b, F;
     Mat P;
     SNES snes;
     KSP kspFromSnes;
@@ -521,7 +516,6 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
 
     // solution vector
     VecCopy(ui, x);
-
     // rhs vector
     MatMult(M1->M, ui, b);
 
@@ -533,9 +527,13 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     SNESSetNPCSide(snes, PC_LEFT);
     //KSPGetTolerances(kspFromSnes, &rtol, &atol, &dtol, &maxits);
     //KSPSetTolerances(kspFromSnes, 1.0e-4, atol, dtol, maxits);
-    //KSPSetOptionsPrefix(kspFromSnes, "jfnk_ksp_");
     SNESSetFromOptions(snes);
     SNESSolve(snes, b, x);
+
+    diagnose_F(&F);
+    MatMult(EtoF->E21, F, hj);
+    VecAYPX(hj, -dt, hi);
+    VecDestroy(&F);
 
     VecCopy(x, ui);
     VecCopy(hj, hi);
@@ -587,6 +585,7 @@ SWEqn::~SWEqn() {
     VecDestroy(&hi);
     VecDestroy(&uj);
     VecDestroy(&hj);
+    VecDestroy(&_F);
 
     delete m0;
     delete M1;

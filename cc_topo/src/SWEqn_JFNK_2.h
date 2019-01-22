@@ -33,6 +33,7 @@ class SWEqn {
         Vec hi;
         Vec uj;
         Vec hj;
+        Vec _F;
         void coriolis();
         void curl(Vec u, Vec* w);
         void diagnose_F(Vec* F);
