@@ -36,6 +36,7 @@ class SWEqn {
         Vec hj;
         IS is_u;           // field split index set for u (global)
         IS is_h;           // field split index set for h (global)
+        Mat SC;            // schur complement matrix (for the fieldsplit preconditioner)
         void coriolis();
         void curl(Vec u, Vec* w);
         void diagnose_F(Vec* F);

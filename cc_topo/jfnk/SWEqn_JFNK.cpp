@@ -25,7 +25,6 @@
 #define W2_ALPHA (0.25*M_PI)
 
 #define WEAK_FORM_H
-#define LEFT
 
 using namespace std;
 
@@ -134,6 +133,14 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
         VecDestroy(&xl);
         VecDestroy(&xg);
     }
+
+    // schur complement matrix (for the fieldsplit preconditioner)
+    MatCreate(MPI_COMM_WORLD, &SC);
+    MatSetSizes(SC, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(SC, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(SC, 9*edge->n*edge->n, PETSC_NULL, 9*edge->n*edge->n, PETSC_NULL);
+    MatSetOptionsPrefix(SC, "SC_");
+    MatZeroEntries(SC);
 
     precon_assembled = false;
 
@@ -368,10 +375,6 @@ void SWEqn::laplacian(Vec u, Vec* ddu) {
     VecDestroy(&MDu);
 }
 
-//#define SCALE 1.0e+8
-//#define SCALE 1.0e+3
-#define SCALE 1.0
-
 void SWEqn::unpack(Vec x, Vec u, Vec h) {
     Vec xl, ul, hl;
     PetscScalar *xArray, *uArray, *hArray;
@@ -389,11 +392,9 @@ void SWEqn::unpack(Vec x, Vec u, Vec h) {
     VecGetArray(hl, &hArray);
     for(ii = 0; ii < topo->n1; ii++) {
         uArray[ii] = xArray[ii];
-        //uArray[ii] = (1.0/SCALE)*xArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
-        hArray[ii] = (1.0*SCALE)*xArray[ii+topo->n1];
-        //hArray[ii] = xArray[ii+topo->n1];
+        hArray[ii] = xArray[ii+topo->n1];
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
@@ -428,11 +429,9 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
     VecGetArray(hl, &hArray);
     for(ii = 0; ii < topo->n1; ii++) {
         xArray[ii] = uArray[ii];
-        //xArray[ii] = (1.0*SCALE)*uArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
-        xArray[ii+topo->n1] = (1.0/SCALE)*hArray[ii];
-        //xArray[ii+topo->n1] = hArray[ii];
+        xArray[ii+topo->n1] = hArray[ii];
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
@@ -509,157 +508,111 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
 }
 
 /* 
-  left preconditioning for linearised 2d wave equation:
+  left preconditioning:
 
-    [ U   GW ][u] = [ U - GWW^{-1}WD  GW ][    I      0 ] = [ U - GWD  GW ][ I  0 ]
-    [ WD   W ][h]   [      0           W ][ W^{-1}WD  I ]   [    0      W ][ D  I ]
-
-
-  right preconditioning:
-
-    [ U   GW ][u] = [ I  G ][ U - GWD  0 ]
-    [ WD   W ][h]   [ 0  I ][    WD    W ]
+    [ U     GW ][u] = [  U          0       ][ I  U^{-1}GW ]
+    [ WG^T   0 ][h]   [ WG^T  -WG^TU^{-1}GW ][ 0      I    ]
 */
 void SWEqn::jfnk_precon(Mat P) {
-    int ri, rj, rr, cc, ncols;
+    int ri, rj, rr, cc, ncols, row_proc, col_proc;
     int pRow, pCols[99];
     const int* cols;
     const PetscScalar* vals;
-    Mat GM2, GM2h;
-    Mat S;
-    Mat M2D, GD, M0, CM1, M0invCM1, RC;
-    Vec w, wl, hl;
-    U0mat* U0;
-    W0mat* W0;
-    W0hmat* W0h;
-    Whmat* Wh;
+    Mat M2D, GM2, M2DUinv, M2DUinvGM2;
+    Mat Uinv;
 
     if(precon_assembled) return;
 
-    U0 = new U0mat(topo, geom, node, edge);
-    W0 = new W0mat(topo, geom, edge);
-    W0h = new W0hmat(topo, geom, edge);
-    Wh = new Whmat(topo, geom, edge);
-
-    // (nonlinear) rotational term
-    curl(uj, &w);
-    VecAXPY(w, 1.0, fg);
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
-    VecScatterBegin(topo->gtol_0, w, wl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, w, wl, INSERT_VALUES, SCATTER_FORWARD);
-    R->assemble(wl);
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
-    VecScatterBegin(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
-    W0h->assemble(hl);
-    Wh->assemble(hl);
-
-    // laplacian term (via helmholtz decomposition)
-    MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
-    MatMatMult(EtoF->E12, M2D, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GD);
-
-    MatCreate(MPI_COMM_WORLD, &M0);
-    MatSetSizes(M0, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
-    MatSetType(M0, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M0, 1, PETSC_NULL, 1, PETSC_NULL);
-    MatZeroEntries(M0);
-    MatDiagonalSet(M0, m0->vgInv, INSERT_VALUES);
-
-    MatMatMult(NtoE->E01, U0->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &CM1);
-    MatMatMult(M0, CM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0invCM1);
-    MatMatMult(NtoE->E10, M0invCM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &RC);
-
-    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
-    MatMatMult(EtoF->E12, Wh->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2h);
-    MatScale(GM2, dt*grav);
-    MatScale(GM2h, dt*grav);
-#ifdef WEAK_FORM_H
-    //MatMatMult(GM2h, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
-    MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
-#else
-    MatMatMult(EtoF->E12, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
-    {
-        Vec one;
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &one);
-        VecSet(one, 1.0);
-        MatDiagonalSet(W0->M, one, INSERT_VALUES);
-        VecDestroy(&one);
+    // assemble the approximate H(div) matrix inverse
+    MatCreate(MPI_COMM_WORLD, &Uinv);
+    MatSetSizes(Uinv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(Uinv, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(Uinv, 1, PETSC_NULL, 1, PETSC_NULL);
+    MatZeroEntries(Uinv);
+    MatGetOwnershipRange(M1->M, &ri, &rj);
+    for(rr = ri; rr < rj; rr++) {
+        MatGetRow(M1->M, rr, &ncols, &cols, &vals);
+        for(cc = 0; cc < ncols; cc++) {
+            if(cols[cc] == rr) {
+                MatSetValues(Uinv, 1, &rr, 1, &rr, &vals[cols[cc]], ADD_VALUES);
+            }
+        }
+        MatRestoreRow(M1->M, rr, &ncols, &cols, &vals);
     }
-#endif
-    //MatAYPX(S, +dt, U0->M, DIFFERENT_NONZERO_PATTERN);
-    MatAYPX(S, +dt*10000.0, U0->M, DIFFERENT_NONZERO_PATTERN);
-    //MatAXPY(S, dt, R->M, DIFFERENT_NONZERO_PATTERN);
-    //MatAXPY(S, dt*del2, GD, DIFFERENT_NONZERO_PATTERN);
-    //MatAXPY(S, dt*del2, RC, DIFFERENT_NONZERO_PATTERN);
-    MatAssemblyBegin(S, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  S, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(Uinv, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Uinv, MAT_FINAL_ASSEMBLY);
+
+    MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
+    MatScale(M2D, dt*10000.0);
+    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
+    MatScale(GM2, dt*grav);
+    MatMatMult(M2D, Uinv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2DUinv);
+    MatMatMult(M2DUinv, GM2, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2DUinvGM2);
+    MatZeroEntries(SC);
+    MatCopy(M2DUinvGM2, SC, DIFFERENT_NONZERO_PATTERN);
+    MatScale(SC, -1.0);
+    MatAssemblyBegin(SC, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  SC, MAT_FINAL_ASSEMBLY);
 
     MatZeroEntries(P);
 
     // [u,u] block
-    MatGetOwnershipRange(S, &ri, &rj);
+    MatGetOwnershipRange(M1->M, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
-        MatGetRow(S, rr, &ncols, &cols, &vals);
-        MatSetValues(P, 1, &rr, ncols, cols, vals, ADD_VALUES);
-        MatRestoreRow(S, rr, &ncols, &cols, &vals);
+        MatGetRow(M1->M, rr, &ncols, &cols, &vals);
+
+        row_proc = rr / topo->n1l;
+        pRow = row_proc * (topo->n1l + topo->n2l) + rr % topo->n1l;
+
+        for(cc = 0; cc < ncols; cc++) {
+            col_proc = cols[cc] / topo->n1l;
+            pCols[cc] = col_proc * (topo->n1l + topo->n2l) + cols[cc] % topo->n1l;
+        }
+
+        MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
+        MatRestoreRow(M1->M, rr, &ncols, &cols, &vals);
     }
 
-#ifdef LEFT
-    // [u,h] block
-    MatGetOwnershipRange(GM2, &ri, &rj);
-    for(rr = ri; rr < rj; rr++) {
-        MatGetRow(GM2, rr, &ncols, &cols, &vals);
-        for(cc = 0; cc < ncols; cc++) {
-            pCols[cc] = cols[cc] + topo->nDofs1G;
-        }
-        MatSetValues(P, 1, &rr, ncols, pCols, vals, ADD_VALUES);
-        MatRestoreRow(GM2, rr, &ncols, &cols, &vals);
-    }
-#else
     // [h,u] block
-    MatScale(M2D, 10000.0);
     MatGetOwnershipRange(M2D, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
         MatGetRow(M2D, rr, &ncols, &cols, &vals);
-        pRow = rr + topo->nDofs1G;
-        MatSetValues(P, 1, &pRow, ncols, cols, vals, ADD_VALUES);
+
+        row_proc = rr / topo->n2l;
+        pRow = row_proc * (topo->n1l + topo->n2l) + rr % topo->n2l + topo->n1l;
+
+        for(cc = 0; cc < ncols; cc++) {
+            col_proc = cols[cc] / topo->n1l;
+            pCols[cc] = col_proc * (topo->n1l + topo->n2l) + cols[cc] % topo->n1l;
+        }
+
+        MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
         MatRestoreRow(M2D, rr, &ncols, &cols, &vals);
     }
-#endif
 
     // [h,h] block
-    MatScale(W0->M, 1.0e-3);
-    MatGetOwnershipRange(W0->M, &ri, &rj);
+    MatGetOwnershipRange(SC, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
-        MatGetRow(W0->M, rr, &ncols, &cols, &vals);
-        pRow = rr + topo->nDofs1G;
+        MatGetRow(SC, rr, &ncols, &cols, &vals);
+
+        row_proc = rr / topo->n2l;
+        pRow = row_proc * (topo->n1l + topo->n2l) + rr % topo->n2l + topo->n1l;
+
         for(cc = 0; cc < ncols; cc++) {
-            pCols[cc] = cols[cc] + topo->nDofs1G;
+            col_proc = cols[cc] / topo->n2l;
+            pCols[cc] = col_proc * (topo->n1l + topo->n2l) + cols[cc] % topo->n2l + topo->n1l;
         }
         MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
-        MatRestoreRow(W0->M, rr, &ncols, &cols, &vals);
+        MatRestoreRow(SC, rr, &ncols, &cols, &vals);
     }
-    MatScale(W0->M, 1.0e+3);
-
-    MatDestroy(&GM2);
-    MatDestroy(&GM2h);
-    MatDestroy(&S);
-    MatDestroy(&M2D);
-    MatDestroy(&GD);
-    MatDestroy(&M0);
-    MatDestroy(&M0invCM1);
-    MatDestroy(&RC);
-    VecDestroy(&w);
-    VecDestroy(&wl);
-    VecDestroy(&hl);
-
-    delete U0;
-    delete W0;
-    delete W0h;
-    delete Wh;
 
     //precon_assembled = true;
+
+    MatDestroy(&M2D);
+    MatDestroy(&GM2);
+    MatDestroy(&M2DUinv);
+    MatDestroy(&M2DUinvGM2);
+    MatDestroy(&Uinv);
 }
 
 int _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
@@ -747,6 +700,7 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     KSPGetPC(kspFromSnes, &pcFromSnes);
     PCFieldSplitSetIS(pcFromSnes, "u", is_u);
     PCFieldSplitSetIS(pcFromSnes, "h", is_h);
+    PCFieldSplitSetSchurPre(pcFromSnes, PC_FIELDSPLIT_SCHUR_PRE_A11, SC);
     SNESSolve(snes, b, x);
 
     unpack(x, un, hn);
@@ -797,6 +751,7 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
 SWEqn::~SWEqn() {
     ISDestroy(&is_u);
     ISDestroy(&is_h);
+    MatDestroy(&SC);
     KSPDestroy(&ksp);
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);
