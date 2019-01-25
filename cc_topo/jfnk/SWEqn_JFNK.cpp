@@ -24,7 +24,7 @@
 //#define RAD_SPHERE 1.0
 #define W2_ALPHA (0.25*M_PI)
 
-#define WEAK_FORM_H
+//#define WEAK_FORM_H
 
 using namespace std;
 
@@ -518,10 +518,16 @@ void SWEqn::jfnk_precon(Mat P) {
     int pRow, pCols[99];
     const int* cols;
     const PetscScalar* vals;
+    double valInv;
     Mat M2D, GM2, M2DUinv, M2DUinvGM2;
     Mat Uinv;
+    //W0mat* W0;
+    //U0mat* U0;
 
     if(precon_assembled) return;
+
+    //W0 = new W0mat(topo, geom, edge);
+    //U0 = new U0mat(topo, geom, node, edge);
 
     // assemble the approximate H(div) matrix inverse
     MatCreate(MPI_COMM_WORLD, &Uinv);
@@ -534,7 +540,8 @@ void SWEqn::jfnk_precon(Mat P) {
         MatGetRow(M1->M, rr, &ncols, &cols, &vals);
         for(cc = 0; cc < ncols; cc++) {
             if(cols[cc] == rr) {
-                MatSetValues(Uinv, 1, &rr, 1, &rr, &vals[cols[cc]], ADD_VALUES);
+                valInv = 1.0/vals[cc];
+                MatSetValues(Uinv, 1, &rr, 1, &rr, &valInv, ADD_VALUES);
             }
         }
         MatRestoreRow(M1->M, rr, &ncols, &cols, &vals);
@@ -543,6 +550,10 @@ void SWEqn::jfnk_precon(Mat P) {
     MatAssemblyEnd(  Uinv, MAT_FINAL_ASSEMBLY);
 
     MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
+#ifndef WEAK_FORM_H
+    MatZeroEntries(M2D);
+    MatCopy(EtoF->E21, M2D, DIFFERENT_NONZERO_PATTERN);
+#endif
     MatScale(M2D, dt*10000.0);
     MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
     MatScale(GM2, dt*grav);
@@ -551,6 +562,7 @@ void SWEqn::jfnk_precon(Mat P) {
     MatZeroEntries(SC);
     MatCopy(M2DUinvGM2, SC, DIFFERENT_NONZERO_PATTERN);
     MatScale(SC, -1.0);
+
     MatAssemblyBegin(SC, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  SC, MAT_FINAL_ASSEMBLY);
 
@@ -613,6 +625,9 @@ void SWEqn::jfnk_precon(Mat P) {
     MatDestroy(&M2DUinv);
     MatDestroy(&M2DUinvGM2);
     MatDestroy(&Uinv);
+
+    //delete W0;
+    //delete U0;
 }
 
 int _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
@@ -700,7 +715,8 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     KSPGetPC(kspFromSnes, &pcFromSnes);
     PCFieldSplitSetIS(pcFromSnes, "u", is_u);
     PCFieldSplitSetIS(pcFromSnes, "h", is_h);
-    PCFieldSplitSetSchurPre(pcFromSnes, PC_FIELDSPLIT_SCHUR_PRE_A11, SC);
+
+    PCFieldSplitSetSchurPre(pcFromSnes, PC_FIELDSPLIT_SCHUR_PRE_USER, SC);
     SNESSolve(snes, b, x);
 
     unpack(x, un, hn);
