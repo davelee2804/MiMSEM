@@ -22,7 +22,7 @@
 #define RAD_EARTH 6371220.0
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
-//#define W2_ALPHA (0.25*M_PI)
+#define W2_ALPHA (0.25*M_PI)
 
 #define WEAK_FORM_H
 #define LEFT
@@ -100,16 +100,24 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     // create the [u,h] -> [x] vec scatter
     {
-        int ii;
+        int ii, jj;
+        int dof_proc;
         int* loc = new int[topo->n1+topo->n2];
+        int* loc_u = new int[topo->n1];
+        int* loc_h = new int[topo->n2];
         IS is_g, is_l;
         Vec xl, xg;
 
         for(ii = 0; ii < topo->n1; ii++) {
-            loc[ii] = topo->loc1[ii];
+            dof_proc = topo->loc1[ii] / topo->n1l;
+            loc[ii] = dof_proc * (topo->n1l + topo->n2l) + topo->loc1[ii] % topo->n1l;
+            loc_u[ii] = loc[ii];
         }
         for(ii = 0; ii < topo->n2; ii++) {
-            loc[ii+topo->n1] = topo->loc2[ii] + topo->nDofs1G;
+            jj = ii + topo->n1;
+            dof_proc = topo->loc2[ii] / topo->n2l;
+            loc[jj] = dof_proc * (topo->n1l + topo->n2l) + topo->loc2[ii] % topo->n2l + topo->n1l;
+            loc_h[ii] = loc[jj];
         }
 
         ISCreateStride(MPI_COMM_SELF, topo->n1+topo->n2, 0, 1, &is_l);
@@ -120,7 +128,13 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
         VecScatterCreate(xg, is_g, xl, is_l, &gtol_x);
 
+        // create the u and h index sets on this processor for later use by the fieldsplit preconditioner
+        ISCreateGeneral(MPI_COMM_WORLD, topo->n1, loc_u, PETSC_COPY_VALUES, &is_u);
+        ISCreateGeneral(MPI_COMM_WORLD, topo->n2, loc_h, PETSC_COPY_VALUES, &is_h);
+
         delete[] loc;
+        delete[] loc_u;
+        delete[] loc_h;
         ISDestroy(&is_l);
         ISDestroy(&is_g);
         VecDestroy(&xl);
@@ -128,11 +142,11 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     }
 
     precon_assembled = false;
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &un);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hn);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_uj);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &_hj);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uj);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -205,7 +219,7 @@ void SWEqn::curl(Vec u, Vec *w) {
 }
 
 // dH/du = hu = F
-void SWEqn::diagnose_F(Vec ui, Vec uj, Vec hi, Vec hj, Vec* F) {
+void SWEqn::diagnose_F(Vec* F) {
     Vec hu, b, hil, hjl;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hil);
@@ -251,7 +265,7 @@ void SWEqn::diagnose_F(Vec ui, Vec uj, Vec hi, Vec hj, Vec* F) {
 // dH/dh = (1/2)u^2 + gh = \Phi
 // note: \Phi is in integral form here
 //          \int_{\Omega} \gamma_h,\Phi_h d\Omega
-void SWEqn::diagnose_Phi(Vec ui, Vec uj, Vec hi, Vec hj, Vec* Phi) {
+void SWEqn::diagnose_Phi(Vec* Phi) {
     Vec uil, ujl, b;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
@@ -292,7 +306,7 @@ void SWEqn::diagnose_Phi(Vec ui, Vec uj, Vec hi, Vec hj, Vec* Phi) {
     VecDestroy(&b);
 }
 
-void SWEqn::diagnose_wxu(Vec ui, Vec uj, Vec* wxu) {
+void SWEqn::diagnose_wxu(Vec* wxu) {
     Vec wi, wj, wl, uh;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
@@ -320,7 +334,7 @@ void SWEqn::diagnose_wxu(Vec ui, Vec uj, Vec* wxu) {
     VecDestroy(&uh);
 }
 
-void SWEqn::laplacian(Vec ui, Vec* ddu) {
+void SWEqn::laplacian(Vec u, Vec* ddu) {
     Vec Du, Cu, RCu, GDu, MDu, dMDu;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, ddu);
@@ -332,7 +346,7 @@ void SWEqn::laplacian(Vec ui, Vec* ddu) {
 
     /*** divergent component ***/
     // div (strong form)
-    MatMult(EtoF->E21, ui, Du);
+    MatMult(EtoF->E21, u, Du);
 
     // grad (weak form)
     MatMult(M2->M, Du, MDu);
@@ -341,7 +355,7 @@ void SWEqn::laplacian(Vec ui, Vec* ddu) {
 
     /*** rotational component ***/
     // curl (weak form)
-    curl(ui, &Cu);
+    curl(u, &Cu);
 
     // rot (strong form)
     MatMult(NtoE->E10, Cu, RCu);
@@ -439,10 +453,8 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 }
 
 void SWEqn::jfnk_vector(Vec x, Vec f) {
-    Vec uj, hj, F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u;
+    Vec F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uj);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
@@ -451,15 +463,12 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
 
     unpack(x, uj, hj);
 
-    VecCopy(uj, _uj);
-    VecCopy(hj, _hj);
-
     // momentum equation
     VecZeroEntries(fu);
 
-    diagnose_F(un, uj, hn, hj, &F);
-    diagnose_Phi(un, uj, hn, hj, &Phi);
-    diagnose_wxu(un, uj, &wxu);
+    diagnose_F(&F);
+    diagnose_Phi(&Phi);
+    diagnose_wxu(&wxu);
 
     MatMult(M1->M, uj, fu);
     VecAXPY(fu, dt, wxu);
@@ -495,8 +504,6 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
     repack(f, fu, fh);
 
     // clean up
-    VecDestroy(&uj);
-    VecDestroy(&hj);
     VecDestroy(&fu);
     VecDestroy(&fh);
     VecDestroy(&utmp);
@@ -541,7 +548,7 @@ void SWEqn::jfnk_precon(Mat P) {
     Wh = new Whmat(topo, geom, edge);
 
     // (nonlinear) rotational term
-    curl(_uj, &w);
+    curl(uj, &w);
     VecAXPY(w, 1.0, fg);
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecScatterBegin(topo->gtol_0, w, wl, INSERT_VALUES, SCATTER_FORWARD);
@@ -549,8 +556,8 @@ void SWEqn::jfnk_precon(Mat P) {
     R->assemble(wl);
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
-    VecScatterBegin(topo->gtol_2, _hj, hl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, _hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, hj, hl, INSERT_VALUES, SCATTER_FORWARD);
     W0h->assemble(hl);
     Wh->assemble(hl);
 
@@ -573,8 +580,19 @@ void SWEqn::jfnk_precon(Mat P) {
     MatMatMult(EtoF->E12, Wh->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2h);
     MatScale(GM2, dt*grav);
     MatScale(GM2h, dt*grav);
+#ifdef WEAK_FORM_H
     //MatMatMult(GM2h, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
     MatMatMult(GM2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
+#else
+    MatMatMult(EtoF->E12, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &S);
+    {
+        Vec one;
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &one);
+        VecSet(one, 1.0);
+        MatDiagonalSet(W0->M, one, INSERT_VALUES);
+        VecDestroy(&one);
+    }
+#endif
     //MatAYPX(S, +dt, U0->M, DIFFERENT_NONZERO_PATTERN);
     MatAYPX(S, +dt*10000.0, U0->M, DIFFERENT_NONZERO_PATTERN);
     //MatAXPY(S, dt, R->M, DIFFERENT_NONZERO_PATTERN);
@@ -672,19 +690,17 @@ int _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
     return 0;
 }
 
-void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
+void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     int its;
-    double norm_u, norm_h;
+    double norm_u, norm_h, norm_u0, norm_h0;
     Vec x, f, b, bu, bh;
-    Mat P;
+    Mat J, P;
     SNES snes;
     KSP kspFromSnes;
+    PC pcFromSnes;
     SNESConvergedReason reason;
 
     dt = _dt;
-
-    VecCopy(ui, un);
-    VecCopy(hi, hn);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &bh);
@@ -692,14 +708,25 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &f);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &b);
 
+    MatCreate(MPI_COMM_WORLD, &J);
+    MatSetSizes(J, topo->n1l+topo->n2l, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, topo->nDofs1G+topo->nDofs2G);
+    MatSetType(J, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(J, 0, PETSC_NULL, 0, PETSC_NULL);
+    MatZeroEntries(J);
+
     MatCreate(MPI_COMM_WORLD, &P);
     MatSetSizes(P, topo->n1l+topo->n2l, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, topo->nDofs1G+topo->nDofs2G);
     MatSetType(P, MATMPIAIJ);
     MatMPIAIJSetPreallocation(P, 8*quad->n*(quad->n+1), PETSC_NULL, 8*quad->n*(quad->n+1), PETSC_NULL);
+    MatSetOptionsPrefix(P, "precon_");
     MatZeroEntries(P);
 
     // solution vector
-    repack(x, ui, hi);
+    VecCopy(un, ui);
+    VecCopy(hn, hi);
+    VecCopy(un, uj);
+    VecCopy(hn, hj);
+    repack(x, un, hn);
 
     // rhs vector
     MatMult(M1->M, ui, bu);
@@ -713,30 +740,42 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
     // setup solver
     SNESCreate(MPI_COMM_WORLD, &snes);
     SNESSetFunction(snes, f,    _snes_function, (void*)this);
-    SNESSetJacobian(snes, P, P, _snes_jacobian, (void*)this);
-    SNESGetKSP(snes, &kspFromSnes);
+    SNESSetJacobian(snes, J, P, _snes_jacobian, (void*)this);
+    SNESSetType(snes, SNESNEWTONTR);
 #ifdef LEFT
     SNESSetNPCSide(snes, PC_LEFT);
 #else
     SNESSetNPCSide(snes, PC_RIGHT);
 #endif
-    //KSPGetTolerances(kspFromSnes, &rtol, &atol, &dtol, &maxits);
-    //KSPSetTolerances(kspFromSnes, 1.0e-4, atol, dtol, maxits);
-    //KSPSetOptionsPrefix(kspFromSnes, "snes_ksp_");
     SNESSetFromOptions(snes);
+
+    //VecGetOwnershipRange(un, &first, &last);
+    //ISCreateStride(MPI_COMM_WORLD, last - first, first, 1, &is_u);
+    //VecGetOwnershipRange(hn, &first, &last);
+    //ISCreateStride(MPI_COMM_WORLD, last - first, first + topo->nDofs1G, 1, &is_h);
+
+    SNESGetKSP(snes, &kspFromSnes);
+    KSPGetPC(kspFromSnes, &pcFromSnes);
+    PCFieldSplitSetIS(pcFromSnes, "u", is_u);
+    PCFieldSplitSetIS(pcFromSnes, "h", is_h);
     SNESSolve(snes, b, x);
 
-    unpack(x, ui, hi);
+    unpack(x, un, hn);
+    VecCopy(un, uj);
+    VecCopy(hn, hj);
 
-    VecAYPX(un, -1.0, ui);
-    VecAYPX(hn, -1.0, hi);
-    VecNorm(un, NORM_2, &norm_u);
-    VecNorm(hn, NORM_2, &norm_h);
+    VecAXPY(uj, -1.0, ui);
+    VecAXPY(hj, -1.0, hi);
+    VecNorm(uj, NORM_2, &norm_u);
+    VecNorm(hj, NORM_2, &norm_h);
+    VecNorm(ui, NORM_2, &norm_u0);
+    VecNorm(hi, NORM_2, &norm_h0);
     SNESGetNumberFunctionEvals(snes, &its);
     SNESGetConvergedReason(snes, &reason);
     if(!rank) {
-        cout << "SNES converged as " << SNESConvergedReasons[reason] << "\titeration: " << its << 
-                "\t|u_j-u_i|: " << norm_u << "\t|h_j-h_i|: " << norm_h << endl;
+        cout << scientific;
+        cout << "SNES converged as " << SNESConvergedReasons[reason] << " iteration: " << its << 
+                "\t|u_j-u_i|/|u_j|: " << norm_u/norm_u0 << "\t|h_j-h_i|/|h_j|: " << norm_h/norm_h0 << endl;
     }
 
     if(save) {
@@ -744,14 +783,14 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
         char fieldname[20];
 
         step++;
-        curl(ui, &wi);
+        curl(un, &wi);
 
         sprintf(fieldname, "vorticity");
         geom->write0(wi, fieldname, step);
         sprintf(fieldname, "velocity");
-        geom->write1(ui, fieldname, step);
+        geom->write1(un, fieldname, step);
         sprintf(fieldname, "pressure");
-        geom->write2(hi, fieldname, step);
+        geom->write2(hn, fieldname, step);
 
         VecDestroy(&wi);
     }
@@ -761,20 +800,23 @@ void SWEqn::solve(Vec ui, Vec hi, double _dt, bool save) {
     VecDestroy(&b);
     VecDestroy(&bu);
     VecDestroy(&bh);
+    MatDestroy(&J);
     MatDestroy(&P);
     SNESDestroy(&snes);
 }
 
 SWEqn::~SWEqn() {
+    ISDestroy(&is_u);
+    ISDestroy(&is_h);
     KSPDestroy(&ksp);
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);
     VecDestroy(&fg);
     VecScatterDestroy(&gtol_x);
-    VecDestroy(&un);
-    VecDestroy(&hn);
-    VecDestroy(&_uj);
-    VecDestroy(&_hj);
+    VecDestroy(&ui);
+    VecDestroy(&hi);
+    VecDestroy(&uj);
+    VecDestroy(&hj);
 
     delete m0;
     delete M1;
@@ -1278,7 +1320,7 @@ double SWEqn::intE(Vec ug, Vec hg) {
     return global;
 }
 
-void SWEqn::writeConservation(double time, Vec ui, Vec hi, double mass0, double vort0, double ener0) {
+void SWEqn::writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0) {
     int rank;
     double mass, vort, ener;
     char filename[50];
@@ -1287,11 +1329,11 @@ void SWEqn::writeConservation(double time, Vec ui, Vec hi, double mass0, double 
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    curl(ui, &wi);
+    curl(u, &wi);
 
-    mass = int2(hi);
+    mass = int2(h);
     vort = int0(wi);
-    ener = intE(ui, hi);
+    ener = intE(u, h);
 
     if(!rank) {
         cout << "conservation of mass:      " << (mass - mass0)/mass0 << endl;
@@ -1304,6 +1346,5 @@ void SWEqn::writeConservation(double time, Vec ui, Vec hi, double mass0, double 
         file << time/60.0/60.0/24.0 << "\t" << (mass-mass0)/mass0 << "\t" << (vort-vort0) << "\t" << (ener-ener0)/ener0 << endl;
         file.close();
     }
-
     VecDestroy(&wi);
 } 

@@ -30,15 +30,17 @@ class SWEqn {
         Mat E12M2;
         KSP ksp;           // 1 form mass matrix linear solver
         VecScatter gtol_x;
-        Vec un;
-        Vec hn;
-        Vec _uj;
-        Vec _hj;
+        Vec ui;
+        Vec hi;
+        Vec uj;
+        Vec hj;
+        IS is_u;           // field split index set for u (global)
+        IS is_h;           // field split index set for h (global)
         void coriolis();
         void curl(Vec u, Vec* w);
-        void diagnose_F(Vec ui, Vec uj, Vec hi, Vec hj, Vec* F);
-        void diagnose_Phi(Vec ui, Vec uj, Vec hi, Vec hj, Vec* Phi);
-        void diagnose_wxu(Vec ui, Vec uj, Vec* wxu);
+        void diagnose_F(Vec* F);
+        void diagnose_Phi(Vec* Phi);
+        void diagnose_wxu(Vec* wxu);
         void init0(Vec q, ICfunc* func);
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
         void init2(Vec h, ICfunc* func);
@@ -48,11 +50,11 @@ class SWEqn {
         double int0(Vec u);
         double int2(Vec u);
         double intE(Vec u, Vec h);
-        void laplacian(Vec ui, Vec* ddu);
-        void writeConservation(double time, Vec ui, Vec hi, double mass0, double vort0, double ener0);
+        void laplacian(Vec u, Vec* ddu);
+        void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0);
         void jfnk_vector(Vec x, Vec f);
         void jfnk_precon(Mat P);
-        void solve(Vec ui, Vec hi, double _dt, bool save);
+        void solve(Vec u, Vec h, double _dt, bool save);
     private:
         double viscosity();
         void unpack(Vec x, Vec u, Vec h);
