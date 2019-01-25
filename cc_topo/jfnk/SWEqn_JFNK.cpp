@@ -103,21 +103,17 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
         int ii, jj;
         int dof_proc;
         int* loc = new int[topo->n1+topo->n2];
-        int* loc_u = new int[topo->n1];
-        int* loc_h = new int[topo->n2];
         IS is_g, is_l;
         Vec xl, xg;
 
         for(ii = 0; ii < topo->n1; ii++) {
             dof_proc = topo->loc1[ii] / topo->n1l;
             loc[ii] = dof_proc * (topo->n1l + topo->n2l) + topo->loc1[ii] % topo->n1l;
-            loc_u[ii] = loc[ii];
         }
         for(ii = 0; ii < topo->n2; ii++) {
             jj = ii + topo->n1;
             dof_proc = topo->loc2[ii] / topo->n2l;
             loc[jj] = dof_proc * (topo->n1l + topo->n2l) + topo->loc2[ii] % topo->n2l + topo->n1l;
-            loc_h[ii] = loc[jj];
         }
 
         ISCreateStride(MPI_COMM_SELF, topo->n1+topo->n2, 0, 1, &is_l);
@@ -129,12 +125,10 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
         VecScatterCreate(xg, is_g, xl, is_l, &gtol_x);
 
         // create the u and h index sets on this processor for later use by the fieldsplit preconditioner
-        ISCreateGeneral(MPI_COMM_WORLD, topo->n1, loc_u, PETSC_COPY_VALUES, &is_u);
-        ISCreateGeneral(MPI_COMM_WORLD, topo->n2, loc_h, PETSC_COPY_VALUES, &is_h);
+        ISCreateStride(MPI_COMM_WORLD, topo->n1l, rank * (topo->n1l + topo->n2l), 1, &is_u);
+        ISCreateStride(MPI_COMM_WORLD, topo->n2l, rank * (topo->n1l + topo->n2l) + topo->n1l, 1, &is_h);
 
         delete[] loc;
-        delete[] loc_u;
-        delete[] loc_h;
         ISDestroy(&is_l);
         ISDestroy(&is_g);
         VecDestroy(&xl);
@@ -748,11 +742,6 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     SNESSetNPCSide(snes, PC_RIGHT);
 #endif
     SNESSetFromOptions(snes);
-
-    //VecGetOwnershipRange(un, &first, &last);
-    //ISCreateStride(MPI_COMM_WORLD, last - first, first, 1, &is_u);
-    //VecGetOwnershipRange(hn, &first, &last);
-    //ISCreateStride(MPI_COMM_WORLD, last - first, first + topo->nDofs1G, 1, &is_h);
 
     SNESGetKSP(snes, &kspFromSnes);
     KSPGetPC(kspFromSnes, &pcFromSnes);
