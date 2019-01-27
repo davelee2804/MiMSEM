@@ -25,6 +25,7 @@
 #define W2_ALPHA (0.25*M_PI)
 
 //#define WEAK_FORM_H
+#define RIGHT
 
 using namespace std;
 
@@ -508,10 +509,15 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
 }
 
 /* 
-  left preconditioning:
+  left preconditioning (strong form continuity equation):
 
-    [ U     GW ][u] = [  U          0       ][ I  U^{-1}GW ]
-    [ WG^T   0 ][h]   [ WG^T  -WG^TU^{-1}GW ][ 0      I    ]
+    [  U   GW ] = [  U         0      ][ I  U^{-1}GW ]
+    [ G^T   0 ]   [ G^T  -G^TU^{-1}GW ][ 0      I    ]
+
+  right preconditioning (strong form continuity equation):
+
+    [  U   GW ] = [     I      0 ][ U       GW      ]
+    [ G^T   0 ]   [ G^TU^{-1}  I ][ 0  -G^TU^{-1}GW ]
 */
 void SWEqn::jfnk_precon(Mat P) {
     int ri, rj, rr, cc, ncols, row_proc, col_proc;
@@ -521,8 +527,8 @@ void SWEqn::jfnk_precon(Mat P) {
     double valInv;
     Mat M2D, GM2, M2DUinv, M2DUinvGM2;
     Mat Uinv;
-    //W0mat* W0;
-    //U0mat* U0;
+    //W0mat* W0; // piecewise constant L^2 mass matrix
+    //U0mat* U0; // pieceiwse constant X linear H(div) mass matrix
 
     if(precon_assembled) return;
 
@@ -585,6 +591,24 @@ void SWEqn::jfnk_precon(Mat P) {
         MatRestoreRow(M1->M, rr, &ncols, &cols, &vals);
     }
 
+#ifdef RIGHT
+    // [u,h] block
+    MatGetOwnershipRange(GM2, &ri, &rj);
+    for(rr = ri; rr < rj; rr++) {
+        MatGetRow(GM2, rr, &ncols, &cols, &vals);
+
+        row_proc = rr / topo->n1l;
+        pRow = row_proc * (topo->n1l + topo->n2l) + rr % topo->n1l;
+
+        for(cc = 0; cc < ncols; cc++) {
+            col_proc = cols[cc] / topo->n2l;
+            pCols[cc] = col_proc * (topo->n1l + topo->n2l) + cols[cc] % topo->n2l + topo->n1l;
+        }
+
+        MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
+        MatRestoreRow(GM2, rr, &ncols, &cols, &vals);
+    }
+#else
     // [h,u] block
     MatGetOwnershipRange(M2D, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
@@ -601,6 +625,7 @@ void SWEqn::jfnk_precon(Mat P) {
         MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
         MatRestoreRow(M2D, rr, &ncols, &cols, &vals);
     }
+#endif
 
     // [h,h] block
     MatGetOwnershipRange(SC, &ri, &rj);
@@ -704,10 +729,10 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     SNESSetFunction(snes, f,    _snes_function, (void*)this);
     SNESSetJacobian(snes, J, P, _snes_jacobian, (void*)this);
     SNESSetType(snes, SNESNEWTONTR);
-#ifdef LEFT
-    SNESSetNPCSide(snes, PC_LEFT);
-#else
+#ifdef RIGHT
     SNESSetNPCSide(snes, PC_RIGHT);
+#else
+    SNESSetNPCSide(snes, PC_LEFT);
 #endif
     SNESSetFromOptions(snes);
 
