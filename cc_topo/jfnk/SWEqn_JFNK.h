@@ -20,6 +20,7 @@ class SWEqn {
         Pvec* m0;
         Umat* M1;
         Wmat* M2;
+        U0mat* U0;
         E10mat* NtoE;
         E21mat* EtoF;
         RotMat* R;
@@ -56,6 +57,7 @@ class SWEqn {
         void jfnk_vector(Vec x, Vec f);
         void jfnk_precon(Mat P);
         void solve(Vec u, Vec h, double _dt, bool save);
+        void solve_explicit(Vec u, Vec h, double _dt, bool save);
     private:
         double viscosity();
         void unpack(Vec x, Vec u, Vec h);

@@ -38,6 +38,11 @@ matrix free:
 preconditioned:
     mpirun -np 6 ./mimsem 0 -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-8 \
         -ksp_rtol 1.0e-7 -ksp_converged_reason -ksp_monitor
+
+fieldsplit:
+    mpirun -np 6 ./mimsem -snes_monitor -ksp_monitor_true_residual -ksp_converged_reason \
+        -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-12 -ksp_rtol 1.0e-12 \
+        -pc_type fieldsplit -pc_fieldsplit_type schur -ksp_type fgmres
 */
 
 SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
@@ -67,6 +72,8 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     // 2 form mass matrix
     M2 = new Wmat(topo, geom, edge);
 
+    U0 = new U0mat(topo, geom, node, edge);
+
     // incidence matrices
     NtoE = new E10mat(topo);
     EtoF = new E21mat(topo);
@@ -90,6 +97,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     // initialize the linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M1->M, M1->M);
+    //KSPSetOperators(ksp, M1->M, U0->M);
     KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
     KSPGetPC(ksp, &pc);
@@ -527,13 +535,8 @@ void SWEqn::jfnk_precon(Mat P) {
     double valInv;
     Mat M2D, GM2, M2DUinv, M2DUinvGM2;
     Mat Uinv;
-    //W0mat* W0; // piecewise constant L^2 mass matrix
-    //U0mat* U0; // pieceiwse constant X linear H(div) mass matrix
 
     if(precon_assembled) return;
-
-    //W0 = new W0mat(topo, geom, edge);
-    //U0 = new U0mat(topo, geom, node, edge);
 
     // assemble the approximate H(div) matrix inverse
     MatCreate(MPI_COMM_WORLD, &Uinv);
@@ -555,10 +558,10 @@ void SWEqn::jfnk_precon(Mat P) {
     MatAssemblyBegin(Uinv, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  Uinv, MAT_FINAL_ASSEMBLY);
 
+#ifdef WEAK_FORM_H
     MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
-#ifndef WEAK_FORM_H
-    MatZeroEntries(M2D);
-    MatCopy(EtoF->E21, M2D, DIFFERENT_NONZERO_PATTERN);
+#else
+    MatConvert(EtoF->E21, MATSAME, MAT_INITIAL_MATRIX, &M2D);
 #endif
     MatScale(M2D, dt*10000.0);
     MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &GM2);
@@ -650,9 +653,6 @@ void SWEqn::jfnk_precon(Mat P) {
     MatDestroy(&M2DUinv);
     MatDestroy(&M2DUinvGM2);
     MatDestroy(&Uinv);
-
-    //delete W0;
-    //delete U0;
 }
 
 int _snes_function(SNES snes, Vec x, Vec f, void* ctx) {
@@ -789,6 +789,107 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     SNESDestroy(&snes);
 }
 
+void SWEqn::solve_explicit(Vec un, Vec hn, double _dt, bool save) {
+    Vec F1, F2, Phi1, Phi2, wxu1, wxu2, bu, tu, uh, hh, d2u, d4u;
+
+    dt = _dt;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hh);
+
+    // first step
+    VecCopy(un, ui);
+    VecCopy(un, uj);
+    VecCopy(hn, hi);
+    VecCopy(hn, hj);
+
+    // ...momentum
+    diagnose_wxu(&wxu1);
+    diagnose_Phi(&Phi1);
+    VecZeroEntries(bu);
+    MatMult(M1->M, un, bu);
+    VecAXPY(bu, -dt, wxu1);
+    MatMult(EtoF->E12, Phi1, tu);
+    VecAXPY(bu, -dt, tu);
+    if(do_visc) {
+        laplacian(uj, &d2u);
+        laplacian(d2u, &d4u);
+        MatMult(M1->M, d4u, d2u);
+        VecAXPY(bu, -dt, d2u);
+        VecDestroy(&d2u);
+        VecDestroy(&d4u);
+    }
+    KSPSolve(ksp, bu, uh);
+
+    // ...continuity
+    diagnose_F(&F1);
+    MatMult(EtoF->E21, F1, hh);
+    VecAYPX(hh, -dt, hn);
+
+    // second step
+    VecCopy(uh, ui);
+    VecCopy(uh, uj);
+    VecCopy(hh, hi);
+    VecCopy(hh, hj);
+
+    // ...momentum
+    diagnose_wxu(&wxu2);
+    diagnose_Phi(&Phi2);
+    MatMult(M1->M, un, bu);
+    VecAXPY(bu, -0.5*dt, wxu1);
+    VecAXPY(bu, -0.5*dt, wxu2);
+    MatMult(EtoF->E12, Phi1, tu);
+    VecAXPY(bu, -0.5*dt, tu);
+    MatMult(EtoF->E12, Phi2, tu);
+    VecAXPY(bu, -0.5*dt, tu);
+    if(do_visc) {
+        laplacian(uj, &d2u);
+        laplacian(d2u, &d4u);
+        MatMult(M1->M, d4u, d2u);
+        VecAXPY(bu, -dt, d2u);
+        VecDestroy(&d2u);
+        VecDestroy(&d4u);
+    }
+    KSPSolve(ksp, bu, un);
+
+    // ...continuity
+    diagnose_F(&F2);
+    VecAXPY(F2, 1.0, F1);
+    MatMult(EtoF->E21, F2, hh);
+    VecAYPX(hh, -0.5*dt, hn);
+    VecCopy(hh, hn);
+
+    if(save) {
+        Vec wi;
+        char fieldname[20];
+
+        step++;
+        curl(un, &wi);
+
+        sprintf(fieldname, "vorticity");
+        geom->write0(wi, fieldname, step);
+        sprintf(fieldname, "velocity");
+        geom->write1(un, fieldname, step);
+        sprintf(fieldname, "pressure");
+        geom->write2(hn, fieldname, step);
+
+        VecDestroy(&wi);
+    }
+
+    VecDestroy(&bu);
+    VecDestroy(&tu);
+    VecDestroy(&uh);
+    VecDestroy(&Phi1);
+    VecDestroy(&Phi2);
+    VecDestroy(&wxu1);
+    VecDestroy(&wxu2);
+    VecDestroy(&hh);
+    VecDestroy(&F1);
+    VecDestroy(&F2);
+}
+
 SWEqn::~SWEqn() {
     ISDestroy(&is_u);
     ISDestroy(&is_h);
@@ -806,6 +907,7 @@ SWEqn::~SWEqn() {
     delete m0;
     delete M1;
     delete M2;
+    delete U0;
 
     delete NtoE;
     delete EtoF;
