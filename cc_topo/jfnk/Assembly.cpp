@@ -22,10 +22,20 @@ Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     l = _l;
     e = _e;
 
-    assemble();
+    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+    MatSetOptionsPrefix(M, "M1_");
+
+    delete U;
+
+    assemble(1.0);
 }
 
-void Umat::assemble() {
+void Umat::assemble(double scale) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y;
     Wii* Q = new Wii(l->q, geom);
@@ -47,10 +57,6 @@ void Umat::assemble() {
     double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
     double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
 
-    MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
-    MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
     mp1 = l->n + 1;
@@ -66,9 +72,9 @@ void Umat::assemble() {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
-                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
-                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -132,6 +138,15 @@ Wmat::Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     geom = _geom;
     e = _e;
 
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+
+    delete W;
+
     assemble();
 }
 
@@ -146,10 +161,6 @@ void Wmat::assemble() {
     double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
-    MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
-    MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
     mp1 = e->l->q->n + 1;
@@ -226,7 +237,7 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
 }
 
-void Uhmat::assemble(Vec h2) {
+void Uhmat::assemble(Vec h2, double scale) {
     int ex, ey, ei, mp1, mp12, ii;
     int *inds_x, *inds_y;
     double hi, det, **J;
@@ -249,9 +260,9 @@ void Uhmat::assemble(Vec h2) {
                 J = geom->J[ei][ii];
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
 
-                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det/det;
-                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det/det;
-                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
             }
 
             Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
@@ -636,6 +647,7 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatSetSizes(M, topo->n2l, topo->n1l, topo->nDofs2G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
+    MatSetOptionsPrefix(M, "WU2_");
 }
 
 void WtQUmat::assemble(Vec u1) {
@@ -733,6 +745,7 @@ RotMat::RotMat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
+    MatSetOptionsPrefix(M, "R1_");
 }
 
 void RotMat::assemble(Vec q0) {
@@ -1171,6 +1184,7 @@ W0mat::W0mat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 1, PETSC_NULL, 1, PETSC_NULL);
+    MatSetOptionsPrefix(M, "W0_");
 
     assemble();
 }
@@ -1265,6 +1279,7 @@ void U0mat::assemble() {
     MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 32, PETSC_NULL, 32, PETSC_NULL);
+    MatSetOptionsPrefix(M, "U0_");
     MatZeroEntries(M);
 
     nx = l->q->n;
@@ -1427,4 +1442,130 @@ void W0hmat::assemble(Vec h) {
 
 W0hmat::~W0hmat() {
     MatDestroy(&M);
+}
+
+// boudary integral of the pressure projected onto 1 forms
+UtQh_vec::UtQh_vec(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    l = _l;
+    e = _e;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ug);
+}
+
+void UtQh_vec::assemble(Vec h2) {
+    int ex, ey, ei, ii, jj, mp1, mp12;
+    int *inds_x, *inds_y;
+    double **J, *u1Array, *h2Array, hi, det = 0.0, avg;
+    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+    M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
+    double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    double** UtQ = Alloc2D(U->nDofsJ, U->nDofsI);
+    double** VtQ = Alloc2D(U->nDofsJ, U->nDofsI);
+    double** Qa = Alloc2D(U->nDofsI, U->nDofsI);
+    double** Qb = Alloc2D(U->nDofsI, U->nDofsI);
+    double hq[99];
+
+    mp1 = l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    VecZeroEntries(hl);
+    VecScatterBegin(topo->gtol_2, h2, hl, ADD_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, h2, hl, ADD_VALUES, SCATTER_FORWARD);
+
+    VecZeroEntries(ul);
+    VecZeroEntries(ug);
+    VecGetArray(ul, &u1Array);
+    VecGetArray(hl, &h2Array);
+
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            inds_x = topo->elInds1x_l(ex, ey);
+            inds_y = topo->elInds1y_l(ex, ey);
+
+            for(ii = 0; ii < mp12; ii++) { hq[ii] = Qa[ii][ii] = Qb[ii][ii] = 0.0; }
+            for(ii = 0; ii < mp1; ii++) {
+                avg = (ii == 0 || ii == mp1-1) ? 0.25 : 0.50;
+                // bottom
+                jj = ii;
+                geom->interp2_g(ex, ey, jj%mp1, jj/mp1, h2Array, &hi);
+                hq[jj] += +1.0 * avg * l->q->w[ii] * hi;
+                // top
+                jj = ii + (mp1-1)*mp1;
+                geom->interp2_g(ex, ey, jj%mp1, jj/mp1, h2Array, &hi);
+                hq[jj] += -1.0 * avg * l->q->w[ii] * hi;
+            }
+
+            for(ii = 0; ii < mp12; ii++) {
+                J = geom->J[ei][ii];
+                det = geom->det[ei][ii];
+                Qa[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])/det;
+                Qb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])/det;
+            }
+            Mult_IP(U->nDofsJ, U->nDofsI, U->nDofsI, Ut, Qa, UtQ);
+            Mult_IP(U->nDofsJ, U->nDofsI, U->nDofsI, Vt, Qb, VtQ);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                for(jj = 0; jj < U->nDofsI; jj++) {
+                    u1Array[inds_x[ii]] += UtQ[ii][jj]*hq[jj];
+                    u1Array[inds_y[ii]] += VtQ[ii][jj]*hq[jj];
+                }
+            }
+
+            for(ii = 0; ii < mp12; ii++) { hq[ii] = Qa[ii][ii] = Qb[ii][ii] = 0.0; }
+            for(ii = 0; ii < mp1; ii++) {
+                avg = (ii == 0 || ii == mp1-1) ? 0.25 : 0.50;
+                // left
+                jj = ii*mp1;
+                geom->interp2_g(ex, ey, jj%mp1, jj/mp1, h2Array, &hi);
+                hq[jj] += +1.0 * avg * l->q->w[ii] * hi;
+                // right
+                jj = ii*mp1 + mp1 - 1;
+                geom->interp2_g(ex, ey, jj%mp1, jj/mp1, h2Array, &hi);
+                hq[jj] += -1.0 * avg * l->q->w[ii] * hi;
+            }
+
+            for(ii = 0; ii < mp12; ii++) {
+                J = geom->J[ei][ii];
+                det = geom->det[ei][ii];
+                Qa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])/det;
+                Qb[ii][ii] = (J[0][1]*J[0][0] + J[1][1]*J[1][0])/det;
+            }
+            Mult_IP(U->nDofsJ, U->nDofsI, U->nDofsI, Ut, Qa, UtQ);
+            Mult_IP(U->nDofsJ, U->nDofsI, U->nDofsI, Vt, Qb, VtQ);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                for(jj = 0; jj < U->nDofsI; jj++) {
+                    u1Array[inds_x[ii]] += UtQ[ii][jj]*hq[jj];
+                    u1Array[inds_y[ii]] += VtQ[ii][jj]*hq[jj];
+                }
+            }
+        }
+    }
+    VecRestoreArray(ul, &u1Array);
+    VecRestoreArray(hl, &h2Array);
+
+    VecScatterBegin(topo->gtol_1, ul, ug, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_1, ul, ug, ADD_VALUES, SCATTER_REVERSE);
+
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+    Free2D(U->nDofsJ, UtQ);
+    Free2D(U->nDofsJ, VtQ);
+    Free2D(U->nDofsI, Qa);
+    Free2D(U->nDofsI, Qb);
+    delete U;
+    delete V;
+}
+
+UtQh_vec::~UtQh_vec() {
+    VecDestroy(&ul);
+    VecDestroy(&hl);
+    VecDestroy(&ug);
 }

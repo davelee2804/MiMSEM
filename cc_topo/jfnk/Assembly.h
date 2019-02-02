@@ -7,7 +7,7 @@ class Umat {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
-        void assemble();
+        void assemble(double scale);
 };
 
 class Wmat {
@@ -47,7 +47,7 @@ class Uhmat {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
-        void assemble(Vec h2);
+        void assemble(Vec h2, double scale);
 };
 
 class Pvec {
@@ -222,4 +222,18 @@ class W0hmat {
         LagrangeEdge* e;
         Mat M;
         void assemble(Vec h);
+};
+
+class UtQh_vec {
+    public:
+        UtQh_vec(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~UtQh_vec();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Vec ul;
+        Vec hl;
+        Vec ug;
+        void assemble(Vec h2);
 };
