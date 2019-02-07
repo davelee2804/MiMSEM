@@ -19,6 +19,7 @@ OBJS = LinAlg.o \
        Geom.o \
        ElMats.o \
        Assembly.o \
+       AdvEqn.o \
        SWEqn_JFNK.o \
        Williamson2.o
 #       Galewsky.o
@@ -29,11 +30,14 @@ mimsem: ${OBJS}
 Galewsky.o: Galewsky.cpp SWEqn_JFNK.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Galewsky.cpp ${CXXFLAGS}
 
-Williamson2.o: Williamson2.cpp SWEqn_JFNK.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+Williamson2.o: Williamson2.cpp SWEqn_JFNK.o AdvEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Williamson2.cpp ${CXXFLAGS}
 
 SWEqn_JFNK.o: SWEqn_JFNK.cpp SWEqn_JFNK.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c SWEqn_JFNK.cpp ${CXXFLAGS}
+
+AdvEqn.o: AdvEqn.cpp AdvEqn.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c AdvEqn.cpp ${CXXFLAGS}
 
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}
