@@ -213,6 +213,18 @@ class U0mat {
         void assemble();
 };
 
+class WU0mat {
+    public:
+        WU0mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~WU0mat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble();
+};
+
 class W0hmat {
     public:
         W0hmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
@@ -236,4 +248,70 @@ class UtQh_vec {
         Vec hl;
         Vec ug;
         void assemble(Vec h2);
+};
+
+class WtUmat {
+    public:
+        WtUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~WtUmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        double* WtQUflat;
+        double* WtQVflat;
+        double** Wt;
+        double** Qaa;
+        double** Qab;
+        double** WtQaa;
+        double** WtQab;
+        double** WtQU;
+        double** WtQV;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        M2_j_xy_i* W;
+        Wii* Q;
+        void assemble();
+};
+
+class U_up_mat {
+    public:
+        U_up_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~U_up_mat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(Vec ui);
+};
+
+class Uh_up_mat {
+    public:
+        Uh_up_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~Uh_up_mat();
+        double* UtQUflat;
+        double** UtQU;
+        double** UtQV;
+        double** VtQU;
+        double** VtQV;
+        double** Qaa;
+        double** Qab;
+        double** Qbb;
+        double** Ut;
+        double** Vt;
+        double** UtQaa;
+        double** UtQab;
+        double** VtQba;
+        double** VtQbb;
+        Wii* Q;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(Vec h2, Vec u1);
 };

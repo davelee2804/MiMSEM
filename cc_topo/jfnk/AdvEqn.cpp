@@ -24,7 +24,8 @@
 //#define RAD_SPHERE 1.0
 #define W2_ALPHA (0.25*M_PI)
 
-#define WEAK_FORM_H
+//#define WEAK_FORM_H
+//#define UPWIND
 #define RIGHT
 
 using namespace std;
@@ -39,10 +40,11 @@ preconditioned:
     mpirun -np 6 ./mimsem 0 -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-8 \
         -ksp_rtol 1.0e-7 -ksp_converged_reason -ksp_monitor
 
-fieldsplit:
-    mpirun -np 6 ./mimsem -snes_monitor -ksp_monitor_true_residual -ksp_converged_reason \
-        -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-12 -ksp_rtol 1.0e-12 \
-        -pc_type fieldsplit -pc_fieldsplit_type schur -ksp_type fgmres
+svd monitor:
+    mpirun -np 6 ./mimsem 0 -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-6 \
+        -ksp_rtol 1.0e-6 -ksp_converged_reason -ksp_monitor -pc_type redundant \
+        -redundant_pc_type svd -redundant_pc_svd_monitor -sw_pc_type redundant \
+        -sw_redundant_pc_type lu
 */
 
 AdvEqn::AdvEqn(Topo* _topo, Geom* _geom) {
@@ -66,6 +68,7 @@ AdvEqn::AdvEqn(Topo* _topo, Geom* _geom) {
 
     // 1 form mass matrix
     M1 = new Umat(topo, geom, node, edge);
+    M1_up = new U_up_mat(topo, geom, node, edge);
 
     // 2 form mass matrix
     M2 = new Wmat(topo, geom, edge);
@@ -88,10 +91,10 @@ AdvEqn::AdvEqn(Topo* _topo, Geom* _geom) {
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M1->M, M1->M);
     //KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    //KSPSetType(ksp, KSPGMRES);
-    //KSPGetPC(ksp, &pc);
-    //PCSetType(pc, PCBJACOBI);
-    //PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+    KSPSetType(ksp, KSPGMRES);
+    KSPGetPC(ksp, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
     KSPSetOptionsPrefix(ksp, "sw_");
     KSPSetFromOptions(ksp);
 
@@ -159,14 +162,30 @@ void AdvEqn::coriolis() {
 void AdvEqn::diagnose_F(Vec* F) {
     double scale = 1.0;
     Vec hu, b, hil, hjl;
+#ifdef UPWIND
+    Vec uil, ujl;
+    Uh_up_mat* Uh_up = new Uh_up_mat(topo, geom, node, edge);
+    PC pc;
+    KSP ksp_up;
+#endif
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hil);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hjl);
+#ifdef UPWIND
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl);
+#endif
 
     VecScatterBegin(topo->gtol_2, hi, hil, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, hi, hil, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterBegin(topo->gtol_2, hj, hjl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, hj, hjl, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UPWIND
+    VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+#endif
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, F);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &hu);
@@ -175,27 +194,72 @@ void AdvEqn::diagnose_F(Vec* F) {
     VecZeroEntries(hu);
 
     // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
+    //M1h->assemble(hil, scale);
+#ifdef UPWIND
+    Uh_up->assemble(hil, uil);
+#else
     M1h->assemble(hil, scale);
+#endif
 
+#ifdef UPWIND
+    MatMult(Uh_up->M, ui, b);
+#else
     MatMult(M1h->M, ui, b);
+#endif
     VecAXPY(hu, 1.0/3.0, b);
 
+#ifdef UPWIND
+    MatMult(Uh_up->M, uj, b);
+#else
     MatMult(M1h->M, uj, b);
+#endif
     VecAXPY(hu, 1.0/6.0, b);
 
+#ifdef UPWIND
+    Uh_up->assemble(hjl, uil);
+#else
     M1h->assemble(hjl, scale);
+#endif
 
+#ifdef UPWIND
+    MatMult(Uh_up->M, uj, b);
+#else
     MatMult(M1h->M, ui, b);
+#endif
     VecAXPY(hu, 1.0/6.0, b);
 
+#ifdef UPWIND
+    MatMult(Uh_up->M, uj, b);
+#else
     MatMult(M1h->M, uj, b);
+#endif
     VecAXPY(hu, 1.0/3.0, b);
 
     // solve the linear system
+#ifdef UPWIND
+/*
+    M1_up->assemble(ujl);
+    KSPCreate(MPI_COMM_WORLD, &ksp_up);
+    KSPSetOperators(ksp_up, M1_up->M, M1_up->M);
+    KSPSetType(ksp_up, KSPGMRES);
+    KSPGetPC(ksp_up, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+    KSPSetOptionsPrefix(ksp_up, "up_");
+    KSPSetFromOptions(ksp_up);
+    KSPSolve(ksp_up, hu, *F);
+    KSPDestroy(&ksp_up);
+*/
+
+    VecDestroy(&uil);
+    VecDestroy(&ujl);
+    delete Uh_up;
+#endif
+//#else
     M1->assemble(scale);
     KSPSolve(ksp, hu, *F);
-//VecSet(*F, 100000.0);
     M1->assemble(1.0);
+//#endif
 
     VecDestroy(&hu);
     VecDestroy(&b);
@@ -257,6 +321,11 @@ void AdvEqn::jfnk_precon(Mat P) {
     double valInv;
     Mat M2D, GM2, M2DUinv, M2DUinvGM2;
     Mat Uinv;
+    WtUmat* WU = new WtUmat(topo, geom, node, edge);
+    WU0mat* WU0 = new WU0mat(topo, geom, node, edge);
+    U0mat* U0 = new U0mat(topo, geom, node, edge);
+    W0mat* W0 = new W0mat(topo, geom, edge);
+    Mat UW, WUUinv, PC;
 
     if(precon_assembled) return;
 
@@ -266,16 +335,19 @@ void AdvEqn::jfnk_precon(Mat P) {
     MatSetType(Uinv, MATMPIAIJ);
     MatMPIAIJSetPreallocation(Uinv, 1, PETSC_NULL, 1, PETSC_NULL);
     MatZeroEntries(Uinv);
-    MatGetOwnershipRange(M1->M, &ri, &rj);
+    //MatGetOwnershipRange(M1->M, &ri, &rj);
+    MatGetOwnershipRange(U0->M, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
-        MatGetRow(M1->M, rr, &ncols, &cols, &vals);
+        //MatGetRow(M1->M, rr, &ncols, &cols, &vals);
+        MatGetRow(U0->M, rr, &ncols, &cols, &vals);
         for(cc = 0; cc < ncols; cc++) {
             if(cols[cc] == rr) {
                 valInv = 1.0/vals[cc];
                 MatSetValues(Uinv, 1, &rr, 1, &rr, &valInv, ADD_VALUES);
             }
         }
-        MatRestoreRow(M1->M, rr, &ncols, &cols, &vals);
+        //MatRestoreRow(M1->M, rr, &ncols, &cols, &vals);
+        MatRestoreRow(U0->M, rr, &ncols, &cols, &vals);
     }
     MatAssemblyBegin(Uinv, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  Uinv, MAT_FINAL_ASSEMBLY);
@@ -297,15 +369,23 @@ void AdvEqn::jfnk_precon(Mat P) {
     MatAssemblyBegin(SC, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  SC, MAT_FINAL_ASSEMBLY);
 
+    //
+    MatTranspose(WU0->M, MAT_INITIAL_MATRIX, &UW);
+    MatMatMult(WU0->M, Uinv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &WUUinv);
+    MatMatMult(WUUinv, UW, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &PC);
+
     MatZeroEntries(P);
 
     // [h,h] block
-    MatGetOwnershipRange(M2->M, &ri, &rj);
+    MatCopy(W0->M, P, DIFFERENT_NONZERO_PATTERN);
+/*
+    MatGetOwnershipRange(PC, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
-        MatGetRow(M2->M, rr, &ncols, &cols, &vals);
+        MatGetRow(PC, rr, &ncols, &cols, &vals);
         MatSetValues(P, 1, &rr, ncols, cols, vals, ADD_VALUES);
-        MatRestoreRow(M2->M, rr, &ncols, &cols, &vals);
+        MatRestoreRow(PC, rr, &ncols, &cols, &vals);
     }
+*/
 
     //precon_assembled = true;
 
@@ -314,6 +394,14 @@ void AdvEqn::jfnk_precon(Mat P) {
     MatDestroy(&M2DUinv);
     MatDestroy(&M2DUinvGM2);
     MatDestroy(&Uinv);
+
+    MatDestroy(&UW);
+    MatDestroy(&WUUinv);
+    MatDestroy(&PC);
+    delete W0;
+    delete U0;
+    delete WU0;
+    delete WU;
 }
 
 int _snes_fun_adv(SNES snes, Vec x, Vec f, void* ctx) {
@@ -492,6 +580,7 @@ AdvEqn::~AdvEqn() {
 
     delete m0;
     delete M1;
+    delete M1_up;
     delete M2;
 
     delete NtoE;

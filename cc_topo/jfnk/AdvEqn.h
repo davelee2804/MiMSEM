@@ -18,6 +18,7 @@ class AdvEqn {
         Pvec* m0;
         Umat* M1;
         Wmat* M2;
+        U_up_mat* M1_up;
         E10mat* NtoE;
         E21mat* EtoF;
         Uhmat* M1h;
