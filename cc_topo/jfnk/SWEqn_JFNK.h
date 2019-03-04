@@ -12,12 +12,14 @@ class SWEqn {
         int step;
         int rank;
         bool precon_assembled;
+        bool u_only;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
         Topo* topo;
         Geom* geom;
         Pvec* m0;
+        Ph_vec* m0h;
         Umat* M1;
         Wmat* M2;
         U0mat* U0;
@@ -43,6 +45,8 @@ class SWEqn {
         void diagnose_F(Vec* F);
         void diagnose_Phi(Vec* Phi);
         void diagnose_wxu(Vec* wxu);
+        void diagnose_q(Vec u, Vec h, Vec* q);
+        Vec* diagnose_null_space_vecs(Vec u, Vec h, int n);
         void init0(Vec q, ICfunc* func);
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
         void init2(Vec h, ICfunc* func);
@@ -56,7 +60,10 @@ class SWEqn {
         void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0);
         void jfnk_vector(Vec x, Vec f);
         void jfnk_precon(Mat P);
+        void jfnk_vector_u(Vec x, Vec f);
+        void jfnk_precon_u(Mat P);
         void solve(Vec u, Vec h, double _dt, bool save);
+        void solve_u(Vec u, Vec h, double _dt, bool save);
         void solve_explicit(Vec u, Vec h, double _dt, bool save);
     private:
         double viscosity();

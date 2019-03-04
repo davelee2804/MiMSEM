@@ -1961,6 +1961,132 @@ U_up_mat::~U_up_mat() {
     MatDestroy(&M);
 }
 
+W_up_mat::W_up_mat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    e = _e;
+
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+
+    delete W;
+}
+
+void W_up_mat::assemble(Vec ui) {
+    int ex, ey, ei, mm, mp1, mp12, ii, jj[2], kk, *inds, *inds_x, *inds_y;
+    double det;
+    Wii* Q = new Wii(e->l->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar* uArray;
+
+    MatZeroEntries(M);
+
+    mm   = e->l->q->n;
+    mp1  = e->l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    VecGetArray(ui, &uArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds = topo->elInds2_g(ex, ey);
+            // incorporate the jacobian transformation for each element
+            Q->assemble(ex, ey);
+            ei = ey*topo->nElsX + ex;
+
+            // initialise global quadrature weights
+            for(ii = 0; ii < mp12; ii++) { Qaa[ii][ii] = 0.0; }
+
+            // internal quadrature points
+            for(ii = 0; ii < mp12; ii++) {
+                // do the boundary points after
+                if(ii/mp1 == 0 || ii/mp1 == mm || ii%mp1 == 0 || ii%mp1 == mm) continue;
+
+                det = geom->det[ei][ii];
+                Qaa[ii][ii] = Q->A[ii][ii]/det/det;
+            }
+
+            inds_x = topo->elInds1x_l(ex, ey);
+            inds_y = topo->elInds1y_l(ex, ey);
+
+            // boundary quadrature weights - upwind
+            for(ii = 0; ii < mm; ii++) {
+                // bottom
+                jj[0] = ii;
+                jj[1] = jj[0] + 1;
+                if(uArray[inds_y[ii]] < 0.0) {
+                    for(kk = 0; kk < 2; kk++) {
+                        det = geom->det[ei][jj[kk]];
+                        Qaa[jj[kk]][jj[kk]] += Q->A[jj[kk]][jj[kk]]/det/det;
+                    }
+                }
+
+                // top
+                jj[0] = ii + mp1*mm;
+                jj[1] = jj[0] + 1;
+                if(uArray[inds_y[ii + mm*mm]] > 0.0) {
+                    for(kk = 0; kk < 2; kk++) {
+                        det = geom->det[ei][jj[kk]];
+                        Qaa[jj[kk]][jj[kk]] += Q->A[jj[kk]][jj[kk]]/det/det;
+                    }
+                }
+
+                // left
+                jj[0] = ii*mp1;
+                jj[1] = jj[0] + mp1;
+                if(uArray[inds_x[ii*mp1]] < 0.0) {
+                    for(kk = 0; kk < 2; kk++) {
+                        det = geom->det[ei][jj[kk]];
+                        Qaa[jj[kk]][jj[kk]] += Q->A[jj[kk]][jj[kk]]/det/det;
+                    }
+                }
+
+                // right
+                jj[0] = ii*mp1 + mm;
+                jj[1] = jj[0] + mp1;
+                if(uArray[inds_x[ii*mp1+mm]] > 0.0) {
+                    for(kk = 0; kk < 2; kk++) {
+                        det = geom->det[ei][jj[kk]];
+                        Qaa[jj[kk]][jj[kk]] += Q->A[jj[kk]][jj[kk]]/det/det;
+                    }
+                }
+            }
+
+            Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+            Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+        }
+    }
+
+    VecRestoreArray(ui, &uArray);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    delete W;
+    delete Q;
+    delete[] WtQWflat;
+}
+
+W_up_mat::~W_up_mat() {
+    MatDestroy(&M);
+}
+
 Uh_up_mat::Uh_up_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     topo = _topo;
     geom = _geom;
@@ -2155,4 +2281,77 @@ Uh_up_mat::~Uh_up_mat() {
     delete Q;
 
     MatDestroy(&M);
+}
+
+Ph_vec::Ph_vec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
+    topo = _topo;
+    geom = _geom;
+    l = _l;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
+    VecZeroEntries(vg);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &vlInv);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vgInv);
+
+    entries = new PetscScalar[(l->n+1)*(l->n+1)];
+
+    Q = new Wii(l->q, geom);
+}
+
+void Ph_vec::assemble(Vec h2) {
+    int ii, ex, ey, np1, np12;
+    int *inds_x;
+    double hi;
+    PetscScalar *p1Array, *p2Array, *h2Array;
+
+    VecZeroEntries(vl);
+
+    np1 = l->n + 1;
+    np12 = np1*np1;
+
+    // assemble values into local vector
+    VecGetArray(h2, &h2Array);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            // incorporate the jacobian transformation for each element
+            Q->assemble(ex, ey);
+
+            for(ii = 0; ii < np12; ii++) {
+                geom->interp2_g(ex, ey, ii%np1, ii/np1, h2Array, &hi);
+                entries[ii] = hi*Q->A[ii][ii];
+            }
+            inds_x = topo->elInds0_l(ex, ey);
+            VecSetValues(vl, np12, inds_x, entries, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(h2, &h2Array);
+
+    // scatter values to global vector
+    VecScatterBegin(topo->gtol_0, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_0, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+
+    // and back to local vector
+    VecScatterBegin(topo->gtol_0, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, vg, vl, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecGetArray(vl, &p1Array);
+    VecGetArray(vlInv, &p2Array);
+    for(ii = 0; ii < topo->n0; ii++) {
+        p2Array[ii] = 1.0/p1Array[ii];
+    }
+    VecRestoreArray(vl, &p1Array);
+    VecRestoreArray(vlInv, &p2Array);
+    VecScatterBegin(topo->gtol_0, vlInv, vgInv, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_0, vlInv, vgInv, ADD_VALUES, SCATTER_REVERSE);
+}
+
+Ph_vec::~Ph_vec() {
+    delete[] entries;
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+    VecDestroy(&vlInv);
+    VecDestroy(&vgInv);
+    delete Q;
 }

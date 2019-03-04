@@ -287,6 +287,16 @@ class U_up_mat {
         void assemble(Vec ui);
 };
 
+class W_up_mat {
+    public:
+        W_up_mat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~W_up_mat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(Vec ui);
+};
 class Uh_up_mat {
     public:
         Uh_up_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
@@ -314,4 +324,20 @@ class Uh_up_mat {
         LagrangeEdge* e;
         Mat M;
         void assemble(Vec h2, Vec u1);
+};
+
+class Ph_vec {
+    public:
+        Ph_vec(Topo* _topo, Geom* _geom, LagrangeNode* _l);
+        ~Ph_vec();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        Wii* Q;
+        PetscScalar* entries;
+        Vec vl;
+        Vec vg;
+        Vec vlInv;
+        Vec vgInv;
+        void assemble(Vec h2);
 };
