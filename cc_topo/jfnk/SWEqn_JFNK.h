@@ -65,7 +65,7 @@ class SWEqn {
         void solve(Vec u, Vec h, double _dt, bool save);
         void solve_u(Vec u, Vec h, double _dt, bool save);
         void solve_explicit(Vec u, Vec h, double _dt, bool save);
-    private:
+    //private:
         double viscosity();
         void unpack(Vec x, Vec u, Vec h);
         void repack(Vec x, Vec u, Vec h);

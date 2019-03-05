@@ -24,7 +24,7 @@
 //#define RAD_SPHERE 1.0
 #define W2_ALPHA (0.25*M_PI)
 
-#define WEAK_FORM_H
+//#define WEAK_FORM_H
 //#define RIGHT
 
 using namespace std;
@@ -270,34 +270,6 @@ void SWEqn::diagnose_F(Vec* F) {
     KSPSolve(ksp, hu, *F);
     M1->assemble(1.0);
 
-/*
-    int rr, ri, rj, cc, ncols;
-    const int* cols;
-    const PetscScalar* vals;
-    double valInv;
-    Mat Uinv;
-    MatCreate(MPI_COMM_WORLD, &Uinv);
-    MatSetSizes(Uinv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
-    MatSetType(Uinv, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(Uinv, 1, PETSC_NULL, 1, PETSC_NULL);
-    MatZeroEntries(Uinv);
-    MatGetOwnershipRange(M1->M, &ri, &rj);
-    for(rr = ri; rr < rj; rr++) {
-        MatGetRow(M1->M, rr, &ncols, &cols, &vals);
-        for(cc = 0; cc < ncols; cc++) {
-            if(cols[cc] == rr) {
-                valInv = 1.0/vals[cc];
-                MatSetValues(Uinv, 1, &rr, 1, &rr, &valInv, ADD_VALUES);
-            }
-        }
-        MatRestoreRow(M1->M, rr, &ncols, &cols, &vals);
-    }
-    MatAssemblyBegin(Uinv, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  Uinv, MAT_FINAL_ASSEMBLY);
-    MatMult(Uinv, hu, *F);
-    MatDestroy(&Uinv);
-*/
-
     VecDestroy(&hu);
     VecDestroy(&b);
     VecDestroy(&hil);
@@ -487,7 +459,6 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 }
 
 void SWEqn::jfnk_vector(Vec x, Vec f) {
-    UtQh_vec* bndry = new UtQh_vec(topo, geom, node, edge);
     Vec F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
@@ -520,13 +491,6 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
         VecDestroy(&d4u);
     }
 
-    // assemble the contour integral of the (left+right)/2 depth field
-    // around each element
-    //bndry->assemble(hi);
-    //VecAXPY(fu, +0.5*dt*grav, bndry->ug);
-    //bndry->assemble(hj);
-    //VecAXPY(fu, +0.5*dt*grav, bndry->ug);
-
     // continuity equation
     VecZeroEntries(fh);
 
@@ -554,8 +518,6 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
     VecDestroy(&F);
     VecDestroy(&Phi);
     VecDestroy(&wxu);
-
-    delete bndry;
 }
 
 void SWEqn::jfnk_vector_u(Vec x, Vec f) {
@@ -1212,7 +1174,8 @@ Vec* SWEqn::diagnose_null_space_vecs(Vec u, Vec h, int n) {
       MatMult(WQ->M, qn, tmp2);
       VecZeroEntries(q2);
       KSPSolve(ksp2, tmp2, q2);
-      VecScale(q2, 1.0/(n + 2.0) - 1.0);
+      // 0th vector is the 2nd moment
+      VecScale(q2, 1.0/(ii + 2.0) - 1.0);
 
       repack(Zi[ii], dq, q2);
 
