@@ -60,6 +60,7 @@ class SWEqn {
         void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0);
         void jfnk_vector(Vec x, Vec f);
         void jfnk_precon(Mat P);
+        void jfnk_precon_I(Mat P);
         void jfnk_vector_u(Vec x, Vec f);
         void jfnk_precon_u(Mat P);
         void solve(Vec u, Vec h, double _dt, bool save);

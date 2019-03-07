@@ -27,6 +27,8 @@
 #define WEAK_FORM_H
 //#define RIGHT
 
+#define SCALE 1.0e-4
+
 using namespace std;
 
 /*
@@ -407,7 +409,7 @@ void SWEqn::unpack(Vec x, Vec u, Vec h) {
         uArray[ii] = xArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
-        hArray[ii] = xArray[ii+topo->n1];
+        hArray[ii] = xArray[ii+topo->n1] / SCALE;
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
@@ -444,7 +446,7 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
         xArray[ii] = uArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
-        xArray[ii+topo->n1] = hArray[ii];
+        xArray[ii+topo->n1] = hArray[ii] * SCALE;
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
@@ -609,7 +611,6 @@ void SWEqn::jfnk_precon(Mat P) {
     if(precon_assembled) return;
 
     // assemble the approximate H(div) matrix inverse
-/*
     MatCreate(MPI_COMM_WORLD, &Uinv);
     MatSetSizes(Uinv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(Uinv, MATMPIAIJ);
@@ -722,21 +723,23 @@ void SWEqn::jfnk_precon(Mat P) {
     MatDestroy(&M2DUinv);
     MatDestroy(&M2DUinvGM2);
     MatDestroy(&Uinv);
-*/
-
-    {
-        Vec d;
-
-        MatZeroEntries(P);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &d);
-        VecSet(d, 1.0);
-        MatDiagonalSet(P, d, INSERT_VALUES);
-        VecDestroy(&d);
-    }
 
     //precon_assembled = true;
 }
 
+void SWEqn::jfnk_precon_I(Mat P) {
+    Vec d;
+
+    if(precon_assembled) return;
+
+    MatZeroEntries(P);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &d);
+    VecSet(d, 1.0);
+    MatDiagonalSet(P, d, INSERT_VALUES);
+    VecDestroy(&d);
+
+    //precon_assembled = true;
+}
 void SWEqn::jfnk_precon_u(Mat P) {
     int ri, rj, rr, cc, ncols;
     const int* cols;
@@ -818,7 +821,8 @@ int _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
     if(sw->u_only) {
         sw->jfnk_precon_u(P);
     } else {
-        sw->jfnk_precon(P);
+        //sw->jfnk_precon(P);
+        sw->jfnk_precon_I(P);
     }
 
     MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
@@ -833,8 +837,8 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     Vec x, f, b, bu, bh;
     Mat J, P;
     SNES snes;
-    KSP kspFromSnes;
-    PC pcFromSnes;
+    //KSP kspFromSnes;
+    //PC pcFromSnes;
     SNESConvergedReason reason;
 
     dt = _dt;
@@ -1180,6 +1184,7 @@ Vec* SWEqn::diagnose_null_space_vecs(Vec u, Vec h, int n) {
     KSPCreate(MPI_COMM_WORLD, &ksp2);
     KSPSetOperators(ksp2, M2->M, M2->M);
     KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetOptionsPrefix(ksp2, "q2_");
 
     diagnose_q(u, h, &q);
     VecCopy(q, qn);
