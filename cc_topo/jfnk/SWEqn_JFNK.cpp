@@ -24,7 +24,7 @@
 //#define RAD_SPHERE 1.0
 #define W2_ALPHA (0.25*M_PI)
 
-//#define WEAK_FORM_H
+#define WEAK_FORM_H
 //#define RIGHT
 
 using namespace std;
@@ -459,55 +459,70 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 }
 
 void SWEqn::jfnk_vector(Vec x, Vec f) {
-    Vec F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u;
+    Vec F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u, fs;
+    int ii, n_null = 2;
+    Vec* Zi;
+    MatNullSpace null;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp1);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &fs);
+
+    VecZeroEntries(fu);
+    VecZeroEntries(fh);
 
     unpack(x, uj, hj);
 
-    // momentum equation
-    VecZeroEntries(fu);
-
+    // assemble in the skew-symmetric parts of the vector
     diagnose_F(&F);
     diagnose_Phi(&Phi);
     diagnose_wxu(&wxu);
 
-    MatMult(M1->M, uj, fu);
-    VecAXPY(fu, dt, wxu);
+    // momentum terms
+    MatMult(EtoF->E12, Phi, fu);
+    VecAXPY(fu, 1.0, wxu);
 
-    MatMult(EtoF->E12, Phi, utmp);
-    VecAXPY(fu, dt, utmp);
+    // continuity term
+    MatMult(EtoF->E21, F, htmp1);
+#ifdef WEAK_FORM_H
+    MatMult(M2->M, htmp1, htmp2);
+    VecAXPY(fh, 1.0, htmp2);
+#else
+    VecAXPY(fh, 1.0, htmp1);
+#endif
+    repack(fs, fu, fh);
+
+    // remove the null space
+    Zi = diagnose_null_space_vecs(ui, hi, n_null);
+    MatNullSpaceCreate(MPI_COMM_WORLD, PETSC_FALSE, n_null, Zi, &null);
+    MatNullSpaceRemove(null, fs);
+
+    // assemble the mass matrix terms
+    VecZeroEntries(fu);
+    VecZeroEntries(fh);
+
+    MatMult(M1->M, uj, fu);
 
     if(do_visc) {
         laplacian(uj, &d2u);
         laplacian(d2u, &d4u);
         MatMult(M1->M, d4u, d2u);
-        VecAXPY(fu, dt, d2u);
+        VecAXPY(fu, -dt, d2u); // sign??
         VecDestroy(&d2u);
         VecDestroy(&d4u);
     }
-
-    // continuity equation
-    VecZeroEntries(fh);
 
 #ifdef WEAK_FORM_H
     MatMult(M2->M, hj, fh);
 #else
     VecCopy(hj, fh);
 #endif
-    MatMult(EtoF->E21, F, htmp1);
-#ifdef WEAK_FORM_H
-    MatMult(M2->M, htmp1, htmp2);
-    VecAXPY(fh, dt, htmp2);
-#else
-    VecAXPY(fh, dt, htmp1);
-#endif
 
     repack(f, fu, fh);
+    VecAXPY(f, -dt, fs);
 
     // clean up
     VecDestroy(&fu);
@@ -518,6 +533,12 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
     VecDestroy(&F);
     VecDestroy(&Phi);
     VecDestroy(&wxu);
+    VecDestroy(&fs);
+    MatNullSpaceDestroy(&null);
+    for(ii = 0; ii < n_null; ii++) {
+        VecDestroy(&Zi[ii]);
+    }
+    delete[] Zi;
 }
 
 void SWEqn::jfnk_vector_u(Vec x, Vec f) {
@@ -588,6 +609,7 @@ void SWEqn::jfnk_precon(Mat P) {
     if(precon_assembled) return;
 
     // assemble the approximate H(div) matrix inverse
+/*
     MatCreate(MPI_COMM_WORLD, &Uinv);
     MatSetSizes(Uinv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(Uinv, MATMPIAIJ);
@@ -695,13 +717,24 @@ void SWEqn::jfnk_precon(Mat P) {
         MatRestoreRow(SC, rr, &ncols, &cols, &vals);
     }
 
-    //precon_assembled = true;
-
     MatDestroy(&M2D);
     MatDestroy(&GM2);
     MatDestroy(&M2DUinv);
     MatDestroy(&M2DUinvGM2);
     MatDestroy(&Uinv);
+*/
+
+    {
+        Vec d;
+
+        MatZeroEntries(P);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &d);
+        VecSet(d, 1.0);
+        MatDiagonalSet(P, d, INSERT_VALUES);
+        VecDestroy(&d);
+    }
+
+    //precon_assembled = true;
 }
 
 void SWEqn::jfnk_precon_u(Mat P) {
@@ -795,12 +828,9 @@ int _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* ctx) {
 }
 
 void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
-    int ii, its;
-    int n_null = 2;
+    int its;
     double norm_u, norm_h, norm_u0, norm_h0;
     Vec x, f, b, bu, bh;
-    Vec* Zi;
-    MatNullSpace null;
     Mat J, P;
     SNES snes;
     KSP kspFromSnes;
@@ -856,14 +886,11 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
 #endif
     SNESSetFromOptions(snes);
 
-    // create the null space
-    Zi = diagnose_null_space_vecs(ui, hi, n_null);
-    MatNullSpaceCreate(MPI_COMM_WORLD, PETSC_FALSE, n_null, Zi, &null);
-    MatSetNullSpace(J, null);
-
     // field split preconditioning
-    SNESGetKSP(snes, &kspFromSnes);
-    KSPGetPC(kspFromSnes, &pcFromSnes);
+    //SNESGetKSP(snes, &kspFromSnes);
+    //KSPGetPC(kspFromSnes, &pcFromSnes);
+    //KSPSetFromOptions(kspFromSnes);
+    //PCSetFromOptions(pcFromSnes);
     //PCFieldSplitSetIS(pcFromSnes, "u", is_u);
     //PCFieldSplitSetIS(pcFromSnes, "h", is_h);
 
@@ -913,11 +940,6 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     MatDestroy(&J);
     MatDestroy(&P);
     SNESDestroy(&snes);
-    MatNullSpaceDestroy(&null);
-    for(ii = 0; ii < n_null; ii++) {
-        VecDestroy(&Zi[ii]);
-    }
-    delete[] Zi;
 }
 
 void SWEqn::solve_u(Vec un, Vec hn, double _dt, bool save) {
