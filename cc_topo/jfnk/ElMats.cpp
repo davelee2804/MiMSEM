@@ -219,8 +219,8 @@ void Wii::assemble(int ex, int ey) {
     ei = ey*geom->topo->nElsX + ex;
 
     for(ii = 0; ii < mi; ii++) {
-        det = geom->det[ei][ii];
-        A[ii][ii] = det*quad->w[ii%mp1]*quad->w[ii/mp1];
+        //det = geom->det[ei][ii];
+        A[ii][ii] = /*det*/quad->w[ii%mp1]*quad->w[ii/mp1];
     }
 }
 

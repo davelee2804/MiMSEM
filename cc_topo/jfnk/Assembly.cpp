@@ -72,9 +72,12 @@ void Umat::assemble(double scale) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
-                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                //Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -175,7 +178,8 @@ void Wmat::assemble() {
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Qaa[ii][ii] = Q->A[ii][ii]/det/det;
+                //Qaa[ii][ii] = Q->A[ii][ii]/det/det;
+                Qaa[ii][ii] = Q->A[ii][ii]/det;
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -260,9 +264,12 @@ void Uhmat::assemble(Vec h2, double scale) {
                 J = geom->J[ei][ii];
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
 
-                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
-                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
+                //Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                //Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
+                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
             }
 
             Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
@@ -365,7 +372,8 @@ void Pvec::assemble() {
             Q->assemble(ex, ey);
 
             for(ii = 0; ii < np12; ii++) {
-                entries[ii] = Q->A[ii][ii];
+                //entries[ii] = Q->A[ii][ii];
+                entries[ii] = Q->A[ii][ii]*geom->det[ey*topo->nElsX + ex][ii];
             }
             inds_x = topo->elInds0_l(ex, ey);
             VecSetValues(vl, np12, inds_x, entries, ADD_VALUES);
@@ -436,7 +444,8 @@ void WtQmat::assemble() {
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Qaa[ii][ii] = Q->A[ii][ii]/det;
+                //Qaa[ii][ii] = Q->A[ii][ii]/det;
+                Qaa[ii][ii] = Q->A[ii][ii];
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -482,6 +491,7 @@ void PtQmat::assemble() {
     Wii* Q = new Wii(l->q, geom);
     double** Pt = Tran(P->nDofsI, P->nDofsJ, P->A);
     double** PtQ = Alloc2D(P->nDofsJ, Q->nDofsJ);
+double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
     double* PtQflat = new double[P->nDofsJ*Q->nDofsJ];
 
     MatCreate(MPI_COMM_WORLD, &M);
@@ -494,7 +504,11 @@ void PtQmat::assemble() {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
-            Mult_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Q->A, PtQ);
+            for(int ii = 0; ii < (l->q->n+1)*(l->q->n+1); ii++) {
+                Qaa[ii][ii] = Q->A[ii][ii]*geom->det[ey*topo->nElsX + ex][ii];
+            }
+            //Mult_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Q->A, PtQ);
+            Mult_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
             Flat2D_IP(P->nDofsJ, Q->nDofsJ, PtQ, PtQflat);
 
             inds_0 = topo->elInds0_g(ex, ey);
@@ -562,10 +576,14 @@ void UtQmat::assemble() {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii][ii] = J[0][0]*Q->A[ii][ii]/det;
-                Qab[ii][ii] = J[1][0]*Q->A[ii][ii]/det;
-                Qba[ii][ii] = J[0][1]*Q->A[ii][ii]/det;
-                Qbb[ii][ii] = J[1][1]*Q->A[ii][ii]/det;
+                //Qaa[ii][ii] = J[0][0]*Q->A[ii][ii]/det;
+                //Qab[ii][ii] = J[1][0]*Q->A[ii][ii]/det;
+                //Qba[ii][ii] = J[0][1]*Q->A[ii][ii]/det;
+                //Qbb[ii][ii] = J[1][1]*Q->A[ii][ii]/det;
+                Qaa[ii][ii] = J[0][0]*Q->A[ii][ii];
+                Qab[ii][ii] = J[1][0]*Q->A[ii][ii];
+                Qba[ii][ii] = J[0][1]*Q->A[ii][ii];
+                Qbb[ii][ii] = J[1][1]*Q->A[ii][ii];
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -673,8 +691,10 @@ void WtQUmat::assemble(Vec u1) {
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
 
-                Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det/det;
-                Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]/det/det;
+                //Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det/det;
+                //Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det;
+                Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]/det;
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -774,8 +794,10 @@ void RotMat::assemble(Vec q0) {
                 J = geom->J[ei][ii];
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
 
-                Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
-                Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
+                //Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
+                //Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
+                Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det;
+                Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det;
             }
 
             Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
@@ -1144,7 +1166,8 @@ void Whmat::assemble(Vec h2) {
             for(ii = 0; ii < mp12; ii++) {
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &hi);
                 det = geom->det[ei][ii];
-                Qaa[ii][ii] = hi*Q->A[ii][ii]/det/det;
+                //Qaa[ii][ii] = hi*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii] = hi*Q->A[ii][ii]/det;
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -1727,8 +1750,10 @@ void WtUmat::assemble() {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii][ii] = (J[0][0] + J[1][0])*Q->A[ii][ii]/det/det;
-                Qab[ii][ii] = (J[0][1] + J[1][1])*Q->A[ii][ii]/det/det;
+                //Qaa[ii][ii] = (J[0][0] + J[1][0])*Q->A[ii][ii]/det/det;
+                //Qab[ii][ii] = (J[0][1] + J[1][1])*Q->A[ii][ii]/det/det;
+                Qaa[ii][ii] = (J[0][0] + J[1][0])*Q->A[ii][ii]/det;
+                Qab[ii][ii] = (J[0][1] + J[1][1])*Q->A[ii][ii]/det;
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -2320,7 +2345,8 @@ void Ph_vec::assemble(Vec h2) {
 
             for(ii = 0; ii < np12; ii++) {
                 geom->interp2_g(ex, ey, ii%np1, ii/np1, h2Array, &hi);
-                entries[ii] = hi*Q->A[ii][ii];
+                //entries[ii] = hi*Q->A[ii][ii];
+                entries[ii] = hi*Q->A[ii][ii]*geom->det[ey*topo->nElsX+ex][ii];
             }
             inds_x = topo->elInds0_l(ex, ey);
             VecSetValues(vl, np12, inds_x, entries, ADD_VALUES);
