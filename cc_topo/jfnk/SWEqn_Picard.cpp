@@ -25,9 +25,6 @@
 #define W2_ALPHA (0.25*M_PI)
 
 #define WEAK_FORM_H
-//#define RIGHT
-
-#define SCALE 1.0e-4
 
 using namespace std;
 
@@ -374,7 +371,7 @@ void SWEqn::unpack(Vec x, Vec u, Vec h) {
         uArray[ii] = xArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
-        hArray[ii] = xArray[ii+topo->n1] / SCALE;
+        hArray[ii] = xArray[ii+topo->n1];
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
@@ -411,7 +408,7 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
         xArray[ii] = uArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
-        xArray[ii+topo->n1] = hArray[ii] * SCALE;
+        xArray[ii+topo->n1] = hArray[ii];
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
@@ -607,7 +604,7 @@ void SWEqn::assemble_operator(double dt) {
 }
 
 void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
-    int its;
+    int it = 0;
     double norm = 1.0e+9, norm_dx, norm_x;
     Vec x, f, dx;
     KSP kspA;
@@ -647,9 +644,10 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
         norm = norm_dx/norm_x;
         if(!rank) {
             cout << scientific;
-            cout << "|x|: " << norm_x << "\t|dx|: " << norm_dx << "\t|dx|/|x|: " << norm << endl; 
+            cout << it << "\t|x|: " << norm_x << "\t|dx|: " << norm_dx << "\t|dx|/|x|: " << norm << endl; 
         }
-    } while(norm > 1.0e-8);
+        it++;
+    } while(norm > 1.0e-14);
 
     unpack(x, un, hn);
 
