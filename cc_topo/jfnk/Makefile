@@ -22,10 +22,14 @@ OBJS = LinAlg.o \
        AdvEqn.o \
        SWEqn_JFNK.o \
        Williamson2.o
+#       Test.o
 #       Galewsky.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
+
+Test.o: Test.cpp SWEqn_JFNK.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Test.cpp ${CXXFLAGS}
 
 Galewsky.o: Galewsky.cpp SWEqn_JFNK.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Galewsky.cpp ${CXXFLAGS}
