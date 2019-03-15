@@ -12,6 +12,7 @@ def init_geom(pn, ne, make_image, expand_sphere):
 	b = np.sqrt((7.0 - 2.0*a)/21.0)
 	c = np.sqrt((7.0 + 2.0*a)/21.0)
 
+	q1 = np.array([-1.0,+1.0])
 	q2 = np.array([-1.0,0.0,+1.0])
 	q3 = np.array([-1.0,-np.sqrt(0.2),+np.sqrt(0.2),+1.0])
 	q4 = np.array([-1,-np.sqrt(3.0/7.0),0.0,+np.sqrt(3.0/7.0),+1])
@@ -21,6 +22,8 @@ def init_geom(pn, ne, make_image, expand_sphere):
 	X = np.zeros(pn*ne+1,dtype=np.float64)
 	dx = 0.5*np.pi/ne
 	for el in np.arange(ne):
+		if pn == 1:
+			X[el*pn:(el+1)*pn] = dx*0.5*(q1[:pn]+1.0) + el*dx - 0.25*np.pi
 		if pn == 2:
 			X[el*pn:(el+1)*pn] = dx*0.5*(q2[:pn]+1.0) + el*dx - 0.25*np.pi
 		if pn == 3:
