@@ -38,8 +38,8 @@ matrix free:
     mpirun -np 6 ./mimsem 0 -snes_mf -snes_type newtontr -snes_stol 1.0e-4
 
 preconditioned:
-    mpirun -np 6 ./mimsem 0 -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-8 \
-        -ksp_rtol 1.0e-7 -ksp_converged_reason -ksp_monitor
+    mpirun -np 6 ./mimsem 0 -snes_mf_operator -snes_type newtontr -snes_stol 1.0e-11 \
+        -ksp_rtol 1.0e-3 -ksp_converged_reason -ksp_monitor -snes_monitor
 
 fieldsplit:
     mpirun -np 6 ./mimsem -snes_monitor -ksp_monitor_true_residual -ksp_converged_reason \
