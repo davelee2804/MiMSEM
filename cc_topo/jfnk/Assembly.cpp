@@ -59,6 +59,12 @@ void Umat::assemble(double scale) {
 
     MatZeroEntries(M);
 
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (01)\n";
+}
+
     mp1 = l->n + 1;
     mp12 = mp1*mp1;
 
@@ -169,6 +175,12 @@ void Wmat::assemble() {
     mp1 = e->l->q->n + 1;
     mp12 = mp1*mp1;
 
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (02)\n";
+}
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds = topo->elInds2_g(ex, ey);
@@ -252,6 +264,12 @@ void Uhmat::assemble(Vec h2, double scale) {
 
     MatZeroEntries(M);
     VecGetArray(h2, &h2Array);
+
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (03)\n";
+}
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -430,11 +448,18 @@ void WtQmat::assemble() {
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n2l, topo->n0l, topo->nDofs2G, topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+    //MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, 8*W->nDofsJ, PETSC_NULL, 8*W->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
     mp1 = e->l->q->n + 1;
     mp12 = mp1*mp1;
+
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (04) " << W->nDofsJ << endl;
+}
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -500,6 +525,12 @@ double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
     MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 4*P->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (05)\n";
+}
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // incorportate jacobian tranformation for each element
@@ -563,8 +594,15 @@ void UtQmat::assemble() {
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n1l, 2*topo->n0l, topo->nDofs1G, 2*topo->nDofs0G);
     MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+    //MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, 24*U->nDofsJ, PETSC_NULL, 24*U->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
+
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (06) " << U->nDofsJ << endl;
+}
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -680,6 +718,12 @@ void WtQUmat::assemble(Vec u1) {
     VecGetArray(u1, &u1Array);
     MatZeroEntries(M);
 
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (07)\n";
+}
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // incorportate jacobian tranformation for each element
@@ -780,6 +824,12 @@ void RotMat::assemble(Vec q0) {
     VecGetArray(q0, &q0Array);
     MatZeroEntries(M);
 
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (08)\n";
+}
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds_x = topo->elInds1x_g(ex, ey);
@@ -860,6 +910,12 @@ E10mat::E10mat(Topo* _topo) {
     MatMPIAIJSetPreallocation(E10, 4, PETSC_NULL, 4, PETSC_NULL);
     MatZeroEntries(E10);
     
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (09)\n";
+}
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds_1x = topo->elInds1x_g(ex, ey);
@@ -928,6 +984,12 @@ E21mat::E21mat(Topo* _topo) {
     MatMPIAIJSetPreallocation(E21, 4, PETSC_NULL, 4, PETSC_NULL);
     MatZeroEntries(E21);
     
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (10)\n";
+}
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds_1x = topo->elInds1x_g(ex, ey);
@@ -1156,6 +1218,12 @@ void Whmat::assemble(Vec h2) {
     MatZeroEntries(M);
     VecGetArray(h2, &hArray);
 
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (11)\n";
+}
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds = topo->elInds2_g(ex, ey);
@@ -1240,7 +1308,7 @@ void W0mat::assemble() {
 
                 for(jj = 0; jj < 4; jj++) {
                     W[jj][0] = 0.25;
-                    Qaa[jj][jj] = geom->det[ei][faceInds[jj]];
+                    Qaa[jj][jj] = 1.0/geom->det[ei][faceInds[jj]];
                 }
 
                 Tran_IP(4, 1, W, Wt);
@@ -1331,9 +1399,9 @@ void U0mat::assemble() {
                     det = geom->det[ei][vertInds[jj]];
                     J = geom->J[ei][vertInds[jj]];
 
-                    Qaa[jj][jj] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])/det/det;
-                    Qab[jj][jj] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])/det/det;
-                    Qbb[jj][jj] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])/det/det;
+                    Qaa[jj][jj] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])/det;
+                    Qab[jj][jj] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])/det;
+                    Qbb[jj][jj] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])/det;
 
                     U[jj][0] = (jj%2==0) ? 0.5 : 0.0; // left
                     U[jj][1] = (jj%2==1) ? 0.5 : 0.0; // right
@@ -1453,8 +1521,8 @@ void WU0mat::assemble() {
                     det = geom->det[ei][vertInds[jj]];
                     J = geom->J[ei][vertInds[jj]];
 
-                    Qa[jj][jj] = (J[0][0] + J[1][0])/det/det;
-                    Qb[jj][jj] = (J[0][1] + J[1][1])/det/det;
+                    Qa[jj][jj] = (J[0][0] + J[1][0])/det;
+                    Qb[jj][jj] = (J[0][1] + J[1][1])/det;
 
                     W[jj][0] = 0.25;
 
@@ -1739,6 +1807,12 @@ void WtUmat::assemble() {
     mp12 = mp1*mp1;
 
     MatZeroEntries(M);
+
+{
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+//if(!rank)cout<<"\tassembling matrix... (12)\n";
+}
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {

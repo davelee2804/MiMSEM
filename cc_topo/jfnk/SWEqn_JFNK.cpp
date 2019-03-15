@@ -607,6 +607,8 @@ void SWEqn::jfnk_precon(Mat P) {
     double valInv;
     Mat M2D, GM2, M2DUinv, M2DUinvGM2;
     Mat Uinv;
+    W0mat* W0 = new W0mat(topo, geom, edge);
+    U0mat* U0 = new U0mat(topo, geom, node, edge);
 
     if(precon_assembled) return;
 
@@ -652,7 +654,7 @@ void SWEqn::jfnk_precon(Mat P) {
     // [u,u] block
     MatGetOwnershipRange(M1->M, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
-        MatGetRow(M1->M, rr, &ncols, &cols, &vals);
+        MatGetRow(U0->M, rr, &ncols, &cols, &vals);
 
         row_proc = rr / topo->n1l;
         pRow = row_proc * (topo->n1l + topo->n2l) + rr % topo->n1l;
@@ -663,7 +665,7 @@ void SWEqn::jfnk_precon(Mat P) {
         }
 
         MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
-        MatRestoreRow(M1->M, rr, &ncols, &cols, &vals);
+        MatRestoreRow(U0->M, rr, &ncols, &cols, &vals);
     }
 
 #ifdef RIGHT
@@ -680,7 +682,7 @@ void SWEqn::jfnk_precon(Mat P) {
             pCols[cc] = col_proc * (topo->n1l + topo->n2l) + cols[cc] % topo->n2l + topo->n1l;
         }
 
-        MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
+        //MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
         MatRestoreRow(GM2, rr, &ncols, &cols, &vals);
     }
 #else
@@ -697,7 +699,7 @@ void SWEqn::jfnk_precon(Mat P) {
             pCols[cc] = col_proc * (topo->n1l + topo->n2l) + cols[cc] % topo->n1l;
         }
 
-        MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
+        //MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
         MatRestoreRow(M2D, rr, &ncols, &cols, &vals);
     }
 #endif
@@ -705,7 +707,7 @@ void SWEqn::jfnk_precon(Mat P) {
     // [h,h] block
     MatGetOwnershipRange(SC, &ri, &rj);
     for(rr = ri; rr < rj; rr++) {
-        MatGetRow(SC, rr, &ncols, &cols, &vals);
+        MatGetRow(W0->M, rr, &ncols, &cols, &vals);
 
         row_proc = rr / topo->n2l;
         pRow = row_proc * (topo->n1l + topo->n2l) + rr % topo->n2l + topo->n1l;
@@ -715,7 +717,7 @@ void SWEqn::jfnk_precon(Mat P) {
             pCols[cc] = col_proc * (topo->n1l + topo->n2l) + cols[cc] % topo->n2l + topo->n1l;
         }
         MatSetValues(P, 1, &pRow, ncols, pCols, vals, ADD_VALUES);
-        MatRestoreRow(SC, rr, &ncols, &cols, &vals);
+        MatRestoreRow(W0->M, rr, &ncols, &cols, &vals);
     }
 
     MatDestroy(&M2D);
@@ -725,6 +727,9 @@ void SWEqn::jfnk_precon(Mat P) {
     MatDestroy(&Uinv);
 
     //precon_assembled = true;
+
+    delete W0;
+    delete U0;
 }
 
 void SWEqn::jfnk_precon_I(Mat P) {
@@ -1740,13 +1745,10 @@ double SWEqn::intE(Vec ug, Vec hg) {
 }
 
 void SWEqn::writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0) {
-    int rank;
     double mass, vort, ener;
     char filename[50];
     ofstream file;
     Vec wi;
-
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     curl(u, &wi);
 

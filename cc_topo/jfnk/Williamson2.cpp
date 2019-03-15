@@ -13,6 +13,7 @@
 #include "Geom.h"
 #include "ElMats.h"
 #include "Assembly.h"
+#include "AdvEqn.h"
 #include "SWEqn_JFNK.h"
 
 using namespace std;
@@ -56,23 +57,42 @@ double h_init(double* x) {
     double theta = asin(x[2]/RAD_SPHERE);
     double lambda = atan2(x[1],x[0]);
     double b = -cos(lambda)*cos(theta)*sin(W2_ALPHA) + sin(theta)*cos(W2_ALPHA);
-    
+
     return W2_H0 - (RAD_SPHERE*W2_OMEGA*W2_U0 + 0.5*W2_U0*W2_U0)*b*b/W2_GRAV;
 }
+
+/*
+double h_init(double* x) {
+    double phi = asin(x[2]/RAD_SPHERE);
+    double lambda = atan2(x[1],x[0]);
+    double hHat = 2000.0;//120.0*(RAD_SPHERE/RAD_EARTH);
+    double h = 10000.0*(RAD_SPHERE/RAD_EARTH);
+    double alpha = 1.0/3.0;
+    double beta = 1.0/15.0;
+    double phi2 = M_PI/4.0;
+
+    h += hHat*cos(phi)*exp(-0.08*1.0*(lambda/alpha)*(lambda/alpha))
+                      *exp(-0.01*1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
+
+    return h;
+}
+*/
 
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 2*60.0*60.0;
+    double dt = 0.5*6.0*60.0;//2*60.0*60.0;
+    //double dt = 2.0*6.0*60.0;//2*60.0*60.0;
     double vort_0, mass_0, ener_0, err_w[3], err_u[3], err_h[3];
     char fieldname[20], filename[50];
     bool dump;
-    int nSteps = 60;
+    int nSteps = 1200;
     int dumpEvery = 1;
     ofstream file;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
+    //AdvEqn* ad;
     Vec wi, ui, hi;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
@@ -85,6 +105,7 @@ int main(int argc, char** argv) {
     topo = new Topo(rank);
     geom = new Geom(rank, topo);
     sw = new SWEqn(topo, geom);
+    //ad = new AdvEqn(topo, geom);
     sw->do_visc = false;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &wi);
@@ -116,6 +137,10 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         sw->solve(ui, hi, dt, dump);
+        //sw->solve_explicit(ui, hi, dt, dump);
+        //sw->solve_u(ui, hi, dt, dump);
+        //ad->solve(ui, hi, dt, dump);
+        //ad->solve_explicit(ui, hi, dt, dump);
         if(dump) {
             sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
 
