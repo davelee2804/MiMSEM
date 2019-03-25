@@ -462,7 +462,7 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 
 void SWEqn::jfnk_vector(Vec x, Vec f) {
     Vec F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u, fs;
-    int ii, n_null = 2;
+    int ii, n_null = 1;
     Vec* Zi;
     MatNullSpace null;
 
@@ -498,9 +498,10 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
     repack(fs, fu, fh);
 
     // remove the null space
-    Zi = diagnose_null_space_vecs(ui, hi, n_null);
+    //Zi = diagnose_null_space_vecs(ui, hi, n_null);
+    Zi = diagnose_null_space_vecs(uj, hj, n_null);
     MatNullSpaceCreate(MPI_COMM_WORLD, PETSC_FALSE, n_null, Zi, &null);
-    MatNullSpaceRemove(null, fs);
+    //MatNullSpaceRemove(null, fs);
 
     // assemble the mass matrix terms
     VecZeroEntries(fu);
@@ -512,7 +513,7 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
         laplacian(uj, &d2u);
         laplacian(d2u, &d4u);
         MatMult(M1->M, d4u, d2u);
-        VecAXPY(fu, -dt, d2u); // sign??
+        VecAXPY(fu, dt, d2u);
         VecDestroy(&d2u);
         VecDestroy(&d4u);
     }
@@ -524,7 +525,7 @@ void SWEqn::jfnk_vector(Vec x, Vec f) {
 #endif
 
     repack(f, fu, fh);
-    VecAXPY(f, -dt, fs);
+    VecAXPY(f, dt, fs);
 
     // clean up
     VecDestroy(&fu);
