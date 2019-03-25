@@ -22,7 +22,7 @@
 #define RAD_EARTH 6371220.0
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
-#define W2_ALPHA (0.25*M_PI)
+//#define W2_ALPHA (0.25*M_PI)
 
 #define WEAK_FORM_H
 
@@ -53,6 +53,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     // 0 form lumped mass matrix (vector)
     m0 = new Pvec(topo, geom, node);
+    m0h = new Ph_vec(topo, geom, node);
 
     // 1 form mass matrix
     M1 = new Umat(topo, geom, node, edge);
@@ -422,6 +423,83 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
     VecDestroy(&hl);
 }
 
+void SWEqn::diagnose_q(Vec u, Vec h, Vec* q) {
+    Vec hl, du, mf;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &du);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &mf);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, q);
+    VecZeroEntries(*q);
+
+    VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
+
+    m0h->assemble(hl);
+    MatMult(E01M1, u, du);
+    VecPointwiseMult(mf, m0->vg, fg);
+    VecAXPY(du, 1.0, mf);
+    VecPointwiseDivide(*q, du, m0h->vg);
+
+    VecDestroy(&hl);
+    VecDestroy(&du);
+    VecDestroy(&mf);
+}
+
+Vec* SWEqn::diagnose_null_space_vecs(Vec u, Vec h, int n) {
+    int ii;
+    double norm;
+    Vec q, qn, dq, q2, tmp2;
+    KSP ksp2;
+    Vec* Zi = new Vec[n];
+    WtQmat* WQ = new WtQmat(topo, geom, edge);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &qn);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dq);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &q2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp2);
+    VecZeroEntries(qn);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp2);
+    KSPSetOperators(ksp2, M2->M, M2->M);
+    KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetOptionsPrefix(ksp2, "q2_");
+
+    diagnose_q(u, h, &q);
+    VecCopy(q, qn);
+    for(ii = 0; ii < n; ii++) {
+      VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &Zi[ii]);
+
+      // velocity section of the nth null space vector
+      VecZeroEntries(dq);
+      MatMult(NtoE->E10, qn, dq);
+      VecScale(dq, -1.0);
+
+      // pressure section of the nth null space vector
+      VecPointwiseMult(qn, qn, q);
+      MatMult(WQ->M, qn, tmp2);
+      VecZeroEntries(q2);
+      KSPSolve(ksp2, tmp2, q2);
+      // 0th vector is the 2nd moment
+      VecScale(q2, 1.0/(ii + 2.0) - 1.0);
+
+      repack(Zi[ii], dq, q2);
+
+      VecNorm(Zi[ii], NORM_2, &norm);
+      VecScale(Zi[ii], 1.0/norm);
+    }
+
+    delete WQ;
+    VecDestroy(&q);
+    VecDestroy(&qn);
+    VecDestroy(&dq);
+    VecDestroy(&q2);
+    VecDestroy(&tmp2);
+    KSPDestroy(&ksp2);
+
+    return Zi;
+}
+
 void SWEqn::assemble_residual(Vec x, Vec f) {
     Vec F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u, fs;
 
@@ -456,6 +534,19 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
 #endif
     repack(fs, fu, fh);
 
+    /*{
+        Vec* Zi;
+        MatNullSpace null;
+        Zi = diagnose_null_space_vecs(uj, hj, 1);
+        MatNullSpaceCreate(MPI_COMM_WORLD, PETSC_FALSE, 1, Zi, &null);
+        MatNullSpaceRemove(null, fs);
+        MatNullSpaceDestroy(&null);
+        for(int ii = 0; ii < 1; ii++) {
+            VecDestroy(&Zi[ii]);
+        }
+        delete[] Zi;
+    }*/
+
     // assemble the mass matrix terms
     VecZeroEntries(fu);
     VecZeroEntries(fh);
@@ -465,10 +556,15 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecAXPY(fu, -1.0, utmp);
 
     if(do_visc) {
-        laplacian(uj, &d2u);
+        VecZeroEntries(utmp);
+        VecAXPY(utmp, 0.5, ui);
+        VecAXPY(utmp, 0.5, uj);
+        laplacian(utmp, &d2u);
+        //laplacian(uj, &d2u);
         laplacian(d2u, &d4u);
         MatMult(M1->M, d4u, d2u);
-        VecAXPY(fu, -dt, d2u); // sign??
+        //VecAXPY(fu, -dt, d2u); // sign??
+        VecAXPY(fu, dt, d2u); // sign??
         VecDestroy(&d2u);
         VecDestroy(&d4u);
     }
@@ -483,7 +579,8 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
 #endif
 
     repack(f, fu, fh);
-    VecAXPY(f, -dt, fs);
+    //VecAXPY(f, -dt, fs);
+    VecAXPY(f, dt, fs);
 
     // clean up
     VecDestroy(&fu);
@@ -529,10 +626,19 @@ void SWEqn::assemble_operator(double dt) {
     MatSetType(A, MATMPIAIJ);
     MatMPIAIJSetPreallocation(A, 16*n2, PETSC_NULL, 16*n2, PETSC_NULL);
 
-    // [u,u] block
+    // [u,u] block // TODO: incorporate viscosity? time step = 1.0*dt?
     MatCopy(M1->M, Muu, DIFFERENT_NONZERO_PATTERN);
     R->assemble(fl);
     MatAXPY(Muu, 0.5*dt, R->M, DIFFERENT_NONZERO_PATTERN);
+
+    // add in the viscosity
+    /*{
+       Mat VISC;
+       MatMatMult(E12M2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VISC);
+       MatDestroy(&VISC);
+       MatAXPY(Muu, -0.5*del2*dt, VISC, DIFFERENT_NONZERO_PATTERN);
+    }*/
+
     MatGetOwnershipRange(Muu, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(Muu, mm, &nCols, &cols, &vals);
@@ -696,6 +802,7 @@ SWEqn::~SWEqn() {
     delete R;
     delete M1h;
     delete K;
+    delete m0h;
 
     delete edge;
     delete node;
@@ -1213,3 +1320,106 @@ void SWEqn::writeConservation(double time, Vec u, Vec h, double mass0, double vo
     }
     VecDestroy(&wi);
 } 
+
+void SWEqn::solve_explicit(Vec un, Vec hn, double _dt, bool save) {
+    Vec F1, F2, Phi1, Phi2, wxu1, wxu2, bu, tu, uh, hh, d2u, d4u;
+
+    dt = _dt;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hh);
+
+    // first step
+    VecCopy(un, ui);
+    VecCopy(un, uj);
+    VecCopy(hn, hi);
+    VecCopy(hn, hj);
+
+    // ...momentum
+    diagnose_wxu(&wxu1);
+    diagnose_Phi(&Phi1);
+    VecZeroEntries(bu);
+    MatMult(M1->M, un, bu);
+    VecAXPY(bu, -dt, wxu1);
+    MatMult(EtoF->E12, Phi1, tu);
+    VecAXPY(bu, -dt, tu);
+    if(do_visc) {
+        laplacian(uj, &d2u);
+        laplacian(d2u, &d4u);
+        MatMult(M1->M, d4u, d2u);
+        VecAXPY(bu, -dt, d2u);
+        VecDestroy(&d2u);
+        VecDestroy(&d4u);
+    }
+    VecZeroEntries(uh);
+    KSPSolve(ksp, bu, uh);
+
+    // ...continuity
+    diagnose_F(&F1);
+    MatMult(EtoF->E21, F1, hh);
+    VecAYPX(hh, -dt, hn);
+
+    // second step
+    VecCopy(uh, ui);
+    VecCopy(uh, uj);
+    VecCopy(hh, hi);
+    VecCopy(hh, hj);
+
+    // ...momentum
+    diagnose_wxu(&wxu2);
+    diagnose_Phi(&Phi2);
+    MatMult(M1->M, un, bu);
+    VecAXPY(bu, -0.5*dt, wxu1);
+    VecAXPY(bu, -0.5*dt, wxu2);
+    MatMult(EtoF->E12, Phi1, tu);
+    VecAXPY(bu, -0.5*dt, tu);
+    MatMult(EtoF->E12, Phi2, tu);
+    VecAXPY(bu, -0.5*dt, tu);
+    if(do_visc) {
+        laplacian(uj, &d2u);
+        laplacian(d2u, &d4u);
+        MatMult(M1->M, d4u, d2u);
+        VecAXPY(bu, -dt, d2u);
+        VecDestroy(&d2u);
+        VecDestroy(&d4u);
+    }
+    VecZeroEntries(un);
+    KSPSolve(ksp, bu, un);
+
+    // ...continuity
+    diagnose_F(&F2);
+    VecAXPY(F2, 1.0, F1);
+    MatMult(EtoF->E21, F2, hh);
+    VecAYPX(hh, -0.5*dt, hn);
+    VecCopy(hh, hn);
+
+    if(save) {
+        Vec wi;
+        char fieldname[20];
+
+        step++;
+        curl(un, &wi);
+
+        sprintf(fieldname, "vorticity");
+        geom->write0(wi, fieldname, step);
+        sprintf(fieldname, "velocity");
+        geom->write1(un, fieldname, step);
+        sprintf(fieldname, "pressure");
+        geom->write2(hn, fieldname, step);
+
+        VecDestroy(&wi);
+    }
+
+    VecDestroy(&bu);
+    VecDestroy(&tu);
+    VecDestroy(&uh);
+    VecDestroy(&Phi1);
+    VecDestroy(&Phi2);
+    VecDestroy(&wxu1);
+    VecDestroy(&wxu2);
+    VecDestroy(&hh);
+    VecDestroy(&F1);
+    VecDestroy(&F2);
+}

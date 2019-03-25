@@ -17,6 +17,7 @@ class SWEqn {
         Topo* topo;
         Geom* geom;
         Pvec* m0;
+        Ph_vec* m0h;
         Umat* M1;
         Wmat* M2;
         E10mat* NtoE;
@@ -53,7 +54,10 @@ class SWEqn {
         void assemble_residual(Vec x, Vec f);
         void assemble_operator(double dt);
         void solve(Vec u, Vec h, double _dt, bool save);
+        void solve_explicit(Vec u, Vec h, double _dt, bool save);
         double viscosity();
         void unpack(Vec x, Vec u, Vec h);
         void repack(Vec x, Vec u, Vec h);
+        void diagnose_q(Vec u, Vec h, Vec* q);
+        Vec* diagnose_null_space_vecs(Vec u, Vec h, int n);
 };
