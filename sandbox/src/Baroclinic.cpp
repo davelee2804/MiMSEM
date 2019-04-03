@@ -87,7 +87,7 @@ double h_bot_init(double* x) {
 
     if(x[2]/RAD_SPHERE > 0.9) return HBOT + DELTA;
 
-    return HBOT + DELTA*tanh(y/L);
+    return HBOT - DELTA*tanh(y/L);
 /*
     int ii, ni = 1000;
     double phiPrime = 0.0;
@@ -121,7 +121,7 @@ double u_top_init(double* x) {
 
     if(fabs(phi - phi_0) > 0.25*M_PI*(7.0/8.0)) return 0.0;
 
-    return (-GRAVITY*DELTA/f/L)*(1.0 - tanh(y/L)*tanh(y/L));
+    return (GRAVITY*DELTA/f/L)*(1.0 - tanh(y/L)*tanh(y/L));
 }
 
 double u_bot_init(double* x) {
@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
     bool dump;
     int startStep = atoi(argv[1]);
     int nSteps = 28*24*12;
-    int dumpEvery = 6*12;
+    int dumpEvery = 1;//6*12;
     Topo* topo;
     Geom* geom;
     SWEqn_2L* sw;
@@ -254,6 +254,7 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         sw->solve(ut, ub, ht, hb, dt, dump);
+        //sw->solve_explicit(ut, ub, ht, hb, dt, dump);
         if(dump) {
             sw->writeConservation(step*dt, ut, ub, ht, hb, mass_0, vort_0, ener_0);
         }

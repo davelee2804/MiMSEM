@@ -41,8 +41,7 @@ class SWEqn_2L {
         Vec h_bi;
         Vec u_bj;
         Vec h_bj;
-        Mat A_t;
-        Mat A_b;
+        Mat A;
         void coriolis();
         void curl(Vec u, Vec* w);
         void diagnose_F(Vec u1, Vec u2, Vec h1, Vec h2, Vec* F);
@@ -59,10 +58,11 @@ class SWEqn_2L {
         double intE(double gravity, Vec u, Vec h);
         void laplacian(Vec u, Vec* ddu);
         void writeConservation(double time, Vec u1, Vec u2, Vec h1, Vec h2, double mass0, double vort0, double ener0);
-        void assemble_residual(Vec x, Vec hoi, Vec hoj, int level, Vec f);
-        void assemble_operator(double dt, double aGrad, double aDiv, Mat* A);
+        void assemble_residual(Vec x, Vec f);
+        void assemble_operator();
         void solve(Vec u1, Vec u2, Vec h1, Vec h2, double _dt, bool save);
+        void solve_explicit(Vec u_tn, Vec u_bn, Vec h_tn, Vec h_bn, double _dt, bool save);
         double viscosity();
-        void unpack(Vec x, Vec u, Vec h);
-        void repack(Vec x, Vec u, Vec h);
+        void unpack(Vec x, Vec u_t, Vec h_t, Vec u_b, Vec h_b);
+        void repack(Vec x, Vec u_t, Vec h_t, Vec u_b, Vec h_b);
 };
