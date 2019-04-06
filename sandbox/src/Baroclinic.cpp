@@ -18,10 +18,12 @@
   Bottom level:
     H_b   = 10000.0
     rho_b =     0.749152837846
+    vel_b =    18.1584170112
 
   Top level:
     H_t   = 20000.0
     rho_t =     0.131703004382
+    vel_t =    14.801012961
  */
 
 using namespace std;
@@ -33,17 +35,20 @@ using namespace std;
 #define DELTA 100.0
 #define HTOP 20000.0
 #define HBOT 10000.0
+#define UTOP 14.801012961
+#define UBOT 18.1584170112
+#define RHO_TOP 0.131703004382
+#define RHO_BOT 0.749152837846
 
-double u_init(double* x) {
+double vel_func(double* x, double U0) {
     double eps = 1.0e-8;
-    double umax = 80.0*(RAD_SPHERE/RAD_EARTH);
     double phi0 = M_PI/7.0;
     double phi1 = M_PI/2.0 - phi0;
     double en = exp(-4.0/((phi1 - phi0)*(phi1 - phi0)));
     double phi = asin(x[2]/RAD_SPHERE);
 
     if(phi > phi0 + eps && phi < phi1 - eps) {
-        return (umax/en)*exp(1.0/((phi - phi0)*(phi - phi1)));
+        return (U0/en)*exp(1.0/((phi - phi0)*(phi - phi1)));
     }
     else {
         return 0.0;
@@ -51,12 +56,42 @@ double u_init(double* x) {
 }
 
 double v_init(double* x) {
-    return 0.0;
+    double eps = 1.0e-4;
+
+    return eps*2.0*(rand()/RAND_MAX - 0.5);
+}
+
+double hgt_func(double* x, int level) {
+    int ii, ni = 10000;
+    double phiPrime = 0.0;
+    double phi = asin(x[2]/RAD_SPHERE);
+    double dphi = fabs(phi/ni);
+    double h = (level == 1) ? HTOP : HBOT;
+    double scale = (level == 1) ? 1.0/GRAVITY/(1.0 - RHO_TOP/RHO_BOT) : 1.0/GRAVITY/(1.0 - RHO_BOT/RHO_TOP);
+    double bot_fac = (level == 1) ? 1.0 : RHO_BOT/RHO_TOP; 
+    double ut, ub, f;
+    double x2[3];
+    int sgn = (phi > 0) ? +1 : -1;
+
+    x2[0] = x[0];
+    x2[1] = x[1];
+    for(ii = 0; ii < ni; ii++) {
+        phiPrime += sgn*dphi;
+        x2[2] = RAD_SPHERE*sin(phiPrime);
+        f = 2.0*OMEGA*sin(phiPrime);
+        ut = vel_func(x2, UTOP);
+        ub = vel_func(x2, UBOT);
+        h -= scale*RAD_SPHERE*ut*(f + tan(phiPrime)*ut/RAD_SPHERE)*dphi;
+        h += scale*RAD_SPHERE*ub*(f + tan(phiPrime)*ub/RAD_SPHERE)*dphi*bot_fac;
+    }
+
+    return h;
 }
 
 double h_top_init(double* x) {
-    return HTOP;
+    return hgt_func(x, 1);
 /*
+    return HTOP;
     int ii, ni = 1000;
     double phiPrime = 0.0;
     double phi = asin(x[2]/RAD_SPHERE);
@@ -80,6 +115,8 @@ double h_top_init(double* x) {
 }
 
 double h_bot_init(double* x) {
+    return hgt_func(x, 2);
+/*
     double phi   = asin(x[2]/RAD_SPHERE);
     double phi_0 = 0.25*M_PI;
     double y     = RAD_SPHERE*(phi - phi_0);
@@ -88,7 +125,6 @@ double h_bot_init(double* x) {
     if(x[2]/RAD_SPHERE > 0.9) return HBOT + DELTA;
 
     return HBOT - DELTA*tanh(y/L);
-/*
     int ii, ni = 1000;
     double phiPrime = 0.0;
     double phi = asin(x[2]/RAD_SPHERE);
@@ -113,6 +149,10 @@ double h_bot_init(double* x) {
 }
 
 double u_top_init(double* x) {
+    double eps = 1.0e-4;
+
+    return vel_func(x, UTOP) + eps*2.0*(rand()/RAND_MAX - 0.5);
+/*
     double phi   = asin(x[2]/RAD_SPHERE);
     double f     = 2.0*OMEGA*sin(phi);
     double phi_0 = 0.25*M_PI;
@@ -122,58 +162,26 @@ double u_top_init(double* x) {
     if(fabs(phi - phi_0) > 0.25*M_PI*(7.0/8.0)) return 0.0;
 
     return (GRAVITY*DELTA/f/L)*(1.0 - tanh(y/L)*tanh(y/L));
+*/
 }
 
 double u_bot_init(double* x) {
-    double eps = 1.0e-8;
+    double eps = 1.0e-4;
 
-    return u_top_init(x) + eps*2.0*(rand() - 0.5)/RAND_MAX;
+    return vel_func(x, UBOT) + eps*2.0*(rand()/RAND_MAX - 0.5);
+//    return u_top_init(x) + eps*2.0*(rand() - 0.5)/RAND_MAX;
 }
-
-/*
-double h_init(double* x) {
-    int ii, ni = 1000;
-    double phiPrime = 0.0;
-    double phi = asin(x[2]/RAD_SPHERE);
-    double lambda = atan2(x[1],x[0]);
-    double dphi = fabs(phi/ni);
-    double hHat = 120.0*(RAD_SPHERE/RAD_EARTH);
-    double h = 10000.0*(RAD_SPHERE/RAD_EARTH);
-    double grav = 9.80616*(RAD_SPHERE/RAD_EARTH);
-    double omega = 7.292e-5;
-    double u, f;
-    double alpha = 1.0/3.0;
-    double beta = 1.0/15.0;
-    double phi2 = M_PI/4.0;
-    double x2[3];
-    int sgn = (phi > 0) ? +1 : -1;
-
-    x2[0] = x[0];
-    x2[1] = x[1];
-    for(ii = 0; ii < ni; ii++) {
-        phiPrime += sgn*dphi;
-        x2[2] = RAD_SPHERE*sin(phiPrime);
-        u = u_init(x2);
-        f = 2.0*omega*sin(phiPrime);
-        h -= RAD_SPHERE*u*(f + tan(phiPrime)*u/RAD_SPHERE)*dphi/grav;
-    }
-
-    h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
-
-    return h;
-}
-*/
 
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 300.0;
+    double dt = 300.0;//15.0;
     double vort_0, mass_0, ener_0;
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 28*24*12;
-    int dumpEvery = 1;//6*12;
+    int nSteps = 14*24*12;//240;
+    int dumpEvery = 6*12;//240;
     Topo* topo;
     Geom* geom;
     SWEqn_2L* sw;
@@ -254,7 +262,6 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         sw->solve(ut, ub, ht, hb, dt, dump);
-        //sw->solve_explicit(ut, ub, ht, hb, dt, dump);
         if(dump) {
             sw->writeConservation(step*dt, ut, ub, ht, hb, mass_0, vort_0, ener_0);
         }
