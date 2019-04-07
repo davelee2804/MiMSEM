@@ -20,12 +20,13 @@ class Euler {
         E10mat* NtoE;
         E21mat* EtoF;
         RotMat* R;
-        Uhmat* F;
+        Uhmat* M1h;
         WtQUmat* K;
         Ut_mat* M1t;
         UtQWmat* Rh;
         WtQdUdz_mat* Rz;
         Whmat* T;
+        EoSvec* eos;
         Vec* fg;                 // coriolis vector (global)
         bool firstStep;
         double k2i;              // kinetic to internal energy exchange
@@ -97,6 +98,10 @@ class Euler {
         L2Vecs* rho_k;
         L2Vecs* Theta_k;
         VecScatter gtol_x;
+        void diagnose_F(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec* F);
+        void diagnose_Phi(int level, Vec u1, Vec u2, Vec* Phi);
+        void diagnose_Pi(int level, Vec rt1, Vec rt2, Vec* Pi);
+        void diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu);
         void assemble_operator(int level, double dt, double rho_avg, double theta_avg, Mat* A);
         void assemble_residual(int level, Vec x, Vec f);
 };

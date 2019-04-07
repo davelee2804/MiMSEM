@@ -70,7 +70,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     R = new RotMat(topo, geom, node, edge);
 
     // mass flux operator
-    F = new Uhmat(topo, geom, node, edge);
+    M1h = new Uhmat(topo, geom, node, edge);
 
     // kinetic energy operator
     K = new WtQUmat(topo, geom, node, edge);
@@ -82,6 +82,9 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
 
     // potential temperature projection operator
     T = new Whmat(topo, geom, edge);
+
+    // equation or state right hand side vector
+    eos = new EoSvec(topo, geom, edge);
 
     // coriolis vector (projected onto 0 forms)
     coriolis();
@@ -402,12 +405,13 @@ Euler::~Euler() {
     delete EtoF;
 
     delete R;
-    delete F;
+    delete M1h;
     delete K;
     delete T;
     delete M1t;
     delete Rh;
     delete Rz;
+    delete eos;
 
     delete edge;
     delete node;
@@ -485,8 +489,8 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
     VecAXPY(theta_k, 0.5, theta_l[lev+1]);
 
     grad(false, exner, &dExner, lev);
-    F->assemble(theta_k, lev, false, SCALE);
-    MatMult(F->M, dExner, dp);
+    M1h->assemble(theta_k, lev, false, SCALE);
+    MatMult(M1h->M, dExner, dp);
     VecAXPY(Fu, 1.0, dp);
     VecDestroy(&dExner);
 
@@ -537,9 +541,9 @@ void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh);
 
     for(kk = 0; kk < geom->nk; kk++) {
-        F->assemble(pi[kk], kk, true, SCALE);
+        M1h->assemble(pi[kk], kk, true, SCALE);
         M1->assemble(kk, SCALE);
-        MatMult(F->M, uh[kk], pu);
+        MatMult(M1h->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fh);
         MatMult(EtoF->E21, Fh, Fp[kk]);
 
@@ -572,10 +576,10 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
         VecZeroEntries(theta_l);
         VecAXPY(theta_l, 0.5, pi[kk+0]);
         VecAXPY(theta_l, 0.5, pi[kk+1]);
-        F->assemble(theta_l, kk, false, SCALE);
+        M1h->assemble(theta_l, kk, false, SCALE);
 
         M1->assemble(kk, SCALE);
-        MatMult(F->M, uh[kk], pu);
+        MatMult(M1h->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fh);
         MatMult(EtoF->E21, Fh, Fp[kk]);
 
@@ -593,8 +597,8 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
 
             M2->assemble(kk, SCALE, false);
             grad(false, theta_g, &dTheta, kk);
-            F->assemble(rho_l[kk], kk, true, SCALE);
-            MatMult(F->M, dTheta, rho_dTheta_1);
+            M1h->assemble(rho_l[kk], kk, true, SCALE);
+            MatMult(M1h->M, dTheta, rho_dTheta_1);
 
             KSPSolve(ksp1, rho_dTheta_1, rho_dTheta_2);
             MatMult(EtoF->E21, rho_dTheta_2, d2Theta);
@@ -1459,8 +1463,8 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
 
     // horiztonal kinetic energy
     for(kk = 0; kk < geom->nk; kk++) {
-        F->assemble(l2_rho->vl[kk], kk, true, SCALE);
-        MatMult(F->M, velx[kk], hu);
+        M1h->assemble(l2_rho->vl[kk], kk, true, SCALE);
+        MatMult(M1h->M, velx[kk], hu);
         VecScale(hu, 1.0/SCALE);
         VecDot(hu, velx[kk], &dot);
         keh += 0.5*dot;
@@ -2265,6 +2269,139 @@ void Euler::assemble_operator(int level, double dt, double rho_avg, double theta
     MatDestroy(&Mhh);
 }
 
+void Euler::diagnose_F(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec* F) {
+    Vec hu, b, h1l, h2l;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &h1l);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &h2l);
+
+    VecScatterBegin(topo->gtol_2, h1, h1l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, h1, h1l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, h2, h2l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, h2, h2l, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, F);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &hu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &b);
+    VecZeroEntries(*F);
+    VecZeroEntries(hu);
+
+    // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
+    M1h->assemble(h1l, level, true, SCALE);
+
+    MatMult(M1h->M, u1, b);
+    VecAXPY(hu, 1.0/3.0, b);
+
+    MatMult(M1h->M, u2, b);
+    VecAXPY(hu, 1.0/6.0, b);
+
+    M1h->assemble(h2l, level, true, SCALE);
+
+    MatMult(M1h->M, u1, b);
+    VecAXPY(hu, 1.0/6.0, b);
+
+    MatMult(M1h->M, u2, b);
+    VecAXPY(hu, 1.0/3.0, b);
+
+    // solve the linear system
+    M1->assemble(level, SCALE);
+    KSPSolve(ksp1, hu, *F);
+
+    VecDestroy(&hu);
+    VecDestroy(&b);
+    VecDestroy(&h1l);
+    VecDestroy(&h2l);
+}
+
+void Euler::diagnose_Phi(int level, Vec u1, Vec u2, Vec* Phi) {
+    Vec u1l, u2l, b;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &u1l);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &u2l);
+
+    VecScatterBegin(topo->gtol_1, u1, u1l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, u1, u1l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_1, u2, u2l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, u2, u2l, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &b);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Phi);
+    VecZeroEntries(*Phi);
+
+    // u^2 terms (0.5 factor incorportated into the matrix assembly)
+    K->assemble(u1l, level, SCALE);
+
+    MatMult(K->M, u1, b);
+    VecAXPY(*Phi, 1.0/3.0, b);
+
+    MatMult(K->M, u2, b);
+    VecAXPY(*Phi, 1.0/3.0, b);
+
+    K->assemble(u2l, level, SCALE);
+
+    MatMult(K->M, u2, b);
+    VecAXPY(*Phi, 1.0/3.0, b);
+
+    VecDestroy(&u1l);
+    VecDestroy(&u2l);
+    VecDestroy(&b);
+}
+
+// TODO: use quadratic approximation to the equation of state, 
+// and integrate this exactly (in time)
+void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec* Pi) {
+    Vec rtl, rhs;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rtl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Pi);
+    VecZeroEntries(rhs);
+
+    VecScatterBegin(topo->gtol_2, rt1, rtl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, rt1, rtl, INSERT_VALUES, SCATTER_FORWARD);
+    eos->assemble(rtl, level, SCALE);
+    VecAXPY(rhs, 0.5, eos->vg);
+
+    VecScatterBegin(topo->gtol_2, rt2, rtl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, rt2, rtl, INSERT_VALUES, SCATTER_FORWARD);
+    eos->assemble(rtl, level, SCALE);
+    VecAXPY(rhs, 0.5, eos->vg);
+
+    M2->assemble(level, SCALE, true);
+    KSPSolve(ksp2, rhs, *Pi);
+
+    VecDestroy(&rtl);
+    VecDestroy(&rhs);
+}
+
+void Euler::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
+    Vec w1, w2, wl, uh;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, wxu);
+
+    curl(true,  u1, &w1, level, true);
+    curl(false, u2, &w2, level, true);
+    VecAXPY(w1, 1.0, w2);
+    VecScale(w1, 0.5);
+
+    VecScatterBegin(topo->gtol_0, w1, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, w1, wl, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecZeroEntries(uh);
+    VecAXPY(uh, 0.5, u1);
+    VecAXPY(uh, 0.5, u2);
+
+    R->assemble(wl, level, SCALE);
+    MatMult(R->M, uh, *wxu);
+
+    VecDestroy(&w1);
+    VecDestroy(&w2);
+    VecDestroy(&wl);
+    VecDestroy(&uh);
+}
+
 void Euler::assemble_residual(int level, Vec x, Vec f) {
     Vec F, Phi, Pi, wxu, fu, frho, fTheta, utmp, htmp1, htmp2, d2u, d4u, fs;
     Vec u_j, rho_j, Theta_j;
@@ -2287,9 +2424,10 @@ void Euler::assemble_residual(int level, Vec x, Vec f) {
     //unpack(x, u_j, rho_j, Theta_j);
 
     // assemble in the skew-symmetric parts of the vector
-    //diagnose_F(u_k[level], u_j, rho_k->vh[level], rho_j, &F);
-    //diagnose_Phi(u_k[level], u_j, &Phi);
-    //diagnose_wxu(u_k[level], u_j, &wxu);
+    diagnose_F(level, u_k[level], u_j, rho_k->vh[level], rho_j, &F);
+    diagnose_Phi(level, u_k[level], u_j, &Phi);
+    diagnose_Pi(level, Theta_k->vh[level], Theta_j, &Phi);
+    diagnose_wxu(level, u_k[level], u_j, &wxu);
 
     // momentum terms
     MatMult(EtoF->E12, Phi, fu);
@@ -2340,10 +2478,10 @@ void Euler::assemble_residual(int level, Vec x, Vec f) {
     VecDestroy(&utmp);
     VecDestroy(&htmp1);
     VecDestroy(&htmp2);
-    //VecDestroy(&F);
-    //VecDestroy(&Phi);
-    //VecDestroy(&Pi);
-    //VecDestroy(&wxu);
+    VecDestroy(&F);
+    VecDestroy(&Phi);
+    VecDestroy(&Pi);
+    VecDestroy(&wxu);
     VecDestroy(&fs);
     VecDestroy(&u_j);
     VecDestroy(&rho_j);

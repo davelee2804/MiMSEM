@@ -12,6 +12,11 @@
 #include "ElMats.h"
 #include "Assembly.h"
 
+#define RD 287.0
+#define CP 1004.5
+#define CV 717.5
+#define P0 100000.0
+
 using namespace std;
 
 // mass matrix for the 1 form vector (x-normal degrees of
@@ -1413,4 +1418,76 @@ WtQdUdz_mat::~WtQdUdz_mat() {
     delete W;
     delete Q;
     MatDestroy(&M);
+}
+
+//
+EoSvec::EoSvec(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    e = _e;
+
+    Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+
+    Q = new Wii(e->l->q, geom);
+    W = new M2_j_xy_i(e);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vg);
+}
+
+void EoSvec::assemble(Vec rt, int lev, double scale) {
+    int ex, ey, mp1, mp12, ii, jj, *inds2, *inds0;
+    double p, rtq[99], fac;
+    PetscScalar *rtArray, *vArray;
+
+    VecZeroEntries(vl);
+
+    mp1 = e->l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    fac = CP*pow(RD/P0, RD/CV);
+
+    VecGetArray(rt, &rtArray);
+    VecGetArray(vl, &vArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            Q->assemble(ex, ey);
+            Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q->A, WtQ);
+
+            inds0 = topo->elInds0_l(ex, ey);
+            inds2 = topo->elInds2_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rtArray, &p);
+                // density is piecewise constant in the vertical
+                p *= 1.0/geom->thick[lev][inds0[ii]];
+                rtq[ii] = fac*pow(p, RD/CV);
+                rtq[ii] *= scale;
+            }
+
+            // 2 form metric term cancels with jacobian determinant at quadrature point
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                for(jj = 0; jj < Q->nDofsI; jj++) {
+                    vArray[inds2[ii]] += WtQ[ii][jj]*rtq[jj];
+                }
+            }
+        }
+    }
+    VecRestoreArray(rt, &rtArray);
+    VecRestoreArray(vl, &vArray);
+
+    VecScatterBegin(topo->gtol_2, vl, vg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_2,   vl, vg, INSERT_VALUES, SCATTER_REVERSE);
+}
+
+EoSvec::~EoSvec() {
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+
+    delete W;
+    delete Q;
+
+    VecDestroy(&vl);
+    VecDestroy(&vg);
 }

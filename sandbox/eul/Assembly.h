@@ -238,3 +238,19 @@ class WtQdUdz_mat {
         Wii* Q;
         void assemble(Vec u1, int lev, double scale);
 };
+
+class EoSvec {
+    public:
+        EoSvec(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~EoSvec();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        double** Wt;
+        double** WtQ;
+        M2_j_xy_i* W;
+        Wii* Q;
+        Vec vl;
+        Vec vg;
+        void assemble(Vec rt, int lev, double scale);
+};
