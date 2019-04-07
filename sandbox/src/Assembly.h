@@ -167,18 +167,6 @@ class E21mat {
         Mat E12;
 };
 
-//////////////
-class Krhs {
-    public:
-        Krhs(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
-        ~Krhs();
-        Topo* topo;
-        Geom* geom;
-        LagrangeNode* l;
-        LagrangeEdge* e;
-        void assemble(Vec k, Vec* F);
-};
-
 class Whmat {
     public:
         Whmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
@@ -188,38 +176,4 @@ class Whmat {
         LagrangeEdge* e;
         Mat M;
         void assemble(Vec h2);
-};
-
-class W0mat {
-    public:
-        W0mat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~W0mat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        Mat M;
-        void assemble();
-};
-
-class U0mat {
-    public:
-        U0mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
-        ~U0mat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeNode* l;
-        LagrangeEdge* e;
-        Mat M;
-        void assemble();
-};
-
-class W0hmat {
-    public:
-        W0hmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~W0hmat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        Mat M;
-        void assemble(Vec h);
 };

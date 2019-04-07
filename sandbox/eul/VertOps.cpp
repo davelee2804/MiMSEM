@@ -178,7 +178,8 @@ void VertOps::AssembleConst(int ex, int ey, Mat B) {
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
             // for constant field we multiply by the vertical jacobian determinant when integrating, 
             // then divide by the vertical jacobian for both the trial and the test functions
             // vertical determinant is dz/2
@@ -221,7 +222,8 @@ void VertOps::AssembleLinear(int ex, int ey, Mat A) {
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            //Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             Q0[ii][ii] *= 0.5*geom->thick[kk][inds0[ii]];
@@ -267,7 +269,8 @@ void VertOps::AssembleLinCon(int ex, int ey, Mat AB) {
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
             // multiply by the vertical jacobian, then scale the piecewise constant 
             // basis by the vertical jacobian, so do nothing 
             Q0[ii][ii] *= 0.5;
@@ -325,7 +328,8 @@ void VertOps::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_int
         VecGetArray(rho[kk], &rArray);
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
 
             // multuply by the vertical determinant to integrate, then
             // divide piecewise constant density by the vertical determinant,
@@ -378,7 +382,8 @@ void VertOps::AssembleLinearInv(int ex, int ey, Mat A) {
     for(kk = 0; kk < geom->nk-1; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            //Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
             // for linear field we multiply by the vertical jacobian determinant when
             // integrating, and do no other trasformations for the basis functions
             Q0[ii][ii] *= 0.5*(geom->thick[kk+0][inds0[ii]] + geom->thick[kk+1][inds0[ii]]);
@@ -420,7 +425,8 @@ void VertOps::AssembleConstWithRhoInv(int ex, int ey, Vec rho, Mat B) {
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
             // for constant field we multiply by the vertical jacobian determinant when integrating, 
             // then divide by the vertical jacobian for both the trial and the test functions
             // vertical determinant is dz/2
@@ -471,7 +477,8 @@ void VertOps::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
             // for constant field we multiply by the vertical jacobian determinant when integrating, 
             // then divide by the vertical jacobian for both the trial and the test functions
             // vertical determinant is dz/2
@@ -518,7 +525,8 @@ void VertOps::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
         if(kk > 0) {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+                //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+                Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
 
                 // multiply by the vertical jacobian, then scale the piecewise constant
                 // basis by the vertical jacobian, so do nothing
@@ -546,7 +554,8 @@ void VertOps::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
         if(kk < geom->nk - 1) {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+                //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+                Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
 
                 // multiply by the vertical jacobian, then scale the piecewise constant
                 // basis by the vertical jacobian, so do nothing
@@ -601,7 +610,8 @@ void VertOps::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_intern
         // build the 2D mass matrix
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
 
             // multuply by the vertical determinant to integrate, then
             // divide piecewise constant density by the vertical determinant,
@@ -665,7 +675,8 @@ void VertOps::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
 
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            QB[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            //QB[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            QB[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
             QB[ii][ii] *= 0.5*geom->thick[kk][inds0[ii]];
@@ -735,7 +746,8 @@ void VertOps::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs) {
         // test function (0.5 at each vertical quadrature point) by jacobian determinant
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det);
+            //Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] = 0.5*Q->A[ii][ii]*SCALE;
         }
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
 
@@ -788,7 +800,8 @@ void VertOps::AssembleConstInv(int ex, int ey, Mat B) {
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            //Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
             Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
         }
         // assemble the piecewise constant mass matrix for level k
@@ -826,7 +839,8 @@ void VertOps::AssembleRayleigh(int ex, int ey, Mat A) {
     // top level
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
-        Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+        //Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+        Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
         // assembly the contributions from the top two levels only
         Q0[ii][ii] *= 0.5*(geom->thick[geom->nk-1][inds0[ii]] + geom->thick[geom->nk-2][inds0[ii]]);
     }
@@ -844,7 +858,7 @@ void VertOps::AssembleRayleigh(int ex, int ey, Mat A) {
     // second from top level
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
-        Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+        Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
         // assembly the contributions from the top two levels only
         Q0[ii][ii] *= 0.25*(geom->thick[geom->nk-2][inds0[ii]] + geom->thick[geom->nk-3][inds0[ii]]);
     }
@@ -861,7 +875,7 @@ void VertOps::AssembleRayleigh(int ex, int ey, Mat A) {
     // third from top level
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
-        Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
+        Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
         // assembly the contributions from the top two levels only
         Q0[ii][ii] *= 0.125*(geom->thick[geom->nk-3][inds0[ii]] + geom->thick[geom->nk-4][inds0[ii]]);
     }
@@ -905,7 +919,8 @@ void VertOps::AssembleLinConWithTheta(int ex, int ey, Mat AB, Vec theta) {
         if(kk > 0) {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det/det);
+                //Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det/det);
+                Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det);
 
                 tk = 0.0;
                 for(jj = 0; jj < n2; jj++) {
@@ -928,7 +943,8 @@ void VertOps::AssembleLinConWithTheta(int ex, int ey, Mat AB, Vec theta) {
         if(kk < geom->nk - 1) {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det/det);
+                //Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det/det);
+                Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det);
 
                 tk = 0.0;
                 for(jj = 0; jj < n2; jj++) {
