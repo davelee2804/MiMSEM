@@ -2421,7 +2421,7 @@ void Euler::assemble_residual(int level, Vec x, Vec f) {
     VecZeroEntries(frho);
     VecZeroEntries(fTheta);
 
-    //unpack(x, u_j, rho_j, Theta_j);
+    unpack(x, u_j, rho_j, Theta_j);
 
     // assemble in the skew-symmetric parts of the vector
     diagnose_F(level, u_k[level], u_j, rho_k->vh[level], rho_j, &F);
@@ -2440,7 +2440,7 @@ void Euler::assemble_residual(int level, Vec x, Vec f) {
 
     // temperature term
 
-    //repack(fs, fu, frho, fTheta);
+    repack(fs, fu, frho, fTheta);
 
     // assemble the mass matrix terms
     VecZeroEntries(fu);
@@ -2467,7 +2467,7 @@ void Euler::assemble_residual(int level, Vec x, Vec f) {
     MatMult(M2->M, rho_k->vh[level], htmp1);
     VecAXPY(frho, -1.0, htmp1);
 
-    //repack(f, fu, frho, fTheta);
+    repack(f, fu, frho, fTheta);
 
     VecAXPY(f, dt, fs);
 
@@ -2486,5 +2486,93 @@ void Euler::assemble_residual(int level, Vec x, Vec f) {
     VecDestroy(&u_j);
     VecDestroy(&rho_j);
     VecDestroy(&Theta_j);
+}
+
+void Euler::unpack(Vec x, Vec u, Vec rho, Vec rt) {
+    Vec xl, ul, rhol, rtl;
+    PetscScalar *xArray, *uArray, *rhoArray, *rtArray;
+    int ii;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1 + 2*topo->n2, &xl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rhol);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rtl);
+
+    VecScatterBegin(gtol_x, x, xl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  gtol_x, x, xl, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecGetArray(xl, &xArray);
+    VecGetArray(ul, &uArray);
+    VecGetArray(rhol, &rhoArray);
+    VecGetArray(rtl, &rtArray);
+    for(ii = 0; ii < topo->n1; ii++) {
+        uArray[ii] = xArray[ii];
+    }
+    for(ii = 0; ii < topo->n2; ii++) {
+        rhoArray[ii] = xArray[ii+topo->n1];
+    }
+    for(ii = 0; ii < topo->n2; ii++) {
+        rtArray[ii] = xArray[ii+topo->n1+topo->n2];
+    }
+    VecRestoreArray(xl, &xArray);
+    VecRestoreArray(ul, &uArray);
+    VecRestoreArray(rhol, &rhoArray);
+    VecRestoreArray(rtl, &rtArray);
+
+    VecScatterBegin(topo->gtol_1, ul,   u,   INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_1, ul,   u,   INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(topo->gtol_2, rhol, rho, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_2, rhol, rho, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(topo->gtol_2, rtl,  rt,  INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_2, rtl,  rt,  INSERT_VALUES, SCATTER_REVERSE);
+
+    VecDestroy(&xl);
+    VecDestroy(&ul);
+    VecDestroy(&rhol);
+    VecDestroy(&rtl);
+}
+
+void Euler::repack(Vec x, Vec u, Vec rho, Vec rt) {
+    Vec xl, ul, rhol, rtl;
+    PetscScalar *xArray, *uArray, *rhoArray, *rtArray;
+    int ii;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1 + 2*topo->n2, &xl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rhol);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rtl);
+
+    VecScatterBegin(topo->gtol_1, u,   ul,   INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, u,   ul,   INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, rho, rhol, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, rho, rhol, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, rt,  rtl,  INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, rt,  rtl,  INSERT_VALUES, SCATTER_FORWARD);
+
+    VecGetArray(xl, &xArray);
+    VecGetArray(ul, &uArray);
+    VecGetArray(rhol, &rhoArray);
+    VecGetArray(rtl, &rtArray);
+    for(ii = 0; ii < topo->n1; ii++) {
+        xArray[ii] = uArray[ii];
+    }
+    for(ii = 0; ii < topo->n2; ii++) {
+        xArray[ii+topo->n1] = rhoArray[ii];
+    }
+    for(ii = 0; ii < topo->n2; ii++) {
+        xArray[ii+topo->n1+topo->n2] = rtArray[ii];
+    }
+    VecRestoreArray(xl, &xArray);
+    VecRestoreArray(ul, &uArray);
+    VecRestoreArray(rhol, &rhoArray);
+    VecRestoreArray(rtl, &rtArray);
+
+    VecScatterBegin(gtol_x, xl, x, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  gtol_x, xl, x, INSERT_VALUES, SCATTER_REVERSE);
+
+    VecDestroy(&xl);
+    VecDestroy(&ul);
+    VecDestroy(&rhol);
+    VecDestroy(&rtl);
 }
 

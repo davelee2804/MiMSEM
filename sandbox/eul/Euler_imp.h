@@ -98,6 +98,8 @@ class Euler {
         L2Vecs* rho_k;
         L2Vecs* Theta_k;
         VecScatter gtol_x;
+        void repack(Vec x, Vec u, Vec rho, Vec rt);
+        void unpack(Vec x, Vec u, Vec rho, Vec rt);
         void diagnose_F(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec* F);
         void diagnose_Phi(int level, Vec u1, Vec u2, Vec* Phi);
         void diagnose_Pi(int level, Vec rt1, Vec rt2, Vec* Pi);
