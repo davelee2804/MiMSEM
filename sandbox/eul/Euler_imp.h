@@ -105,5 +105,6 @@ class Euler {
         void diagnose_Pi(int level, Vec rt1, Vec rt2, Vec* Pi);
         void diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu);
         void assemble_operator(int level, double dt, double rho_avg, double theta_avg, Mat* A);
-        void assemble_residual(int level, Vec x, Vec f);
+        void assemble_residual(int level, Vec* theta1, Vec* theta2, Vec x, Vec f);
+        void assemble_residual(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec x, Vec f);
 };

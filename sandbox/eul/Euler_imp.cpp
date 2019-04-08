@@ -2402,20 +2402,34 @@ void Euler::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
     VecDestroy(&uh);
 }
 
-void Euler::assemble_residual(int level, Vec x, Vec f) {
-    Vec F, Phi, Pi, wxu, fu, frho, fTheta, utmp, htmp1, htmp2, d2u, d4u, fs;
-    Vec u_j, rho_j, Theta_j;
+void Euler::assemble_residual(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec x, Vec f) {
+    Vec F, G, Phi, Pi, dPi, wxu, wxz, fu, frho, fTheta, utmp, htmp, d2u, d4u, fs;
+    Vec u_j, rho_j, Theta_j, theta_h, dp, dudz_h, velz_h, dudz_l;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &frho);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fTheta);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp1);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l+2*topo->n2l, topo->nDofs1G+2*topo->nDofs2G, &fs);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_j);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_j);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Theta_j);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &G);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &wxz);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_h);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &velz_h);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &dudz_l);
+
+    // assume theta2 is at the current iteration (consistent with the contents
+    // of the x vector
+    VecZeroEntries(theta_h);
+    VecAXPY(theta_h, 0.25, theta1[level+0]);
+    VecAXPY(theta_h, 0.25, theta1[level+1]);
+    VecAXPY(theta_h, 0.25, theta2[level+0]);
+    VecAXPY(theta_h, 0.25, theta2[level+1]);
 
     VecZeroEntries(fu);
     VecZeroEntries(frho);
@@ -2426,19 +2440,65 @@ void Euler::assemble_residual(int level, Vec x, Vec f) {
     // assemble in the skew-symmetric parts of the vector
     diagnose_F(level, u_k[level], u_j, rho_k->vh[level], rho_j, &F);
     diagnose_Phi(level, u_k[level], u_j, &Phi);
-    diagnose_Pi(level, Theta_k->vh[level], Theta_j, &Phi);
+    diagnose_Pi(level, Theta_k->vh[level], Theta_j, &Pi);
+    grad(true, Pi, &dPi, level);
     diagnose_wxu(level, u_k[level], u_j, &wxu);
+
+    // add the pressure gradient force to the (horiztonal) bernoulli function
+    M1h->assemble(theta_h, level, false, SCALE);
+    MatMult(M1h->M, dPi, dp);
+    VecAXPY(Phi, 1.0, dp);
+
+    // diagnose the temperature flux (assume the H(div) mass matrix has
+    // already been assembled at this level
+    MatMult(M1h->M, F, utmp);
+    KSPSolve(ksp1, utmp, G);
+
+    // second voritcity term
+    VecZeroEntries(utmp);
+    if(level > 0) {
+        VecZeroEntries(dudz_h);
+        VecAXPY(dudz_h, 0.5, dudz1[level-1]);
+        VecAXPY(dudz_h, 0.5, dudz2[level-1]);
+        VecScatterBegin(topo->gtol_1, dudz_h, dudz_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, dudz_h, dudz_l, INSERT_VALUES, SCATTER_FORWARD);
+
+        VecZeroEntries(velz_h);
+        VecAXPY(velz_h, 0.5, velz1[level-1]);
+        VecAXPY(velz_h, 0.5, velz2[level-1]);
+
+        Rh->assemble(dudz_l, SCALE);
+        MatMult(Rh->M, velz_h, dp);
+        VecAXPY(utmp, 0.5, dp);
+    }
+    if(level < geom->nk-1) {
+        VecZeroEntries(dudz_h);
+        VecAXPY(dudz_h, 0.5, dudz1[level+0]);
+        VecAXPY(dudz_h, 0.5, dudz2[level+0]);
+        VecScatterBegin(topo->gtol_1, dudz_h, dudz_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, dudz_h, dudz_l, INSERT_VALUES, SCATTER_FORWARD);
+
+        VecZeroEntries(velz_h);
+        VecAXPY(velz_h, 0.5, velz1[level+0]);
+        VecAXPY(velz_h, 0.5, velz2[level+0]);
+
+        Rh->assemble(dudz_l, SCALE);
+        MatMult(Rh->M, velz_h, dp);
+        VecAXPY(utmp, 0.5, dp);
+    }
 
     // momentum terms
     MatMult(EtoF->E12, Phi, fu);
     VecAXPY(fu, 1.0, wxu);
+    VecAXPY(fu, 1.0, utmp);
 
     // continuity term
-    MatMult(EtoF->E21, F, htmp1);
-    MatMult(M2->M, htmp1, htmp2);
-    VecAXPY(frho, 1.0, htmp2);
+    MatMult(EtoF->E21, F, htmp);
+    MatMult(M2->M, htmp, frho);
 
     // temperature term
+    MatMult(EtoF->E21, G, htmp);
+    MatMult(M2->M, htmp, fTheta);
 
     repack(fs, fu, frho, fTheta);
 
@@ -2464,8 +2524,8 @@ void Euler::assemble_residual(int level, Vec x, Vec f) {
     }
 
     MatMult(M2->M, rho_j, frho);
-    MatMult(M2->M, rho_k->vh[level], htmp1);
-    VecAXPY(frho, -1.0, htmp1);
+    MatMult(M2->M, rho_k->vh[level], htmp);
+    VecAXPY(frho, -1.0, htmp);
 
     repack(f, fu, frho, fTheta);
 
@@ -2476,16 +2536,23 @@ void Euler::assemble_residual(int level, Vec x, Vec f) {
     VecDestroy(&frho);
     VecDestroy(&fTheta);
     VecDestroy(&utmp);
-    VecDestroy(&htmp1);
-    VecDestroy(&htmp2);
+    VecDestroy(&htmp);
     VecDestroy(&F);
     VecDestroy(&Phi);
     VecDestroy(&Pi);
+    VecDestroy(&dPi);
     VecDestroy(&wxu);
     VecDestroy(&fs);
     VecDestroy(&u_j);
     VecDestroy(&rho_j);
     VecDestroy(&Theta_j);
+    VecDestroy(&theta_h);
+    VecDestroy(&dp);
+    VecDestroy(&G);
+    VecDestroy(&wxz);
+    VecDestroy(&dudz_h);
+    VecDestroy(&velz_h);
+    VecDestroy(&dudz_l);
 }
 
 void Euler::unpack(Vec x, Vec u, Vec rho, Vec rt) {
