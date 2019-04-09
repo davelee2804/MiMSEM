@@ -107,4 +107,6 @@ class Euler {
         void assemble_operator(int level, double dt, double rho_avg, double theta_avg, Mat* A);
         void assemble_residual(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec x, Vec f);
         void solve_level(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, double rho_avg, double theta_avg, Mat A);
+        void repack_z(Vec x, Vec u, Vec rho, Vec rt);
+        void unpack_z(Vec x, Vec u, Vec rho, Vec rt);
 };

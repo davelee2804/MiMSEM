@@ -2115,6 +2115,8 @@ void Euler::AssembleVertMomVort(Vec* velx) {
     VecDestroy(&tmp);
 }
 
+/*** implicit horizontal solve routines ***/
+
 void Euler::assemble_operator(int level, double dt, double rho_avg, double theta_avg, Mat* A) {
     int n2 = (topo->elOrd+1)*(topo->elOrd+1);
     int nRowsL = topo->n1l + 2*topo->n2l;
@@ -2685,4 +2687,61 @@ void Euler::solve_level(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* du
     VecDestroy(&f);
     VecDestroy(&dx);
     KSPDestroy(&kspA);
+}
+
+/*** implicit vertical solve routines ***/
+
+// all vectors are local vectors
+void Euler::repack_z(Vec x, Vec u, Vec rho, Vec rt) {
+    int ii, shift;
+    PetscScalar *xArray, *uArray, *rhoArray, *rtArray;
+
+    VecGetArray(x,   &xArray  );
+    VecGetArray(u,   &uArray  );
+    VecGetArray(rho, &rhoArray);
+    VecGetArray(rt,  &rtArray );
+
+    for(ii = 0; ii < vo->n2*(geom->nk-1); ii++) {
+        xArray[ii] = uArray[ii];
+    }
+    shift = vo->n2*(geom->nk-1);
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        xArray[shift+ii] = rhoArray[ii];
+    }
+    shift += vo->n2*geom->nk;
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        xArray[shift+ii] = rtArray[ii];
+    }
+
+    VecRestoreArray(x,   &xArray  );
+    VecRestoreArray(u,   &uArray  );
+    VecRestoreArray(rho, &rhoArray);
+    VecRestoreArray(rt,  &rtArray );
+}
+
+void Euler::unpack_z(Vec x, Vec u, Vec rho, Vec rt) {
+    int ii, shift;
+    PetscScalar *xArray, *uArray, *rhoArray, *rtArray;
+
+    VecGetArray(x,   &xArray  );
+    VecGetArray(u,   &uArray  );
+    VecGetArray(rho, &rhoArray);
+    VecGetArray(rt,  &rtArray );
+
+    for(ii = 0; ii < vo->n2*(geom->nk-1); ii++) {
+        uArray[ii] = xArray[ii];
+    }
+    shift = vo->n2*(geom->nk-1);
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        rhoArray[ii] = xArray[shift+ii];
+    }
+    shift += vo->n2*geom->nk;
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        rtArray[ii] = xArray[shift+ii];
+    }
+
+    VecRestoreArray(x,   &xArray  );
+    VecRestoreArray(u,   &uArray  );
+    VecRestoreArray(rho, &rhoArray);
+    VecRestoreArray(rt,  &rtArray );
 }
