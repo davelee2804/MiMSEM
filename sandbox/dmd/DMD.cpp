@@ -209,7 +209,8 @@ int main(int argc, char** argv) {
         freq = log(fabs(lambda_r))/TIMESTEP;
         if(!rank) cout << ii << "\tlambda: " << lambda_r << " + " << lambda_i << "i\tfrequency: " << 
                           freq << "\ttimescale: " << 1.0/freq/(24.0*60.0*60.0) << endl;
-        MatMult(XVSI, vr, vecs[ii]);
+        //MatMult(XVSI, vr, vecs[ii]);
+        MatMult(UT, vr, vecs[ii]);
         VecScale(vecs[ii], 1.0/lambda_r);
         sprintf(eigvecname, "%s_dmd", fieldname);
 

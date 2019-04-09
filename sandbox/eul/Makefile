@@ -21,7 +21,7 @@ OBJS = LinAlg.o \
        ElMats.o \
        VertOps.o \
        Assembly.o \
-       Euler.o \
+       Euler_imp.o \
        UMJS14.o
 
 mimsem: ${OBJS}
@@ -29,6 +29,9 @@ mimsem: ${OBJS}
 
 UMJS14.o: UMJS14.cpp Euler.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c UMJS14.cpp ${CXXFLAGS}
+
+Euler_imp.o: Euler_imp.cpp Euler_imp.h Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Euler_imp.cpp ${CXXFLAGS}
 
 Euler.o: Euler.cpp Euler.h Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Euler.cpp ${CXXFLAGS}

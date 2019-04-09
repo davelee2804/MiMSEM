@@ -2643,3 +2643,46 @@ void Euler::repack(Vec x, Vec u, Vec rho, Vec rt) {
     VecDestroy(&rtl);
 }
 
+// update the u_k, rho_k, Theta_k solution at a given level
+void Euler::solve_level(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, double rho_avg, double theta_avg, Mat A) {
+    int it = 0;
+    double norm = 1.0e+9, norm_x, norm_dx;
+    Vec x, f, dx;
+    KSP kspA;
+
+    if(!A) assemble_operator(level, dt, rho_avg, theta_avg, &A);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+2*topo->n2l, topo->nDofs1G+2*topo->nDofs2G, &x);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+2*topo->n2l, topo->nDofs1G+2*topo->nDofs2G, &f);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+2*topo->n2l, topo->nDofs1G+2*topo->nDofs2G, &dx);
+
+    repack(x, u_k[level], rho_k->vh[level], Theta_k->vh[level]);
+
+    KSPCreate(MPI_COMM_WORLD, &kspA);
+    KSPSetOperators(kspA, A, A);
+    KSPSetTolerances(kspA, 1.0e-12, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetOptionsPrefix(kspA, "A_");
+    KSPSetFromOptions(kspA);
+
+    do {
+        assemble_residual(level, theta1, theta2, dudz1, dudz2, velz1, velz2, x, f);
+        VecScale(f, -1.0);
+        KSPSolve(kspA, f, dx);
+        VecAXPY(x, +1.0, dx);
+        VecNorm(x, NORM_2, &norm_x);
+        VecNorm(dx, NORM_2, &norm_dx);
+        norm = norm_dx/norm_x;
+        if(!rank) {
+            cout << scientific;
+            cout << it << "\t|x|: " << norm_x << "\t|dx|: " << norm_dx << "\t|dx|/|x|: " << norm << endl;
+        }
+        it++;
+    } while(norm > 1.0e-14);
+
+    unpack(x, u_k[level], rho_k->vh[level], Theta_k->vh[level]);
+
+    VecDestroy(&x);
+    VecDestroy(&f);
+    VecDestroy(&dx);
+    KSPDestroy(&kspA);
+}
