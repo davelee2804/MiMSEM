@@ -39,7 +39,7 @@ void LoadVecs(Vec* vecs, int nk, char* fieldname) {
 }
 
 int main(int argc, char** argv) {
-    int rank, size, ki, nEig, ii, index_i, index_f;
+    int rank, size, ki, kj, nEig, ii, index_i, index_f;
     double vSigmaInv, lambda_r, lambda_i, freq;
     double* sigma;
     static char help[] = "petsc";
@@ -51,10 +51,12 @@ int main(int argc, char** argv) {
     Geom* geom;
     Vec* vecs;
     Vec lVec, rVec, vLocal, vr, vi;
-    Mat X, XT, U, UT, VSI, XVSI, Atilde;
+    Mat Xi, Xj, XT, U, UT, VSI, XVSI, Atilde;
     PetscScalar* vArray;
     SVD svd;
     EPS eps;
+    int nk, nkl, nDofsKG, *lock;
+    VecScatter gtol_k;
 
     SlepcInitialize(&argc, &argv, (char*)0, help);
 
@@ -64,66 +66,62 @@ int main(int argc, char** argv) {
     topo = new Topo(rank);
     geom = new Geom(rank, topo);
 
-    vecs  = new Vec[NQ];
-    for(ki = 0; ki < NQ; ki++) {
-        if(form == 2) {
-            VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vecs[ki]);
-        } else if(form == 1) {
-            VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &vecs[ki]);
-        } else {
-            VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vecs[ki]);
-        }
+    if(form == 2) {
+        nk      = topo->n2;
+        nkl     = topo->n2l;
+        nDofsKG = topo->nDofs2G;
+        lock    = topo->loc2;
+        gtol_k  = topo->gtol_2;
+    } else if(form == 1) {
+        nk      = topo->n1;
+        nkl     = topo->n1l;
+        nDofsKG = topo->nDofs1G;
+        lock    = topo->loc1;
+        gtol_k  = topo->gtol_1;
+    } else if(form == 0) {
+        nk      = topo->n0;
+        nkl     = topo->n0l;
+        nDofsKG = topo->nDofs0G;
+        lock    = topo->loc0;
+        gtol_k  = topo->gtol_0;
+    } else {
+        if(!rank) cout << "invalid basis form! must be 0, 1 or 2.\n";
+        abort();
     }
 
-    if(form == 2) {
-        VecCreateSeq(MPI_COMM_SELF, topo->n2, &vLocal);
-    } else if(form == 1) {
-        VecCreateSeq(MPI_COMM_SELF, topo->n1, &vLocal);
-    } else if(!form) {
-        VecCreateSeq(MPI_COMM_SELF, topo->n0, &vLocal);
+    vecs  = new Vec[NQ];
+    for(ki = 0; ki < NQ; ki++) {
+        VecCreateMPI(MPI_COMM_WORLD, nk, nDofsKG, &vecs[ki]);
     }
+    VecCreateSeq(MPI_COMM_SELF, nk, &vLocal);
     LoadVecs(vecs, NQ, fieldname);
 
     // pack the time slice data into a dense matrix
-    if(form == 2) {
-        MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ, topo->nDofs2G, NULL, &X);
-    } else if(form == 1) {
-        MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ, topo->nDofs1G, NULL, &X);
-    } else if(!form) {
-        MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ, topo->nDofs0G, NULL, &X);
-    }
+    MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ, nDofsKG, NULL, &Xi);
+    MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ, nDofsKG, NULL, &Xj);
 
     for(ki = 0; ki < NQ; ki++) {
-        if(form == 2) {
-            VecScatterBegin(topo->gtol_2, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
-            VecScatterEnd(  topo->gtol_2, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
-        } else if(form == 1) {
-            VecScatterBegin(topo->gtol_1, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
-            VecScatterEnd(  topo->gtol_1, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
-        } else if(!form) {
-            VecScatterBegin(topo->gtol_0, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
-            VecScatterEnd(  topo->gtol_0, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
-        }
-        VecGetArray(vLocal, &vArray);
+        kj = ki - 1;
 
-        if(form == 2) {
-            MatSetValues(X, 1, &ki, topo->n2, topo->loc2, vArray, INSERT_VALUES);
-        } else if(form == 1) {
-            MatSetValues(X, 1, &ki, topo->n1, topo->loc1, vArray, INSERT_VALUES);
-        } else if(!form) {
-            MatSetValues(X, 1, &ki, topo->n0, topo->loc0, vArray, INSERT_VALUES);
-        }
+        VecScatterBegin(gtol_k, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  gtol_k, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
+
+        VecGetArray(vLocal, &vArray);
+        if(ki < NQ - 1) MatSetValues(Xi, 1, &ki, nk, lock, vArray, INSERT_VALUES);
+        if(ki > 0)      MatSetValues(Xj, 1, &kj, nk, lock, vArray, INSERT_VALUES);
         VecRestoreArray(vLocal, &vArray);
     }
-    MatAssemblyBegin(X, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  X, MAT_FINAL_ASSEMBLY);
-    MatCreateVecs(X, &rVec, &lVec);
+    MatAssemblyBegin(Xi, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Xi, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(Xj, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Xj, MAT_FINAL_ASSEMBLY);
+    MatCreateVecs(Xi, &rVec, &lVec);
 
     // compute the svd
     if(!rank) cout << "solving the singular value decomposition...\n";
 
     SVDCreate(MPI_COMM_WORLD, &svd);
-    SVDSetOperator(svd, X);
+    SVDSetOperator(svd, Xi);
     SVDSetFromOptions(svd);
     SVDSolve(svd);
     SVDGetConverged(svd, &nEig);
@@ -149,29 +147,14 @@ int main(int argc, char** argv) {
     if(!rank) cout << "solving the dynamic mode decomposition.....\n";
 
     MatCreate(MPI_COMM_WORLD, &U);
-    if(form == 2) {
-        //MatSetSizes(U, PETSC_DECIDE, PETSC_DECIDE, nEig, topo->nDofs2G);
-        MatSetSizes(U, PETSC_DECIDE, PETSC_DECIDE, NQ, topo->nDofs2G);
-        MatSetType(U, MATMPIAIJ);
-        MatMPIAIJSetPreallocation(U, topo->nDofs2G/size+1, PETSC_NULL, topo->nDofs2G, PETSC_NULL);
-    } else if(form == 1) {
-        //MatSetSizes(U, PETSC_DECIDE, PETSC_DECIDE, nEig, topo->nDofs1G);
-        MatSetSizes(U, PETSC_DECIDE, PETSC_DECIDE, NQ, topo->nDofs1G);
-        MatSetType(U, MATMPIAIJ);
-        MatMPIAIJSetPreallocation(U, topo->nDofs1G/size+1, PETSC_NULL, topo->nDofs1G, PETSC_NULL);
-    } else if(!form) {
-        //MatSetSizes(U, PETSC_DECIDE, PETSC_DECIDE, nEig, topo->nDofs0G);
-        MatSetSizes(U, PETSC_DECIDE, PETSC_DECIDE, NQ, topo->nDofs0G);
-        MatSetType(U, MATMPIAIJ);
-        MatMPIAIJSetPreallocation(U, topo->nDofs0G/size+1, PETSC_NULL, topo->nDofs0G, PETSC_NULL);
-    }
+    MatSetSizes(U, PETSC_DECIDE, PETSC_DECIDE, NQ-1, nDofsKG);
+    MatSetType(U, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(U, nDofsKG/size+1, PETSC_NULL, nDofsKG, PETSC_NULL);
 
     MatCreate(MPI_COMM_WORLD, &VSI);
-    //MatSetSizes(VSI, PETSC_DECIDE, PETSC_DECIDE, nEig, nEig);
-    MatSetSizes(VSI, PETSC_DECIDE, PETSC_DECIDE, NQ, NQ);
+    MatSetSizes(VSI, PETSC_DECIDE, PETSC_DECIDE, NQ-1, NQ-1);
     MatSetType(VSI, MATMPIAIJ);
-    //MatMPIAIJSetPreallocation(VSI, nEig, PETSC_NULL, nEig, PETSC_NULL);
-    MatMPIAIJSetPreallocation(VSI, NQ, PETSC_NULL, NQ, PETSC_NULL);
+    MatMPIAIJSetPreallocation(VSI, NQ-1, PETSC_NULL, NQ-1, PETSC_NULL);
 
     MatZeroEntries(U);
     MatZeroEntries(VSI);
@@ -179,36 +162,22 @@ int main(int argc, char** argv) {
     for(ki = 0; ki < nEig; ki++) {
         SVDGetSingularTriplet(svd, ki, &sigma[ki], lVec, rVec);
 
-        if(form == 2) {
-            VecScatterBegin(topo->gtol_2, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
-            VecScatterEnd(  topo->gtol_2, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
-        } else if(form == 1) {
-            VecScatterBegin(topo->gtol_1, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
-            VecScatterEnd(  topo->gtol_1, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
-        } else if(!form) {
-            VecScatterBegin(topo->gtol_0, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
-            VecScatterEnd(  topo->gtol_0, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
-        }
-        VecGetArray(vLocal, &vArray);
+        VecScatterBegin(gtol_k, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  gtol_k, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
 
-        if(form == 2) {
-            MatSetValues(U, 1, &ki, topo->n2, topo->loc2, vArray, INSERT_VALUES);
-        } else if(form == 1) {
-            MatSetValues(U, 1, &ki, topo->n1, topo->loc1, vArray, INSERT_VALUES);
-        } else if(!form) {
-            MatSetValues(U, 1, &ki, topo->n0, topo->loc0, vArray, INSERT_VALUES);
-        }
+        VecGetArray(vLocal, &vArray);
+        MatSetValues(U, 1, &ki, nk, lock, vArray, INSERT_VALUES);
         VecRestoreArray(vLocal, &vArray);
 
         VecGetOwnershipRange(lVec, &index_i, &index_f);
         VecGetArray(lVec, &vArray);
         for(ii = index_i; ii < index_f; ii++) {
             //vSigmaInv = vArray[ii-index_i]/sigma[ii];
-            vSigmaInv = vArray[ii-index_i]/sigma[ki];
-if(ii<nEig) {
+            vSigmaInv = vArray[ii-index_i]/sigma[ki]; // TODO: check this!
+//if(ii<nEig) {
             //MatSetValues(VSI, 1, &ki, 1, &ii, &vArray[ii-index_i], INSERT_VALUES);
             MatSetValues(VSI, 1, &ki, 1, &ii, &vSigmaInv, INSERT_VALUES);
-}
+//}
         }
         VecRestoreArray(lVec, &vArray);
     }
@@ -217,7 +186,7 @@ if(ii<nEig) {
     MatAssemblyBegin(VSI, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  VSI, MAT_FINAL_ASSEMBLY);
 
-    MatTranspose(X, MAT_INITIAL_MATRIX, &XT);
+    MatTranspose(Xj, MAT_INITIAL_MATRIX, &XT);
     MatTranspose(U, MAT_INITIAL_MATRIX, &UT);
 
     MatMatMult(XT, VSI, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &XVSI);
@@ -270,7 +239,8 @@ if(ii<nEig) {
 
     SVDDestroy(&svd);
     EPSDestroy(&eps);
-    MatDestroy(&X);
+    MatDestroy(&Xi);
+    MatDestroy(&Xj);
     MatDestroy(&U);
     MatDestroy(&XT);
     MatDestroy(&UT);
