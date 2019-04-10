@@ -13,13 +13,9 @@
 #include "Topo.h"
 #include "Geom.h"
 
-#define OFFSET 48
-//#define OFFSET 9
-//#define NQ 12
-#define NQ 54
-//#define TIMESTEP (24.0*60.0*60.0)
-//#define TIMESTEP (12.0*60.0*60.0)
-#define TIMESTEP (4.0*60.0*60.0)
+#define OFFSET 117
+#define NQ 25
+#define TIMESTEP (6.0*60.0*60.0)
 #define SHIFT 1
 
 using namespace std;
@@ -38,6 +34,16 @@ void LoadVecs(Vec* vecs, int nk, char* fieldname) {
     }
 }
 
+void WriteForm(Geom* geom, int form, Vec rVec, char* eigvecname, int ki) {
+    if(form == 2) {
+        geom->write2(rVec, eigvecname, ki);
+    } else if(form == 1) {
+        geom->write1(rVec, eigvecname, ki);
+    } else if(!form) {
+        geom->write0(rVec, eigvecname, ki);
+    }
+}
+
 int main(int argc, char** argv) {
     int rank, size, ki, kj, nEig, ii, index_i, index_f;
     double vSigmaInv, lambda_r, lambda_i, freq;
@@ -51,7 +57,7 @@ int main(int argc, char** argv) {
     Geom* geom;
     Vec* vecs;
     Vec lVec, rVec, vLocal, vr, vi;
-    Mat Xi, Xj, XT, U, UT, VSI, XVSI, Atilde;
+    Mat Xi, Xj, XiT, XjT, U, UT, VSI, XVSI, Atilde;
     PetscScalar* vArray;
     SVD svd;
     EPS eps;
@@ -91,14 +97,14 @@ int main(int argc, char** argv) {
 
     vecs  = new Vec[NQ];
     for(ki = 0; ki < NQ; ki++) {
-        VecCreateMPI(MPI_COMM_WORLD, nk, nDofsKG, &vecs[ki]);
+        VecCreateMPI(MPI_COMM_WORLD, nkl, nDofsKG, &vecs[ki]);
     }
     VecCreateSeq(MPI_COMM_SELF, nk, &vLocal);
     LoadVecs(vecs, NQ, fieldname);
 
     // pack the time slice data into a dense matrix
-    MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ, nDofsKG, NULL, &Xi);
-    MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ, nDofsKG, NULL, &Xj);
+    MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ-1, nDofsKG, NULL, &XiT);
+    MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ-1, nDofsKG, NULL, &XjT);
 
     for(ki = 0; ki < NQ; ki++) {
         kj = ki - 1;
@@ -107,14 +113,18 @@ int main(int argc, char** argv) {
         VecScatterEnd(  gtol_k, vecs[ki], vLocal, INSERT_VALUES, SCATTER_FORWARD);
 
         VecGetArray(vLocal, &vArray);
-        if(ki < NQ - 1) MatSetValues(Xi, 1, &ki, nk, lock, vArray, INSERT_VALUES);
-        if(ki > 0)      MatSetValues(Xj, 1, &kj, nk, lock, vArray, INSERT_VALUES);
+        if(ki < NQ - 1) MatSetValues(XiT, 1, &ki, nk, lock, vArray, INSERT_VALUES);
+        if(ki > 0)      MatSetValues(XjT, 1, &kj, nk, lock, vArray, INSERT_VALUES);
         VecRestoreArray(vLocal, &vArray);
     }
-    MatAssemblyBegin(Xi, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  Xi, MAT_FINAL_ASSEMBLY);
-    MatAssemblyBegin(Xj, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  Xj, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(XiT, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  XiT, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(XjT, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  XjT, MAT_FINAL_ASSEMBLY);
+
+    MatTranspose(XiT, MAT_INITIAL_MATRIX, &Xi);
+    MatTranspose(XjT, MAT_INITIAL_MATRIX, &Xj);
+
     MatCreateVecs(Xi, &rVec, &lVec);
 
     // compute the svd
@@ -133,64 +143,54 @@ int main(int argc, char** argv) {
         SVDGetSingularTriplet(svd, ki, &sigma[ki], lVec, rVec);
         if(!rank) cout << ki << "\tsigma: " << sigma[ki] << endl;
         sprintf(eigvecname, "%s_svd", fieldname);
-
-        if(form == 2) {
-            geom->write2(rVec, eigvecname, ki);
-        } else if(form == 1) {
-            geom->write1(rVec, eigvecname, ki);
-        } else if(!form) {
-            geom->write0(rVec, eigvecname, ki);
-        }
+        WriteForm(geom, form, lVec, eigvecname, ki);
     }
 
     // compute the dmd
     if(!rank) cout << "solving the dynamic mode decomposition.....\n";
 
-    MatCreate(MPI_COMM_WORLD, &U);
-    MatSetSizes(U, PETSC_DECIDE, PETSC_DECIDE, NQ-1, nDofsKG);
-    MatSetType(U, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(U, nDofsKG/size+1, PETSC_NULL, nDofsKG, PETSC_NULL);
+    MatCreate(MPI_COMM_WORLD, &UT);
+    MatSetSizes(UT, PETSC_DECIDE, PETSC_DECIDE, NQ-1, nDofsKG);
+    MatSetType(UT, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(UT, nDofsKG/size+1, PETSC_NULL, nDofsKG, PETSC_NULL);
+    MatZeroEntries(UT);
 
     MatCreate(MPI_COMM_WORLD, &VSI);
     MatSetSizes(VSI, PETSC_DECIDE, PETSC_DECIDE, NQ-1, NQ-1);
     MatSetType(VSI, MATMPIAIJ);
     MatMPIAIJSetPreallocation(VSI, NQ-1, PETSC_NULL, NQ-1, PETSC_NULL);
-
-    MatZeroEntries(U);
     MatZeroEntries(VSI);
 
     for(ki = 0; ki < nEig; ki++) {
         SVDGetSingularTriplet(svd, ki, &sigma[ki], lVec, rVec);
 
-        VecScatterBegin(gtol_k, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  gtol_k, rVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterBegin(gtol_k, lVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  gtol_k, lVec, vLocal, INSERT_VALUES, SCATTER_FORWARD);
 
         VecGetArray(vLocal, &vArray);
-        MatSetValues(U, 1, &ki, nk, lock, vArray, INSERT_VALUES);
+        MatSetValues(UT, 1, &ki, nk, lock, vArray, INSERT_VALUES);
         VecRestoreArray(vLocal, &vArray);
 
-        VecGetOwnershipRange(lVec, &index_i, &index_f);
+        VecGetOwnershipRange(rVec, &index_i, &index_f);
         VecGetArray(lVec, &vArray);
         for(ii = index_i; ii < index_f; ii++) {
             //vSigmaInv = vArray[ii-index_i]/sigma[ii];
             vSigmaInv = vArray[ii-index_i]/sigma[ki]; // TODO: check this!
 //if(ii<nEig) {
-            //MatSetValues(VSI, 1, &ki, 1, &ii, &vArray[ii-index_i], INSERT_VALUES);
-            MatSetValues(VSI, 1, &ki, 1, &ii, &vSigmaInv, INSERT_VALUES);
+            MatSetValues(VSI, 1, &ki, 1, &ii, &vSigmaInv, INSERT_VALUES); // TODO: transpose!!
 //}
         }
-        VecRestoreArray(lVec, &vArray);
+        VecRestoreArray(rVec, &vArray);
     }
-    MatAssemblyBegin(U, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  U, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(UT, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  UT, MAT_FINAL_ASSEMBLY);
     MatAssemblyBegin(VSI, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  VSI, MAT_FINAL_ASSEMBLY);
 
-    MatTranspose(Xj, MAT_INITIAL_MATRIX, &XT);
-    MatTranspose(U, MAT_INITIAL_MATRIX, &UT);
+    MatTranspose(UT, MAT_INITIAL_MATRIX, &U);
 
-    MatMatMult(XT, VSI, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &XVSI);
-    MatMatMult(U, XVSI, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Atilde);
+    MatMatMult(Xj, VSI, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &XVSI);
+    MatMatMult(UT, XVSI, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Atilde);
 
     MatCreateVecs(Atilde, NULL, &vr);
     MatCreateVecs(Atilde, NULL, &vi);
@@ -210,31 +210,18 @@ int main(int argc, char** argv) {
         if(!rank) cout << ii << "\tlambda: " << lambda_r << " + " << lambda_i << "i\tfrequency: " << 
                           freq << "\ttimescale: " << 1.0/freq/(24.0*60.0*60.0) << endl;
         //MatMult(XVSI, vr, vecs[ii]);
-        MatMult(UT, vr, vecs[ii]);
+        MatMult(U, vr, vecs[ii]);
         VecScale(vecs[ii], 1.0/lambda_r);
         sprintf(eigvecname, "%s_dmd", fieldname);
-
-        if(form == 2) {
-            geom->write2(vecs[ii], eigvecname, ii);
-        } else if(form == 1) {
-            geom->write1(vecs[ii], eigvecname, ii);
-        } else if(!form) {
-            geom->write0(vecs[ii], eigvecname, ii);
-        }
+        WriteForm(geom, form, vecs[ii], eigvecname, ii);
 
         // imaginary component
         if(fabs(lambda_i) > 1.0e-16) {
-            MatMult(XVSI, vi, vecs[ii]);
+            //MatMult(XVSI, vi, vecs[ii]);
+            MatMult(U, vi, vecs[ii]);
             VecScale(vecs[ii], 1.0/lambda_i);
             sprintf(eigvecname, "%s_dmd_i", fieldname);
-
-            if(form == 2) {
-                geom->write2(vecs[ii], eigvecname, ii);
-            } else if(form == 1) {
-                geom->write1(vecs[ii], eigvecname, ii);
-            } else if(!form) {
-                geom->write0(vecs[ii], eigvecname, ii);
-            }
+            WriteForm(geom, form, vecs[ii], eigvecname, ii);
         }
     }
 
@@ -242,8 +229,9 @@ int main(int argc, char** argv) {
     EPSDestroy(&eps);
     MatDestroy(&Xi);
     MatDestroy(&Xj);
+    MatDestroy(&XiT);
+    MatDestroy(&XjT);
     MatDestroy(&U);
-    MatDestroy(&XT);
     MatDestroy(&UT);
     MatDestroy(&VSI);
     MatDestroy(&XVSI);
