@@ -170,24 +170,29 @@ int main(int argc, char** argv) {
         VecGetArray(vLocal, &vArray);
         MatSetValues(UT, 1, &ki, nk, lock, vArray, INSERT_VALUES);
         VecRestoreArray(vLocal, &vArray);
+    }
+    MatAssemblyBegin(UT, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  UT, MAT_FINAL_ASSEMBLY);
+
+    MatTranspose(UT, MAT_INITIAL_MATRIX, &U);
+
+    // ki is the column
+    for(ki = 0; ki < nEig; ki++) {
+        SVDGetSingularTriplet(svd, ki, &sigma[ki], lVec, rVec);
 
         VecGetOwnershipRange(rVec, &index_i, &index_f);
-        VecGetArray(lVec, &vArray);
+        VecGetArray(rVec, &vArray);
+        // ii is the row
         for(ii = index_i; ii < index_f; ii++) {
-            //vSigmaInv = vArray[ii-index_i]/sigma[ii];
-            vSigmaInv = vArray[ii-index_i]/sigma[ki]; // TODO: check this!
+            vSigmaInv = vArray[ii-index_i]/sigma[ki];
 //if(ii<nEig) {
-            MatSetValues(VSI, 1, &ki, 1, &ii, &vSigmaInv, INSERT_VALUES); // TODO: transpose!!
+            MatSetValues(VSI, 1, &ii, 1, &ki, &vSigmaInv, INSERT_VALUES);
 //}
         }
         VecRestoreArray(rVec, &vArray);
     }
-    MatAssemblyBegin(UT, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  UT, MAT_FINAL_ASSEMBLY);
     MatAssemblyBegin(VSI, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  VSI, MAT_FINAL_ASSEMBLY);
-
-    MatTranspose(UT, MAT_INITIAL_MATRIX, &U);
 
     MatMatMult(Xj, VSI, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &XVSI);
     MatMatMult(UT, XVSI, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Atilde);
