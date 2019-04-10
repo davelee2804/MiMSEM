@@ -2691,6 +2691,69 @@ void Euler::solve_level(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* du
 
 /*** implicit vertical solve routines ***/
 
+void Euler::diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec tmp, Mat Op, Vec wh) {
+    VecZeroEntries(wh);
+
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+
+    MatZeroEntries(Op);
+    vo->AssembleLinearWithRT(ex, ey, rho1, vo->VA, true);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Op);
+
+    MatMult(Op, velz1, tmp);
+    VecAXPY(wh, 1.0/3.0, tmp);
+
+    MatMult(Op, velz2, tmp);
+    VecAXPY(wh, 1.0/6.0, tmp);
+
+    MatZeroEntries(Op);
+    vo->AssembleLinearWithRT(ex, ey, rho2, vo->VA, true);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Op);
+
+    MatMult(Op, velz1, tmp);
+    VecAXPY(wh, 1.0/6.0, tmp);
+
+    MatMult(Op, velz2, tmp);
+    VecAXPY(wh, 1.0/3.0, tmp);
+}
+
+void Euler::diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec tmp, Vec Phi) {
+    VecZeroEntries(Phi);
+
+    // kinetic energy term
+    MatZeroEntries(vo->VBA);
+    vo->AssembleConLinWithW(ex, ey, velz1, vo->VBA);
+
+    MatMult(vo->VBA, velz1, tmp);
+    VecAXPY(Phi, 1.0/6.0, tmp);
+    
+    MatMult(vo->VBA, velz2, tmp);
+    VecAXPY(Phi, 1.0/6.0, tmp);
+
+    MatZeroEntries(vo->VBA);
+    vo->AssembleConLinWithW(ex, ey, velz2, vo->VBA);
+
+    MatMult(vo->VBA, velz2, tmp);
+    VecAXPY(Phi, 1.0/6.0, tmp);
+
+    // potential energy term
+    VecAXPY(Phi, 1.0, zv[ey*topo->nElsX + ex]);
+}
+
+// TODO: use quadrttic approximation to the EoS and integrate this exactly in time
+void Euler::diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec tmp1, Vec tmp2, Vec Pi) {
+    VecZeroEntries(Pi);
+    vo->AssembleConstInv(ex, ey, vo->VB_inv);
+
+    vo->Assemble_EOS_RHS(ex, ey, rt1, tmp1);
+    MatMult(vo->VB_inv, tmp1, tmp2);
+    VecAXPY(Pi, 0.5, tmp2);
+
+    vo->Assemble_EOS_RHS(ex, ey, rt2, tmp1);
+    MatMult(vo->VB_inv, tmp1, tmp2);
+    VecAXPY(Pi, 0.5, tmp2);
+}
+
 // all vectors are local vectors
 void Euler::repack_z(Vec x, Vec u, Vec rho, Vec rt) {
     int ii, shift;

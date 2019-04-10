@@ -98,6 +98,8 @@ class Euler {
         L2Vecs* rho_k;
         L2Vecs* Theta_k;
         VecScatter gtol_x;
+
+        // horiztonal routines
         void repack(Vec x, Vec u, Vec rho, Vec rt);
         void unpack(Vec x, Vec u, Vec rho, Vec rt);
         void diagnose_F(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec* F);
@@ -109,4 +111,9 @@ class Euler {
         void solve_level(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, double rho_avg, double theta_avg, Mat A);
         void repack_z(Vec x, Vec u, Vec rho, Vec rt);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt);
+
+        // vertical routines
+        void diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec tmp, Mat Op, Vec wh);
+        void diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec tmp, Vec Phi);
+        void diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec tmp1, Vec tmp2, Vec Pi);
 };
