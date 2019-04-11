@@ -219,6 +219,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     for(int ii = 0; ii < geom->nk; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_k[ii]);
     }
+    w_k = new L2Vecs(geom->nk-1, topo, geom);
     rho_k = new L2Vecs(geom->nk, topo, geom);
     Theta_k = new L2Vecs(geom->nk, topo, geom);
 }
@@ -428,6 +429,7 @@ Euler::~Euler() {
         VecDestroy(&u_k[ii]);
     }
     delete[] u_k;
+    delete w_k;
     delete rho_k;
     delete Theta_k;
 }
@@ -2752,6 +2754,34 @@ void Euler::diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec tmp1, Vec tmp2, 
     vo->Assemble_EOS_RHS(ex, ey, rt2, tmp1);
     MatMult(vo->VB_inv, tmp1, tmp2);
     VecAXPY(Pi, 0.5, tmp2);
+}
+
+void Euler::assemble_precon(int ex, int ey, Vec rho, Vec rt, Vec Pi, Vec theta) {
+    MatReuse reuse = (!PCz) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &_DTV1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, _DTV1, reuse, PETSC_DEFAULT, &_V0_invDTV1);
+    diagThetaVert(ex, ey, vo->VAB, rho, rt, theta);
+    vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    MatMatMult(vo->VA, _V0_invDTV1, reuse, PETSC_DEFAULT, &_GRAD);
+
+    vo->AssembleLinearWithRT(ex, ey, rt, vo->VA, true);
+    MatMatMult(vo->VA_inv, vo->VA, reuse, PETSC_DEFAULT, &_V0_invV0_rt);
+    MatMatMult(vo->V10, _V0_invV0_rt, reuse, PETSC_DEFAULT, &_DV0_invV0_rt);
+    vo->AssembleConstWithRho(ex, ey, Pi, vo->VB);
+    MatMatMult(vo->VB, _DV0_invV0_rt, reuse, PETSC_DEFAULT, &_V1_PiDV0_invV0_rt);
+    vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB);
+    MatMatMult(vo->VB, _V1_PiDV0_invV0_rt, reuse, PETSC_DEFAULT, &_DIV);
+
+    MatMatMult(_GRAD, _DIV, reuse, PETSC_DEFAULT, &PCz);
+    vo->AssembleLinear(ex, ey, vo->VA);
+    MatAYPX(PCz, -0.25*dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
+}
+
+void Euler::assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec x, Vec f) {
+    unpack_z(x, w_j, rho_j, rt_j);
 }
 
 // all vectors are local vectors
