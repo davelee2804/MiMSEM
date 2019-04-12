@@ -2780,8 +2780,49 @@ void Euler::assemble_precon(int ex, int ey, Vec rho, Vec rt, Vec Pi, Vec theta) 
     MatAYPX(PCz, -0.25*dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
 }
 
-void Euler::assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec x, Vec f) {
-    unpack_z(x, w_j, rho_j, rt_j);
+void Euler::assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec f_w, Vec f_rho, Vec f_rt) {
+    int ei = ey*topo->nElsX + ex;
+
+    // diagnose the hamiltonian derivatives
+    diagnose_F_z(ex, ey, w_k->vz[ei], w_j, rho_k->vz[ei], rho_j, _tmpA, vo->VA, _F_z);
+    diagnose_Phi_z(ex, ey, w_k->vz[ei], w_j, _tmpB, _Phi_z);
+    diagnose_Pi_z(ex, ey, Theta_k->vz[ei], rt_j, _tmpB, _tmpB2, _Pi_z);
+
+    // diagnose the potential temperature (midpoint)
+    diagThetaVert(ex, ey, vo->VAB, rho_k->vz[ei], Theta_k->vz[ei], _theta_z1);
+    diagThetaVert(ex, ey, vo->VAB, rho_j, rt_j, _theta_z2);
+    VecAXPY(_theta_z1, 1.0, _theta_z2);
+    VecScale(_theta_z1, 0.5);
+
+    // diagnose the pressure gradient term
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMult(vo->VB, _Pi_z, _tmpB);
+    MatMult(vo->V01, _tmpB, _tmpA);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMult(vo->VA_inv, _tmpA, _tmpA2); // pressure gradient
+    vo->AssembleLinearWithTheta(ex, ey, _theta_z1, vo->VA);
+    MatMult(vo->VA, _tmpA2, _tmpA);
+
+    // assemble the momentum equation residual
+    vo->AssembleLinear(ex, ey, vo->VA);
+    MatMult(vo->VA, w_j, f_w);
+
+    VecAXPY(f_w, +dt, _tmpA); // pressure gradient term
+
+    MatMult(vo->V01, _Phi_z, _tmpA);
+    VecAXPY(f_w, +dt, _tmpA); // bernoulli function term
+
+    MatMult(vo->VA, w_k->vz[ei], _tmpA);
+    VecAXPY(f_w, -1.0, _tmpA);
+
+    // assemble the continuity equation residual
+    MatMult(vo->VB, rho_j, f_rho);
+    MatMult(vo->VB, rho_k->vz[ei], _tmpB);
+    VecAXPY(f_rho, -1.0, _tmpB);
+    MatMult(vo->V10, _F_z, _tmpB);
+    VecAXPY(f_rho, +dt, _tmpB);
+
+    // assemble the temperature equation residual
 }
 
 // all vectors are local vectors

@@ -100,6 +100,16 @@ class Euler {
         L2Vecs* Theta_k;
         VecScatter gtol_x;
 
+        Vec _F_z;
+        Vec _Phi_z;
+        Vec _Pi_z;
+        Vec _theta_z1;
+        Vec _theta_z2;
+        Vec _tmpA;
+        Vec _tmpA2;
+        Vec _tmpB;
+        Vec _tmpB2;
+
         Mat PCz;
         Mat _DTV1;
         Mat _V0_invDTV1;
@@ -127,5 +137,5 @@ class Euler {
         void diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec tmp, Vec Phi);
         void diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec tmp1, Vec tmp2, Vec Pi);
         void assemble_precon(int ex, int ey, Vec rho, Vec rt, Vec Pi, Vec theta);
-        void assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec x, Vec f);
+        void assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec f_w, Vec f_rho, Vec f_rt);
 };
