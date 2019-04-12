@@ -119,6 +119,8 @@ class Euler {
         Mat _V1_PiDV0_invV0_rt;
         Mat _DIV;
 
+        KSP kspColW;
+
         // horiztonal routines
         void repack(Vec x, Vec u, Vec rho, Vec rt);
         void unpack(Vec x, Vec u, Vec rho, Vec rt);
@@ -136,6 +138,7 @@ class Euler {
         void diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec tmp, Mat Op, Vec wh);
         void diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec tmp, Vec Phi);
         void diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec tmp1, Vec tmp2, Vec Pi);
-        void assemble_precon(int ex, int ey, Vec rho, Vec rt, Vec Pi, Vec theta);
-        void assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec f_w, Vec f_rho, Vec f_rt);
+        void assemble_precon(int ex, int ey, Vec rho, Vec rt);
+        void assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec f_w, double* norm_rho, double* norm_rt);
+        void solve_vert(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec f_w);
 };

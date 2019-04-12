@@ -2756,21 +2756,23 @@ void Euler::diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec tmp1, Vec tmp2, 
     VecAXPY(Pi, 0.5, tmp2);
 }
 
-void Euler::assemble_precon(int ex, int ey, Vec rho, Vec rt, Vec Pi, Vec theta) {
-    MatReuse reuse = (!PCz) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+void Euler::assemble_precon(int ex, int ey, Vec rho, Vec rt) {
+    MatReuse reuse = (!_DTV1) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+
+    diagnose_Pi_z(ex, ey, rt, rho, _tmpB, _tmpB2, _Pi_z);
 
     vo->AssembleConst(ex, ey, vo->VB);
     MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &_DTV1);
     vo->AssembleLinearInv(ex, ey, vo->VA_inv);
     MatMatMult(vo->VA_inv, _DTV1, reuse, PETSC_DEFAULT, &_V0_invDTV1);
-    diagThetaVert(ex, ey, vo->VAB, rho, rt, theta);
-    vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    diagThetaVert(ex, ey, vo->VAB, rho, rt, _theta_z1);
+    vo->AssembleLinearWithTheta(ex, ey, _theta_z1, vo->VA);
     MatMatMult(vo->VA, _V0_invDTV1, reuse, PETSC_DEFAULT, &_GRAD);
 
     vo->AssembleLinearWithRT(ex, ey, rt, vo->VA, true);
     MatMatMult(vo->VA_inv, vo->VA, reuse, PETSC_DEFAULT, &_V0_invV0_rt);
     MatMatMult(vo->V10, _V0_invV0_rt, reuse, PETSC_DEFAULT, &_DV0_invV0_rt);
-    vo->AssembleConstWithRho(ex, ey, Pi, vo->VB);
+    vo->AssembleConstWithRho(ex, ey, _Pi_z, vo->VB);
     MatMatMult(vo->VB, _DV0_invV0_rt, reuse, PETSC_DEFAULT, &_V1_PiDV0_invV0_rt);
     vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB);
     MatMatMult(vo->VB, _V1_PiDV0_invV0_rt, reuse, PETSC_DEFAULT, &_DIV);
@@ -2780,7 +2782,7 @@ void Euler::assemble_precon(int ex, int ey, Vec rho, Vec rt, Vec Pi, Vec theta) 
     MatAYPX(PCz, -0.25*dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
 }
 
-void Euler::assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec f_w, Vec f_rho, Vec f_rt) {
+void Euler::assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec f_w, double* rho_norm, double* rt_norm) {
     int ei = ey*topo->nElsX + ex;
 
     // diagnose the hamiltonian derivatives
@@ -2813,14 +2815,23 @@ void Euler::assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Ve
     MatMult(vo->VA, _tmpA2, _tmpA);
     VecAXPY(f_w, +dt, _tmpA); // pressure gradient term
 
-    // assemble the continuity equation residual
+    // update the continuity equation
+/*
     MatMult(vo->VB, rho_j, f_rho);
     MatMult(vo->VB, rho_k->vz[ei], _tmpB);
     VecAXPY(f_rho, -1.0, _tmpB);
     MatMult(vo->V10, _F_z, _tmpB);
     VecAXPY(f_rho, +dt, _tmpB);
+*/
+    MatMult(vo->V10, _F_z, _tmpB);
+    VecAXPY(rho_j, -dt, _tmpB);
+    VecAXPY(rho_j, -1.0, rho_k->vz[ei]);
 
-    // assemble the temperature equation residual
+    VecNorm(_tmpB, NORM_2, rho_norm);
+    *rho_norm *= dt;
+
+    // update the temperature equation
+/*
     MatMult(vo->VB, rt_j, f_rt);
     MatMult(vo->VB, Theta_k->vz[ei], _tmpB);
     VecAXPY(f_rt, -1.0, _tmpB);
@@ -2829,6 +2840,41 @@ void Euler::assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Ve
     MatMult(vo->VA_inv, _tmpA, _tmpA2);
     MatMult(vo->V10, _tmpA2, _tmpB);
     VecAXPY(f_rt, +dt, _tmpB);
+*/
+    MatMult(vo->VA, _F_z, _tmpA); // includes theta
+    MatMult(vo->VA_inv, _tmpA, _tmpA2);
+    MatMult(vo->V10, _tmpA2, _tmpB);
+    VecAXPY(rt_j, -dt, _tmpB);
+    VecAXPY(rt_j, -1.0, Theta_k->vz[ei]);
+
+    VecNorm(_tmpB, NORM_2, rt_norm);
+    *rt_norm *= dt;
+}
+
+void Euler::solve_vert(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec f_w) {
+    int ei = ey*topo->nElsX + ex;
+    bool done = false;
+    double eps = 1.0e-14;
+    double norm_w = 1.0e+9, norm_d_w;
+    double norm_rho = 1.0e+9, norm_d_rho;
+    double norm_rt = 1.0e+9, norm_d_rt;
+
+    assemble_precon(ex, ey, rho_k->vz[ei], Theta_k->vz[ei]);
+
+    do{
+        assemble_residual_z(ex, ey, w_j, rho_j, rt_j, f_w, &norm_d_rho, &norm_d_rt);
+        VecScale(f_w, -1.0);
+        KSPSolve(kspColW, f_w, _tmpA);
+        VecAXPY(w_j, +1.0, _tmpA);
+
+        VecNorm(f_w, NORM_2, &norm_d_w);
+        VecNorm(w_j, NORM_2, &norm_w);
+        VecNorm(rho_j, NORM_2, &norm_rho);
+        VecNorm(rt_j, NORM_2, &norm_rt);
+
+        if(norm_d_w/norm_w < eps && norm_d_rho/norm_rho < eps && norm_d_rt/norm_rt < eps) 
+            done = true;
+    } while(!done);
 }
 
 // all vectors are local vectors
