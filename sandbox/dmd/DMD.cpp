@@ -13,8 +13,8 @@
 #include "Topo.h"
 #include "Geom.h"
 
-#define OFFSET 117
-#define NQ 25
+#define OFFSET 170
+#define NQ 49
 #define TIMESTEP (6.0*60.0*60.0)
 #define SHIFT 1
 
@@ -25,7 +25,6 @@ void LoadVecs(Vec* vecs, int nk, char* fieldname) {
     char filename[100];
     PetscViewer viewer;
 
-    //for(ki = 0; ki < nk; ki++) {
     for(ki = 0; ki < nk; ki += SHIFT) {
         sprintf(filename, "output/%s_%.4u.vec", fieldname, ki+OFFSET);
         PetscViewerBinaryOpen(PETSC_COMM_WORLD, filename, FILE_MODE_READ, &viewer);
@@ -63,6 +62,8 @@ int main(int argc, char** argv) {
     EPS eps;
     int nk, nkl, nDofsKG, *lock;
     VecScatter gtol_k;
+    ofstream dmd_file;
+    PetscViewer viewer;
 
     SlepcInitialize(&argc, &argv, (char*)0, help);
 
@@ -211,9 +212,27 @@ int main(int argc, char** argv) {
     for(ii = 0; ii < nEig; ii++) {
         EPSGetEigenpair(eps, ii, &lambda_r, &lambda_i, vr, vi);
 
-        freq = log(fabs(lambda_r))/TIMESTEP;
-        if(!rank) cout << ii << "\tlambda: " << lambda_r << " + " << lambda_i << "i\tfrequency: " << 
-                          freq << "\ttimescale: " << 1.0/freq/(24.0*60.0*60.0) << endl;
+        freq = log(sqrt(lambda_r*lambda_r + lambda_i*lambda_i))/TIMESTEP;
+        if(!rank) cout << ii << "\tlambda: " << lambda_r << " + " << lambda_i << "i\tfrequency: " 
+                       << freq << "\ttimescale: " << 1.0/freq/(24.0*60.0*60.0) << endl;
+
+        if(!rank) {
+            sprintf(eigvecname, "output/dmd_mode_%.2u.meta", ii);
+            dmd_file.open(eigvecname);
+            dmd_file << lambda_r << "\t" << lambda_i << "\t" << freq << "\t" << 1.0/freq/(24.0*60.0*60.0) << endl;
+            dmd_file.close();
+        }
+        sprintf(eigvecname, "output/dmd_mode_%.2u_r.txt", ii);
+        PetscViewerASCIIOpen(MPI_COMM_WORLD, eigvecname, &viewer);
+        VecView(vr, viewer);
+        PetscViewerDestroy(&viewer);
+        if(fabs(lambda_i) > 1.0e-16) {
+            sprintf(eigvecname, "output/dmd_mode_%.2u_i.txt", ii);
+            PetscViewerASCIIOpen(MPI_COMM_WORLD, eigvecname, &viewer);
+            VecView(vi, viewer);
+            PetscViewerDestroy(&viewer);
+        }
+
         //MatMult(XVSI, vr, vecs[ii]);
         MatMult(U, vr, vecs[ii]);
         VecScale(vecs[ii], 1.0/lambda_r);
