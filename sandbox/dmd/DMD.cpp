@@ -20,13 +20,13 @@
 
 using namespace std;
 
-void LoadVecs(Vec* vecs, int nk, char* fieldname) {
+void LoadVecs(Vec* vecs, int ni, int nk, char* fieldname) {
     int ki;
     char filename[100];
     PetscViewer viewer;
 
     for(ki = 0; ki < nk; ki += SHIFT) {
-        sprintf(filename, "output/%s_%.4u.vec", fieldname, ki+OFFSET);
+        sprintf(filename, "output/%s_%.4u.vec", fieldname, ki+ni);
         PetscViewerBinaryOpen(PETSC_COMM_WORLD, filename, FILE_MODE_READ, &viewer);
         VecLoad(vecs[ki], viewer);
         PetscViewerDestroy(&viewer);
@@ -50,6 +50,7 @@ int main(int argc, char** argv) {
     static char help[] = "petsc";
     char* fieldname = argv[1];
     int form = atoi(argv[2]);
+    int offset = atoi(argv[3]);
     char eigvecname[100];
     ofstream file;
     Topo* topo;
@@ -101,7 +102,7 @@ int main(int argc, char** argv) {
         VecCreateMPI(MPI_COMM_WORLD, nkl, nDofsKG, &vecs[ki]);
     }
     VecCreateSeq(MPI_COMM_SELF, nk, &vLocal);
-    LoadVecs(vecs, NQ, fieldname);
+    LoadVecs(vecs, offset, NQ, fieldname);
 
     // pack the time slice data into a dense matrix
     MatCreateDense(MPI_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, NQ-1, nDofsKG, NULL, &XiT);
@@ -129,7 +130,7 @@ int main(int argc, char** argv) {
     MatCreateVecs(Xi, &rVec, &lVec);
 
     // compute the svd
-    if(!rank) cout << "solving the singular value decomposition...\n";
+    if(!rank) cout << "solving the singular value decomposition...\t" << offset << endl;
 
     SVDCreate(MPI_COMM_WORLD, &svd);
     SVDSetOperator(svd, Xi);
@@ -148,7 +149,7 @@ int main(int argc, char** argv) {
     }
 
     // compute the dmd
-    if(!rank) cout << "solving the dynamic mode decomposition.....\n";
+    if(!rank) cout << "solving the dynamic mode decomposition.....\t" << offset << endl;
 
     MatCreate(MPI_COMM_WORLD, &UT);
     MatSetSizes(UT, PETSC_DECIDE, PETSC_DECIDE, NQ-1, nDofsKG);
@@ -217,17 +218,17 @@ int main(int argc, char** argv) {
                        << freq << "\ttimescale: " << 1.0/freq/(24.0*60.0*60.0) << endl;
 
         if(!rank) {
-            sprintf(eigvecname, "output/dmd_mode_%.2u.meta", ii);
+            sprintf(eigvecname, "output/dmd_mode_%.3u_%.2u.meta", offset, ii);
             dmd_file.open(eigvecname);
             dmd_file << lambda_r << "\t" << lambda_i << "\t" << freq << "\t" << 1.0/freq/(24.0*60.0*60.0) << endl;
             dmd_file.close();
         }
-        sprintf(eigvecname, "output/dmd_mode_%.2u_r.txt", ii);
+        sprintf(eigvecname, "output/dmd_mode_%.3u_%.2u_r.txt", offset, ii);
         PetscViewerASCIIOpen(MPI_COMM_WORLD, eigvecname, &viewer);
         VecView(vr, viewer);
         PetscViewerDestroy(&viewer);
         if(fabs(lambda_i) > 1.0e-16) {
-            sprintf(eigvecname, "output/dmd_mode_%.2u_i.txt", ii);
+            sprintf(eigvecname, "output/dmd_mode_%.3u_%.2u_i.txt", offset, ii);
             PetscViewerASCIIOpen(MPI_COMM_WORLD, eigvecname, &viewer);
             VecView(vi, viewer);
             PetscViewerDestroy(&viewer);
@@ -235,16 +236,16 @@ int main(int argc, char** argv) {
 
         //MatMult(XVSI, vr, vecs[ii]);
         MatMult(U, vr, vecs[ii]);
-        VecScale(vecs[ii], 1.0/lambda_r);
-        sprintf(eigvecname, "%s_dmd", fieldname);
+        //VecScale(vecs[ii], 1.0/lambda_r);
+        sprintf(eigvecname, "%s_%.3u_dmd", fieldname, offset);
         WriteForm(geom, form, vecs[ii], eigvecname, ii);
 
         // imaginary component
         if(fabs(lambda_i) > 1.0e-16) {
             //MatMult(XVSI, vi, vecs[ii]);
             MatMult(U, vi, vecs[ii]);
-            VecScale(vecs[ii], 1.0/lambda_i);
-            sprintf(eigvecname, "%s_dmd_i", fieldname);
+            //VecScale(vecs[ii], 1.0/lambda_i);
+            sprintf(eigvecname, "%s_%.3u_dmd_i", fieldname, offset);
             WriteForm(geom, form, vecs[ii], eigvecname, ii);
         }
     }
@@ -275,5 +276,5 @@ int main(int argc, char** argv) {
 
     SlepcFinalize();
 
-    return 0;
+    return EXIT_SUCCESS;
 }
