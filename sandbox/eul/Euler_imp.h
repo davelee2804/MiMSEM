@@ -9,6 +9,7 @@ class Euler {
         bool do_visc;
         int rank;
         int step;
+        bool firstStep;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
@@ -21,41 +22,23 @@ class Euler {
         E21mat* EtoF;
         RotMat* R;
         Uhmat* M1h;
+        Uhmat* F;
         WtQUmat* K;
-        Ut_mat* M1t;
-        UtQWmat* Rh;
-        WtQdUdz_mat* Rz;
         Whmat* T;
         EoSvec* eos;
+        Ut_mat* M1t;
+        UtQWmat* Rh;
         Vec* fg;                 // coriolis vector (global)
-        bool firstStep;
-        double k2i;              // kinetic to internal energy exchange
-        double i2k;              // kinetic to internal energy exchange
-        double k2i_z;            // kinetic to internal energy exchange
-        double i2k_z;            // kinetic to internal energy exchange
+        Vec* fl;                 // coriolis vector (local)
+        Vec* gv;                 // gravity vector
+        Vec* zv;                 // level height vector
+        VertOps* vo;
+        KSP ksp1;
+        KSP ksp2;
         Vec theta_b;             // bottom potential temperature bc
         Vec theta_t;             // top potential temperature bc
         Vec theta_b_l;           // bottom potential temperature bc
         Vec theta_t_l;           // top potential temperature bc
-        Vec* Kh;                 // kinetic energy vector for each horiztontal layer
-        Vec* gv;
-        Vec* zv;
-        Vec* uz;                 // dudz and dvdz vorticity components
-        L2Vecs* uuz;             // u.dudz + v.dvdz vorticity velocity product
-        Mat VA;
-        Mat VB;
-        KSP ksp1;
-        KSP ksp2;
-        KSP kspE;
-        KSP kspColA;
-
-        VertOps* vo;
-
-        Wii* Q;
-        M2_j_xy_i* W;
-        double** Q0;
-        double** Wt;
-        double** WtQ;
 
         double viscosity();
         void coriolis();
@@ -63,82 +46,50 @@ class Euler {
         void grad(bool assemble, Vec phi, Vec* u, int lev);            // weak form grad operator
         void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
         void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
-        void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux);
-        void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner);
-        void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu, Vec Flux, Vec uzb, Vec uzt, Vec velz_b, Vec velz_t);
-        void thetaBCVec(int ex, int ey, Mat A, Vec* bTheta);
-        void diagTheta(Vec* rho, Vec* rt, Vec* theta);
-        void diagThetaVert(int ex, int ey, Mat AB, Vec rho, Vec rt, Vec theta);
-        void AssembleKEVecs(Vec* velx, Vec* velz);
-        void VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph);
-        void HorizToVert2(int ex, int ey, Vec* ph, Vec pv);
-        void init0(Vec* q, ICfunc3D* func);
-        void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
-        void init2(Vec* p, ICfunc3D* func);
-        void initTheta(Vec theta, ICfunc3D* func);
-        void HorizRHS(Vec* velx, Vec* rho, Vec* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft, Vec* velz);
-        void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
-        void StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
-        void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
-        void VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
-        void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
+        void thetaBCVec(int ex, int ey, Mat A, Vec bTheta);
+        void diagTheta(Vec* rho, Vec* rt, L2Vecs* theta);
 
-        void DiagExner(Vec* rtz, L2Vecs* exner);
+        void diagnose_F_x(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec _F);
+        void diagnose_Pi_x(int level, Vec rt1, Vec rt2, Vec Pi);
+        void diagnose_Phi_x(int level, Vec u1, Vec u2, Vec* Phi);
+        void diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu);
 
-        void HorizVort(Vec* velx);
-        void AssembleVertMomVort(Vec* velx);
+        void diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec _F);
+        void diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec Pi);
+        void diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi);
 
-        L2Vecs* velz_prev;
-        L2Vecs* rho_prev;
-        L2Vecs* rt_prev;
-        L2Vecs* exner_prev;
+        void solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
+        void assemble_precon_z(int ex, int ey, Vec theta, Vec rt, Vec exner, Mat PC);
+        void assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner, Mat PC);
 
-        Vec* u_k;
-        L2Vecs* w_k;
-        L2Vecs* rho_k;
-        L2Vecs* Theta_k;
-        VecScatter gtol_x;
+        void assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, 
+                                 Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fu, Vec _F, Vec _G);
+        void assemble_residual_z(int ex, int ey, Vec theta1, Vec theta2, 
+                                 Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
 
-        Vec _F_z;
+    private:
+        // vertical vectors and matrices
         Vec _Phi_z;
         Vec _Pi_z;
-        Vec _theta_z1;
-        Vec _theta_z2;
-        Vec _tmpA;
+        Vec _theta_h;
+        Vec _tmpA1;
         Vec _tmpA2;
-        Vec _tmpB;
+        Vec _tmpB1;
         Vec _tmpB2;
-
-        Mat PCz;
         Mat _DTV1;
-        Mat _V0_invDTV1;
         Mat _GRAD;
+        Mat _DIV;
+        Mat _V0_invDTV1;
         Mat _V0_invV0_rt;
         Mat _DV0_invV0_rt;
         Mat _V1_PiDV0_invV0_rt;
-        Mat _DIV;
-
-        KSP kspColW;
-
-        // horiztonal routines
-        void repack(Vec x, Vec u, Vec rho, Vec rt);
-        void unpack(Vec x, Vec u, Vec rho, Vec rt);
-        void diagnose_F(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec* F);
-        void diagnose_Phi(int level, Vec u1, Vec u2, Vec* Phi);
-        void diagnose_Pi(int level, Vec rt1, Vec rt2, Vec* Pi);
-        void diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu);
-        void assemble_operator(int level, double dt, double rho_avg, double theta_avg, Mat* A);
-        void assemble_residual(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec x, Vec f);
-        void solve_level(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, double rho_avg, double theta_avg, Mat A);
-        void repack_z(Vec x, Vec u, Vec rho, Vec rt);
-        void unpack_z(Vec x, Vec u, Vec rho, Vec rt);
-
-        // vertical routines
-        void diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec tmp, Mat Op, Vec wh);
-        void diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec tmp, Vec Phi);
-        void diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec tmp1, Vec tmp2, Vec Pi);
-        void assemble_precon(int ex, int ey, Vec rho, Vec rt);
-        void assemble_residual_z(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec f_w, double* norm_rho, double* norm_rt);
-        void solve_vert(int ex, int ey, Vec w_j, Vec rho_j, Vec rt_j, Vec f_w);
+        // horiztonal vectors and matrices
+        Mat _M1invM1;
+        Mat _DM1invM1;
+        Mat _PiDM1invM1;
+        Mat _ThetaPiDM1invM1;
+        Mat _M2ThetaPiDM1invM1;
+        Mat _DM2ThetaPiDM1invM1;
+        Mat _M1DM2ThetaPiDM1invM1;
 };
