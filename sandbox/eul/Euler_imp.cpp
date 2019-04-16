@@ -77,6 +77,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     K = new WtQUmat(topo, geom, node, edge);
 
     // additional vorticity operator
+    M1t = new Ut_mat(topo, geom, node, edge);
     Rh = new UtQWmat(topo, geom, node, edge);
 
     // potential temperature projection operator
@@ -327,6 +328,7 @@ Euler::~Euler() {
     delete M1h;
     delete F;
     delete K;
+    delete M1h;
     delete Rh;
     delete T;
     delete eos;
