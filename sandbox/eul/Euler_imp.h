@@ -49,6 +49,7 @@ class Euler {
 
         void thetaBCVec(int ex, int ey, Mat A, Vec bTheta);
         void diagTheta(Vec* rho, Vec* rt, L2Vecs* theta);
+        void diagHorizVort(Vec* velx, Vec* dudz);
 
         void diagnose_F_x(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec _F);
         void diagnose_Pi_x(int level, Vec rt1, Vec rt2, Vec Pi);

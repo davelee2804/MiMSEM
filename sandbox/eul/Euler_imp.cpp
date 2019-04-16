@@ -17,7 +17,7 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
-#include "Euler_imp_2.h"
+#include "Euler_imp.h"
 
 #define RAD_EARTH 6371220.0
 #define GRAVITY 9.80616
@@ -435,6 +435,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
     Vec* _G_x = new Vec[geom->nk];
     Vec* _F_z = new Vec[topo->nElsX*topo->nElsX];
     Vec* _G_z = new Vec[topo->nElsX*topo->nElsX];
+    Vec* dudz_i = new Vec[geom->nk];
+    Vec* dudz_j = new Vec[geom->nk];
     PC pc;
     KSP ksp_x;
     KSP ksp_z;
@@ -490,6 +492,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_j[ii]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F_x[ii]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_G_x[ii]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_i[ii]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_j[ii]);
         VecCopy(velx_i[ii], velx_j[ii]);
 
         MatCreate(MPI_COMM_WORLD, &PCx[ii]);
@@ -501,11 +505,16 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
     }
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
 
+    diagHorizVort(velx_i, dudz_i);
+    for(int ii = 0; ii < geom->nk; ii++) {
+        VecCopy(dudz_i[ii], dudz_j[ii]);
+    }
+
     do {
         // update the horizontal dynamics for this iteration
         norm_max_x = -1.0;
         for(int ii = 0; ii < geom->nk; ii++) {
-            assemble_residual_x(ii, theta_i->vl, theta_j->vl, NULL, NULL, velz_i->vh, velz_j->vh, 
+            assemble_residual_x(ii, theta_i->vl, theta_j->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, 
                                 velx_i[ii], velx_j[ii], rho_i->vh[ii], rho_j->vh[ii], rt_i->vh[ii], rt_j->vh[ii], 
                                 fu, _F_x[ii], _G_x[ii]);
             VecScale(fu, -1.0);
@@ -579,6 +588,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         rt_j->UpdateGlobal();
 
         diagTheta(rho_j->vz, rt_j->vz, theta_j);
+        diagHorizVort(velx_j, dudz_j);
 
         if(norm_max_x < 1.0e-12 && norm_max_z < 1.0e-8) done = true;
     } while(!done);
@@ -639,12 +649,16 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         VecDestroy(&velx_j[ii]);
         VecDestroy(&_F_x[ii]);
         VecDestroy(&_G_x[ii]);
+        VecDestroy(&dudz_i[ii]);
+        VecDestroy(&dudz_j[ii]);
         MatDestroy(&PCx[ii]);
     }
     VecDestroy(&htmp);
     delete[] velx_j;
     delete[] _F_x;
     delete[] _G_x;
+    delete[] dudz_i;
+    delete[] dudz_j;
     delete[] PCx;
     delete theta_i;
     delete theta_j;
@@ -1046,6 +1060,47 @@ void Euler::diagTheta(Vec* rho, Vec* rt, L2Vecs* theta) {
     VecDestroy(&theta_v);
     MatDestroy(&AB);
     KSPDestroy(&kspColA);
+}
+
+// compute the vorticity components dudz, dvdz
+void Euler::diagHorizVort(Vec* velx, Vec* dudz) {
+    int ii;
+    Vec* Mu = new Vec[geom->nk];
+    Vec  du;
+    PC pc;
+    KSP ksp1_t;
+
+    KSPCreate(MPI_COMM_WORLD, &ksp1_t);
+    KSPSetOperators(ksp1_t, M1t->M, M1t->M);
+    KSPSetTolerances(ksp1_t, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp1_t, KSPGMRES);
+    KSPGetPC(ksp1_t, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+    KSPSetOptionsPrefix(ksp1_t, "ksp1_t_");
+    KSPSetFromOptions(ksp1_t);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu[ii]);
+        M1->assemble(ii, SCALE);
+        MatMult(M1->M, velx[ii], Mu[ii]);
+    }
+
+    for(ii = 0; ii < geom->nk-1; ii++) {
+        VecZeroEntries(du);
+        VecAXPY(du, +1.0, Mu[ii+1]);
+        VecAXPY(du, -1.0, Mu[ii+0]);
+        M1t->assemble(ii, SCALE);
+        KSPSolve(ksp1_t, du, dudz[ii]);
+    }
+
+    VecDestroy(&du);
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecDestroy(&Mu[ii]);
+    }
+    delete[] Mu;
+    KSPDestroy(&ksp1_t);
 }
 
 void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, 
