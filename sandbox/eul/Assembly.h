@@ -253,4 +253,5 @@ class EoSvec {
         Vec vl;
         Vec vg;
         void assemble(Vec rt, int lev, double scale);
+        void GetExponents(double rt, double* c2, double* c1, double* c0);
 };
