@@ -253,5 +253,6 @@ class EoSvec {
         Vec vl;
         Vec vg;
         void assemble(Vec rt, int lev, double scale);
+        void assemble_quad(Vec rt1, Vec rt2, int lev, double scale);
         void GetExponents(double rt, double* c2, double* c1, double* c0);
 };

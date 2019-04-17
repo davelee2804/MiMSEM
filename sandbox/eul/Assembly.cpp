@@ -1481,6 +1481,68 @@ void EoSvec::assemble(Vec rt, int lev, double scale) {
     VecScatterEnd(topo->gtol_2,   vl, vg, INSERT_VALUES, SCATTER_REVERSE);
 }
 
+void EoSvec::assemble_quad(Vec rt1, Vec rt2, int lev, double scale) {
+    int ex, ey, ei, ii, jj;
+    int nQuad  = e->l->q->n + 1;
+    int nQuad2 = nQuad * nQuad;
+    int *inds0, *inds2;
+    double rtAvg, volAvg, c0, c1, c2, volq, rtq1[99], rtq2[99], rtq[99], det;
+    double third = 1.0/3.0;
+    PetscScalar *rt1Array, *rt2Array, *vArray;
+
+    VecZeroEntries(vl);
+
+    VecGetArray(rt1, &rt1Array);
+    VecGetArray(rt2, &rt2Array);
+    VecGetArray(vl, &vArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey * topo->nElsX + ex;
+            Q->assemble(ex, ey);
+
+            // get the average density weighted potential temperature for this element at this level
+            rtAvg = volAvg = 0.0;
+            for(ii = 0; ii < nQuad2; ii++) {
+                det = geom->det[ei][ii];
+                volq = det * Q->A[ii][ii];
+                volAvg += volq;
+                geom->interp2_g(ex, ey, ii%nQuad, ii/nQuad, rt1Array, &rtq1[ii]);
+                geom->interp2_g(ex, ey, ii%nQuad, ii/nQuad, rt2Array, &rtq2[ii]);
+                rtAvg += 0.5*volq*(rtq1[ii] + rtq1[ii]);
+            }
+            rtAvg /= volAvg;
+            // and look up the quadratic expansion from this
+            GetExponents(rtAvg, &c2, &c1, &c0);
+
+            inds0 = topo->elInds0_l(ex, ey);
+            inds2 = topo->elInds2_l(ex, ey);
+
+            Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q->A, WtQ);
+
+            for(ii = 0; ii < nQuad2; ii++) {
+                // density is piecewise constant in the vertical
+                rtq[ii] = c0 + 0.5*c1*(rtq1[ii] + rtq2[ii]) + third*c2*(rtq1[ii]*rtq1[ii] + rtq1[ii]*rtq2[ii] + rtq2[ii]*rtq2[ii]);
+                rtq[ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                rtq[ii] *= scale;
+            }
+
+            // 2 form metric term cancels with jacobian determinant at quadrature point
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                for(jj = 0; jj < Q->nDofsI; jj++) {
+                    vArray[inds2[ii]] += WtQ[ii][jj]*rtq[jj];
+                }
+            }
+        }
+    }
+    VecRestoreArray(rt1, &rt1Array);
+    VecRestoreArray(rt2, &rt2Array);
+    VecRestoreArray(vl, &vArray);
+
+    VecScatterBegin(topo->gtol_2, vl, vg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(topo->gtol_2,   vl, vg, INSERT_VALUES, SCATTER_REVERSE);
+}
+
 void EoSvec::GetExponents(double rt, double* c2, double* c1, double* c0) {
     if(rt > 387.5625) { *c2 = -7.96223048e-04; *c1 = 1.65075161e+00; *c0 = 5.13774111e+02; return; }
     if(rt > 375.125)  { *c2 = -8.38520228e-04; *c1 = 1.68353169e+00; *c0 = 5.07423013e+02; return; }

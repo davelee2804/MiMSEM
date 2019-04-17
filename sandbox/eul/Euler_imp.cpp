@@ -132,7 +132,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     _M1invM1 = NULL;
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &_Phi_z);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &_Pi_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &_theta_h);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &_tmpA1);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &_tmpA2);
@@ -297,7 +296,6 @@ Euler::~Euler() {
     VecDestroy(&theta_t_l);
 
     VecDestroy(&_Phi_z);
-    VecDestroy(&_Pi_z);
     VecDestroy(&_theta_h);
     VecDestroy(&_tmpA1);
     VecDestroy(&_tmpA2);
@@ -462,7 +460,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
     // diagnose the potential temperature
     diagTheta(rho_i->vz, rt_i->vz, theta_i);
     for(int ii = 0; ii < geom->nk; ii++) {
-        diagnose_Pi_x(ii, rt_i->vh[ii], rt_i->vh[ii], exner->vh[ii]);
+        diagnose_Pi(ii, rt_i->vl[ii], rt_i->vl[ii], exner->vh[ii]);
     }
     exner->UpdateLocal();
     exner->HorizToVert();
@@ -516,7 +514,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         // update the horizontal dynamics for this iteration
         norm_max_x = -1.0;
         for(int ii = 0; ii < geom->nk; ii++) {
-            assemble_residual_x(ii, theta_i->vl, theta_j->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, 
+            assemble_residual_x(ii, theta_i->vl, theta_j->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, exner->vh[ii],
                                 velx_i[ii], velx_j[ii], rho_i->vh[ii], rho_j->vh[ii], rt_i->vh[ii], rt_j->vh[ii], 
                                 fu, _F_x[ii], _G_x[ii]);
             VecScale(fu, -1.0);
@@ -542,7 +540,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         // update the vertical dynamics for this iteration
         norm_max_z = -1.0;
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-            assemble_residual_z(ii%topo->nElsX, ii/topo->nElsX, theta_i->vz[ii], theta_j->vz[ii], 
+            assemble_residual_z(ii%topo->nElsX, ii/topo->nElsX, theta_i->vz[ii], theta_j->vz[ii], exner->vz[ii],
                                 velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], 
                                 fw, _F_z[ii], _G_z[ii]);
             VecScale(fw, -1.0);
@@ -590,6 +588,9 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         rt_j->UpdateGlobal();
 
         diagTheta(rho_j->vz, rt_j->vz, theta_j);
+        for(int ii = 0; ii < geom->nk; ii++) {
+            diagnose_Pi(ii, rt_i->vl[ii], rt_j->vl[ii], exner->vh[ii]);
+        }
         diagHorizVort(velx_j, dudz_j);
 
         if(norm_max_x < 1.0e-12 && norm_max_z < 1.0e-8) done = true;
@@ -625,7 +626,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
             sprintf(fieldname, "rhoTheta");
             geom->write2(rt_j->vh[ii], fieldname, step, ii, true);
             sprintf(fieldname, "exner");
-            diagnose_Pi_x(ii, rt_j->vh[ii], rt_j->vh[ii], htmp);
+            geom->write2(exner->vh[ii], fieldname, step, ii, true);
 
             VecDestroy(&wi);
         }
@@ -868,30 +869,31 @@ void Euler::diagnose_Phi_x(int level, Vec u1, Vec u2, Vec* Phi) {
     VecDestroy(&b);
 }
 
-// TODO: use quadratic approximation to the equation of state, 
-// and integrate this exactly (in time)
-void Euler::diagnose_Pi_x(int level, Vec rt1, Vec rt2, Vec Pi) {
-    Vec rtl, rhs;
+// diagnose the exner pressure using a quadratic approximation to the equation of state, 
+// in order to integrate this exactly (in time)
+void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
+    Vec rtl1, rtl2;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rtl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs);
-    VecZeroEntries(rhs);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rtl1);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rtl2);
 
-    VecScatterBegin(topo->gtol_2, rt1, rtl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, rt1, rtl, INSERT_VALUES, SCATTER_FORWARD);
-    eos->assemble(rtl, level, SCALE);
-    VecAXPY(rhs, 0.5, eos->vg);
+    VecScatterBegin(topo->gtol_2, rt1, rtl1, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, rt1, rtl1, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, rt2, rtl2, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, rt2, rtl2, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecScatterBegin(topo->gtol_2, rt2, rtl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, rt2, rtl, INSERT_VALUES, SCATTER_FORWARD);
-    eos->assemble(rtl, level, SCALE);
-    VecAXPY(rhs, 0.5, eos->vg);
+    //eos->assemble(rtl1, level, SCALE);
+    //VecAXPY(rhs, 0.5, eos->vg);
+    //eos->assemble(rtl2, level, SCALE);
+    //VecAXPY(rhs, 0.5, eos->vg);
+    //KSPSolve(ksp2, rhs, Pi);
 
+    eos->assemble_quad(rtl1, rtl2, level, SCALE);
     M2->assemble(level, SCALE, true);
-    KSPSolve(ksp2, rhs, Pi);
+    KSPSolve(ksp2, eos->vg, Pi);
 
-    VecDestroy(&rtl);
-    VecDestroy(&rhs);
+    VecDestroy(&rtl1);
+    VecDestroy(&rtl2);
 }
 
 void Euler::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
@@ -974,7 +976,7 @@ void Euler::diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi) {
 }
 
 // TODO: use quadrttic approximation to the EoS and integrate this exactly in time
-void Euler::diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec Pi) {
+/*void Euler::diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec Pi) {
     VecZeroEntries(Pi);
     vo->AssembleConstInv(ex, ey, vo->VB_inv);
 
@@ -985,7 +987,7 @@ void Euler::diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec Pi) {
     vo->Assemble_EOS_RHS(ex, ey, rt2, _tmpB1);
     MatMult(vo->VB_inv, _tmpB1, _tmpB2);
     VecAXPY(Pi, 0.5, _tmpB2);
-}
+}*/
 
 /*
 diagnose theta from rho X theta (with boundary condition)
@@ -1105,10 +1107,10 @@ void Euler::diagHorizVort(Vec* velx, Vec* dudz) {
     KSPDestroy(&ksp1_t);
 }
 
-void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, 
+void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi, 
                                 Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fu, Vec _F, Vec _G) 
 {
-    Vec Phi, Pi, dPi, wxu, wxz, utmp, htmp, d2u, d4u;
+    Vec Phi, dPi, wxu, wxz, utmp, htmp, d2u, d4u;
     Vec theta_h, dp, dudz_h, velz_h, dudz_l;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
@@ -1117,7 +1119,6 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &wxz);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_h);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &velz_h);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Pi);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dudz_l);
 
@@ -1132,7 +1133,7 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     // assemble in the skew-symmetric parts of the vector
     diagnose_F_x(level, velx1, velx2, rho1, rho2, _F);
     diagnose_Phi_x(level, velx1, velx2, &Phi);
-    diagnose_Pi_x(level, rt1, rt2, Pi);
+    //diagnose_Pi_x(level, rt1, rt2, Pi);
     grad(true, Pi, &dPi, level);
     diagnose_wxu(level, velx1, velx2, &wxu);
 
@@ -1217,7 +1218,6 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     VecDestroy(&htmp);
     VecDestroy(&_F);
     VecDestroy(&Phi);
-    VecDestroy(&Pi);
     VecDestroy(&dPi);
     VecDestroy(&wxu);
     VecDestroy(&theta_h);
@@ -1228,11 +1228,11 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     VecDestroy(&dudz_l);
 }
 
-void Euler::assemble_residual_z(int ex, int ey, Vec theta1, Vec theta2, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G) {
+void Euler::assemble_residual_z(int ex, int ey, Vec theta1, Vec theta2, Vec Pi, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G) {
     // diagnose the hamiltonian derivatives
     diagnose_F_z(ex, ey, velz1, velz2, rho1, rho2, _F);
     diagnose_Phi_z(ex, ey, velz1, velz2, _Phi_z);
-    diagnose_Pi_z(ex, ey, rt1, rt2, _Pi_z);
+    //diagnose_Pi_z(ex, ey, rt1, rt2, _Pi_z);
 
     // diagnose the potential temperature (midpoint)
     VecAXPY(_theta_h, 1.0, theta1);
@@ -1250,7 +1250,7 @@ void Euler::assemble_residual_z(int ex, int ey, Vec theta1, Vec theta2, Vec velz
     VecAXPY(fw, +dt, _tmpA1); // bernoulli function term
 
     vo->AssembleConst(ex, ey, vo->VB);
-    MatMult(vo->VB, _Pi_z, _tmpB1);
+    MatMult(vo->VB, Pi, _tmpB1);
     MatMult(vo->V01, _tmpB1, _tmpA1);
     vo->AssembleLinearInv(ex, ey, vo->VA_inv);
     MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient

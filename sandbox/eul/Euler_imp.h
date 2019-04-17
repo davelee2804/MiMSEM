@@ -50,29 +50,27 @@ class Euler {
         void thetaBCVec(int ex, int ey, Mat A, Vec bTheta);
         void diagTheta(Vec* rho, Vec* rt, L2Vecs* theta);
         void diagHorizVort(Vec* velx, Vec* dudz);
+        void diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi);
 
         void diagnose_F_x(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec _F);
-        void diagnose_Pi_x(int level, Vec rt1, Vec rt2, Vec Pi);
         void diagnose_Phi_x(int level, Vec u1, Vec u2, Vec* Phi);
         void diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu);
 
         void diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec _F);
-        void diagnose_Pi_z(int ex, int ey, Vec rt1, Vec rt2, Vec Pi);
         void diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi);
 
         void solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
         void assemble_precon_z(int ex, int ey, Vec theta, Vec rt, Vec exner, Mat PC);
         void assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner, Mat PC);
 
-        void assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, 
+        void assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi,
                                  Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fu, Vec _F, Vec _G);
-        void assemble_residual_z(int ex, int ey, Vec theta1, Vec theta2, 
+        void assemble_residual_z(int ex, int ey, Vec theta1, Vec theta2, Vec Pi, 
                                  Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
 
     private:
         // vertical vectors and matrices
         Vec _Phi_z;
-        Vec _Pi_z;
         Vec _theta_h;
         Vec _tmpA1;
         Vec _tmpA2;
