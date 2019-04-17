@@ -29,10 +29,13 @@ L2Vecs::L2Vecs(int _nk, Topo* _topo, Geom* _geom) {
     for(ii = 0; ii < nk; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vh[ii]);
         VecCreateSeq(MPI_COMM_SELF, topo->n2, &vl[ii]);
+        VecZeroEntries(vh[ii]);
+        VecZeroEntries(vl[ii]);
     }
 
     for(ii = 0; ii < n2; ii++) {
         VecCreateSeq(MPI_COMM_SELF, nk*topo->elOrd*topo->elOrd, &vz[ii]);
+        VecZeroEntries(vz[ii]);
     }
 }
 
