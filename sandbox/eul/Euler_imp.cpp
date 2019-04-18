@@ -304,8 +304,6 @@ Euler::~Euler() {
     VecDestroy(&_tmpB1);
     VecDestroy(&_tmpB2);
 
-    delete vo;
-
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&fg[ii]);
         VecDestroy(&fl[ii]);
@@ -327,7 +325,6 @@ Euler::~Euler() {
     delete EtoF;
 
     delete R;
-    delete M1h;
     delete F;
     delete K;
     delete M1h;
