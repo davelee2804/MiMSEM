@@ -690,7 +690,8 @@ void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt, Vec exner, Mat 
     vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB);
     MatMatMult(vo->VB, _V1_PiDV0_invV0_rt, reuse, PETSC_DEFAULT, &_DIV);
 
-    MatMatMult(_GRAD, _DIV, reuse, PETSC_DEFAULT, &PC);
+    //MatMatMult(_GRAD, _DIV, reuse, PETSC_DEFAULT, &PC);
+    MatMatMult(_GRAD, _DIV, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PC);
     vo->AssembleLinear(ex, ey, vo->VA);
     MatAYPX(PC, -0.25*dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
 }
@@ -1022,6 +1023,9 @@ void Euler::diagTheta(Vec* rho, Vec* rt, L2Vecs* theta) {
 
     VecGetArray(theta_b_l, &tbArray);
     VecGetArray(theta_t_l, &ttArray);
+
+    // do this to initialise the order of the data in this matrix before the bcs are assembled
+    vo->AssembleLinear(0, 0, vo->VA);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
