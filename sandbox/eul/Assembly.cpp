@@ -1426,11 +1426,11 @@ EoSvec::EoSvec(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     geom = _geom;
     e = _e;
 
-    Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-
     Q = new Wii(e->l->q, geom);
     W = new M2_j_xy_i(e);
+
+    Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &vl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vg);

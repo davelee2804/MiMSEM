@@ -89,6 +89,8 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     // coriolis vector (projected onto 0 forms)
     coriolis();
 
+    vo = new VertOps(topo, geom);
+
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_b);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_t);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_b_l);
@@ -301,6 +303,8 @@ Euler::~Euler() {
     VecDestroy(&_tmpA2);
     VecDestroy(&_tmpB1);
     VecDestroy(&_tmpB2);
+
+    delete vo;
 
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&fg[ii]);
@@ -1261,4 +1265,145 @@ void Euler::assemble_residual_z(int ex, int ey, Vec theta1, Vec theta2, Vec Pi, 
     // update the temperature equation flux
     MatMult(vo->VA, _F, _tmpA1); // includes theta
     MatMult(vo->VA_inv, _tmpA1, _G);
+}
+
+void Euler::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
+    int ex, ey, ii, kk, mp1, mp12;
+    int *inds0, *loc02;
+    UtQmat* UQ = new UtQmat(topo, geom, node, edge);
+    PetscScalar *bArray;
+    Vec bl, bg, UQb;
+    IS isl, isg;
+    VecScatter scat;
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    loc02 = new int[2*topo->n0];
+    VecCreateSeq(MPI_COMM_SELF, 2*topo->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, 2*topo->n0l, 2*topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &UQb);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecZeroEntries(bg);
+        VecGetArray(bl, &bArray);
+
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                inds0 = topo->elInds0_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    bArray[2*inds0[ii]+0] = func_x(geom->x[inds0[ii]], kk);
+                    bArray[2*inds0[ii]+1] = func_y(geom->x[inds0[ii]], kk);
+                }
+            }
+        }
+        VecRestoreArray(bl, &bArray);
+
+        // create a new vec scatter object to handle vector quantity on nodes
+        for(ii = 0; ii < topo->n0; ii++) {
+            loc02[2*ii+0] = 2*topo->loc0[ii]+0;
+            loc02[2*ii+1] = 2*topo->loc0[ii]+1;
+        }
+        ISCreateStride(MPI_COMM_WORLD, 2*topo->n0, 0, 1, &isl);
+        ISCreateGeneral(MPI_COMM_WORLD, 2*topo->n0, loc02, PETSC_COPY_VALUES, &isg);
+        VecScatterCreate(bg, isg, bl, isl, &scat);
+        VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(  scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+        M1->assemble(kk, SCALE);
+        MatMult(UQ->M, bg, UQb);
+        VecScale(UQb, SCALE);
+        KSPSolve(ksp1, UQb, u[kk]);
+
+        ISDestroy(&isl);
+        ISDestroy(&isg);
+        VecScatterDestroy(&scat);
+    }
+
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&UQb);
+    delete UQ;
+    delete[] loc02;
+}
+
+void Euler::init2(Vec* h, ICfunc3D* func) {
+    int ex, ey, ii, kk, mp1, mp12, *inds0;
+    PetscScalar *bArray;
+    Vec bl, bg, WQb;
+    WtQmat* WQ = new WtQmat(topo, geom, edge);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecZeroEntries(bl);
+        VecZeroEntries(bg);
+        VecGetArray(bl, &bArray);
+
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                inds0 = topo->elInds0_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    bArray[inds0[ii]] = func(geom->x[inds0[ii]], kk);
+                }
+            }
+        }
+        VecRestoreArray(bl, &bArray);
+        VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(  topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+        MatMult(WQ->M, bg, WQb);
+        VecScale(WQb, SCALE);          // have to rescale the M2 operator as the metric terms scale
+        M2->assemble(kk, SCALE, true); // this down to machine precision, so rescale the rhs as well
+        KSPSolve(ksp2, WQb, h[kk]);
+    }
+
+    delete WQ;
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&WQb);
+}
+
+void Euler::initTheta(Vec theta, ICfunc3D* func) {
+    int ex, ey, ii, mp1, mp12, *inds0;
+    PetscScalar *bArray;
+    Vec bl, bg, WQb;
+    WtQmat* WQ = new WtQmat(topo, geom, edge);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
+    VecZeroEntries(bg);
+
+    VecGetArray(bl, &bArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                bArray[inds0[ii]] = func(geom->x[inds0[ii]], 0);
+            }
+        }
+    }
+    VecRestoreArray(bl, &bArray);
+    VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+    M2->assemble(0, SCALE, false);
+    MatMult(WQ->M, bg, WQb);
+    VecScale(WQb, SCALE);
+    KSPSolve(ksp2, WQb, theta);
+
+    delete WQ;
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&WQb);
 }

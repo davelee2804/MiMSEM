@@ -68,6 +68,10 @@ class Euler {
         void assemble_residual_z(int ex, int ey, Vec theta1, Vec theta2, Vec Pi, 
                                  Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
 
+        void init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y);
+        void init2(Vec* h, ICfunc3D* func);
+        void initTheta(Vec theta, ICfunc3D* func);
+
     private:
         // vertical vectors and matrices
         Vec _Phi_z;

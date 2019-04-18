@@ -266,7 +266,7 @@ void LoadVecsVert(Vec* vecs, int nk, char* fieldname, int step, Topo* topo, Geom
 }
 
 int main(int argc, char** argv) {
-    int size, rank, step, ii, ki, n2;
+    int size, rank, step, ki, n2;
     static char help[] = "petsc";
     char fieldname[50];
     bool dump;
