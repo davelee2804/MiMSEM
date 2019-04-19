@@ -68,9 +68,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     R = new RotMat(topo, geom, node, edge);
 
     // mass flux operator
-    M1h = new Uhmat(topo, geom, node, edge);
-
-    // mass flux operator
     F = new Uhmat(topo, geom, node, edge);
 
     // kinetic energy operator
@@ -334,7 +331,6 @@ Euler::~Euler() {
     delete R;
     delete F;
     delete K;
-    delete M1h;
     delete Rh;
     delete T;
     delete eos;
@@ -509,6 +505,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         // update the horizontal dynamics for this iteration
         norm_max_x = -1.0;
         for(int ii = 0; ii < geom->nk; ii++) {
+            if(!rank) cout << ii << ":\tassembling (horizontal) residual vector: " << ii << endl;
             assemble_residual_x(ii, theta_i->vl, theta_j->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, exner->vh[ii],
                                 velx_i[ii], velx_j[ii], rho_i->vh[ii], rho_j->vh[ii], rt_i->vh[ii], rt_j->vh[ii], 
                                 fu, _F_x[ii], _G_x[ii]);
@@ -535,6 +532,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         // update the vertical dynamics for this iteration
         norm_max_z = -1.0;
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            if(!rank) cout << ii << ":\tassembling (vertical) residual vector: " << ii << endl;
             assemble_residual_z(ii%topo->nElsX, ii/topo->nElsX, theta_i->vz[ii], theta_j->vz[ii], exner->vz[ii],
                                 velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], 
                                 fw, _F_z[ii], _G_z[ii]);
@@ -582,10 +580,13 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         rt_j->VertToHoriz();
         rt_j->UpdateGlobal();
 
+if(!rank) cout << "diagnosing theta...\n";
         diagTheta(rho_j->vz, rt_j->vz, theta_j);
+if(!rank) cout << "diagnosing exner pressure (final)...\n";
         for(int ii = 0; ii < geom->nk; ii++) {
             diagnose_Pi(ii, rt_i->vl[ii], rt_j->vl[ii], exner->vh[ii]);
         }
+if(!rank) cout << "diagnosing horizontal vorticity (final)...\n";
         diagHorizVort(velx_j, dudz_j);
 
         if(norm_max_x < 1.0e-12 && norm_max_z < 1.0e-8) done = true;
@@ -730,7 +731,7 @@ void Euler::assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner) {
     VecZeroEntries(theta_h);
     VecAXPY(theta_h, 0.5, theta[level+0]);
     VecAXPY(theta_h, 0.5, theta[level+1]);
-    M1h->assemble(theta_h, level, false, SCALE);
+    F->assemble(theta_h, level, false, SCALE);
 
     M2->assemble(level, SCALE, true);
     M1->assemble(level, SCALE);
@@ -748,9 +749,9 @@ void Euler::assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner) {
     MatMatMult(EtoF->E12, _M2ThetaPiDM1invM1, reuse, PETSC_DEFAULT, &_DM2ThetaPiDM1invM1);
     MatMatMult(M1inv, _DM2ThetaPiDM1invM1, reuse, PETSC_DEFAULT, &_M1DM2ThetaPiDM1invM1);
     if(firstStep) {
-        MatMatMult(M1h->M, _M1DM2ThetaPiDM1invM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &PCx[level]);
+        MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &PCx[level]);
     } else {
-        MatMatMult(M1h->M, _M1DM2ThetaPiDM1invM1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCx[level]);
+        MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCx[level]);
     }
 
     MatAYPX(PCx[level], -dt*dt*RD/CV, M1->M, DIFFERENT_NONZERO_PATTERN);
@@ -811,20 +812,20 @@ void Euler::diagnose_F_x(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec _F) {
     VecZeroEntries(hu);
 
     // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
-    M1h->assemble(h1l, level, true, SCALE);
+    F->assemble(h1l, level, true, SCALE);
 
-    MatMult(M1h->M, u1, b);
+    MatMult(F->M, u1, b);
     VecAXPY(hu, 1.0/3.0, b);
 
-    MatMult(M1h->M, u2, b);
+    MatMult(F->M, u2, b);
     VecAXPY(hu, 1.0/6.0, b);
 
-    M1h->assemble(h2l, level, true, SCALE);
+    F->assemble(h2l, level, true, SCALE);
 
-    MatMult(M1h->M, u1, b);
+    MatMult(F->M, u1, b);
     VecAXPY(hu, 1.0/6.0, b);
 
-    MatMult(M1h->M, u2, b);
+    MatMult(F->M, u2, b);
     VecAXPY(hu, 1.0/3.0, b);
 
     // solve the linear system
@@ -1138,18 +1139,20 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     // assemble in the skew-symmetric parts of the vector
     diagnose_F_x(level, velx1, velx2, rho1, rho2, _F);
     diagnose_Phi_x(level, velx1, velx2, &Phi);
-    //diagnose_Pi_x(level, rt1, rt2, Pi);
     grad(true, Pi, &dPi, level);
     diagnose_wxu(level, velx1, velx2, &wxu);
 
-    // add the pressure gradient force to the (horiztonal) bernoulli function
-    M1h->assemble(theta_h, level, false, SCALE);
-    MatMult(M1h->M, dPi, dp);
-    VecAXPY(Phi, 1.0, dp);
+    MatMult(EtoF->E12, Phi, fu);
+    VecAXPY(fu, 1.0, wxu);
+
+    // add the pressure gradient force
+    F->assemble(theta_h, level, false, SCALE);
+    MatMult(F->M, dPi, dp);
+    VecAXPY(fu, 1.0, dp);
 
     // diagnose the temperature flux (assume the H(div) mass matrix has
     // already been assembled at this level
-    MatMult(M1h->M, _F, utmp);
+    MatMult(F->M, _F, utmp);
     KSPSolve(ksp1, utmp, _G);
 
     // second voritcity term
@@ -1184,11 +1187,8 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
         MatMult(Rh->M, velz_h, dp);
         VecAXPY(utmp, 0.5, dp);
     }
-
-    // momentum terms
-    MatMult(EtoF->E12, Phi, fu);
-    VecAXPY(fu, 1.0, wxu);
     VecAXPY(fu, 1.0, utmp);
+    VecScale(fu, dt);
 
     // assemble the mass matrix terms
     MatMult(M1->M, velx1, utmp);
@@ -1237,7 +1237,6 @@ void Euler::assemble_residual_z(int ex, int ey, Vec theta1, Vec theta2, Vec Pi, 
     // diagnose the hamiltonian derivatives
     diagnose_F_z(ex, ey, velz1, velz2, rho1, rho2, _F);
     diagnose_Phi_z(ex, ey, velz1, velz2, _Phi_z);
-    //diagnose_Pi_z(ex, ey, rt1, rt2, _Pi_z);
 
     // diagnose the potential temperature (midpoint)
     VecAXPY(_theta_h, 1.0, theta1);

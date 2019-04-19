@@ -21,7 +21,6 @@ class Euler {
         E10mat* NtoE;
         E21mat* EtoF;
         RotMat* R;
-        Uhmat* M1h;
         Uhmat* F;
         WtQUmat* K;
         Whmat* T;
