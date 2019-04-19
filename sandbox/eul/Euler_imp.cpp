@@ -139,6 +139,9 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &_tmpA2);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &_tmpB1);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &_tmpB2);
+
+    PCz = new Mat[topo->nElsX*topo->nElsX];
+    PCx = new Mat[geom->nk];
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -307,15 +310,19 @@ Euler::~Euler() {
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&fg[ii]);
         VecDestroy(&fl[ii]);
+        MatDestroy(&PCx[ii]);
     }
     delete[] fg;
     delete[] fl;
+    delete[] PCx;
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&gv[ii]);
         VecDestroy(&zv[ii]);
+        MatDestroy(&PCz[ii]);
     }
     delete[] gv;
     delete[] zv;
+    delete[] PCz;
 
     delete m0;
     delete M1;
@@ -422,8 +429,6 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
     bool done = false;
     int elOrd2 = topo->elOrd*topo->elOrd;
     double norm_max_x, norm_max_z, norm_u, norm_du;
-    Mat* PCz = new Mat[topo->nElsX*topo->nElsX];
-    Mat* PCx = new Mat[geom->nk];
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* exner = new L2Vecs(geom->nk, topo, geom);
@@ -448,7 +453,6 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         VecScatterEnd(  topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterBegin(topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(  topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
-        firstStep = false;
     }
 
     velz_i->UpdateLocal();
@@ -480,12 +484,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &_F_z[ii]);
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &_G_z[ii]);
 
-        MatCreate(MPI_COMM_SELF, &PCz[ii]);
-        MatSetType(PCz[ii], MATSEQAIJ);
-        MatSetSizes(PCz[ii], (geom->nk-1)*elOrd2, (geom->nk-1)*elOrd2, (geom->nk-1)*elOrd2, (geom->nk-1)*elOrd2);
-        MatSeqAIJSetPreallocation(PCz[ii], 2*elOrd2, PETSC_NULL);
-
-        assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_i->vz[ii], rt_i->vz[ii], exner->vz[ii], PCz[ii]);
+        assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_i->vz[ii], rt_i->vz[ii], exner->vz[ii]);
     }
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
@@ -497,12 +496,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_j[ii]);
         VecCopy(velx_i[ii], velx_j[ii]);
 
-        MatCreate(MPI_COMM_WORLD, &PCx[ii]);
-        MatSetType(PCx[ii], MATMPIAIJ);
-        MatSetSizes(PCx[ii], topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
-        MatMPIAIJSetPreallocation(PCx[ii], 8*F->U->nDofsJ, PETSC_NULL, 8*F->U->nDofsJ, PETSC_NULL);
-
-        assemble_precon_x(ii, theta_i->vl, rt_i->vl[ii], exner->vl[ii], PCx[ii]);
+        assemble_precon_x(ii, theta_i->vl, rt_i->vl[ii], exner->vl[ii]);
     }
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
 
@@ -637,16 +631,16 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         }
     }
 
+    firstStep = false;
+
     VecDestroy(&dw);
     VecDestroy(&fw);
     for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&_F_z[ii]);
         VecDestroy(&_G_z[ii]);
-        MatDestroy(&PCz[ii]);
     }
     delete[] _F_z;
     delete[] _G_z;
-    delete[] PCz;
     VecDestroy(&du);
     VecDestroy(&fu);
     for(int ii = 0; ii < geom->nk; ii++) {
@@ -655,7 +649,6 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         VecDestroy(&_G_x[ii]);
         VecDestroy(&dudz_i[ii]);
         VecDestroy(&dudz_j[ii]);
-        MatDestroy(&PCx[ii]);
     }
     VecDestroy(&htmp);
     delete[] velx_j;
@@ -663,7 +656,6 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
     delete[] _G_x;
     delete[] dudz_i;
     delete[] dudz_j;
-    delete[] PCx;
     delete theta_i;
     delete theta_j;
     delete exner;
@@ -672,7 +664,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
     delete rt_j;
 }
 
-void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt, Vec exner, Mat PC) {
+void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt, Vec exner) {
+    int ei = ey * topo->nElsX + ex;
     MatReuse reuse = (!_DTV1) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
     vo->AssembleConst(ex, ey, vo->VB);
@@ -690,10 +683,13 @@ void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt, Vec exner, Mat 
     vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB);
     MatMatMult(vo->VB, _V1_PiDV0_invV0_rt, reuse, PETSC_DEFAULT, &_DIV);
 
-    //MatMatMult(_GRAD, _DIV, reuse, PETSC_DEFAULT, &PC);
-    MatMatMult(_GRAD, _DIV, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PC);
+    if(firstStep) {
+        MatMatMult(_GRAD, _DIV, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &PCz[ei]);
+    } else {
+        MatMatMult(_GRAD, _DIV, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCz[ei]);
+    }
     vo->AssembleLinear(ex, ey, vo->VA);
-    MatAYPX(PC, -0.25*dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
+    MatAYPX(PCz[ei], -0.25*dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
 }
 
 void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ainv) {
@@ -724,7 +720,7 @@ void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ain
     VecDestroy(&diag_u_g);
 }
 
-void Euler::assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner, Mat PC) {
+void Euler::assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner) {
     MatReuse reuse = (!_M1invM1) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     Mat M1inv;
     Mat M2ThetaInv;
@@ -741,7 +737,7 @@ void Euler::assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner, Mat PC) 
     DiagMatInv(M1->M, topo->n1, topo->n1l, topo->nDofs1G, topo->gtol_1, &M1inv);
 
     T->assemble(rt, level, SCALE); 
-    DiagMatInv(M1->M, topo->n2, topo->n2l, topo->nDofs2G, topo->gtol_2, &M2ThetaInv);
+    DiagMatInv(T->M, topo->n2, topo->n2l, topo->nDofs2G, topo->gtol_2, &M2ThetaInv);
 
     T->assemble(exner, level, SCALE); 
     MatMatMult(M1inv, M1->M, reuse, PETSC_DEFAULT, &_M1invM1);
@@ -751,12 +747,16 @@ void Euler::assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner, Mat PC) 
     MatMatMult(M2->M, _ThetaPiDM1invM1, reuse, PETSC_DEFAULT, &_M2ThetaPiDM1invM1);
     MatMatMult(EtoF->E12, _M2ThetaPiDM1invM1, reuse, PETSC_DEFAULT, &_DM2ThetaPiDM1invM1);
     MatMatMult(M1inv, _DM2ThetaPiDM1invM1, reuse, PETSC_DEFAULT, &_M1DM2ThetaPiDM1invM1);
-    MatMatMult(M1h->M, _M1DM2ThetaPiDM1invM1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PC);
+    if(firstStep) {
+        MatMatMult(M1h->M, _M1DM2ThetaPiDM1invM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &PCx[level]);
+    } else {
+        MatMatMult(M1h->M, _M1DM2ThetaPiDM1invM1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCx[level]);
+    }
 
-    MatAYPX(PC, -dt*dt*RD/CV, M1->M, DIFFERENT_NONZERO_PATTERN);
+    MatAYPX(PCx[level], -dt*dt*RD/CV, M1->M, DIFFERENT_NONZERO_PATTERN);
 
     R->assemble(fl[level], level, SCALE);
-    MatAXPY(PC, dt, R->M, DIFFERENT_NONZERO_PATTERN);
+    MatAXPY(PCx[level], dt, R->M, DIFFERENT_NONZERO_PATTERN);
 
     VecDestroy(&theta_h);
     MatDestroy(&M1inv);

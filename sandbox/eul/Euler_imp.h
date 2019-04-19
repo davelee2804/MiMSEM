@@ -60,8 +60,8 @@ class Euler {
         void diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi);
 
         void solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
-        void assemble_precon_z(int ex, int ey, Vec theta, Vec rt, Vec exner, Mat PC);
-        void assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner, Mat PC);
+        void assemble_precon_z(int ex, int ey, Vec theta, Vec rt, Vec exner);
+        void assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner);
 
         void assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi,
                                  Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fu, Vec _F, Vec _G);
@@ -87,6 +87,7 @@ class Euler {
         Mat _V0_invV0_rt;
         Mat _DV0_invV0_rt;
         Mat _V1_PiDV0_invV0_rt;
+        Mat* PCz;
         // horiztonal vectors and matrices
         Mat _M1invM1;
         Mat _DM1invM1;
@@ -95,4 +96,5 @@ class Euler {
         Mat _M2ThetaPiDM1invM1;
         Mat _DM2ThetaPiDM1invM1;
         Mat _M1DM2ThetaPiDM1invM1;
+        Mat* PCx;
 };
