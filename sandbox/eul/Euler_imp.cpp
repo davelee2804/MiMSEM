@@ -131,7 +131,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     _M1invM1 = NULL;
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &_Phi_z);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &_theta_h);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*topo->elOrd*topo->elOrd, &_theta_h);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &_tmpA1);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &_tmpA2);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &_tmpB1);
@@ -505,7 +505,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         // update the horizontal dynamics for this iteration
         norm_max_x = -1.0;
         for(int ii = 0; ii < geom->nk; ii++) {
-            if(!rank) cout << ii << ":\tassembling (horizontal) residual vector: " << ii << endl;
+            if(!rank) cout << rank << ":\tassembling (horizontal) residual vector: " << ii << endl;
             assemble_residual_x(ii, theta_i->vl, theta_j->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, exner->vh[ii],
                                 velx_i[ii], velx_j[ii], rho_i->vh[ii], rho_j->vh[ii], rt_i->vh[ii], rt_j->vh[ii], 
                                 fu, _F_x[ii], _G_x[ii]);
@@ -530,9 +530,9 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         }
 
         // update the vertical dynamics for this iteration
+        if(!rank) cout << rank << ":\tassembling (vertical) residual vectors" << endl;
         norm_max_z = -1.0;
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-            if(!rank) cout << ii << ":\tassembling (vertical) residual vector: " << ii << endl;
             assemble_residual_z(ii%topo->nElsX, ii/topo->nElsX, theta_i->vz[ii], theta_j->vz[ii], exner->vz[ii],
                                 velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], 
                                 fw, _F_z[ii], _G_z[ii]);
@@ -568,6 +568,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         rho_j->HorizToVert();
         rt_j->UpdateLocal();
         rt_j->HorizToVert();
+
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             MatMult(vo->V10, _F_z[ii], _tmpB1);
             VecAXPY(rho_j->vz[ii], -dt, _tmpB1);
@@ -580,14 +581,13 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         rt_j->VertToHoriz();
         rt_j->UpdateGlobal();
 
-if(!rank) cout << "diagnosing theta...\n";
         diagTheta(rho_j->vz, rt_j->vz, theta_j);
-if(!rank) cout << "diagnosing exner pressure (final)...\n";
         for(int ii = 0; ii < geom->nk; ii++) {
             diagnose_Pi(ii, rt_i->vl[ii], rt_j->vl[ii], exner->vh[ii]);
         }
-if(!rank) cout << "diagnosing horizontal vorticity (final)...\n";
         diagHorizVort(velx_j, dudz_j);
+
+        if(!rank) cout << "|dx|/|x|: " << norm_max_x << "\t|dz|/|z|: " << norm_max_z << endl;
 
         if(norm_max_x < 1.0e-12 && norm_max_z < 1.0e-8) done = true;
     } while(!done);
@@ -1221,7 +1221,6 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     // clean up
     VecDestroy(&utmp);
     VecDestroy(&htmp);
-    VecDestroy(&_F);
     VecDestroy(&Phi);
     VecDestroy(&dPi);
     VecDestroy(&wxu);
