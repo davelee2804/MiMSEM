@@ -27,6 +27,7 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
+//#define SCALE 1.0
 #define MAX_IT 100
 #define VERT_TOL 1.0e-8
 #define HORIZ_TOL 1.0e-12
@@ -524,8 +525,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
             KSPDestroy(&ksp_x);
             VecAXPY(velx_j[ii], 1.0, du);
 
-            VecNorm(velx_j[ii], NORM_2, &norm_du);
-            VecNorm(du, NORM_2, &norm_u);
+            VecNorm(velx_j[ii], NORM_2, &norm_u);
+            VecNorm(du, NORM_2, &norm_du);
             if(norm_max_x < norm_du/norm_u) norm_max_x = norm_du/norm_u;
         }
 
@@ -548,8 +549,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
             KSPDestroy(&ksp_z);
             VecAXPY(velz_j->vz[ii], 1.0, dw);
 
-            VecNorm(velz_j->vz[ii], NORM_2, &norm_du);
-            VecNorm(dw, NORM_2, &norm_u);
+            VecNorm(velz_j->vz[ii], NORM_2, &norm_u);
+            VecNorm(dw, NORM_2, &norm_du);
             if(norm_max_z < norm_du/norm_u) norm_max_z = norm_du/norm_u;
         }
         velz_j->VertToHoriz();
@@ -753,7 +754,6 @@ void Euler::assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner) {
     } else {
         MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCx[level]);
     }
-
     MatAYPX(PCx[level], -dt*dt*RD/CV, M1->M, DIFFERENT_NONZERO_PATTERN);
 
     R->assemble(fl[level], level, SCALE);
@@ -1191,9 +1191,9 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     VecScale(fu, dt);
 
     // assemble the mass matrix terms
-    MatMult(M1->M, velx1, utmp);
-    VecAXPY(fu, +1.0, utmp);
     MatMult(M1->M, velx2, utmp);
+    VecAXPY(fu, +1.0, utmp);
+    MatMult(M1->M, velx1, utmp);
     VecAXPY(fu, -1.0, utmp);
 
     if(do_visc) {
@@ -1201,7 +1201,7 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
         VecAXPY(utmp, 0.5, velx1);
         VecAXPY(utmp, 0.5, velx2);
         laplacian(true, utmp, &d2u, level);
-        laplacian(true, d2u, &d4u, level);
+        laplacian(false, d2u, &d4u, level);
         MatMult(M1->M, d4u, d2u);
         VecAXPY(fu, dt, d2u);
         VecDestroy(&d2u);
