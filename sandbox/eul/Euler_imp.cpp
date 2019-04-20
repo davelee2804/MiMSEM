@@ -187,6 +187,7 @@ void Euler::coriolis() {
         VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fg[kk]);
         m0->assemble(kk, 1.0);
         VecPointwiseDivide(fg[kk], PtQfxg, m0->vg);
+        VecZeroEntries(fl[kk]);
         VecScatterBegin(topo->gtol_0, fg[kk], fl[kk], INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(  topo->gtol_0, fg[kk], fl[kk], INSERT_VALUES, SCATTER_FORWARD);
     }
@@ -201,7 +202,6 @@ void Euler::initGZ() {
     int ex, ey, ei, ii, kk, n2, mp12;
     int* inds0;
     int inds2k[99], inds0k[99];
-    double det;
     Wii* Q = new Wii(node->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(edge);
     double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
@@ -221,6 +221,8 @@ void Euler::initGZ() {
     MatSetType(BQ, MATSEQAIJ);
     MatSetSizes(BQ, (geom->nk+0)*n2, (geom->nk+1)*mp12, (geom->nk+0)*n2, (geom->nk+1)*mp12);
     MatSeqAIJSetPreallocation(BQ, 2*mp12, PETSC_NULL);
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -907,7 +909,7 @@ void Euler::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, wxu);
 
-    curl(true,  u1, &w1, level, true);
+    curl(false, u1, &w1, level, true);
     curl(false, u2, &w2, level, true);
     VecAXPY(w1, 1.0, w2);
     VecScale(w1, 0.5);
@@ -1129,6 +1131,10 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dudz_l);
 
+    m0->assemble(level, SCALE);
+    M1->assemble(level, SCALE);
+    M2->assemble(level, SCALE, true);
+
     // assume theta2 is at the current iteration (consistent with the contents
     // of the x vector
     VecZeroEntries(theta_h);
@@ -1140,16 +1146,16 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     // assemble in the skew-symmetric parts of the vector
     diagnose_F_x(level, velx1, velx2, rho1, rho2, _F);
     diagnose_Phi_x(level, velx1, velx2, &Phi);
-    grad(true, Pi, &dPi, level);
+    grad(false, Pi, &dPi, level);
     diagnose_wxu(level, velx1, velx2, &wxu);
 
     MatMult(EtoF->E12, Phi, fu);
     VecAXPY(fu, 1.0, wxu);
 
     // add the pressure gradient force
-    F->assemble(theta_h, level, false, SCALE);
+    F->assemble(theta_h, level, false, SCALE); // TODO: this operator causing blow up??
     MatMult(F->M, dPi, dp);
-    VecAXPY(fu, 1.0, dp);
+    VecAXPY(fu, 1.0, dp); // TODO: residual blow up
 
     // diagnose the temperature flux (assume the H(div) mass matrix has
     // already been assembled at this level
