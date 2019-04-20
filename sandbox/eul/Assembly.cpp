@@ -383,7 +383,6 @@ void Pvec::assemble(int lev, double scale) {
     // assemble values into local vector
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            // incorporate the jacobian transformation for each element
             Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
@@ -391,7 +390,8 @@ void Pvec::assemble(int lev, double scale) {
             inds_l = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < np12; ii++) {
                 //entries[ii]  = scale*Q->A[ii][ii];
-                entries[ii]  = scale*Q->A[ii][ii]/geom->det[ei][ii];
+                //entries[ii]  = scale*Q->A[ii][ii]/geom->det[ei][ii];
+                entries[ii]  = scale*Q->A[ii][ii]*geom->det[ei][ii];
                 entries[ii] *= 1.0/geom->thick[lev][inds_l[ii]];
             }
             VecSetValues(vl, np12, inds_l, entries, ADD_VALUES);
@@ -425,7 +425,6 @@ WtQmat::WtQmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 
 void WtQmat::assemble() {
     int ex, ey, ei, mp1, mp12, ii, *inds_2, *inds_0;
-    //double det;
     M2_j_xy_i* W = new M2_j_xy_i(e);
     Wii* Q = new Wii(e->l->q, geom);
     double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
@@ -444,7 +443,6 @@ void WtQmat::assemble() {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            // incorportate jacobian tranformation for each element
             Q->assemble(ex, ey);
 
             // piecewise constant field in the vertical, so vertical transformation is det/det = 1
@@ -518,7 +516,8 @@ void PtQmat::assemble() {
             // piecewise constant field in the vertical, so vertical transformation is det/det = 1
             Q->assemble(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
-                Qaa[ii][ii] = Q->A[ii][ii]/geom->det[ei][ii];
+                //Qaa[ii][ii] = Q->A[ii][ii]/geom->det[ei][ii];
+                Qaa[ii][ii] = Q->A[ii][ii]*geom->det[ei][ii];
             }
             //Mult_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Q->A, PtQ);
             Mult_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
