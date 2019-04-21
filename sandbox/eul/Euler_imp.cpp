@@ -428,7 +428,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
     char fieldname[100];
     bool done = false;
     int elOrd2 = topo->elOrd*topo->elOrd;
-    double norm_max_x, norm_max_z, norm_u, norm_du;
+    double norm_max_x, norm_max_z, norm_u, norm_du, norm_max_dz;
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* exner = new L2Vecs(geom->nk, topo, geom);
@@ -509,7 +509,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         // update the horizontal dynamics for this iteration
         norm_max_x = -1.0;
         for(int ii = 0; ii < geom->nk; ii++) {
-            if(!rank) cout << rank << ":\tassembling (horizontal) residual vector: " << ii << endl;
+            if(!rank) cout << rank << ":\tassembling (horizontal) residual vector: " << ii;
             assemble_residual_x(ii, theta_i->vl, theta_j->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, exner->vh[ii],
                                 velx_i[ii], velx_j[ii], rho_i->vh[ii], rho_j->vh[ii], rt_i->vh[ii], rt_j->vh[ii], 
                                 fu, _F_x[ii], _G_x[ii]);
@@ -530,6 +530,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
 
             VecNorm(velx_j[ii], NORM_2, &norm_u);
             VecNorm(du, NORM_2, &norm_du);
+            if(!rank) cout << "\t|dx|: " << norm_du << "\t|x|: " << norm_u << "\t|dx|/|x|: " << norm_du/norm_u << endl;
             if(norm_max_x < norm_du/norm_u) norm_max_x = norm_du/norm_u;
         }
 
@@ -554,7 +555,10 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
 
             VecNorm(velz_j->vz[ii], NORM_2, &norm_u);
             VecNorm(dw, NORM_2, &norm_du);
-            if(norm_max_z < norm_du/norm_u) norm_max_z = norm_du/norm_u;
+            if(norm_max_dz/norm_max_z < norm_du/norm_u) { 
+                norm_max_z = norm_u;
+                norm_max_dz = norm_du;
+            }
         }
         velz_j->VertToHoriz();
         velz_j->UpdateGlobal();
@@ -591,7 +595,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         }
         diagHorizVort(velx_j, dudz_j);
 
-        if(!rank) cout << "|dx|/|x|: " << norm_max_x << "\t|dz|/|z|: " << norm_max_z << endl;
+        //if(!rank) cout << "|dx|/|x|: " << norm_max_x << "\t|dz|/|z|: " << norm_max_z << endl;
+        if(!rank) cout << "|dz|: " << norm_max_dz << "\t|z|: " << norm_max_z << "\t|dz|/|z|: " << norm_max_dz/norm_max_z << endl;
 
         if(norm_max_x < 1.0e-12 && norm_max_z < 1.0e-8) done = true;
     } while(!done);
@@ -694,7 +699,7 @@ void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt, Vec exner) {
         MatMatMult(_GRAD, _DIV, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCz[ei]);
     }
     vo->AssembleLinear(ex, ey, vo->VA);
-    MatAYPX(PCz[ei], -0.25*dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
+    MatAYPX(PCz[ei], -dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
 }
 
 void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ainv) {
@@ -1143,6 +1148,8 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     VecAXPY(theta_h, 0.25, theta2[level+0]);
     VecAXPY(theta_h, 0.25, theta2[level+1]);
 
+    VecZeroEntries(fu);
+
     // assemble in the skew-symmetric parts of the vector
     diagnose_F_x(level, velx1, velx2, rho1, rho2, _F);
     diagnose_Phi_x(level, velx1, velx2, &Phi);
@@ -1207,7 +1214,7 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
         VecZeroEntries(utmp);
         VecAXPY(utmp, 0.5, velx1);
         VecAXPY(utmp, 0.5, velx2);
-        laplacian(true, utmp, &d2u, level);
+        laplacian(false, utmp, &d2u, level);
         laplacian(false, d2u, &d4u, level);
         MatMult(M1->M, d4u, d2u);
         VecAXPY(fu, dt, d2u);
@@ -1239,15 +1246,17 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     VecDestroy(&dudz_l);
 }
 
-void Euler::assemble_residual_z(int ex, int ey, Vec theta1, Vec theta2, Vec Pi, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G) {
+void Euler::assemble_residual_z(int ex, int ey, Vec theta1, Vec theta2, Vec Pi, 
+                                Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G) 
+{
     // diagnose the hamiltonian derivatives
     diagnose_F_z(ex, ey, velz1, velz2, rho1, rho2, _F);
     diagnose_Phi_z(ex, ey, velz1, velz2, _Phi_z);
 
     // diagnose the potential temperature (midpoint)
-    VecAXPY(_theta_h, 1.0, theta1);
-    VecAXPY(_theta_h, 1.0, theta2);
-    VecScale(_theta_h, 0.5);
+    VecZeroEntries(_theta_h);
+    VecAXPY(_theta_h, 0.5, theta1);
+    VecAXPY(_theta_h, 0.5, theta2);
 
     // assemble the momentum equation residual
     vo->AssembleLinear(ex, ey, vo->VA);
