@@ -570,7 +570,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
 
             VecCopy(rt_i->vh[ii], rt_j->vh[ii]);
             MatMult(EtoF->E21, _G_x[ii], htmp);
-            VecAXPY(rt_j->vh[ii], -dt, htmp);
+            VecAXPY(rt_j->vh[ii], -dt, htmp); // TODO: breaks convergence!
         }
         rho_j->UpdateLocal();
         rho_j->HorizToVert();
@@ -579,10 +579,10 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             MatMult(vo->V10, _F_z[ii], _tmpB1);
-            VecAXPY(rho_j->vz[ii], -dt, _tmpB1);
+            VecAXPY(rho_j->vz[ii], -dt, _tmpB1); // TODO: breaks convergence!
 
             MatMult(vo->V10, _G_z[ii], _tmpB1);
-            VecAXPY(rt_j->vz[ii], -dt, _tmpB1);
+            VecAXPY(rt_j->vz[ii], -dt, _tmpB1); // TODO: breaks convergence!
         }
         rho_j->VertToHoriz();
         rho_j->UpdateGlobal();
@@ -593,12 +593,14 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         for(int ii = 0; ii < geom->nk; ii++) {
             diagnose_Pi(ii, rt_i->vl[ii], rt_j->vl[ii], exner->vh[ii]);
         }
+        exner->UpdateLocal();
+        exner->HorizToVert();
         diagHorizVort(velx_j, dudz_j);
 
         //if(!rank) cout << "|dx|/|x|: " << norm_max_x << "\t|dz|/|z|: " << norm_max_z << endl;
         if(!rank) cout << "|dz|: " << norm_max_dz << "\t|z|: " << norm_max_z << "\t|dz|/|z|: " << norm_max_dz/norm_max_z << endl;
 
-        if(norm_max_x < 1.0e-12 && norm_max_z < 1.0e-8) done = true;
+        if(norm_max_x < 1.0e-12 && norm_max_dz/norm_max_z < 1.0e-8) done = true;
     } while(!done);
 
     // update the solutions
@@ -1124,11 +1126,10 @@ void Euler::diagHorizVort(Vec* velx, Vec* dudz) {
 void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi, 
                                 Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fu, Vec _F, Vec _G) 
 {
-    Vec Phi, dPi, wxu, wxz, utmp, htmp, d2u, d4u;
+    Vec Phi, dPi, wxu, wxz, utmp, d2u, d4u;
     Vec theta_h, dp, dudz_h, velz_h, dudz_l;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &wxz);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_h);
@@ -1160,9 +1161,9 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     VecAXPY(fu, 1.0, wxu);
 
     // add the pressure gradient force
-    F->assemble(theta_h, level, false, SCALE); // TODO: this operator causing blow up??
+    F->assemble(theta_h, level, false, SCALE);
     MatMult(F->M, dPi, dp);
-    VecAXPY(fu, 1.0, dp); // TODO: residual blow up
+    VecAXPY(fu, 1.0, dp);
 
     // diagnose the temperature flux (assume the H(div) mass matrix has
     // already been assembled at this level
@@ -1201,7 +1202,7 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
         MatMult(Rh->M, velz_h, dp);
         VecAXPY(utmp, 0.5, dp);
     }
-    VecAXPY(fu, 1.0, utmp);
+    VecAXPY(fu, 1.0, utmp); // TODO: coupling to vertical solve causing blow up
     VecScale(fu, dt);
 
     // assemble the mass matrix terms
@@ -1222,19 +1223,8 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
         VecDestroy(&d4u);
     }
 
-    // update the continuity equation
-    MatMult(EtoF->E21, _F, htmp);
-    VecAXPY(rho2, -dt, htmp);
-    VecAXPY(rho2, -1.0, rho1);
-
-    // temperature term
-    MatMult(EtoF->E21, _G, htmp);
-    VecAXPY(rt2, -dt, htmp);
-    VecAXPY(rt2, -1.0, rt1);
-
     // clean up
     VecDestroy(&utmp);
-    VecDestroy(&htmp);
     VecDestroy(&Phi);
     VecDestroy(&dPi);
     VecDestroy(&wxu);
