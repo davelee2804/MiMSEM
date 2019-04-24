@@ -180,7 +180,6 @@ void Wmat::assemble(int lev, double scale, bool vert_scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds = topo->elInds2_g(ex, ey);
-            // incorporate the jacobian transformation for each element
             Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
@@ -1521,8 +1520,10 @@ void EoSvec::assemble_quad(Vec rt1, Vec rt2, int lev, double scale) {
 
             for(ii = 0; ii < nQuad2; ii++) {
                 // density is piecewise constant in the vertical
+                rtq1[ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                rtq2[ii] *= 1.0/geom->thick[lev][inds0[ii]];
                 rtq[ii] = c0 + 0.5*c1*(rtq1[ii] + rtq2[ii]) + third*c2*(rtq1[ii]*rtq1[ii] + rtq1[ii]*rtq2[ii] + rtq2[ii]*rtq2[ii]);
-                rtq[ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                //rtq[ii] *= 1.0/geom->thick[lev][inds0[ii]];
                 rtq[ii] *= scale;
             }
 

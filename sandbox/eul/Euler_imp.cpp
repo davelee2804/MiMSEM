@@ -697,6 +697,7 @@ void Euler::solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_
     PC pc;
     KSP ksp_x;
     KSP ksp_z;
+L2Vecs* exner_i = new L2Vecs(geom->nk, topo, geom);
 
     if(firstStep) {
         // assumed these have been initialised from the driver
@@ -720,6 +721,7 @@ void Euler::solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_
     }
     exner->UpdateLocal();
     exner->HorizToVert();
+exner_i->CopyFromVert(exner->vz);
 for(int ii = 0; ii < geom->nk; ii++) {
 sprintf(fieldname, "density");
 geom->write2(rho_i->vh[ii], fieldname, 9999, ii, true);
@@ -830,14 +832,10 @@ geom->write2(theta_i->vh[ii], fieldname, 9999, ii, false);
         diagHorizVort(velx_j, dudz_j);
 
         if(!rank) cout << "|dz|: " << norm_max_dz << "\t|z|: " << norm_max_z << "\t|dz|/|z|: " << norm_max_dz/norm_max_z << endl;
-
-        if(norm_max_dz/norm_max_z < 1.0e-8) done = true;
+        if(norm_max_dz/norm_max_z < 1.0e-10) done = true;
     } while(!done);
+
 if(!rank)cout<<"done with veritcal solve...(1)\n";
-MPI_Barrier(MPI_COMM_WORLD);
-if(!rank)cout<<"done with veritcal solve...(2)\n";
-
-
 for(int ii = 0; ii < geom->nk; ii++) {
 sprintf(fieldname, "density");
 geom->write2(rho_j->vh[ii], fieldname, 9999, ii, true);
@@ -980,6 +978,7 @@ geom->write2(theta_j->vh[ii], fieldname, 9999, ii, false);
     delete velz_j;
     delete rho_j;
     delete rt_j;
+delete exner_i;
 }
 
 void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt_i, Vec rt_j, Vec exner, Vec velz) {
@@ -1228,6 +1227,7 @@ void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
     VecAXPY(rhs, 0.5, eos->vg);
     eos->assemble(rtl2, level, SCALE);
     VecAXPY(rhs, 0.5, eos->vg);
+    M2->assemble(level, SCALE, true);
     KSPSolve(ksp2, rhs, Pi);
 
     //eos->assemble_quad(rtl1, rtl2, level, SCALE);
