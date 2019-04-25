@@ -495,7 +495,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_j[ii]);
         VecCopy(velx_i[ii], velx_j[ii]);
 
-        assemble_precon_x(ii, theta_i->vl, rt_i->vl[ii], exner->vl[ii]);
+        assemble_precon_x(ii, theta_i->vl, rt_i->vl[ii], rt_i->vl[ii], exner->vl[ii]);
     }
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
 
@@ -519,7 +519,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
                                 fu, _F_x[ii], _G_x[ii]);
             VecScale(fu, -1.0);
 
-            assemble_precon_x(ii, theta_j->vl, rt_j->vl[ii], exner->vl[ii]);
+            assemble_precon_x(ii, theta_j->vl, rt_i->vl[ii], rt_j->vl[ii], exner->vl[ii]);
 
             KSPCreate(MPI_COMM_WORLD, &ksp_x);
             KSPSetOperators(ksp_x, PCx[ii], PCx[ii]);
@@ -777,7 +777,7 @@ geom->write2(theta_i->vh[ii], fieldname, 9999, ii, false);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_j[ii]);
         VecCopy(velx_i[ii], velx_j[ii]);
 
-        assemble_precon_x(ii, theta_i->vl, rt_i->vl[ii], exner->vl[ii]);
+        assemble_precon_x(ii, theta_i->vl, rt_i->vl[ii], rt_i->vl[ii], exner->vl[ii]);
     }
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
 
@@ -1065,7 +1065,7 @@ void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ain
     VecDestroy(&diag_u_g);
 }
 
-void Euler::assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner) {
+void Euler::assemble_precon_x(int level, Vec* theta, Vec rt_i, Vec rt_j, Vec exner) {
     MatReuse reuse = (!_M1invM1) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     Mat M1inv;
     Mat M2ThetaInv;
@@ -1075,23 +1075,26 @@ void Euler::assemble_precon_x(int level, Vec* theta, Vec rt, Vec exner) {
     VecZeroEntries(theta_h);
     VecAXPY(theta_h, 0.5, theta[level+0]);
     VecAXPY(theta_h, 0.5, theta[level+1]);
-    F->assemble(theta_h, level, false, SCALE);
 
     M2->assemble(level, SCALE, true);
     M1->assemble(level, SCALE);
     DiagMatInv(M1->M, topo->n1, topo->n1l, topo->nDofs1G, topo->gtol_1, &M1inv);
 
-    T->assemble(rt, level, SCALE); 
+    T->assemble(rt_i, level, SCALE); 
     DiagMatInv(T->M, topo->n2, topo->n2l, topo->nDofs2G, topo->gtol_2, &M2ThetaInv);
 
-    T->assemble(exner, level, SCALE); 
-    MatMatMult(M1inv, M1->M, reuse, PETSC_DEFAULT, &_M1invM1);
+    F->assemble(rt_j, level, true, SCALE);
+    MatMatMult(M1inv, F->M, reuse, PETSC_DEFAULT, &_M1invM1);
     MatMatMult(EtoF->E21, _M1invM1, reuse, PETSC_DEFAULT, &_DM1invM1);
+
+    T->assemble(exner, level, SCALE); 
     MatMatMult(T->M, _DM1invM1, reuse, PETSC_DEFAULT, &_PiDM1invM1);
     MatMatMult(M2ThetaInv, _PiDM1invM1, reuse, PETSC_DEFAULT, &_ThetaPiDM1invM1);
     MatMatMult(M2->M, _ThetaPiDM1invM1, reuse, PETSC_DEFAULT, &_M2ThetaPiDM1invM1);
     MatMatMult(EtoF->E12, _M2ThetaPiDM1invM1, reuse, PETSC_DEFAULT, &_DM2ThetaPiDM1invM1);
     MatMatMult(M1inv, _DM2ThetaPiDM1invM1, reuse, PETSC_DEFAULT, &_M1DM2ThetaPiDM1invM1);
+
+    F->assemble(theta_h, level, false, SCALE);
     if(firstStep) {
         MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &PCx[level]);
     } else {
