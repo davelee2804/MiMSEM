@@ -505,6 +505,11 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
     }
 
     do {
+        for(int ii = 0; ii < geom->nk+1; ii++) {
+            VecAXPY(theta_j->vl[ii], 1.0, theta_i->vl[ii]);
+            VecScale(theta_j->vl[ii], 0.5);
+        }
+
         // update the horizontal dynamics for this iteration
         norm_max_x = -1.0;
         for(int ii = 0; ii < geom->nk; ii++) {
@@ -513,6 +518,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
                                 velx_i[ii], velx_j[ii], rho_i->vh[ii], rho_j->vh[ii], rt_i->vh[ii], rt_j->vh[ii], 
                                 fu, _F_x[ii], _G_x[ii]);
             VecScale(fu, -1.0);
+
+            assemble_precon_x(ii, theta_j->vl, rt_j->vl[ii], exner->vl[ii]);
 
             KSPCreate(MPI_COMM_WORLD, &ksp_x);
             KSPSetOperators(ksp_x, PCx[ii], PCx[ii]);
@@ -542,6 +549,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
                                 fw, _F_z[ii], _G_z[ii]);
             VecScale(fw, -1.0);
 
+            assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii]);
+
             KSPCreate(MPI_COMM_SELF, &ksp_z);
             KSPSetOperators(ksp_z, PCz[ii], PCz[ii]);
             KSPGetPC(ksp_z, &pc);
@@ -569,7 +578,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
 
             VecCopy(rt_i->vh[ii], rt_j->vh[ii]);
             MatMult(EtoF->E21, _G_x[ii], htmp);
-            //VecAXPY(rt_j->vh[ii], -dt, htmp); // TODO: breaks convergence!
+            VecAXPY(rt_j->vh[ii], -dt, htmp); // TODO: breaks convergence!
         }
         rho_j->UpdateLocal();
         rho_j->HorizToVert();
@@ -578,10 +587,10 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             MatMult(vo->V10, _F_z[ii], _tmpB1);
-            //VecAXPY(rho_j->vz[ii], -dt, _tmpB1); // TODO: breaks convergence!
+            VecAXPY(rho_j->vz[ii], -dt, _tmpB1); // TODO: breaks convergence!
 
             MatMult(vo->V10, _G_z[ii], _tmpB1);
-            //VecAXPY(rt_j->vz[ii], -dt, _tmpB1); // TODO: breaks convergence!
+            VecAXPY(rt_j->vz[ii], -dt, _tmpB1); // TODO: breaks convergence!
         }
         rho_j->VertToHoriz();
         rho_j->UpdateGlobal();
@@ -832,7 +841,7 @@ geom->write2(theta_i->vh[ii], fieldname, 9999, ii, false);
         diagHorizVort(velx_j, dudz_j);
 
         if(!rank) cout << "|dz|: " << norm_max_dz << "\t|z|: " << norm_max_z << "\t|dz|/|z|: " << norm_max_dz/norm_max_z << endl;
-        if(norm_max_dz/norm_max_z < 1.0e-10) done = true;
+        if(norm_max_dz/norm_max_z < 1.0e-8) done = true;
     } while(!done);
 
 if(!rank)cout<<"done with veritcal solve...(1)\n";
@@ -1021,12 +1030,11 @@ void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt_i, Vec rt_j, Vec
         MatMatMult(_GRAD, _DIV, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCz[ei]);
     }
     vo->AssembleLinear(ex, ey, vo->VA);
-//MatZeroEntries(PCz[ei]);
     MatAYPX(PCz[ei], -dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
 
-    vo->AssembleConLinWithW(ex, ey, velz, vo->VBA);
-    MatMatMult(vo->V01, vo->VBA, reuse, PETSC_DEFAULT, &vo->VA);
-    MatAXPY(PCz[ei], +0.5*dt, vo->VA, DIFFERENT_NONZERO_PATTERN);
+    //vo->AssembleConLinWithW(ex, ey, velz, vo->VBA);
+    //MatMatMult(vo->V01, vo->VBA, reuse, PETSC_DEFAULT, &vo->VA);
+    //MatAXPY(PCz[ei], +0.5*dt, vo->VA, DIFFERENT_NONZERO_PATTERN);
 }
 
 void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ainv) {
@@ -1222,17 +1230,17 @@ void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
     VecScatterBegin(topo->gtol_2, rt2, rtl2, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, rt2, rtl2, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecZeroEntries(rhs);
-    eos->assemble(rtl1, level, SCALE);
-    VecAXPY(rhs, 0.5, eos->vg);
-    eos->assemble(rtl2, level, SCALE);
-    VecAXPY(rhs, 0.5, eos->vg);
-    M2->assemble(level, SCALE, true);
-    KSPSolve(ksp2, rhs, Pi);
-
-    //eos->assemble_quad(rtl1, rtl2, level, SCALE);
+    //VecZeroEntries(rhs);
+    //eos->assemble(rtl1, level, SCALE);
+    //VecAXPY(rhs, 0.5, eos->vg);
+    //eos->assemble(rtl2, level, SCALE);
+    //VecAXPY(rhs, 0.5, eos->vg);
     //M2->assemble(level, SCALE, true);
-    //KSPSolve(ksp2, eos->vg, Pi);
+    //KSPSolve(ksp2, rhs, Pi);
+
+    eos->assemble_quad(rtl1, rtl2, level, SCALE);
+    M2->assemble(level, SCALE, true);
+    KSPSolve(ksp2, eos->vg, Pi);
 
     VecDestroy(&rtl1);
     VecDestroy(&rtl2);
@@ -1312,8 +1320,7 @@ void Euler::diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi) {
     vo->AssembleConLinWithW(ex, ey, velz2, vo->VBA);
 
     MatMult(vo->VBA, velz2, _tmpB1);
-    VecAXPY(Phi, 1.0/6.0, _tmpB1); // TODO: nonlinear term w^2 causing blow up!!
-//VecZeroEntries(Phi);
+    VecAXPY(Phi, 1.0/6.0, _tmpB1);
 
     // potential energy term
     VecAXPY(Phi, 1.0, zv[ei]);
@@ -1473,13 +1480,14 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     M1->assemble(level, SCALE);
     M2->assemble(level, SCALE, true);
 
-    // assume theta2 is at the current iteration (consistent with the contents
-    // of the x vector
+    // assume theta2 is 0.5*(theta_i + theta_j)
     VecZeroEntries(theta_h);
-    VecAXPY(theta_h, 0.25, theta1[level+0]);
-    VecAXPY(theta_h, 0.25, theta1[level+1]);
-    VecAXPY(theta_h, 0.25, theta2[level+0]);
-    VecAXPY(theta_h, 0.25, theta2[level+1]);
+    //VecAXPY(theta_h, 0.25, theta1[level+0]);
+    //VecAXPY(theta_h, 0.25, theta1[level+1]);
+    //VecAXPY(theta_h, 0.25, theta2[level+0]);
+    //VecAXPY(theta_h, 0.25, theta2[level+1]);
+    VecAXPY(theta_h, 0.5, theta2[level+0]);
+    VecAXPY(theta_h, 0.5, theta2[level+1]);
 
     VecZeroEntries(fu);
 
@@ -1534,7 +1542,7 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
         MatMult(Rh->M, velz_h, dp);
         VecAXPY(utmp, 0.5, dp);
     }
-    //VecAXPY(fu, 1.0, utmp); // TODO: coupling to vertical solve causing blow up
+    VecAXPY(fu, 1.0, utmp); // TODO: coupling to vertical solve causing blow up
     VecScale(fu, dt);
 
     // assemble the mass matrix terms
