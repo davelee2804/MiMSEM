@@ -73,6 +73,11 @@ class Euler {
         void init2(Vec* h, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
 
+
+        void repack_z(Vec x, Vec u, Vec rho, Vec rt);
+        void unpack_z(Vec x, Vec u, Vec rho, Vec rt);
+        void assemble_operator(int ex, int ey, Vec theta);
+
     private:
         // vertical vectors and matrices
         Vec _Phi_z;
@@ -98,4 +103,6 @@ class Euler {
         Mat _DM2ThetaPiDM1invM1;
         Mat _M1DM2ThetaPiDM1invM1;
         Mat* PCx;
+
+        Mat _PCz, _Muu, _Muh, _Mhu, _Mhh;
 };

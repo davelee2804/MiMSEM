@@ -139,6 +139,8 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
 
     PCz = new Mat[topo->nElsX*topo->nElsX];
     PCx = new Mat[geom->nk];
+
+    _PCz = NULL;
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -343,6 +345,12 @@ Euler::~Euler() {
     delete quad;
 
     delete vo;
+
+    MatDestroy(&_PCz);
+    MatDestroy(&_Muu);
+    MatDestroy(&_Muh);
+    MatDestroy(&_Mhu);
+    MatDestroy(&_Mhh);
 }
 
 /*
@@ -1950,4 +1958,194 @@ void Euler::initTheta(Vec theta, ICfunc3D* func) {
     VecDestroy(&bl);
     VecDestroy(&bg);
     VecDestroy(&WQb);
+}
+
+void Euler::repack_z(Vec x, Vec u, Vec rho, Vec rt) {
+    int ii, shift;
+    PetscScalar *xArray, *uArray, *rhoArray, *rtArray;
+
+    VecGetArray(x,   &xArray  );
+    VecGetArray(u,   &uArray  );
+    VecGetArray(rho, &rhoArray);
+    VecGetArray(rt,  &rtArray );
+
+    for(ii = 0; ii < vo->n2*(geom->nk-1); ii++) {
+        xArray[ii] = uArray[ii];
+    }
+    shift = vo->n2*(geom->nk-1);
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        xArray[shift+ii] = rhoArray[ii];
+    }
+    shift += vo->n2*geom->nk;
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        xArray[shift+ii] = rtArray[ii];
+    }
+
+    VecRestoreArray(x,   &xArray  );
+    VecRestoreArray(u,   &uArray  );
+    VecRestoreArray(rho, &rhoArray);
+    VecRestoreArray(rt,  &rtArray );
+}
+
+void Euler::unpack_z(Vec x, Vec u, Vec rho, Vec rt) {
+    int ii, shift;
+    PetscScalar *xArray, *uArray, *rhoArray, *rtArray;
+
+    VecGetArray(x,   &xArray  );
+    VecGetArray(u,   &uArray  );
+    VecGetArray(rho, &rhoArray);
+    VecGetArray(rt,  &rtArray );
+
+    for(ii = 0; ii < vo->n2*(geom->nk-1); ii++) {
+        uArray[ii] = xArray[ii];
+    }
+    shift = vo->n2*(geom->nk-1);
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        rhoArray[ii] = xArray[shift+ii];
+    }
+    shift += vo->n2*geom->nk;
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        rtArray[ii] = xArray[shift+ii];
+    }
+
+    VecRestoreArray(x,   &xArray  );
+    VecRestoreArray(u,   &uArray  );
+    VecRestoreArray(rho, &rhoArray);
+    VecRestoreArray(rt,  &rtArray );
+}
+
+void Euler::assemble_operator(int ex, int ey, Vec theta) {
+    int n2 = topo->elOrd*topo->elOrd;
+    int nDofsW = (geom->nk-1)*n2;
+    int nDofsRho = geom->nk*n2;
+    int nDofsTotal = nDofsW + 2*nDofsRho;
+    int mm, mi, mf, ri, ci;
+    int nCols;
+    const int *cols;
+    const double* vals;
+    int cols2[9999];
+
+    if(!_PCz) {
+        MatCreate(MPI_COMM_SELF, &_PCz);
+        MatSetType(_PCz, MATSEQAIJ);
+        MatSetSizes(_PCz, nDofsTotal, nDofsTotal, nDofsTotal, nDofsTotal);
+        MatSeqAIJSetPreallocation(_PCz, 6*n2, PETSC_NULL);
+
+        MatCreate(MPI_COMM_SELF, &_Muu);
+        MatSetType(_Muu, MATSEQAIJ);
+        MatSetSizes(_Muu, nDofsW, nDofsW, nDofsW, nDofsW);
+        MatSeqAIJSetPreallocation(_Muu, 2*n2, PETSC_NULL);
+
+        MatCreate(MPI_COMM_SELF, &_Muh);
+        MatSetType(_Muh, MATSEQAIJ);
+        MatSetSizes(_Muh, nDofsW, nDofsRho, nDofsW, nDofsRho);
+        MatSeqAIJSetPreallocation(_Muh, 2*n2, PETSC_NULL);
+
+        MatCreate(MPI_COMM_SELF, &_Mhu);
+        MatSetType(_Mhu, MATSEQAIJ);
+        MatSetSizes(_Mhu, nDofsRho, nDofsW, nDofsRho, nDofsW);
+        MatSeqAIJSetPreallocation(_Mhu, 2*n2, PETSC_NULL);
+
+        MatCreate(MPI_COMM_SELF, &_Mhh);
+        MatSetType(_Mhh, MATSEQAIJ);
+        MatSetSizes(_Mhh, nDofsRho, nDofsRho, nDofsRho, nDofsRho);
+        MatSeqAIJSetPreallocation(_Mhh, 2*n2, PETSC_NULL);
+    }
+    MatZeroEntries(_PCz);
+    MatZeroEntries(_Muu);
+    MatZeroEntries(_Muh);
+    MatZeroEntries(_Mhh);
+    MatZeroEntries(_Mhh);
+
+    // [u,u] block
+    vo->AssembleLinear(ex, ey, vo->VA);
+    MatCopy(vo->VA, _Muu, DIFFERENT_NONZERO_PATTERN);
+    MatGetOwnershipRange(_Muu, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(_Muu, mm, &nCols, &cols, &vals);
+        ri = mm;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci];
+        }
+        MatSetValues(_PCz, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(_Muu, mm, &nCols, &cols, &vals);
+    }
+
+    // [u,rho] block
+    MatGetOwnershipRange(_Muh, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(_Muh, mm, &nCols, &cols, &vals);
+        ri = mm;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci] + nDofsW;
+        }
+        MatSetValues(_PCz, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(_Muh, mm, &nCols, &cols, &vals);
+    }
+
+    // [u,theta] block
+    MatGetOwnershipRange(_Muh, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(_Muh, mm, &nCols, &cols, &vals);
+        ri = mm;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci] + nDofsW + nDofsRho;
+        }
+        MatSetValues(_PCz, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(_Muh, mm, &nCols, &cols, &vals);
+    }
+
+    // [rho,u] block
+    MatGetOwnershipRange(_Mhu, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(_Mhu, mm, &nCols, &cols, &vals);
+        ri = mm + nDofsW;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci];
+        }
+        MatSetValues(_PCz, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(_Mhu, mm, &nCols, &cols, &vals);
+    }
+
+    // [rho,rho] block
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatCopy(vo->VB, _Mhh, DIFFERENT_NONZERO_PATTERN);
+    MatGetOwnershipRange(_Mhh, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(_Mhh, mm, &nCols, &cols, &vals);
+        ri = mm + nDofsW;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci] + nDofsW;
+        }
+        MatSetValues(_PCz, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(_Mhh, mm, &nCols, &cols, &vals);
+    }
+
+    // [theta,u] block
+    MatGetOwnershipRange(_Mhu, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(_Mhu, mm, &nCols, &cols, &vals);
+        ri = mm + nDofsW + nDofsRho;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci];
+        }
+        MatSetValues(_PCz, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(_Mhu, mm, &nCols, &cols, &vals);
+    }
+
+    // [theta,theta] block
+    MatCopy(vo->VB, _Mhh, DIFFERENT_NONZERO_PATTERN);
+    MatGetOwnershipRange(_Mhh, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(_Mhh, mm, &nCols, &cols, &vals);
+        ri = mm + nDofsW + nDofsRho;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci] + nDofsW + nDofsRho;
+        }
+        MatSetValues(_PCz, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(_Mhh, mm, &nCols, &cols, &vals);
+    }
+
+    MatAssemblyBegin(_PCz, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  _PCz, MAT_FINAL_ASSEMBLY);
 }
