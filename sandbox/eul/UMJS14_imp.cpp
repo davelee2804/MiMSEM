@@ -20,7 +20,7 @@
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define NK 24
+#define NK 8
 #define P0 100000.0
 #define RD 287.0
 #define GAMMA 0.005
@@ -266,14 +266,14 @@ void LoadVecsVert(Vec* vecs, int nk, char* fieldname, int step, Topo* topo, Geom
 }
 
 int main(int argc, char** argv) {
-    int size, rank, step, ki, n2;
+    int size, rank, step, ki;
     static char help[] = "petsc";
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
     double dt = 120.0;
-    int nSteps = 12*24*30;
-    int dumpEvery = 360; //dump evert 12 hours
+    int nSteps = 3;
+    int dumpEvery = 1; //dump evert 12 hours
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -295,8 +295,6 @@ int main(int argc, char** argv) {
     pe   = new Euler(topo, geom, dt);
     pe->step = startStep;
 
-    n2 = topo->nElsX*topo->nElsX;
-
     velx  = new Vec[NK];
     for(ki = 0; ki < NK; ki++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx[ki] );
@@ -308,6 +306,10 @@ int main(int argc, char** argv) {
     // initialise the potential temperature top and bottom boundary conditions
     pe->initTheta(pe->theta_b, theta_b_init);
     pe->initTheta(pe->theta_t, theta_t_init);
+    VecScatterBegin(topo->gtol_2, pe->theta_b, pe->theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, pe->theta_b, pe->theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_2, pe->theta_t, pe->theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, pe->theta_t, pe->theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
 
     if(startStep == 0) {
         pe->init1(velx,    u_init, v_init);
@@ -321,6 +323,20 @@ int main(int argc, char** argv) {
             geom->write2(rho->vh[ki],fieldname,0,ki, true);
             sprintf(fieldname,"rhoTheta");
             geom->write2(rt->vh[ki],fieldname,0,ki, true);
+        }
+        {
+            L2Vecs* theta = new L2Vecs(NK+1, topo, geom);
+            rho->UpdateLocal();
+            rho->HorizToVert();
+            rt->UpdateLocal();
+            rt->HorizToVert();
+            pe->diagTheta(rho->vz, rt->vz, theta);
+            theta->UpdateGlobal();
+            for(ki = 0; ki < NK+1; ki++) {
+                sprintf(fieldname,"theta");
+                geom->write2(theta->vh[ki],fieldname,0,ki,false);
+            }
+            delete theta;
         }
     } else {
         sprintf(fieldname,"density");
@@ -338,6 +354,8 @@ int main(int argc, char** argv) {
     rho->HorizToVert();
     rt->UpdateLocal();
     rt->HorizToVert();
+
+    pe->solve_vert(velz, rho, rt, true);
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {

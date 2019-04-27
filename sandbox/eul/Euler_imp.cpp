@@ -589,11 +589,9 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
 
 #ifdef SOLVE_X
         for(int ii = 0; ii < geom->nk; ii++) {
-            //VecCopy(rho_i->vh[ii], rho_j->vh[ii]);
             MatMult(EtoF->E21, _F_x[ii], htmp);
             VecAXPY(rho_j->vh[ii], -dt, htmp);
 
-            //VecCopy(rt_i->vh[ii], rt_j->vh[ii]);
             MatMult(EtoF->E21, _G_x[ii], htmp);
             VecAXPY(rt_j->vh[ii], -dt, htmp);
         }
@@ -625,10 +623,9 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         exner->HorizToVert();
         diagHorizVort(velx_j, dudz_j);
 
-        //if(!rank) cout << "|dx|/|x|: " << norm_max_x << "\t|dz|/|z|: " << norm_max_z << endl;
         if(!rank) cout << "|dz|: " << norm_max_dz << "\t|z|: " << norm_max_z << "\t|dz|/|z|: " << norm_max_dz/norm_max_z << endl;
 
-        if(norm_max_x < 1.0e-10 && norm_max_dz/norm_max_z < 1.0e-8) done_l = true;
+        if(norm_max_x < 1.0e-10 && norm_max_dz/norm_max_z < 1.0e-8) done_l = 1;
         MPI_Allreduce(&done_l, &done, 1, MPI_INT, MPI_LAND, MPI_COMM_WORLD);
     } while(!done);
 
@@ -1431,7 +1428,7 @@ void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
     VecScatterEnd(  topo->gtol_2, rt1, rtl1, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterBegin(topo->gtol_2, rt2, rtl2, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, rt2, rtl2, INSERT_VALUES, SCATTER_FORWARD);
-
+/*
     VecZeroEntries(rhs);
     eos->assemble(rtl1, level, SCALE);
     VecAXPY(rhs, 0.5, eos->vg);
@@ -1439,10 +1436,10 @@ void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
     VecAXPY(rhs, 0.5, eos->vg);
     M2->assemble(level, SCALE, true);
     KSPSolve(ksp2, rhs, Pi);
-
-    //eos->assemble_quad(rtl1, rtl2, level, SCALE);
-    //M2->assemble(level, SCALE, true);
-    //KSPSolve(ksp2, eos->vg, Pi);
+*/
+    eos->assemble_quad(rtl1, rtl2, level, SCALE);
+    M2->assemble(level, SCALE, true);
+    KSPSolve(ksp2, eos->vg, Pi);
 
     VecDestroy(&rtl1);
     VecDestroy(&rtl2);
