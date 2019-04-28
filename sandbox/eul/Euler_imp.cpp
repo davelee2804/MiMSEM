@@ -1089,6 +1089,8 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
                                 fw, _F_z[ii], _G_z[ii]);
             VecScale(fw, -1.0);
 
+            VecAXPY(theta_j->vz[ii], 1.0, theta_i->vz[ii]);
+            VecScale(theta_j->vz[ii], 0.5);
             assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii]);
 
             KSPCreate(MPI_COMM_SELF, &ksp_z);
@@ -1236,9 +1238,9 @@ void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt_i, Vec rt_j, Vec
     vo->AssembleLinear(ex, ey, vo->VA);
     MatAYPX(PCz[ei], -dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
 
-    //vo->AssembleConLinWithW(ex, ey, velz, vo->VBA);
-    //MatMatMult(vo->V01, vo->VBA, reuse, PETSC_DEFAULT, &vo->VA);
-    //MatAXPY(PCz[ei], +0.5*dt, vo->VA, DIFFERENT_NONZERO_PATTERN);
+    vo->AssembleConLin(ex, ey, vo->VBA);
+    MatMatMult(vo->V01, vo->VBA, reuse, PETSC_DEFAULT, &vo->VA);
+    MatAXPY(PCz[ei], dt, vo->VA, DIFFERENT_NONZERO_PATTERN);
 }
 
 void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ainv) {
@@ -1436,7 +1438,7 @@ void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
     VecScatterEnd(  topo->gtol_2, rt1, rtl1, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterBegin(topo->gtol_2, rt2, rtl2, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, rt2, rtl2, INSERT_VALUES, SCATTER_FORWARD);
-/*
+
     VecZeroEntries(rhs);
     eos->assemble(rtl1, level, SCALE);
     VecAXPY(rhs, 0.5, eos->vg);
@@ -1444,10 +1446,11 @@ void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
     VecAXPY(rhs, 0.5, eos->vg);
     M2->assemble(level, SCALE, true);
     KSPSolve(ksp2, rhs, Pi);
-*/
+/*
     eos->assemble_quad(rtl1, rtl2, level, SCALE);
     M2->assemble(level, SCALE, true);
     KSPSolve(ksp2, eos->vg, Pi);
+*/
 
     VecDestroy(&rtl1);
     VecDestroy(&rtl2);
@@ -2014,7 +2017,7 @@ void Euler::unpack_z(Vec x, Vec u, Vec rho, Vec rt) {
     VecRestoreArray(rt,  &rtArray );
 }
 
-void Euler::assemble_operator(int ex, int ey, Vec theta) {
+void Euler::assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt) {
     int n2 = topo->elOrd*topo->elOrd;
     int nDofsW = (geom->nk-1)*n2;
     int nDofsRho = geom->nk*n2;
@@ -2096,6 +2099,12 @@ void Euler::assemble_operator(int ex, int ey, Vec theta) {
     }
 
     // [rho,u] block
+    vo->AssembleLinearWithRT(ex, ey, rho, vo->VA, true);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &_V0_invV0_rt);
+    MatMatMult(vo->V10, _V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &_DV0_invV0_rt);
+    MatScale(_DV0_invV0_rt, -dt);
+    MatCopy(_DV0_invV0_rt, _Mhu, DIFFERENT_NONZERO_PATTERN);
     MatGetOwnershipRange(_Mhu, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(_Mhu, mm, &nCols, &cols, &vals);
@@ -2122,6 +2131,11 @@ void Euler::assemble_operator(int ex, int ey, Vec theta) {
     }
 
     // [theta,u] block
+    vo->AssembleLinearWithRT(ex, ey, rt, vo->VA, true);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &_V0_invV0_rt);
+    MatMatMult(vo->V10, _V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &_DV0_invV0_rt);
+    MatScale(_DV0_invV0_rt, -dt);
+    MatCopy(_DV0_invV0_rt, _Mhu, DIFFERENT_NONZERO_PATTERN);
     MatGetOwnershipRange(_Mhu, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(_Mhu, mm, &nCols, &cols, &vals);

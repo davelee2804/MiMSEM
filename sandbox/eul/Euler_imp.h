@@ -76,7 +76,7 @@ class Euler {
 
         void repack_z(Vec x, Vec u, Vec rho, Vec rt);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt);
-        void assemble_operator(int ex, int ey, Vec theta);
+        void assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt);
 
     private:
         // vertical vectors and matrices
