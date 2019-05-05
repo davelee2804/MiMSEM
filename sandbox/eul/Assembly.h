@@ -254,5 +254,22 @@ class EoSvec {
         Vec vg;
         void assemble(Vec rt, int lev, double scale);
         void assemble_quad(Vec rt1, Vec rt2, int lev, double scale);
-        void GetExponents(double rt, double* c2, double* c1, double* c0);
+};
+
+class EoSmat {
+    public:
+        EoSmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~EoSmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        double** Wt;
+        double** WtQ;
+        double** WtQW;
+        double** Qaa;
+        double* WtQWflat;
+        M2_j_xy_i* W;
+        Wii* Q;
+        Mat M;
+        void assemble(Vec rt, int lev, double scale);
 };

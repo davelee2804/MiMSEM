@@ -1418,6 +1418,42 @@ WtQdUdz_mat::~WtQdUdz_mat() {
     MatDestroy(&M);
 }
 
+void GetExponents(double rt, double* c2, double* c1, double* c0) {
+    if(rt > 387.5625) { *c2 = -7.96223048e-04; *c1 = 1.65075161e+00; *c0 = 5.13774111e+02; return; }
+    if(rt > 375.125)  { *c2 = -8.38520228e-04; *c1 = 1.68353169e+00; *c0 = 5.07423013e+02; return; }
+    if(rt > 362.6875) { *c2 = -8.84581701e-04; *c1 = 1.71808311e+00; *c0 = 5.00943626e+02; return; }
+    if(rt > 350.25)   { *c2 = -9.34887037e-04; *c1 = 1.75456634e+00; *c0 = 4.94328892e+02; return; }
+    if(rt > 337.8125) { *c2 = -9.89996668e-04; *c1 = 1.79316268e+00; *c0 = 4.87571099e+02; return; }
+    if(rt > 325.375)  { *c2 = -1.05056910e-03; *c1 = 1.83407787e+00; *c0 = 4.80661798e+02; return; }
+    if(rt > 312.9375) { *c2 = -1.11738264e-03; *c1 = 1.87754641e+00; *c0 = 4.73591699e+02; return; }
+    if(rt > 300.5)    { *c2 = -1.19136296e-03; *c1 = 1.92383690e+00; *c0 = 4.66350552e+02; return; }
+    if(rt > 288.0625) { *c2 = -1.27361857e-03; *c1 = 1.97325869e+00; *c0 = 4.58927006e+02; return; }
+    if(rt > 275.625)  { *c2 = -1.36548667e-03; *c1 = 2.02617009e+00; *c0 = 4.51308433e+02; return; }
+    if(rt > 263.1875) { *c2 = -1.46859326e-03; *c1 = 2.08298869e+00; *c0 = 4.43480724e+02; return; }
+    if(rt > 250.75)   { *c2 = -1.58493276e-03; *c1 = 2.14420456e+00; *c0 = 4.35428037e+02; return; }
+    if(rt > 238.3125) { *c2 = -1.71697485e-03; *c1 = 2.21039706e+00; *c0 = 4.27132489e+02; return; }
+    if(rt > 225.875)  { *c2 = -1.86780976e-03; *c1 = 2.28225676e+00; *c0 = 4.18573766e+02; return; }
+    if(rt > 213.4375) { *c2 = -2.04134892e-03; *c1 = 2.36061426e+00; *c0 = 4.09728652e+02; return; }
+    if(rt > 201.0)    { *c2 = -2.24260674e-03; *c1 = 2.44647854e+00; *c0 = 4.00570409e+02; return; }
+    if(rt > 188.5625) { *c2 = -2.47810366e-03; *c1 = 2.54108909e+00; *c0 = 3.91067999e+02; return; }
+    if(rt > 176.125)  { *c2 = -2.75645489e-03; *c1 = 2.64598769e+00; *c0 = 3.81185062e+02; return; }
+    if(rt > 163.6875) { *c2 = -3.08925051e-03; *c1 = 2.76311944e+00; *c0 = 3.70878557e+02; return; }
+    if(rt > 151.25)   { *c2 = -3.49240650e-03; *c1 = 2.89497814e+00; *c0 = 3.60096936e+02; return; }
+    if(rt > 138.8125) { *c2 = -3.98830219e-03; *c1 = 3.04482084e+00; *c0 = 3.48777617e+02; return; }
+    if(rt > 126.375)  { *c2 = -4.60928205e-03; *c1 = 3.21699419e+00; *c0 = 3.36843408e+02; return; }
+    if(rt > 113.9375) { *c2 = -5.40363139e-03; *c1 = 3.41744813e+00; *c0 = 3.24197309e+02; return; }
+    if(rt > 101.5)    { *c2 = -6.44627832e-03; *c1 = 3.65457844e+00; *c0 = 3.10714661e+02; return; }
+    if(rt > 89.0625)  { *c2 = -7.85910930e-03; *c1 = 3.94067884e+00; *c0 = 2.96230808e+02; return; }
+    if(rt > 76.625)   { *c2 = -9.85240108e-03; *c1 = 4.29460100e+00; *c0 = 2.80520663e+02; return; }
+    if(rt > 64.1875)  { *c2 = -1.28173420e-02; *c1 = 4.74701804e+00; *c0 = 2.63262534e+02; return; }
+    if(rt > 51.75)    { *c2 = -1.75587611e-02; *c1 = 5.35195125e+00; *c0 = 2.43968196e+02; return; }
+    if(rt > 39.3125)  { *c2 = -2.59852369e-02; *c1 = 6.21581501e+00; *c0 = 2.21829876e+02; return; }
+    if(rt > 26.875)   { *c2 = -4.37279825e-02; *c1 = 7.58779070e+00; *c0 = 1.95315010e+02; return; }
+    if(rt > 14.4375)  { *c2 = -9.54336570e-02; *c1 = 1.02674025e+01; *c0 = 1.60645674e+02; return; }
+    if(rt > 2.0)      { *c2 = -0.53372535;     *c1 = 21.20572392;    *c0 = 94.0817949;     return; }
+                      { *c2 = -0.53372535;     *c1 = 21.20572392;    *c0 = 94.0817949;     return; }
+}
+
 //
 EoSvec::EoSvec(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     topo = _topo;
@@ -1534,42 +1570,6 @@ void EoSvec::assemble_quad(Vec rt1, Vec rt2, int lev, double scale) {
     VecScatterEnd(topo->gtol_2,   vl, vg, INSERT_VALUES, SCATTER_REVERSE);
 }
 
-void EoSvec::GetExponents(double rt, double* c2, double* c1, double* c0) {
-    if(rt > 387.5625) { *c2 = -7.96223048e-04; *c1 = 1.65075161e+00; *c0 = 5.13774111e+02; return; }
-    if(rt > 375.125)  { *c2 = -8.38520228e-04; *c1 = 1.68353169e+00; *c0 = 5.07423013e+02; return; }
-    if(rt > 362.6875) { *c2 = -8.84581701e-04; *c1 = 1.71808311e+00; *c0 = 5.00943626e+02; return; }
-    if(rt > 350.25)   { *c2 = -9.34887037e-04; *c1 = 1.75456634e+00; *c0 = 4.94328892e+02; return; }
-    if(rt > 337.8125) { *c2 = -9.89996668e-04; *c1 = 1.79316268e+00; *c0 = 4.87571099e+02; return; }
-    if(rt > 325.375)  { *c2 = -1.05056910e-03; *c1 = 1.83407787e+00; *c0 = 4.80661798e+02; return; }
-    if(rt > 312.9375) { *c2 = -1.11738264e-03; *c1 = 1.87754641e+00; *c0 = 4.73591699e+02; return; }
-    if(rt > 300.5)    { *c2 = -1.19136296e-03; *c1 = 1.92383690e+00; *c0 = 4.66350552e+02; return; }
-    if(rt > 288.0625) { *c2 = -1.27361857e-03; *c1 = 1.97325869e+00; *c0 = 4.58927006e+02; return; }
-    if(rt > 275.625)  { *c2 = -1.36548667e-03; *c1 = 2.02617009e+00; *c0 = 4.51308433e+02; return; }
-    if(rt > 263.1875) { *c2 = -1.46859326e-03; *c1 = 2.08298869e+00; *c0 = 4.43480724e+02; return; }
-    if(rt > 250.75)   { *c2 = -1.58493276e-03; *c1 = 2.14420456e+00; *c0 = 4.35428037e+02; return; }
-    if(rt > 238.3125) { *c2 = -1.71697485e-03; *c1 = 2.21039706e+00; *c0 = 4.27132489e+02; return; }
-    if(rt > 225.875)  { *c2 = -1.86780976e-03; *c1 = 2.28225676e+00; *c0 = 4.18573766e+02; return; }
-    if(rt > 213.4375) { *c2 = -2.04134892e-03; *c1 = 2.36061426e+00; *c0 = 4.09728652e+02; return; }
-    if(rt > 201.0)    { *c2 = -2.24260674e-03; *c1 = 2.44647854e+00; *c0 = 4.00570409e+02; return; }
-    if(rt > 188.5625) { *c2 = -2.47810366e-03; *c1 = 2.54108909e+00; *c0 = 3.91067999e+02; return; }
-    if(rt > 176.125)  { *c2 = -2.75645489e-03; *c1 = 2.64598769e+00; *c0 = 3.81185062e+02; return; }
-    if(rt > 163.6875) { *c2 = -3.08925051e-03; *c1 = 2.76311944e+00; *c0 = 3.70878557e+02; return; }
-    if(rt > 151.25)   { *c2 = -3.49240650e-03; *c1 = 2.89497814e+00; *c0 = 3.60096936e+02; return; }
-    if(rt > 138.8125) { *c2 = -3.98830219e-03; *c1 = 3.04482084e+00; *c0 = 3.48777617e+02; return; }
-    if(rt > 126.375)  { *c2 = -4.60928205e-03; *c1 = 3.21699419e+00; *c0 = 3.36843408e+02; return; }
-    if(rt > 113.9375) { *c2 = -5.40363139e-03; *c1 = 3.41744813e+00; *c0 = 3.24197309e+02; return; }
-    if(rt > 101.5)    { *c2 = -6.44627832e-03; *c1 = 3.65457844e+00; *c0 = 3.10714661e+02; return; }
-    if(rt > 89.0625)  { *c2 = -7.85910930e-03; *c1 = 3.94067884e+00; *c0 = 2.96230808e+02; return; }
-    if(rt > 76.625)   { *c2 = -9.85240108e-03; *c1 = 4.29460100e+00; *c0 = 2.80520663e+02; return; }
-    if(rt > 64.1875)  { *c2 = -1.28173420e-02; *c1 = 4.74701804e+00; *c0 = 2.63262534e+02; return; }
-    if(rt > 51.75)    { *c2 = -1.75587611e-02; *c1 = 5.35195125e+00; *c0 = 2.43968196e+02; return; }
-    if(rt > 39.3125)  { *c2 = -2.59852369e-02; *c1 = 6.21581501e+00; *c0 = 2.21829876e+02; return; }
-    if(rt > 26.875)   { *c2 = -4.37279825e-02; *c1 = 7.58779070e+00; *c0 = 1.95315010e+02; return; }
-    if(rt > 14.4375)  { *c2 = -9.54336570e-02; *c1 = 1.02674025e+01; *c0 = 1.60645674e+02; return; }
-    if(rt > 2.0)      { *c2 = -0.53372535;     *c1 = 21.20572392;    *c0 = 94.0817949;     return; }
-                      { *c2 = -0.53372535;     *c1 = 21.20572392;    *c0 = 94.0817949;     return; }
-}
-
 EoSvec::~EoSvec() {
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
@@ -1579,4 +1579,84 @@ EoSvec::~EoSvec() {
 
     VecDestroy(&vl);
     VecDestroy(&vg);
+}
+
+// assemble the derivative of the equation of state into a volume
+// form matrix (for use in the Theta preconditioner operator)
+EoSmat::EoSmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    e = _e;
+
+    Q = new Wii(e->l->q, geom);
+    W = new M2_j_xy_i(e);
+
+    Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+}
+
+void EoSmat::assemble(Vec rt, int lev, double scale) {
+    int ex, ey, ei, mp1, mp12, ii, *inds2, *inds0;
+    double p, rtq, fac, det;
+    PetscScalar *rtArray;
+
+    mp1 = e->l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    fac = CP*pow(RD/P0, RD/CV);
+    fac *= RD/CV;
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    MatZeroEntries(M);
+
+    VecGetArray(rt, &rtArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            Q->assemble(ex, ey);
+
+            inds0 = topo->elInds0_l(ex, ey);
+            inds2 = topo->elInds2_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rtArray, &p);
+                // density is piecewise constant in the vertical
+                p *= 1.0/geom->thick[lev][inds0[ii]];
+                rtq = fac*pow(p, RD/CV-1.0);
+                rtq *= scale;
+
+                Qaa[ii][ii] = rtq * Q->A[ii][ii] / (det * geom->thick[lev][inds0[ii]]);
+            }
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+            MatSetValues(M, W->nDofsJ, inds2, W->nDofsJ, inds2, WtQWflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(rt, &rtArray);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+}
+
+EoSmat::~EoSmat() {
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(Q->nDofsI, Qaa);
+    delete[] WtQWflat;
+
+    delete W;
+    delete Q;
+
+    MatDestroy(&M);
 }

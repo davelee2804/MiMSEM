@@ -83,6 +83,9 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     // equation or state right hand side vector
     eos = new EoSvec(topo, geom, edge);
 
+    // derivative of the equation of state (for the Theta preconditioner operator)
+    eos_mat = new EoSmat(topo, geom, edge);
+
     // coriolis vector (projected onto 0 forms)
     coriolis();
 
@@ -339,6 +342,7 @@ Euler::~Euler() {
     delete Rh;
     delete T;
     delete eos;
+    delete eos_mat;
 
     delete edge;
     delete node;
@@ -2162,4 +2166,99 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt) {
 
     MatAssemblyBegin(_PCz, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  _PCz, MAT_FINAL_ASSEMBLY);
+}
+
+double Euler::integrateTheta(Vec theta) {
+    int ei, mp1, mp12;
+    double th_l = 0.0, th_g, th_q, det;
+    PetscScalar* tArray;
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecGetArray(theta, &tArray);
+    for(int ey = 0; ey < topo->nElsX; ey++) {
+        for(int ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+            for(int ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, tArray, &th_q);
+                th_l += det*quad->w[ii%mp1]*quad->w[ii/mp1]*th_q;
+            }
+        }
+    }
+    VecRestoreArray(theta, &tArray);
+
+    MPI_Allreduce(&th_l, &th_g, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    return th_g;
+}
+
+void Euler::coriolisMatInv(Mat A, Mat* Ainv) {
+    int mi, mf, nCols1, nCols2;
+    const int *cols1, *cols2;
+    const double *vals1, *vals2;
+    double D[2][2], Dinv[2][2], detInv;
+    double vals1Inv[9999], vals2Inv[9999];
+    int row1, row2;
+
+    MatCreate(MPI_COMM_WORLD, Ainv);
+    MatSetSizes(*Ainv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(*Ainv, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(*Ainv, 2, PETSC_NULL, 2, PETSC_NULL);
+
+    MatGetOwnershipRange(A, &mi, &mf);
+    for(int mm = mi; mm < mf; mm += 2) {
+        MatGetRow(A, mi+0, &nCols1, &cols1, &vals1);
+        MatGetRow(A, mi+1, &nCols2, &cols2, &vals2);
+        for(int ci = 0; ci < nCols1; ci += 2) {
+            D[0][0] = vals1[ci+0];
+            D[0][1] = vals1[ci+1];
+            D[1][0] = vals2[ci+0];
+            D[1][1] = vals2[ci+1];
+
+            detInv = 1.0/(D[0][0]*D[1][1] - D[0][1]*D[1][0]);
+
+            Dinv[0][0] = +detInv*D[1][1];
+            Dinv[1][1] = +detInv*D[0][0];
+            Dinv[0][1] = -detInv*D[1][0];
+            Dinv[1][0] = -detInv*D[0][1];
+
+            vals1Inv[ci+0] = Dinv[0][0];
+            vals1Inv[ci+1] = Dinv[0][1];
+            vals2Inv[ci+0] = Dinv[1][0];
+            vals2Inv[ci+1] = Dinv[1][1];
+        }
+        row1 = mi + 0;
+        row2 = mi + 1;
+        MatSetValues(*Ainv, 1, &row1, nCols1, cols1, vals1Inv, INSERT_VALUES);
+        MatSetValues(*Ainv, 1, &row2, nCols2, cols2, vals2Inv, INSERT_VALUES);
+
+        MatRestoreRow(A, mi+0, &nCols1, &cols1, &vals1);
+        MatRestoreRow(A, mi+1, &nCols2, &cols2, &vals2);
+    }
+    MatAssemblyBegin(*Ainv, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  *Ainv, MAT_FINAL_ASSEMBLY);
+}
+
+void Euler::assemblePreconTheta(int level, Vec theta, Vec rt, Mat PC) {
+    Mat M1inv, M1_f_inv;
+
+    M2->assemble(level, SCALE, true);
+    T->assemble(rt, level, SCALE);
+    eos_mat->assemble(rt, level, SCALE);
+
+    M1->assemble(level, SCALE);
+    DiagMatInv(M1->M, topo->n1, topo->n1l, topo->nDofs1G, topo->gtol_1, &M1inv);
+
+    R->assemble(fl[level], level, SCALE);
+    MatAXPY(M1->M, dt, R->M, DIFFERENT_NONZERO_PATTERN);
+    coriolisMatInv(M1->M, &M1_f_inv);
+
+    MatZeroEntries(PC);
+    MatAXPY(PC, 1.0, M2->M, DIFFERENT_NONZERO_PATTERN);
+
+    MatDestroy(&M1inv);
+    MatDestroy(&M1_f_inv);
 }

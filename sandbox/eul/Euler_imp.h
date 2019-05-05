@@ -25,6 +25,7 @@ class Euler {
         WtQUmat* K;
         Whmat* T;
         EoSvec* eos;
+        EoSmat* eos_mat;
         Ut_mat* M1t;
         UtQWmat* Rh;
         Vec* fg;                 // coriolis vector (global)
@@ -73,6 +74,9 @@ class Euler {
         void init2(Vec* h, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
 
+        double integrateTheta(Vec theta);
+        void coriolisMatInv(Mat A, Mat* Ainv);
+        void assemblePreconTheta(int level, Vec theta, Vec rt, Mat PC);
 
         void repack_z(Vec x, Vec u, Vec rho, Vec rt);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt);
