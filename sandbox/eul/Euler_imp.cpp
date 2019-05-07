@@ -144,6 +144,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     PCx = new Mat[geom->nk];
 
     _PCz = NULL;
+    _DTM2 = NULL;
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -355,6 +356,13 @@ Euler::~Euler() {
     MatDestroy(&_Muh);
     MatDestroy(&_Mhu);
     MatDestroy(&_Mhh);
+
+    MatDestroy(&_DTM2);
+    MatDestroy(&_M1invDTM2);
+    MatDestroy(&_M1thetaM1invDTM2);
+    MatDestroy(&_M1invM1thetaM1invDTM2);
+    MatDestroy(&_DM1invM1thetaM1invDTM2);
+    MatDestroy(&_KDT);
 }
 
 /*
@@ -2242,23 +2250,57 @@ void Euler::coriolisMatInv(Mat A, Mat* Ainv) {
     MatAssemblyEnd(  *Ainv, MAT_FINAL_ASSEMBLY);
 }
 
-void Euler::assemblePreconTheta(int level, Vec theta, Vec rt, Mat PC) {
+void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz) {
+    int ei;
+    Vec theta_h;
+    MatReuse reuse;
     Mat M1inv, M1_f_inv;
 
-    M2->assemble(level, SCALE, true);
-    T->assemble(rt, level, SCALE);
-    eos_mat->assemble(rt, level, SCALE);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
 
-    M1->assemble(level, SCALE);
-    DiagMatInv(M1->M, topo->n1, topo->n1l, topo->nDofs1G, topo->gtol_1, &M1inv);
+    // horizontal part
+    for(int level = 0; level < geom->nk; level++) {
+        reuse = (_DTM2) ? MAT_REUSE_MATRIX : MAT_INITIAL_MATRIX;
 
-    R->assemble(fl[level], level, SCALE);
-    MatAXPY(M1->M, dt, R->M, DIFFERENT_NONZERO_PATTERN);
-    coriolisMatInv(M1->M, &M1_f_inv);
+        VecZeroEntries(theta_h);
+        VecAXPY(theta_h, 0.5, theta->vl[level+0]);
+        VecAXPY(theta_h, 0.5, theta->vl[level+1]);
 
-    MatZeroEntries(PC);
-    MatAXPY(PC, 1.0, M2->M, DIFFERENT_NONZERO_PATTERN);
+        M2->assemble(level, SCALE, true);
+        T->assemble(rt->vl[level], level, SCALE);
+        F->assemble(theta_h, level, false, SCALE);
+        eos_mat->assemble(rt->vl[level], level, SCALE);
 
-    MatDestroy(&M1inv);
-    MatDestroy(&M1_f_inv);
+        M1->assemble(level, SCALE);
+        DiagMatInv(M1->M, topo->n1, topo->n1l, topo->nDofs1G, topo->gtol_1, &M1inv);
+
+        R->assemble(fl[level], level, SCALE);
+        MatAXPY(M1->M, dt, R->M, DIFFERENT_NONZERO_PATTERN);
+        coriolisMatInv(M1->M, &M1_f_inv);
+
+        MatMatMult(EtoF->E12, eos_mat->M, reuse, DIFFERENT_NONZERO_PATTERN, &_DTM2);
+        MatMatMult(M1inv, _DTM2, reuse, DIFFERENT_NONZERO_PATTERN, &_M1invDTM2);
+        MatMatMult(F->M, _M1invDTM2, reuse, DIFFERENT_NONZERO_PATTERN, &_M1thetaM1invDTM2);
+        MatMatMult(M1_f_inv, _M1thetaM1invDTM2, reuse, DIFFERENT_NONZERO_PATTERN, &_M1invM1thetaM1invDTM2);
+        MatMatMult(EtoF->E21, _M1invM1thetaM1invDTM2, reuse, DIFFERENT_NONZERO_PATTERN, &_DM1invM1thetaM1invDTM2);
+        MatMatMult(T->M, _DM1invM1thetaM1invDTM2, reuse, DIFFERENT_NONZERO_PATTERN, &PCx[level]);
+
+        MatAYPX(PCx[level], -1.0*dt*dt, M2->M, DIFFERENT_NONZERO_PATTERN);
+
+        K->assemble(velx[level], level, SCALE);
+        MatMatMult(K->M, EtoF->E12, reuse, DIFFERENT_NONZERO_PATTERN, &_KDT);
+        MatAXPY(PCx[level], -2.0*dt, _KDT, DIFFERENT_NONZERO_PATTERN); // re-scale by 2.0 since K is scaled by 0.5
+
+        MatDestroy(&M1inv);
+        MatDestroy(&M1_f_inv);
+    }
+
+    // vertical part
+    for(int ey = 0; ey < topo->nElsX; ey++) {
+        for(int ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey * topo->nElsX + ex;
+        }
+    }
+
+    VecDestroy(&theta_h);
 }

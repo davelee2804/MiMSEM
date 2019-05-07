@@ -76,7 +76,7 @@ class Euler {
 
         double integrateTheta(Vec theta);
         void coriolisMatInv(Mat A, Mat* Ainv);
-        void assemblePreconTheta(int level, Vec theta, Vec rt, Mat PC);
+        void assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz);
 
         void repack_z(Vec x, Vec u, Vec rho, Vec rt);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt);
@@ -109,4 +109,11 @@ class Euler {
         Mat* PCx;
 
         Mat _PCz, _Muu, _Muh, _Mhu, _Mhh;
+
+        Mat _DTM2;
+        Mat _M1invDTM2;
+        Mat _M1thetaM1invDTM2;
+        Mat _M1invM1thetaM1invDTM2;
+        Mat _DM1invM1thetaM1invDTM2;
+        Mat _KDT;
 };
