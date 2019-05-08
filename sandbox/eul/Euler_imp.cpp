@@ -757,7 +757,6 @@ void Euler::solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_
     PC pc;
     KSP ksp_x;
     KSP ksp_z;
-L2Vecs* exner_i = new L2Vecs(geom->nk, topo, geom);
 
     if(firstStep) {
         // assumed these have been initialised from the driver
@@ -781,19 +780,6 @@ L2Vecs* exner_i = new L2Vecs(geom->nk, topo, geom);
     }
     exner->UpdateLocal();
     exner->HorizToVert();
-exner_i->CopyFromVert(exner->vz);
-for(int ii = 0; ii < geom->nk; ii++) {
-sprintf(fieldname, "density");
-geom->write2(rho_i->vh[ii], fieldname, 9999, ii, true);
-sprintf(fieldname, "rhoTheta");
-geom->write2(rt_i->vh[ii], fieldname, 9999, ii, true);
-sprintf(fieldname, "exner");
-geom->write2(exner->vh[ii], fieldname, 9999, ii, true);
-}
-sprintf(fieldname, "theta");
-for(int ii = 0; ii < geom->nk+1; ii++) {
-geom->write2(theta_i->vh[ii], fieldname, 9999, ii, false);
-}
 
     // update the next time level
     velz_j->CopyFromHoriz(velz_i->vh);
@@ -894,24 +880,6 @@ geom->write2(theta_i->vh[ii], fieldname, 9999, ii, false);
         if(!rank) cout << "|dz|: " << norm_max_dz << "\t|z|: " << norm_max_z << "\t|dz|/|z|: " << norm_max_dz/norm_max_z << endl;
         if(norm_max_dz/norm_max_z < 1.0e-8) done = true;
     } while(!done);
-
-if(!rank)cout<<"done with veritcal solve...(1)\n";
-for(int ii = 0; ii < geom->nk; ii++) {
-sprintf(fieldname, "density");
-geom->write2(rho_j->vh[ii], fieldname, 9999, ii, true);
-sprintf(fieldname, "rhoTheta");
-geom->write2(rt_j->vh[ii], fieldname, 9999, ii, true);
-sprintf(fieldname, "exner");
-geom->write2(exner->vh[ii], fieldname, 9999, ii, true);
-}
-sprintf(fieldname, "velocity_z");
-for(int ii = 0; ii < geom->nk-1; ii++) {
-geom->write2(velz_j->vh[ii], fieldname, 9999, ii, false);
-}
-sprintf(fieldname, "theta");
-for(int ii = 0; ii < geom->nk+1; ii++) {
-geom->write2(theta_j->vh[ii], fieldname, 9999, ii, false);
-}
 
     do {
         // update the horizontal dynamics for this iteration
@@ -1038,7 +1006,6 @@ geom->write2(theta_j->vh[ii], fieldname, 9999, ii, false);
     delete velz_j;
     delete rho_j;
     delete rt_j;
-delete exner_i;
 }
 
 void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
@@ -2266,11 +2233,12 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
     int *inds2;
     const int *cols;
     const double* vals;
-    Vec theta_h;
+    Vec theta_h, velx_l;
     MatReuse reuse;
     Mat M1inv, M1_f_inv;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &velx_l);
 
     // horizontal part
     for(int level = 0; level < geom->nk; level++) {
@@ -2301,7 +2269,9 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
 
         MatAYPX(PCx[level], -1.0*dt*dt, M2->M, DIFFERENT_NONZERO_PATTERN);
 
-        K->assemble(velx[level], level, SCALE);
+        VecScatterBegin(topo->gtol_1, velx[level], velx_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, velx[level], velx_l, INSERT_VALUES, SCATTER_FORWARD);
+        K->assemble(velx_l, level, SCALE);
         MatMatMult(K->M, EtoF->E12, reuse, DIFFERENT_NONZERO_PATTERN, &_KDT);
         MatAXPY(PCx[level], -2.0*dt, _KDT, DIFFERENT_NONZERO_PATTERN); // re-scale by 2.0 since K is scaled by 0.5
 
@@ -2352,4 +2322,121 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
     }
 
     VecDestroy(&theta_h);
+    VecDestroy(&velx_l);
+}
+
+void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
+    bool done = false;
+    int ei;
+    int elOrd2 = topo->elOrd * topo->elOrd;
+    Vec fTheta, dTheta, F_x, F_z;
+    PC pc;
+    KSP ksp_Theta;
+    Vec* velx_j = new Vec[geom->nk];
+    L2Vecs* velz_j = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* dF_z = new L2Vecs(geom->nk, topo, geom);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fTheta);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dTheta);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &F_x);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_z);
+    for(int level = 0; level < geom->nk; level++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_j[level]);
+        VecCopy(velx_i[level], velx_j[level]);
+    }
+
+    if(firstStep) {
+        // assumed these have been initialised from the driver
+        VecScatterBegin(topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterBegin(topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
+    }
+
+    velz_i->UpdateLocal();
+    velz_i->HorizToVert();
+    velz_j->CopyFromVert(velz_i->vh);
+
+    rho_j->CopyFromHoriz(rho_i->vh);
+    rt_j->CopyFromHoriz(rt_i->vh);
+
+    rho_i->UpdateLocal();
+    rho_i->HorizToVert();
+    rt_i->UpdateLocal();
+    rt_i->HorizToVert();
+
+    diagTheta(rho_i->vz, rt_i->vz, theta_i);
+    theta_j->CopyFromVert(theta_i->vz);
+    theta_j->VertToHoriz();
+
+    do {
+        // assemble the (density weighted potential temperature) preconditioners for all levels
+        rt_j->UpdateLocal();
+        assemblePreconTheta(theta_j, rt_j, velx_j, velz_j->vz);
+
+        rho_j->UpdateLocal();
+        rho_j->HorizToVert();
+        for(int ey = 0; ey < topo->nElsX; ey++) {
+            for(int ex = 0; ex < topo->nElsX; ex++) {
+                ei = ey * topo->nElsX + ex;
+                diagnose_F_z(ex, ey, velz_i->vz[ei], velz_j->vz[ei], rho_i->vz[ei], rho_i->vz[ei], F_z);
+                MatMult(vo->V10, F_z, dF_z->vz[ei]);
+            }
+        }
+        dF_z->VertToHoriz();
+        dF_z->UpdateGlobal();
+
+        // update the density weighted potential temperature on all levels
+        for(int level = 0; level < geom->nk; level++) {
+            // assemble the density weighted potential temperature residual
+            diagnose_F_x(level, velx_i[level], velx_j[level], rho_i->vh[level], rho_j->vh[level], F_x);
+
+            KSPCreate(MPI_COMM_WORLD, &ksp_Theta);
+            KSPSetOperators(ksp_Theta, PCx[level], PCx[level]);
+            KSPSetTolerances(ksp_Theta, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+            KSPSetType(ksp_Theta, KSPGMRES);
+            KSPGetPC(ksp_Theta, &pc);
+            PCSetType(pc, PCBJACOBI);
+            PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
+            KSPSetOptionsPrefix(ksp_Theta, "ksp_Theta_");
+            KSPSetFromOptions(ksp_Theta);
+            KSPSolve(ksp_Theta, fTheta, dTheta);
+            KSPDestroy(&ksp_Theta);
+
+            VecAXPY(rt_j->vh[level], 1.0, dTheta);
+            rt_j->UpdateLocal();
+
+            diagnose_Pi(level, rt_i->vl[level], rt_j->vl[level], exner->vh[level]);
+        }
+
+        rho_j->UpdateLocal();
+        rho_j->HorizToVert();
+        rt_j->UpdateLocal();
+        rt_j->HorizToVert();
+        diagTheta(rho_j->vz, rt_j->vz, theta_j);
+
+    } while(!done);
+
+    firstStep = false;
+
+    VecDestroy(&fTheta);
+    VecDestroy(&dTheta);
+    VecDestroy(&F_x);
+    VecDestroy(&F_z);
+    for(int level = 0; level < geom->nk; level++) {
+        VecDestroy(&velx_j[level]);
+    }
+    delete[] velx_j;
+    delete velz_j;
+    delete rho_j;
+    delete rt_j;
+    delete exner;
+    delete theta_i;
+    delete theta_j;
+    delete dF_z;
 }
