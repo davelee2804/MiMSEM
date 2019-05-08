@@ -2262,7 +2262,10 @@ void Euler::coriolisMatInv(Mat A, Mat* Ainv) {
 }
 
 void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz) {
-    int ei;
+    int ei, elOrd2, nCols;
+    int *inds2;
+    const int *cols;
+    const double* vals;
     Vec theta_h;
     MatReuse reuse;
     Mat M1inv, M1_f_inv;
@@ -2324,9 +2327,27 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
 
             vo->AssembleConstWithRho(ex, ey, rt->vz[ei], vo->VB);
             MatMatMult(vo->VB, _DV0_invV0_thetaV0_invDTV1, reuse, DIFFERENT_NONZERO_PATTERN, &PCz[ei]);
+            MatScale(PCz[ei], -1.0*dt*dt);
+        }
+    }
 
-            vo->AssembleConst(ex, ey, vo->VB);
-            MatAYPX(PCz[ei], -1.0*dt*dt, vo->VB, DIFFERENT_NONZERO_PATTERN);
+    // add the vertical part to the horiztonal
+    elOrd2 = topo->elOrd * topo->elOrd;
+    for(int ey = 0; ey < topo->nElsX; ey++) {
+        for(int ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey * topo->nElsX + ex;
+            inds2 = topo->elInds2_g(ex, ey);
+            for(int level = 0; level < geom->nk; level++) {
+                for(int ii = 0; ii < elOrd2; ii++) {
+                    MatGetRow(PCz[ei], level*elOrd2+ii, &nCols, &cols, &vals);
+                    if(nCols != elOrd2) {
+                        cout << rank << ": ERROR in preconditioner assembly, incorrect number of columns: " << nCols << endl;
+                        abort();
+                    }
+                    MatSetValues(PCx[level], 1, &inds2[ii], elOrd2, inds2, vals, ADD_VALUES);
+                    MatRestoreRow(PCz[ei], level*elOrd2+ii, &nCols, &cols, &vals);
+                }
+            }
         }
     }
 
