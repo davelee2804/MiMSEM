@@ -51,4 +51,5 @@ class VertOps {
         void AssembleLinConWithTheta(int ex, int ey, Mat AB, Vec theta);
         void AssembleLinConWithRho(int ex, int ey, Mat AB, Vec rho);
         void AssembleConLin(int ex, int ey, Mat BA);
+        void AssembleConstEoS(int ex, int ey, Vec rt, Mat B);
 };
