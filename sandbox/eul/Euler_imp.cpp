@@ -351,6 +351,17 @@ Euler::~Euler() {
 
     delete vo;
 
+    MatDestroy(&_DTV1);
+    MatDestroy(&_GRAD);
+    MatDestroy(&_DIV);
+    MatDestroy(&_V0_invDTV1);
+    MatDestroy(&_V0_invV0_rt);
+    MatDestroy(&_DV0_invV0_rt);
+    MatDestroy(&_V1_PiDV0_invV0_rt);
+    MatDestroy(&_V0_thetaV0_invDTV1);
+    MatDestroy(&_V0_invV0_thetaV0_invDTV1);
+    MatDestroy(&_DV0_invV0_thetaV0_invDTV1);
+
     MatDestroy(&_PCz);
     MatDestroy(&_Muu);
     MatDestroy(&_Muh);
@@ -2299,6 +2310,23 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
     for(int ey = 0; ey < topo->nElsX; ey++) {
         for(int ex = 0; ex < topo->nElsX; ex++) {
             ei = ey * topo->nElsX + ex;
+            reuse = (_DTM2) ? MAT_REUSE_MATRIX : MAT_INITIAL_MATRIX;
+
+            vo->AssembleConstEoS(ex, ey, rt->vz[ei], vo->VB);
+            vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+            vo->AssembleLinearWithTheta(ex, ey, theta->vz[ei], vo->VA);
+
+            MatMatMult(vo->V01, vo->VB, reuse, DIFFERENT_NONZERO_PATTERN, &_DTV1);
+            MatMatMult(vo->VA_inv, _DTV1, reuse, DIFFERENT_NONZERO_PATTERN, &_V0_invDTV1);
+            MatMatMult(vo->VA, _V0_invDTV1, reuse, DIFFERENT_NONZERO_PATTERN, &_V0_thetaV0_invDTV1);
+            MatMatMult(vo->VA_inv, _V0_thetaV0_invDTV1, reuse, DIFFERENT_NONZERO_PATTERN, &_V0_invV0_thetaV0_invDTV1);
+            MatMatMult(vo->V10, _V0_invV0_thetaV0_invDTV1, reuse, DIFFERENT_NONZERO_PATTERN, &_DV0_invV0_thetaV0_invDTV1);
+
+            vo->AssembleConstWithRho(ex, ey, rt->vz[ei], vo->VB);
+            MatMatMult(vo->VB, _DV0_invV0_thetaV0_invDTV1, reuse, DIFFERENT_NONZERO_PATTERN, &PCz[ei]);
+
+            vo->AssembleConst(ex, ey, vo->VB);
+            MatAYPX(PCz[ei], -1.0*dt*dt, vo->VB, DIFFERENT_NONZERO_PATTERN);
         }
     }
 

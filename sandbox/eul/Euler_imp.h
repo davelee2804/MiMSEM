@@ -97,6 +97,9 @@ class Euler {
         Mat _V0_invV0_rt;
         Mat _DV0_invV0_rt;
         Mat _V1_PiDV0_invV0_rt;
+        Mat _V0_thetaV0_invDTV1;
+        Mat _V0_invV0_thetaV0_invDTV1;
+        Mat _DV0_invV0_thetaV0_invDTV1;
         Mat* PCz;
         // horiztonal vectors and matrices
         Mat _M1invM1;
