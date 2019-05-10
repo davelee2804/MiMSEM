@@ -2295,6 +2295,8 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
             MatMatMult(vo->VA_inv, _V0_thetaV0_invDTV1, reuse, DIFFERENT_NONZERO_PATTERN, &_V0_invV0_thetaV0_invDTV1);
             MatMatMult(vo->V10, _V0_invV0_thetaV0_invDTV1, reuse, DIFFERENT_NONZERO_PATTERN, &_DV0_invV0_thetaV0_invDTV1);
 
+            // TODO: add in the vertical advection part of the precinditioner
+
             vo->AssembleConstWithRho(ex, ey, rt->vz[ei], vo->VB);
             MatMatMult(vo->VB, _DV0_invV0_thetaV0_invDTV1, reuse, DIFFERENT_NONZERO_PATTERN, &PCz[ei]);
             MatScale(PCz[ei], -1.0*dt*dt);
@@ -2325,28 +2327,143 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
     VecDestroy(&velx_l);
 }
 
+void Euler::assemble_residual_u(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi, 
+                                Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fu) 
+{
+    Vec Phi, dPi, wxu, wxz, utmp, d2u, d4u;
+    Vec theta_h, dp, dudz_h, velz_h, dudz_l;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &wxz);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_h);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &velz_h);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &dudz_l);
+
+    m0->assemble(level, SCALE);
+    M1->assemble(level, SCALE);
+    M2->assemble(level, SCALE, true);
+
+    // assume theta = 0.5*(theta_i + theta_j)
+    VecZeroEntries(theta_h);
+    VecAXPY(theta_h, 0.5, theta[level+0]);
+    VecAXPY(theta_h, 0.5, theta[level+1]);
+
+    VecZeroEntries(fu);
+
+    // assemble in the skew-symmetric parts of the vector
+    diagnose_Phi_x(level, velx1, velx2, &Phi);
+    grad(false, Pi, &dPi, level);
+    diagnose_wxu(level, velx1, velx2, &wxu);
+
+    MatMult(EtoF->E12, Phi, fu);
+    VecAXPY(fu, 1.0, wxu);
+
+    // add the pressure gradient force
+    F->assemble(theta_h, level, false, SCALE);
+    MatMult(F->M, dPi, dp);
+    VecAXPY(fu, 1.0, dp);
+
+    // second voritcity term
+    VecZeroEntries(utmp);
+    if(level > 0) {
+        VecZeroEntries(dudz_h);
+        VecAXPY(dudz_h, 0.5, dudz1[level-1]);
+        VecAXPY(dudz_h, 0.5, dudz2[level-1]);
+        VecScatterBegin(topo->gtol_1, dudz_h, dudz_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, dudz_h, dudz_l, INSERT_VALUES, SCATTER_FORWARD);
+
+        VecZeroEntries(velz_h);
+        VecAXPY(velz_h, 0.5, velz1[level-1]);
+        VecAXPY(velz_h, 0.5, velz2[level-1]);
+
+        Rh->assemble(dudz_l, SCALE);
+        MatMult(Rh->M, velz_h, dp);
+        VecAXPY(utmp, 0.5, dp);
+    }
+    if(level < geom->nk-1) {
+        VecZeroEntries(dudz_h);
+        VecAXPY(dudz_h, 0.5, dudz1[level+0]);
+        VecAXPY(dudz_h, 0.5, dudz2[level+0]);
+        VecScatterBegin(topo->gtol_1, dudz_h, dudz_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, dudz_h, dudz_l, INSERT_VALUES, SCATTER_FORWARD);
+
+        VecZeroEntries(velz_h);
+        VecAXPY(velz_h, 0.5, velz1[level+0]);
+        VecAXPY(velz_h, 0.5, velz2[level+0]);
+
+        Rh->assemble(dudz_l, SCALE);
+        MatMult(Rh->M, velz_h, dp);
+        VecAXPY(utmp, 0.5, dp);
+    }
+    VecAXPY(fu, 1.0, utmp);
+    VecScale(fu, dt);
+
+    // assemble the mass matrix terms
+    MatMult(M1->M, velx2, utmp);
+    VecAXPY(fu, +1.0, utmp);
+    MatMult(M1->M, velx1, utmp);
+    VecAXPY(fu, -1.0, utmp);
+
+    if(do_visc) {
+        VecZeroEntries(utmp);
+        VecAXPY(utmp, 0.5, velx1);
+        VecAXPY(utmp, 0.5, velx2);
+        laplacian(false, utmp, &d2u, level);
+        laplacian(false, d2u, &d4u, level);
+        MatMult(M1->M, d4u, d2u);
+        VecAXPY(fu, dt, d2u);
+        VecDestroy(&d2u);
+        VecDestroy(&d4u);
+    }
+
+    // clean up
+    VecDestroy(&utmp);
+    VecDestroy(&Phi);
+    VecDestroy(&dPi);
+    VecDestroy(&wxu);
+    VecDestroy(&theta_h);
+    VecDestroy(&dp);
+    VecDestroy(&wxz);
+    VecDestroy(&dudz_h);
+    VecDestroy(&velz_h);
+    VecDestroy(&dudz_l);
+}
+
 void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
     bool done = false;
     int ei;
     int elOrd2 = topo->elOrd * topo->elOrd;
-    Vec fTheta, dTheta, F_x, F_z;
+    Vec fTheta, dTheta, fu, du, F_x, G_x, F_z, G_z, tmp1, tmp2;
     PC pc;
     KSP ksp_Theta;
     Vec* velx_j = new Vec[geom->nk];
+    Vec* dudz_i = new Vec[geom->nk];
+    Vec* dudz_j = new Vec[geom->nk];
     L2Vecs* velz_j = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* rho_j = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_j = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
-    L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* dF_z = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* dG_z = new L2Vecs(geom->nk, topo, geom);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fTheta);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dTheta);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &F_x);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &G_x);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmp1);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
     for(int level = 0; level < geom->nk; level++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_j[level]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_i[level]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_j[level]);
         VecCopy(velx_i[level], velx_j[level]);
     }
 
@@ -2364,6 +2481,8 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
 
     rho_j->CopyFromHoriz(rho_i->vh);
     rt_j->CopyFromHoriz(rt_i->vh);
+    rt_j->UpdateLocal();
+    rt_j->HorizToVert();
 
     rho_i->UpdateLocal();
     rho_i->HorizToVert();
@@ -2371,30 +2490,58 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     rt_i->HorizToVert();
 
     diagTheta(rho_i->vz, rt_i->vz, theta_i);
-    theta_j->CopyFromVert(theta_i->vz);
-    theta_j->VertToHoriz();
+    theta_h->CopyFromVert(theta_i->vz);
+    theta_h->VertToHoriz();
+
+    diagHorizVort(velx_i, dudz_i);
+    for(int ii = 0; ii < geom->nk; ii++) {
+        VecCopy(dudz_i[ii], dudz_j[ii]);
+    }
 
     do {
         // assemble the (density weighted potential temperature) preconditioners for all levels
-        rt_j->UpdateLocal();
-        assemblePreconTheta(theta_j, rt_j, velx_j, velz_j->vz);
+        assemblePreconTheta(theta_h, rt_j, velx_j, velz_j->vz);
 
         rho_j->UpdateLocal();
         rho_j->HorizToVert();
         for(int ey = 0; ey < topo->nElsX; ey++) {
             for(int ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey * topo->nElsX + ex;
+                // mass flux divergence
                 diagnose_F_z(ex, ey, velz_i->vz[ei], velz_j->vz[ei], rho_i->vz[ei], rho_i->vz[ei], F_z);
                 MatMult(vo->V10, F_z, dF_z->vz[ei]);
+                // temperature flux divergence
+                vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+                vo->AssembleLinearWithTheta(ex, ey, theta_h->vz[ei], vo->VA);
+                MatMult(vo->VA, F_z, _tmpA1);
+                MatMult(vo->VA_inv, _tmpA1, G_z);
+                MatMult(vo->V10, G_z, dG_z->vz[ei]);
             }
         }
         dF_z->VertToHoriz();
         dF_z->UpdateGlobal();
+        dG_z->VertToHoriz();
+        dG_z->UpdateGlobal();
 
         // update the density weighted potential temperature on all levels
         for(int level = 0; level < geom->nk; level++) {
             // assemble the density weighted potential temperature residual
             diagnose_F_x(level, velx_i[level], velx_j[level], rho_i->vh[level], rho_j->vh[level], F_x);
+    
+            VecZeroEntries(tmp2);
+            VecAXPY(tmp2, 0.5, theta_h->vl[level+0]);
+            VecAXPY(tmp2, 0.5, theta_h->vl[level+1]);
+            F->assemble(tmp2, level, false, SCALE);
+            MatMult(F->M, F_x, tmp1);
+            M1->assemble(level, SCALE);
+            KSPSolve(ksp1, tmp1, G_z);
+            MatMult(EtoF->E21, G_z, tmp2);
+            VecAXPY(dG_z->vh[level], 1.0, tmp2);
+            VecAYPX(tmp2, +dt, rt_j->vh[level]);
+            VecAXPY(tmp2, -dt, rt_i->vh[level]);
+            M2->assemble(level, SCALE, true);
+            MatMult(M2->M, tmp2, fTheta);
+            VecScale(fTheta, -1.0);
 
             KSPCreate(MPI_COMM_WORLD, &ksp_Theta);
             KSPSetOperators(ksp_Theta, PCx[level], PCx[level]);
@@ -2409,16 +2556,38 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
             KSPDestroy(&ksp_Theta);
 
             VecAXPY(rt_j->vh[level], 1.0, dTheta);
-            rt_j->UpdateLocal();
-
-            diagnose_Pi(level, rt_i->vl[level], rt_j->vl[level], exner->vh[level]);
         }
+        rt_j->UpdateLocal();
+        rt_j->HorizToVert();
+
+        // update the exner pressure and horizontal velocity
+        for(int level = 0; level < geom->nk; level++) {
+            diagnose_Pi(level, rt_i->vl[level], rt_j->vl[level], exner->vh[level]);
+
+            assemble_residual_u(level, theta_h->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, exner->vh[level],
+                                velx_i[level], velx_j[level], rho_i->vh[level], rho_j->vh[level], rt_i->vh[level], rt_j->vh[level], fu);
+            VecScale(fu, -1.0);
+
+            M1->assemble(level, SCALE);
+            R->assemble(fl[level], level, SCALE);
+            MatAXPY(M1->M, dt, R->M, DIFFERENT_NONZERO_PATTERN);
+            KSPSolve(ksp1, fu, du);
+            VecAXPY(velx_j[level], 1.0, du);
+        }
+        diagHorizVort(velx_j, dudz_j);
+
+        // update the vertical velocity
+
+        // udpate the density
 
         rho_j->UpdateLocal();
         rho_j->HorizToVert();
-        rt_j->UpdateLocal();
-        rt_j->HorizToVert();
-        diagTheta(rho_j->vz, rt_j->vz, theta_j);
+        diagTheta(rho_j->vz, rt_j->vz, theta_h);
+        for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+            VecAXPY(theta_h->vz[ei], 1.0, theta_i->vz[ei]);
+            VecScale(theta_h->vz[ei], 0.5);
+        }
+        theta_h->VertToHoriz();
 
     } while(!done);
 
@@ -2426,17 +2595,28 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
 
     VecDestroy(&fTheta);
     VecDestroy(&dTheta);
+    VecDestroy(&fu);
+    VecDestroy(&du);
     VecDestroy(&F_x);
+    VecDestroy(&G_x);
     VecDestroy(&F_z);
+    VecDestroy(&G_z);
+    VecDestroy(&tmp1);
+    VecDestroy(&tmp2);
     for(int level = 0; level < geom->nk; level++) {
         VecDestroy(&velx_j[level]);
+        VecDestroy(&dudz_i[level]);
+        VecDestroy(&dudz_j[level]);
     }
     delete[] velx_j;
+    delete[] dudz_i;
+    delete[] dudz_j;
     delete velz_j;
     delete rho_j;
     delete rt_j;
     delete exner;
     delete theta_i;
-    delete theta_j;
+    delete theta_h;
     delete dF_z;
+    delete dG_z;
 }
