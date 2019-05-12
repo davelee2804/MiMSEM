@@ -33,12 +33,18 @@ using namespace std;
 #define GRAVITY 9.80616
 #define OMEGA 7.29212e-5
 #define DELTA 100.0
-#define HTOP 20000.0
-#define HBOT 10000.0
-#define UTOP 14.801012961
-#define UBOT 18.1584170112
-#define RHO_TOP 0.131703004382
-#define RHO_BOT 0.749152837846
+//#define HTOP 8000.0
+//#define HBOT 2000.0
+//#define UTOP 21.4589470412
+//#define UBOT 4.95652139969
+//#define RHO_TOP 0.661798009439
+//#define RHO_BOT 1.09857215148
+#define HTOP 10000.0
+#define HBOT 2000.0
+#define UTOP 40.0
+#define UBOT 0.0
+#define RHO_TOP 0.600192080827
+#define RHO_BOT 1.09857215148
 
 double vel_func(double* x, double U0) {
     double eps = 1.0e-8;
@@ -56,7 +62,7 @@ double vel_func(double* x, double U0) {
 }
 
 double v_init(double* x) {
-    double eps = 1.0e-4;
+    double eps = 1.0e-3;
 
     return eps*2.0*(rand()/RAND_MAX - 0.5);
 }
@@ -148,6 +154,20 @@ double h_bot_init(double* x) {
 */
 }
 
+double h_pert_init(double* x) {
+    double h = 0.0;
+    double hHat = 120.0*(RAD_SPHERE/RAD_EARTH);
+    double phi = asin(x[2]/RAD_SPHERE);
+    double lambda = atan2(x[1],x[0]);
+    double alpha = 1.0/3.0;
+    double beta = 1.0/15.0;
+    double phi2 = M_PI/4.0;
+
+    h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
+
+    return h;    
+}
+
 double u_top_init(double* x) {
     double eps = 1.0e-4;
 
@@ -172,6 +192,61 @@ double u_bot_init(double* x) {
 //    return u_top_init(x) + eps*2.0*(rand() - 0.5)/RAND_MAX;
 }
 
+// initial condition given by:
+//     Galewsky, Scott and Polvani (2004) Tellus, 56A 429-440
+double u_init(double* x) {
+    double eps = 1.0e-8;
+    double umax = 80.0*(RAD_SPHERE/RAD_EARTH);
+    double phi0 = M_PI/7.0;
+    double phi1 = M_PI/2.0 - phi0;
+    //double phi0 = -M_PI/4.0;
+    //double phi1 = +M_PI/4.0;
+    double en = exp(-4.0/((phi1 - phi0)*(phi1 - phi0)));
+    double phi = asin(x[2]/RAD_SPHERE);
+
+    if(phi > phi0 + eps && phi < phi1 - eps) {
+        return (umax/en)*exp(1.0/((phi - phi0)*(phi - phi1)));
+    }
+    else {
+        return 0.0;
+    }
+}
+
+double h_init(double* x) {
+    int ii, ni = 1000;
+    double phiPrime = 0.0;
+    //double phiPrime = -0.5*M_PI;
+    double phi = asin(x[2]/RAD_SPHERE);
+    double lambda = atan2(x[1],x[0]);
+    //double dphi = phi/ni;
+    double dphi = fabs(phi/ni);
+    double hHat = 120.0*(RAD_SPHERE/RAD_EARTH);
+    double h = 10000.0*(RAD_SPHERE/RAD_EARTH);
+    double grav = 9.80616*(RAD_SPHERE/RAD_EARTH);
+    double omega = 7.292e-5;
+    double u, f;
+    double alpha = 1.0/3.0;
+    double beta = 1.0/15.0;
+    double phi2 = M_PI/4.0;
+    double x2[3];
+    int sgn = (phi > 0) ? +1 : -1;
+    //int sgn = +1;
+
+    x2[0] = x[0];
+    x2[1] = x[1];
+    for(ii = 0; ii < ni; ii++) {
+        phiPrime += sgn*dphi;
+        x2[2] = RAD_SPHERE*sin(phiPrime);
+        u = u_init(x2);
+        f = 2.0*omega*sin(phiPrime);
+        h -= RAD_SPHERE*u*(f + tan(phiPrime)*u/RAD_SPHERE)*dphi/grav;
+    }
+
+    h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
+
+    return h;
+}
+
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
@@ -180,7 +255,7 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 14*24*12;//240;
+    int nSteps = 60*24*12;//240;
     int dumpEvery = 6*12;//240;
     Topo* topo;
     Geom* geom;
@@ -213,10 +288,12 @@ int main(int argc, char** argv) {
         sw->init2(ht, h_top_init);
         sw->init1(ub, u_bot_init, v_init);
         sw->init2(hb, h_bot_init);
-        //sw->init1(ut, u_init, v_init);
-        //sw->init2(ht, h_init);
-        //sw->init1(ub, u_init, v_init);
-        //sw->init2(hb, h_init);
+/*
+        sw->init1(ut, u_init, v_init);
+        sw->init2(ht, h_init);
+        sw->init1(ub, u_init, v_init);
+        sw->init2(hb, h_init);
+*/
 
         sprintf(fieldname,"velocity_t");
         geom->write1(ut,fieldname,0);
@@ -246,6 +323,14 @@ int main(int argc, char** argv) {
         PetscViewerBinaryOpen(PETSC_COMM_WORLD, fieldname, FILE_MODE_READ, &viewer);
         VecLoad(ub, viewer);
         PetscViewerDestroy(&viewer);
+
+        /*{
+            Vec hPert;
+            VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hPert);
+            sw->init2(hPert, h_pert_init);
+            VecAXPY(ht, 1.0, hPert);
+            VecDestroy(&hPert);
+        }*/
     }
 
     sw->curl(ut, &wt);
@@ -267,9 +352,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    delete topo;
-    delete geom;
     delete sw;
+    delete geom;
+    delete topo;
 
     VecDestroy(&ut);
     VecDestroy(&ht);

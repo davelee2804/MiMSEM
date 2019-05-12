@@ -38,10 +38,10 @@ SWEqn_2L::SWEqn_2L(Topo* _topo, Geom* _geom) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     grav    = 9.80616*(RAD_SPHERE/RAD_EARTH);
-    rho_t   = 0.131703004382;
-    rho_b   = 0.749152837846;
-    H_t     = 20000.0;
-    H_b     = 10000.0;
+    rho_t   = 0.600192080827;//0.661798009439;//0.131703004382;
+    rho_b   = 1.09857215148;//0.749152837846;
+    H_t     = 10000.0;//8000.0;//20000.0;
+    H_b     = 2000.0;//10000.0;
     omega   = 7.292e-5;
     del2    = viscosity();
     do_visc = true;
@@ -239,9 +239,7 @@ void SWEqn_2L::diagnose_F(Vec ui, Vec uj, Vec hi, Vec hj, Vec* F) {
     VecAXPY(hu, 1.0/3.0, b);
 
     // solve the linear system
-    M1->assemble();
     KSPSolve(ksp, hu, *F);
-    M1->assemble();
 
     VecDestroy(&hu);
     VecDestroy(&b);
@@ -503,6 +501,10 @@ void SWEqn_2L::assemble_residual(Vec x, Vec f) {
     MatMult(M2->M, htmp1, htmp2);
     VecAXPY(fh_t, 1.0, htmp2);
 
+    VecDestroy(&F);
+    VecDestroy(&Phi);
+    VecDestroy(&wxu);
+
     // bottom level
     diagnose_F(u_bi, u_bj, h_bi, h_bj, &F);
     diagnose_Phi(u_bi, u_bj, h_bi, h_bj, h_ti, h_tj, grav, (rho_t/rho_b)*grav, &Phi);
@@ -516,6 +518,10 @@ void SWEqn_2L::assemble_residual(Vec x, Vec f) {
     MatMult(EtoF->E21, F, htmp1);
     MatMult(M2->M, htmp1, htmp2);
     VecAXPY(fh_b, 1.0, htmp2);
+
+    VecDestroy(&F);
+    VecDestroy(&Phi);
+    VecDestroy(&wxu);
 
     repack(fs, fu_t, fh_t, fu_b, fh_b);
 
@@ -578,9 +584,6 @@ void SWEqn_2L::assemble_residual(Vec x, Vec f) {
     VecDestroy(&utmp);
     VecDestroy(&htmp1);
     VecDestroy(&htmp2);
-    VecDestroy(&F);
-    VecDestroy(&Phi);
-    VecDestroy(&wxu);
     VecDestroy(&fs);
 }
 
@@ -772,7 +775,7 @@ void SWEqn_2L::solve(Vec u_tn, Vec u_bn, Vec h_tn, Vec h_bn, double _dt, bool sa
 
     KSPCreate(MPI_COMM_WORLD, &kspA);
     KSPSetOperators(kspA, A, A);
-    KSPSetTolerances(kspA, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetTolerances(kspA, 1.0e-14, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetOptionsPrefix(kspA, "A_");
     KSPSetFromOptions(kspA);
 
