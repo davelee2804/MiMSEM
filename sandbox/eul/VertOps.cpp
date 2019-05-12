@@ -566,8 +566,7 @@ void VertOps::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
                     gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                     wt += wArray[(kk+0)*n2+jj]*gamma;
                 }
-                Q0[ii][ii] *= wt/det; // scale by 0.5 outside
-                Q0[ii][ii] *= 0.5;
+                Q0[ii][ii] *= 0.5*wt/det; // scale by 0.5 outside
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
