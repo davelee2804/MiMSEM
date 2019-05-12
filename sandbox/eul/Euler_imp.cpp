@@ -529,7 +529,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_j[ii]);
         VecCopy(velx_i[ii], velx_j[ii]);
 
-        assemble_precon_x(ii, theta_i->vl, rt_i->vl[ii], rt_i->vl[ii], exner->vl[ii]);
+        if(firstStep) PCx[ii] = NULL;
+        assemble_precon_x(ii, theta_i->vl, rt_i->vl[ii], rt_i->vl[ii], exner->vl[ii], &PCx[ii]);
     }
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
 
@@ -554,7 +555,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
                                 fu, _F_x[ii], _G_x[ii]);
             VecScale(fu, -1.0);
 
-            assemble_precon_x(ii, theta_j->vl, rt_i->vl[ii], rt_j->vl[ii], exner->vl[ii]);
+            assemble_precon_x(ii, theta_j->vl, rt_i->vl[ii], rt_j->vl[ii], exner->vl[ii], &PCx[ii]);
 
             KSPCreate(MPI_COMM_WORLD, &ksp_x);
             KSPSetOperators(ksp_x, PCx[ii], PCx[ii]);
@@ -814,7 +815,8 @@ void Euler::solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_j[ii]);
         VecCopy(velx_i[ii], velx_j[ii]);
 
-        assemble_precon_x(ii, theta_i->vl, rt_i->vl[ii], rt_i->vl[ii], exner->vl[ii]);
+        if(firstStep) PCx[ii] = NULL; 
+        assemble_precon_x(ii, theta_i->vl, rt_i->vl[ii], rt_i->vl[ii], exner->vl[ii], &PCx[ii]);
     }
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
 
@@ -1261,7 +1263,7 @@ void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ain
     VecDestroy(&diag_u_g);
 }
 
-void Euler::assemble_precon_x(int level, Vec* theta, Vec rt_i, Vec rt_j, Vec exner) {
+void Euler::assemble_precon_x(int level, Vec* theta, Vec rt_i, Vec rt_j, Vec exner, Mat* _PC) {
     MatReuse reuse = (!_M1invM1) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     Mat M1inv;
     Mat M2ThetaInv;
@@ -1291,15 +1293,15 @@ void Euler::assemble_precon_x(int level, Vec* theta, Vec rt_i, Vec rt_j, Vec exn
     MatMatMult(M1inv, _DM2ThetaPiDM1invM1, reuse, PETSC_DEFAULT, &_M1DM2ThetaPiDM1invM1);
 
     F->assemble(theta_h, level, false, SCALE);
-    if(firstStep) {
-        MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &PCx[level]);
+    if(!_PC) {
+        MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, _PC);
     } else {
-        MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCx[level]);
+        MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_REUSE_MATRIX, PETSC_DEFAULT, _PC);
     }
-    MatAYPX(PCx[level], -dt*dt*RD/CV, M1->M, DIFFERENT_NONZERO_PATTERN);
+    MatAYPX(*_PC, -dt*dt*RD/CV, M1->M, DIFFERENT_NONZERO_PATTERN);
 
     R->assemble(fl[level], level, SCALE);
-    MatAXPY(PCx[level], dt, R->M, DIFFERENT_NONZERO_PATTERN);
+    MatAXPY(*_PC, dt, R->M, DIFFERENT_NONZERO_PATTERN);
 
     VecDestroy(&theta_h);
     MatDestroy(&M1inv);
@@ -2463,8 +2465,10 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     double norm_w_l, norm_w_g, norm_w_max, norm_w_0;
     char fieldname[100];
     Vec fTheta, dTheta, fu, du, fw, dw, F_x, G_x, F_z, G_z, tmp1, tmp2, wi;
+    Mat PC_u = NULL;
+    Mat PC_w = NULL;
     PC pc;
-    KSP ksp_Theta;
+    KSP ksp_Theta, ksp_x, ksp_z;
     Vec* velx_j = new Vec[geom->nk];
     Vec* dudz_i = new Vec[geom->nk];
     Vec* dudz_j = new Vec[geom->nk];
@@ -2604,10 +2608,24 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
                                 velx_i[level], velx_j[level], rho_i->vh[level], rho_j->vh[level], rt_i->vh[level], rt_j->vh[level], fu);
             VecScale(fu, -1.0);
 
-            M1->assemble(level, SCALE);
-            R->assemble(fl[level], level, SCALE);
-            MatAXPY(M1->M, dt, R->M, DIFFERENT_NONZERO_PATTERN);
-            KSPSolve(ksp1, fu, du);
+            assemble_precon_x(level, theta_h->vl, rt_i->vl[level], rt_j->vl[level], exner->vl[level], &PC_u);
+            KSPCreate(MPI_COMM_WORLD, &ksp_x);
+            KSPSetOperators(ksp_x, PC_u, PC_u);
+            KSPSetTolerances(ksp_x, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+            KSPSetType(ksp_x, KSPGMRES);
+            KSPGetPC(ksp_x, &pc);
+            PCSetType(pc, PCBJACOBI);
+            PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+            KSPSetOptionsPrefix(ksp_x, "ksp_x_");
+            KSPSetFromOptions(ksp_x);
+            KSPSolve(ksp_x, fu, du);
+            KSPDestroy(&ksp_x);
+
+            //M1->assemble(level, SCALE);
+            //R->assemble(fl[level], level, SCALE);
+            //MatAXPY(M1->M, dt, R->M, DIFFERENT_NONZERO_PATTERN);
+            //KSPSolve(ksp1, fu, du);
+
             VecAXPY(velx_j[level], 1.0, du);
 
             VecNorm(du, NORM_2, &norm_u_l);
