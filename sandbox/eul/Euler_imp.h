@@ -77,6 +77,7 @@ class Euler {
 
         void assemble_residual_u(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi, 
                                  Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fu);
+        void assemble_residual_w(int ex, int ey, Vec theta, Vec Pi, Vec velz1, Vec velz2, Vec fw);
 
         double integrateTheta(Vec theta);
         void coriolisMatInv(Mat A, Mat* Ainv);

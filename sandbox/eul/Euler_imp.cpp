@@ -2431,11 +2431,38 @@ void Euler::assemble_residual_u(int level, Vec* theta, Vec* dudz1, Vec* dudz2, V
     VecDestroy(&dudz_l);
 }
 
+void Euler::assemble_residual_w(int ex, int ey, Vec theta, Vec Pi, Vec velz1, Vec velz2, Vec fw) {
+    diagnose_Phi_z(ex, ey, velz1, velz2, _Phi_z);
+
+    // assemble the momentum equation residual
+    vo->AssembleLinear(ex, ey, vo->VA);
+    MatMult(vo->VA, velz2, fw);
+
+    MatMult(vo->VA, velz1, _tmpA1);
+    VecAXPY(fw, -1.0, _tmpA1);
+
+    MatMult(vo->V01, _Phi_z, _tmpA1);
+    VecAXPY(fw, +dt, _tmpA1); // bernoulli function term
+
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMult(vo->VB, Pi, _tmpB1);
+    MatMult(vo->V01, _tmpB1, _tmpA1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
+    vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    MatMult(vo->VA, _tmpA2, _tmpA1);
+    VecAXPY(fw, +dt, _tmpA1); // pressure gradient term
+}
+
 void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
     bool done = false;
     int ei;
     int elOrd2 = topo->elOrd * topo->elOrd;
-    Vec fTheta, dTheta, fu, du, F_x, G_x, F_z, G_z, tmp1, tmp2;
+    double norm_rt_l, norm_rt_max, norm_rt_0;
+    double norm_u_l, norm_u_max, norm_u_0;
+    double norm_w_l, norm_w_g, norm_w_max, norm_w_0;
+    char fieldname[100];
+    Vec fTheta, dTheta, fu, du, fw, dw, F_x, G_x, F_z, G_z, tmp1, tmp2, wi;
     PC pc;
     KSP ksp_Theta;
     Vec* velx_j = new Vec[geom->nk];
@@ -2460,6 +2487,8 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmp1);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &fw);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &dw);
     for(int level = 0; level < geom->nk; level++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_j[level]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_i[level]);
@@ -2498,6 +2527,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
         VecCopy(dudz_i[ii], dudz_j[ii]);
     }
 
+    norm_rt_max = norm_u_max = norm_w_max = 0.0;
     do {
         // assemble the (density weighted potential temperature) preconditioners for all levels
         assemblePreconTheta(theta_h, rt_j, velx_j, velz_j->vz);
@@ -2508,7 +2538,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
             for(int ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey * topo->nElsX + ex;
                 // mass flux divergence
-                diagnose_F_z(ex, ey, velz_i->vz[ei], velz_j->vz[ei], rho_i->vz[ei], rho_i->vz[ei], F_z);
+                diagnose_F_z(ex, ey, velz_i->vz[ei], velz_j->vz[ei], rho_i->vz[ei], rho_j->vz[ei], F_z);
                 MatMult(vo->V10, F_z, dF_z->vz[ei]);
                 // temperature flux divergence
                 vo->AssembleLinearInv(ex, ey, vo->VA_inv);
@@ -2527,6 +2557,8 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
         for(int level = 0; level < geom->nk; level++) {
             // assemble the density weighted potential temperature residual
             diagnose_F_x(level, velx_i[level], velx_j[level], rho_i->vh[level], rho_j->vh[level], F_x);
+            MatMult(EtoF->E21, F_x, tmp2);
+            VecAXPY(dF_z->vh[level], 1.0, tmp2);
     
             VecZeroEntries(tmp2);
             VecAXPY(tmp2, 0.5, theta_h->vl[level+0]);
@@ -2556,6 +2588,10 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
             KSPDestroy(&ksp_Theta);
 
             VecAXPY(rt_j->vh[level], 1.0, dTheta);
+
+            VecNorm(dTheta, NORM_2, &norm_rt_l);
+            VecNorm(rt_j->vh[level], NORM_2, &norm_rt_0);
+            if(norm_rt_l/norm_rt_0 > norm_rt_max) norm_rt_max = norm_rt_l/norm_rt_0;
         }
         rt_j->UpdateLocal();
         rt_j->HorizToVert();
@@ -2573,15 +2609,38 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
             MatAXPY(M1->M, dt, R->M, DIFFERENT_NONZERO_PATTERN);
             KSPSolve(ksp1, fu, du);
             VecAXPY(velx_j[level], 1.0, du);
+
+            VecNorm(du, NORM_2, &norm_u_l);
+            VecNorm(velx_j[level], NORM_2, &norm_u_0);
+            if(norm_u_l/norm_u_0 > norm_u_max) norm_u_max = norm_u_l/norm_u_0;
         }
+        exner->UpdateLocal();
+        exner->HorizToVert();
+
         diagHorizVort(velx_j, dudz_j);
 
         // update the vertical velocity
+        for(int ey = 0; ey < topo->nElsX; ey++) {
+            for(int ex = 0; ex < topo->nElsX; ex++) {
+                ei = ey * topo->nElsX + ex;
+                assemble_residual_w(ex, ey, theta_h->vz[ei], exner->vz[ei], velz_i->vz[ei], velz_j->vz[ei], fw);
+
+                VecNorm(dw, NORM_2, &norm_w_l);
+                VecNorm(velz_j->vz[ei], NORM_2, &norm_w_0);
+                if(norm_w_l/norm_w_0 > norm_w_max) norm_w_max = norm_w_l/norm_w_0;
+            }
+        }
+        MPI_Allreduce(&norm_w_max, &norm_w_g, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
         // udpate the density
-
+        for(int level = 0; level < geom->nk; level++) {
+            VecCopy(rho_i->vh[level], rho_j->vh[level]);
+            VecAXPY(rho_j->vh[level], dt, dF_z->vh[level]);
+            VecScale(rho_j->vh[level], -1.0);
+        }
         rho_j->UpdateLocal();
         rho_j->HorizToVert();
+
         diagTheta(rho_j->vz, rt_j->vz, theta_h);
         for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
             VecAXPY(theta_h->vz[ei], 1.0, theta_i->vz[ei]);
@@ -2589,7 +2648,42 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
         }
         theta_h->VertToHoriz();
 
+        if(!rank) cout << "|dTheta|/|Theta|: " << norm_rt_max << "\t|du|/|u|: " << norm_u_max << "\t|dw|/|w|: " << norm_w_max << endl;
+
+        if(norm_rt_max < 1.0e-10 && norm_u_max < 1.0e-10 && norm_w_g < 1.0e-8) done = true;
     } while(!done);
+
+    // write output
+    if(save) {
+        step++;
+
+        theta_h->UpdateGlobal();
+        for(int ii = 0; ii < geom->nk+1; ii++) {
+            sprintf(fieldname, "theta");
+            geom->write2(theta_h->vh[ii], fieldname, step, ii, false);
+        }
+
+        for(int ii = 0; ii < geom->nk; ii++) {
+            curl(true, velx_j[ii], &wi, ii, false);
+
+            sprintf(fieldname, "vorticity");
+            geom->write0(wi, fieldname, step, ii);
+            sprintf(fieldname, "velocity_h");
+            geom->write1(velx_j[ii], fieldname, step, ii);
+            sprintf(fieldname, "density");
+            geom->write2(rho_j->vh[ii], fieldname, step, ii, true);
+            sprintf(fieldname, "rhoTheta");
+            geom->write2(rt_j->vh[ii], fieldname, step, ii, true);
+            sprintf(fieldname, "exner");
+            geom->write2(exner->vh[ii], fieldname, step, ii, true);
+
+            VecDestroy(&wi);
+        }
+        sprintf(fieldname, "velocity_z");
+        for(int ii = 0; ii < geom->nk-1; ii++) {
+            geom->write2(velz_j->vh[ii], fieldname, step, ii, false);
+        }
+    }
 
     firstStep = false;
 
@@ -2597,6 +2691,8 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     VecDestroy(&dTheta);
     VecDestroy(&fu);
     VecDestroy(&du);
+    VecDestroy(&fw);
+    VecDestroy(&dw);
     VecDestroy(&F_x);
     VecDestroy(&G_x);
     VecDestroy(&F_z);
