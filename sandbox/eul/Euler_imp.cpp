@@ -2189,7 +2189,8 @@ double Euler::integrateTheta(Vec theta) {
 void Euler::coriolisMatInv(Mat A, Mat* Ainv) {
     int mi, mf, nCols1, nCols2;
     const int *cols1, *cols2;
-    const double *vals1, *vals2;
+    const double *vals1;
+    const double *vals2;
     double D[2][2], Dinv[2][2], detInv;
     double vals1Inv[9999], vals2Inv[9999];
     int row1, row2;
@@ -2203,10 +2204,14 @@ void Euler::coriolisMatInv(Mat A, Mat* Ainv) {
     for(int mm = mi; mm < mf; mm += 2) {
         MatGetRow(A, mi+0, &nCols1, &cols1, &vals1);
         MatGetRow(A, mi+1, &nCols2, &cols2, &vals2);
+        if(nCols1 != nCols2) {
+            cout << rank << ":\tERROR in coriolis matrix inverse..." << nCols1 << "\t" << nCols2 << endl;
+            abort();
+        }
         for(int ci = 0; ci < nCols1; ci += 2) {
             D[0][0] = vals1[ci+0];
             D[0][1] = vals1[ci+1];
-            D[1][0] = vals2[ci+0];
+            D[1][0] = vals2[ci+0]; // TOOD: invalid read??
             D[1][1] = vals2[ci+1];
 
             detInv = 1.0/(D[0][0]*D[1][1] - D[0][1]*D[1][0]);
@@ -2236,6 +2241,7 @@ void Euler::coriolisMatInv(Mat A, Mat* Ainv) {
 void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz) {
     int ei, elOrd2, nCols;
     int *inds2;
+    int mi, mf;
     const int *cols;
     const double* vals;
     Vec theta_h, velx_l;
@@ -2270,7 +2276,11 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
         MatMatMult(F->M, _M1invDTM2, reuse, DIFFERENT_NONZERO_PATTERN, &_M1thetaM1invDTM2);
         MatMatMult(M1_f_inv, _M1thetaM1invDTM2, reuse, DIFFERENT_NONZERO_PATTERN, &_M1invM1thetaM1invDTM2);
         MatMatMult(EtoF->E21, _M1invM1thetaM1invDTM2, reuse, DIFFERENT_NONZERO_PATTERN, &_DM1invM1thetaM1invDTM2);
-        MatMatMult(T->M, _DM1invM1thetaM1invDTM2, reuse, DIFFERENT_NONZERO_PATTERN, &PCx[level]);
+        if(firstStep) {
+            MatMatMult(T->M, _DM1invM1thetaM1invDTM2, MAT_INITIAL_MATRIX, DIFFERENT_NONZERO_PATTERN, &PCx[level]);
+        } else {
+            MatMatMult(T->M, _DM1invM1thetaM1invDTM2, MAT_REUSE_MATRIX, DIFFERENT_NONZERO_PATTERN, &PCx[level]);
+        }
 
         MatAYPX(PCx[level], -1.0*dt*dt, M2->M, DIFFERENT_NONZERO_PATTERN);
 
@@ -2282,7 +2292,11 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
 
         MatDestroy(&M1inv);
         MatDestroy(&M1_f_inv);
+
+        MatAssemblyBegin(PCx[level], MAT_FINAL_ASSEMBLY);
+        MatAssemblyEnd(  PCx[level], MAT_FINAL_ASSEMBLY);
     }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     // vertical part
     for(int ey = 0; ey < topo->nElsX; ey++) {
@@ -2301,15 +2315,23 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
             MatMatMult(vo->V10, _V0_invV0_thetaV0_invDTV1, reuse, DIFFERENT_NONZERO_PATTERN, &_DV0_invV0_thetaV0_invDTV1);
 
             vo->AssembleConstWithRho(ex, ey, rt->vz[ei], vo->VB);
-            MatMatMult(vo->VB, _DV0_invV0_thetaV0_invDTV1, reuse, DIFFERENT_NONZERO_PATTERN, &PCz[ei]);
+            if(firstStep) {
+                MatMatMult(vo->VB, _DV0_invV0_thetaV0_invDTV1, MAT_INITIAL_MATRIX, DIFFERENT_NONZERO_PATTERN, &PCz[ei]);
+            } else {
+                MatMatMult(vo->VB, _DV0_invV0_thetaV0_invDTV1, MAT_REUSE_MATRIX, DIFFERENT_NONZERO_PATTERN, &PCz[ei]);
+            }
             MatScale(PCz[ei], -1.0*dt*dt); //TODO: check sign
 
             // add in the vertical advection part of the precinditioner
             vo->AssembleConLinWithW(ex, ey, velz[ei], vo->VBA);
             MatMatMult(vo->VBA, vo->V01, reuse, DIFFERENT_NONZERO_PATTERN, &_V10DT);
             MatAXPY(PCz[ei], +dt, _V10DT, DIFFERENT_NONZERO_PATTERN); // TODO: check sign
+
+            MatAssemblyBegin(PCz[ei], MAT_FINAL_ASSEMBLY);
+            MatAssemblyEnd(  PCz[ei], MAT_FINAL_ASSEMBLY);
         }
     }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     // add the vertical part to the horiztonal
     elOrd2 = topo->elOrd * topo->elOrd;
@@ -2317,6 +2339,14 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
         for(int ex = 0; ex < topo->nElsX; ex++) {
             ei = ey * topo->nElsX + ex;
             inds2 = topo->elInds2_g(ex, ey);
+
+/*
+            MatGetOwnershipRange(PCz[ei], &mi, &mf);
+            for(int mm = mi; mm < mf; mm++) {
+                MatGetRow(PCz[ei], mm, &nCols, &cols, &vals);
+                MatRestoreRow(PCz[ei], mm, &nCols, &cols, &vals);
+            }
+*/
             for(int level = 0; level < geom->nk; level++) {
                 for(int ii = 0; ii < elOrd2; ii++) {
                     MatGetRow(PCz[ei], level*elOrd2+ii, &nCols, &cols, &vals);
@@ -2329,6 +2359,11 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
                 }
             }
         }
+    }
+
+    for(int level = 0; level < geom->nk; level++) {
+        MatAssemblyBegin(PCx[level], MAT_FINAL_ASSEMBLY);
+        MatAssemblyEnd(  PCx[level], MAT_FINAL_ASSEMBLY);
     }
 
     VecDestroy(&theta_h);
@@ -2516,7 +2551,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
 
     velz_i->UpdateLocal();
     velz_i->HorizToVert();
-    velz_j->CopyFromVert(velz_i->vh);
+    velz_j->CopyFromVert(velz_i->vz);
 
     rho_j->CopyFromHoriz(rho_i->vh);
     rt_j->CopyFromHoriz(rt_i->vh);
@@ -2541,6 +2576,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     do {
         // assemble the (density weighted potential temperature) preconditioners for all levels
         assemblePreconTheta(theta_h, rt_j, velx_j, velz_j->vz);
+//return;
 
         rho_j->UpdateLocal();
         rho_j->HorizToVert();

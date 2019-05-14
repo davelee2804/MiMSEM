@@ -272,7 +272,7 @@ int main(int argc, char** argv) {
     bool dump;
     int startStep = atoi(argv[1]);
     double dt = 120.0;
-    int nSteps = 3;
+    int nSteps = 1;
     int dumpEvery = 1; //dump evert 12 hours
     ofstream file;
     Topo* topo;
@@ -355,18 +355,18 @@ int main(int argc, char** argv) {
     rt->UpdateLocal();
     rt->HorizToVert();
 
-    pe->solve_vert(velz, rho, rt, true);
+    //pe->solve_vert(velz, rho, rt, true);
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->solve(velx, velz, rho, rt, dump);
+        pe->solve_unsplit(velx, velz, rho, rt, dump);
     }
 
     for(ki = 0; ki < NK; ki++) {
-        VecDestroy(&velx[ki] );
+        VecDestroy(&velx[ki]);
     }
     delete[] velx;
     delete velz;
