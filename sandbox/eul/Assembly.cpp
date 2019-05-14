@@ -1625,7 +1625,7 @@ void EoSmat::assemble(Vec rt, int lev, double scale) {
             Q->assemble(ex, ey);
 
             inds0 = topo->elInds0_l(ex, ey);
-            inds2 = topo->elInds2_l(ex, ey);
+            inds2 = topo->elInds2_g(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rtArray, &p);
