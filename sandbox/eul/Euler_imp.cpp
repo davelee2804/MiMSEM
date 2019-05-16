@@ -2244,7 +2244,7 @@ void Euler::coriolisMatInv(Mat A, Mat* Ainv) {
 }
 
 void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz) {
-    int ei, elOrd2, nCols;
+    int ei, elOrd2, nCols, level_k;
     int *inds2;
     const int *cols;
     const double* vals;
@@ -2342,14 +2342,27 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
             ei = ey * topo->nElsX + ex;
             inds2 = topo->elInds2_g(ex, ey);
 
+            // loop pver all rows of vertical matrix ei
             for(int level = 0; level < geom->nk; level++) {
                 for(int ii = 0; ii < elOrd2; ii++) {
+                    // column indices are contiguous and start from (level - 1) * elOrd2 (or level * elOrd2 for bottem level)
+                    // nCols is 2 * elOrd2 for bottom and top levels and 3 * elOrd2 for internal levels
                     MatGetRow(PCz[ei], level*elOrd2+ii, &nCols, &cols, &vals);
-                    if(nCols != elOrd2) {
-                        cout << rank << ": ERROR in preconditioner assembly, incorrect number of columns: " << nCols << endl;
+                    if(nCols%elOrd2 != 0) {
+                        cout << rank << ": ERROR in preconditioner assembly, inconsistent number of columns" << ei << endl;
                         abort();
                     }
-                    MatSetValues(PCx[level], 1, &inds2[ii], elOrd2, inds2, vals, ADD_VALUES);
+                    for(int jj = 0; jj < nCols/elOrd2; jj++) {
+                        level_k = cols[jj*elOrd2]/elOrd2;
+                        for(int ll = 0; ll < elOrd2; ll++) {
+                            if(cols[jj*elOrd2+ll]/elOrd2 != level_k) {
+                                cout << rank << ": ERROR in preconditioner assembly, inconsistent level" 
+                                     << level_k << "\t" << cols[jj*elOrd2+ll]/elOrd2 << endl;
+                                abort();
+                            }
+                        }
+                        MatSetValues(PCx[level_k], 1, &inds2[ii], elOrd2, inds2, &vals[jj*elOrd2], ADD_VALUES);
+                    } 
                     MatRestoreRow(PCz[ei], level*elOrd2+ii, &nCols, &cols, &vals);
                 }
             }
