@@ -95,18 +95,24 @@ class Euler {
         Vec _tmpA2;
         Vec _tmpB1;
         Vec _tmpB2;
-        Mat _DTV1;
-        Mat _GRAD;
-        Mat _DIV;
-        Mat _V0_invDTV1;
         Mat _V0_invV0_rt;
         Mat _DV0_invV0_rt;
-        Mat _V1_PiDV0_invV0_rt;
         Mat _V0_thetaV0_invDTV1;
         Mat _V0_invV0_thetaV0_invDTV1;
         Mat _DV0_invV0_thetaV0_invDTV1;
         Mat _V10DT;
         Mat* PCz;
+        // ...vertical velocity preconditioner
+        Mat pcz_DTV1;
+        Mat pcz_V0_invDTV1;
+        Mat pcz_GRAD;
+        Mat pcz_V0_invV0_rt;
+        Mat pcz_DV0_invV0_rt;
+        Mat pcz_V1_PiDV0_invV0_rt;
+        Mat pcz_DIV;
+        // ...theta preconditioner
+        Mat pct_DTV1;
+        Mat pct_V0_invDTV1;
         // horiztonal vectors and matrices
         Mat _M1invM1;
         Mat _DM1invM1;

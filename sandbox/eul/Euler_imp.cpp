@@ -132,9 +132,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetOptionsPrefix(ksp2, "ksp2_");
     KSPSetFromOptions(ksp2);
 
-    _DTV1 = NULL;
-    _M1invM1 = NULL;
-
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &_Phi_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*elOrd2, &_theta_h);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &_tmpA1);
@@ -145,7 +142,10 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     PCz = new Mat[topo->nElsX*topo->nElsX];
     PCx = new Mat[geom->nk];
 
+    _M1invM1 = NULL;
     _PCz = NULL;
+    pcz_DTV1 = NULL;
+    pct_DTV1 = NULL;
     _DTM2 = NULL;
     _V0_invV0_rt = NULL;
 }
@@ -354,13 +354,18 @@ Euler::~Euler() {
 
     delete vo;
 
-    MatDestroy(&_DTV1);
-    MatDestroy(&_GRAD);
-    MatDestroy(&_DIV);
-    MatDestroy(&_V0_invDTV1);
+    MatDestroy(&pcz_DTV1);
+    MatDestroy(&pcz_GRAD);
+    MatDestroy(&pcz_DIV);
+    MatDestroy(&pcz_V0_invDTV1);
+    MatDestroy(&pcz_V0_invV0_rt);
+    MatDestroy(&pcz_DV0_invV0_rt);
+    MatDestroy(&pcz_V1_PiDV0_invV0_rt);
+
+    MatDestroy(&pct_DTV1);
+    MatDestroy(&pct_V0_invDTV1);
+
     MatDestroy(&_V0_invV0_rt);
-    MatDestroy(&_DV0_invV0_rt);
-    MatDestroy(&_V1_PiDV0_invV0_rt);
     MatDestroy(&_V0_thetaV0_invDTV1);
     MatDestroy(&_V0_invV0_thetaV0_invDTV1);
     MatDestroy(&_DV0_invV0_thetaV0_invDTV1);
@@ -1196,19 +1201,19 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
 }
 
 void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt_i, Vec rt_j, Vec exner, Vec velz, Mat* _PC) {
-    MatReuse reuse = (!_DTV1) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
-    MatReuse reuse_2 = (!_V0_invV0_rt) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    MatReuse reuse = (!pcz_DTV1) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    MatReuse reuse_2 = (!*_PC) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
     vo->AssembleConst(ex, ey, vo->VB);
-    MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &_DTV1);
+    MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pcz_DTV1);
     vo->AssembleLinearInv(ex, ey, vo->VA_inv);
-    MatMatMult(vo->VA_inv, _DTV1, reuse, PETSC_DEFAULT, &_V0_invDTV1);
+    MatMatMult(vo->VA_inv, pcz_DTV1, reuse, PETSC_DEFAULT, &pcz_V0_invDTV1);
     vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
-    MatMatMult(vo->VA, _V0_invDTV1, reuse, PETSC_DEFAULT, &_GRAD);
+    MatMatMult(vo->VA, pcz_V0_invDTV1, reuse, PETSC_DEFAULT, &pcz_GRAD);
 
     vo->AssembleLinearWithRT(ex, ey, rt_j, vo->VA, true);
-    MatMatMult(vo->VA_inv, vo->VA, reuse_2, PETSC_DEFAULT, &_V0_invV0_rt);
-    MatMatMult(vo->V10, _V0_invV0_rt, reuse, PETSC_DEFAULT, &_DV0_invV0_rt);
+    MatMatMult(vo->VA_inv, vo->VA, reuse, PETSC_DEFAULT, &pcz_V0_invV0_rt);
+    MatMatMult(vo->V10, pcz_V0_invV0_rt, reuse, PETSC_DEFAULT, &pcz_DV0_invV0_rt);
 
     // diagnose the exner pressure from hydrostatic balance
     /*{
@@ -1225,15 +1230,11 @@ void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt_i, Vec rt_j, Vec
     }*/
 
     vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
-    MatMatMult(vo->VB, _DV0_invV0_rt, reuse, PETSC_DEFAULT, &_V1_PiDV0_invV0_rt);
+    MatMatMult(vo->VB, pcz_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pcz_V1_PiDV0_invV0_rt);
     vo->AssembleConstWithRhoInv(ex, ey, rt_i, vo->VB);
-    MatMatMult(vo->VB, _V1_PiDV0_invV0_rt, reuse, PETSC_DEFAULT, &_DIV);
+    MatMatMult(vo->VB, pcz_V1_PiDV0_invV0_rt, reuse, PETSC_DEFAULT, &pcz_DIV);
 
-    if(_PC == NULL) {
-        MatMatMult(_GRAD, _DIV, MAT_INITIAL_MATRIX, PETSC_DEFAULT, _PC);
-    } else {
-        MatMatMult(_GRAD, _DIV, MAT_REUSE_MATRIX, PETSC_DEFAULT, _PC);
-    }
+    MatMatMult(pcz_GRAD, pcz_DIV, reuse_2, PETSC_DEFAULT, _PC);
     vo->AssembleLinear(ex, ey, vo->VA);
     MatAYPX(*_PC, -dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
 
@@ -1272,6 +1273,7 @@ void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ain
 
 void Euler::assemble_precon_x(int level, Vec* theta, Vec rt_i, Vec rt_j, Vec exner, Mat* _PC) {
     MatReuse reuse = (!_M1invM1) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    MatReuse reuse_2 = (!*_PC) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     Mat M1inv;
     Mat M2ThetaInv;
     Vec theta_h;
@@ -1300,11 +1302,7 @@ void Euler::assemble_precon_x(int level, Vec* theta, Vec rt_i, Vec rt_j, Vec exn
     MatMatMult(M1inv, _DM2ThetaPiDM1invM1, reuse, PETSC_DEFAULT, &_M1DM2ThetaPiDM1invM1);
 
     F->assemble(theta_h, level, false, SCALE);
-    if(!*_PC) {
-        MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, _PC);
-    } else {
-        MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_REUSE_MATRIX, PETSC_DEFAULT, _PC);
-    }
+    MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, reuse_2, PETSC_DEFAULT, _PC);
     MatAYPX(*_PC, -dt*dt*RD/CV, M1->M, DIFFERENT_NONZERO_PATTERN);
 
     R->assemble(fl[level], level, SCALE);
@@ -1426,34 +1424,24 @@ void Euler::diagnose_Phi_x(int level, Vec u1, Vec u2, Vec* Phi) {
 // diagnose the exner pressure using a quadratic approximation to the equation of state, 
 // in order to integrate this exactly (in time)
 void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
-    Vec rtl1, rtl2;
     Vec rhs;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rtl1);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &rtl2);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs);
 
-    VecScatterBegin(topo->gtol_2, rt1, rtl1, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, rt1, rtl1, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterBegin(topo->gtol_2, rt2, rtl2, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, rt2, rtl2, INSERT_VALUES, SCATTER_FORWARD);
-
     VecZeroEntries(rhs);
-    eos->assemble(rtl1, level, SCALE);
+    eos->assemble(rt1, level, SCALE);
     VecAXPY(rhs, 0.5, eos->vg);
-    eos->assemble(rtl2, level, SCALE); // TODO uninitialised value!
+    eos->assemble(rt2, level, SCALE); // TODO uninitialised value!
     VecAXPY(rhs, 0.5, eos->vg);
     M2->assemble(level, SCALE, true);
     KSPSolve(ksp2, rhs, Pi);
+
+    VecDestroy(&rhs);
 /*
-    eos->assemble_quad(rtl1, rtl2, level, SCALE);
+    eos->assemble_quad(rt1, rt2, level, SCALE);
     M2->assemble(level, SCALE, true);
     KSPSolve(ksp2, eos->vg, Pi);
 */
-
-    VecDestroy(&rtl1);
-    VecDestroy(&rtl2);
-    VecDestroy(&rhs);
 }
 
 void Euler::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
@@ -2308,15 +2296,15 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
     for(int ey = 0; ey < topo->nElsX; ey++) {
         for(int ex = 0; ex < topo->nElsX; ex++) {
             ei = ey * topo->nElsX + ex;
-            reuse = (_DTV1) ? MAT_REUSE_MATRIX : MAT_INITIAL_MATRIX;
+            reuse = (pct_DTV1) ? MAT_REUSE_MATRIX : MAT_INITIAL_MATRIX;
 
             vo->AssembleConstEoS(ex, ey, rt->vz[ei], vo->VB);
             vo->AssembleLinearInv(ex, ey, vo->VA_inv);
             vo->AssembleLinearWithTheta(ex, ey, theta->vz[ei], vo->VA);
 
-            MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &_DTV1);
-            MatMatMult(vo->VA_inv, _DTV1, reuse, PETSC_DEFAULT, &_V0_invDTV1);
-            MatMatMult(vo->VA, _V0_invDTV1, reuse, PETSC_DEFAULT, &_V0_thetaV0_invDTV1);
+            MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pct_DTV1);
+            MatMatMult(vo->VA_inv, pct_DTV1, reuse, PETSC_DEFAULT, &pct_V0_invDTV1);
+            MatMatMult(vo->VA, pct_V0_invDTV1, reuse, PETSC_DEFAULT, &_V0_thetaV0_invDTV1);
             MatMatMult(vo->VA_inv, _V0_thetaV0_invDTV1, reuse, PETSC_DEFAULT, &_V0_invV0_thetaV0_invDTV1);
             MatMatMult(vo->V10, _V0_invV0_thetaV0_invDTV1, reuse, PETSC_DEFAULT, &_DV0_invV0_thetaV0_invDTV1);
 
@@ -2661,6 +2649,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
                                 velx_i[level], velx_j[level], rho_i->vh[level], rho_j->vh[level], rt_i->vh[level], rt_j->vh[level], fu);
             VecScale(fu, -1.0);
 
+            PC_u = NULL;
             assemble_precon_x(level, theta_h->vl, rt_i->vl[level], rt_j->vl[level], exner->vl[level], &PC_u);
 
             KSPCreate(MPI_COMM_WORLD, &ksp_x);
@@ -2674,6 +2663,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
             KSPSetFromOptions(ksp_x);
             KSPSolve(ksp_x, fu, du);
             KSPDestroy(&ksp_x);
+            MatDestroy(&PC_u);
 
             VecAXPY(velx_j[level], 1.0, du);
 
@@ -2681,7 +2671,6 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
             VecNorm(velx_j[level], NORM_2, &norm_u_0);
             if(norm_u_l/norm_u_0 > norm_u_max) norm_u_max = norm_u_l/norm_u_0;
         }
-//return;
         exner->UpdateLocal();
         exner->HorizToVert();
 
@@ -2694,6 +2683,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
                 assemble_residual_w(ex, ey, theta_h->vz[ei], exner->vz[ei], velz_i->vz[ei], velz_j->vz[ei], fw);
                 VecScale(fw, -1.0);
 
+                PC_w = NULL;
                 assemble_precon_z(ex, ey, theta_h->vz[ei], rt_i->vz[ei], rt_j->vz[ei], exner->vz[ei], velz_j->vz[ei], &PC_w);
 
                 KSPCreate(MPI_COMM_SELF, &ksp_z);
@@ -2704,6 +2694,8 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
                 KSPSetFromOptions(ksp_z);
                 KSPSolve(ksp_z, fw, dw);
                 KSPDestroy(&ksp_z);
+                MatDestroy(&PC_w);
+
                 VecAXPY(velz_j->vz[ei], 1.0, dw);
 
                 VecNorm(dw, NORM_2, &norm_w_l);
@@ -2712,6 +2704,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
             }
         }
         MPI_Allreduce(&norm_w_max, &norm_w_g, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+//return;
 
         // udpate the density
         for(int level = 0; level < geom->nk; level++) {
