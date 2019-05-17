@@ -35,7 +35,7 @@
 using namespace std;
 
 Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
-    int ii;
+    int ii, elOrd2;
     PC pc;
 
     dt = _dt;
@@ -96,13 +96,15 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_b_l);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_t_l);
 
+    elOrd2 = topo->elOrd * topo->elOrd;
+
     gv = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &gv[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &gv[ii]);
     }
     zv = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &zv[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &zv[ii]);
     }
     initGZ();
 
@@ -126,25 +128,26 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetType(ksp2, KSPGMRES);
     KSPGetPC(ksp2, &pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, topo->elOrd*topo->elOrd, NULL);
+    PCBJacobiSetTotalBlocks(pc, elOrd2, NULL);
     KSPSetOptionsPrefix(ksp2, "ksp2_");
     KSPSetFromOptions(ksp2);
 
     _DTV1 = NULL;
     _M1invM1 = NULL;
 
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &_Phi_z);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*topo->elOrd*topo->elOrd, &_theta_h);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &_tmpA1);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &_tmpA2);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &_tmpB1);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &_tmpB2);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &_Phi_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*elOrd2, &_theta_h);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &_tmpA1);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &_tmpA2);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &_tmpB1);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &_tmpB2);
 
     PCz = new Mat[topo->nElsX*topo->nElsX];
     PCx = new Mat[geom->nk];
 
     _PCz = NULL;
     _DTM2 = NULL;
+    _V0_invV0_rt = NULL;
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -1194,6 +1197,7 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
 
 void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt_i, Vec rt_j, Vec exner, Vec velz, Mat* _PC) {
     MatReuse reuse = (!_DTV1) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    MatReuse reuse_2 = (!_V0_invV0_rt) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
     vo->AssembleConst(ex, ey, vo->VB);
     MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &_DTV1);
@@ -1203,7 +1207,7 @@ void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt_i, Vec rt_j, Vec
     MatMatMult(vo->VA, _V0_invDTV1, reuse, PETSC_DEFAULT, &_GRAD);
 
     vo->AssembleLinearWithRT(ex, ey, rt_j, vo->VA, true);
-    MatMatMult(vo->VA_inv, vo->VA, reuse, PETSC_DEFAULT, &_V0_invV0_rt);
+    MatMatMult(vo->VA_inv, vo->VA, reuse_2, PETSC_DEFAULT, &_V0_invV0_rt);
     MatMatMult(vo->V10, _V0_invV0_rt, reuse, PETSC_DEFAULT, &_DV0_invV0_rt);
 
     // diagnose the exner pressure from hydrostatic balance
@@ -1296,7 +1300,7 @@ void Euler::assemble_precon_x(int level, Vec* theta, Vec rt_i, Vec rt_j, Vec exn
     MatMatMult(M1inv, _DM2ThetaPiDM1invM1, reuse, PETSC_DEFAULT, &_M1DM2ThetaPiDM1invM1);
 
     F->assemble(theta_h, level, false, SCALE);
-    if(!_PC) {
+    if(!*_PC) {
         MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, _PC);
     } else {
         MatMatMult(F->M, _M1DM2ThetaPiDM1invM1, MAT_REUSE_MATRIX, PETSC_DEFAULT, _PC);
@@ -1437,7 +1441,7 @@ void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
     VecZeroEntries(rhs);
     eos->assemble(rtl1, level, SCALE);
     VecAXPY(rhs, 0.5, eos->vg);
-    eos->assemble(rtl2, level, SCALE);
+    eos->assemble(rtl2, level, SCALE); // TODO uninitialised value!
     VecAXPY(rhs, 0.5, eos->vg);
     M2->assemble(level, SCALE, true);
     KSPSolve(ksp2, rhs, Pi);
@@ -1481,13 +1485,13 @@ void Euler::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
 }
 
 void Euler::diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec _F) {
+    MatReuse reuse = (!_V0_invV0_rt) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     VecZeroEntries(_F);
 
     vo->AssembleLinearInv(ex, ey, vo->VA_inv);
 
-    MatZeroEntries(_V0_invV0_rt);
     vo->AssembleLinearWithRT(ex, ey, rho1, vo->VA, true);
-    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &_V0_invV0_rt);
+    MatMatMult(vo->VA_inv, vo->VA, reuse, PETSC_DEFAULT, &_V0_invV0_rt);
 
     MatMult(_V0_invV0_rt, velz1, _tmpA1);
     VecAXPY(_F, 1.0/3.0, _tmpA1);
@@ -1495,7 +1499,6 @@ void Euler::diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho
     MatMult(_V0_invV0_rt, velz2, _tmpA1);
     VecAXPY(_F, 1.0/6.0, _tmpA1);
 
-    MatZeroEntries(_V0_invV0_rt);
     vo->AssembleLinearWithRT(ex, ey, rho2, vo->VA, true);
     MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &_V0_invV0_rt);
 
@@ -2513,7 +2516,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     double norm_u_l, norm_u_max, norm_u_0;
     double norm_w_l, norm_w_g, norm_w_max, norm_w_0;
     char fieldname[100];
-    Vec fTheta, dTheta, fu, du, fw, dw, F_x, G_x, F_z, G_z, tmp1, tmp2, wi;
+    Vec fTheta, dTheta, fu, du, fw, dw, F_x, G_x, F_z, G_z, tmp1, tmp2, tmp2_l, wi;
     Mat PC_u = NULL;
     Mat PC_w = NULL;
     PC pc;
@@ -2538,6 +2541,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &F_x);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &G_x);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmp1);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &tmp2_l);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &fw);
@@ -2584,7 +2588,6 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     do {
         // assemble the (density weighted potential temperature) preconditioners for all levels
         assemblePreconTheta(theta_h, rt_j, velx_j, velz_j->vz);
-//return;
 
         rho_j->UpdateLocal();
         rho_j->HorizToVert();
@@ -2614,14 +2617,14 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
             MatMult(EtoF->E21, F_x, tmp2);
             VecAXPY(dF_z->vh[level], 1.0, tmp2);
     
-            VecZeroEntries(tmp2);
-            VecAXPY(tmp2, 0.5, theta_h->vl[level+0]);
-            VecAXPY(tmp2, 0.5, theta_h->vl[level+1]);
-            F->assemble(tmp2, level, false, SCALE);
+            VecZeroEntries(tmp2_l);
+            VecAXPY(tmp2_l, 0.5, theta_h->vl[level+0]);
+            VecAXPY(tmp2_l, 0.5, theta_h->vl[level+1]);
+            F->assemble(tmp2_l, level, false, SCALE);
             MatMult(F->M, F_x, tmp1);
             M1->assemble(level, SCALE);
-            KSPSolve(ksp1, tmp1, G_z);
-            MatMult(EtoF->E21, G_z, tmp2);
+            KSPSolve(ksp1, tmp1, G_x);
+            MatMult(EtoF->E21, G_x, tmp2);
             VecAXPY(dG_z->vh[level], 1.0, tmp2);
             VecAYPX(tmp2, +dt, rt_j->vh[level]);
             VecAXPY(tmp2, -dt, rt_i->vh[level]);
@@ -2659,6 +2662,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
             VecScale(fu, -1.0);
 
             assemble_precon_x(level, theta_h->vl, rt_i->vl[level], rt_j->vl[level], exner->vl[level], &PC_u);
+
             KSPCreate(MPI_COMM_WORLD, &ksp_x);
             KSPSetOperators(ksp_x, PC_u, PC_u);
             KSPSetTolerances(ksp_x, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
@@ -2677,6 +2681,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
             VecNorm(velx_j[level], NORM_2, &norm_u_0);
             if(norm_u_l/norm_u_0 > norm_u_max) norm_u_max = norm_u_l/norm_u_0;
         }
+//return;
         exner->UpdateLocal();
         exner->HorizToVert();
 
@@ -2775,6 +2780,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     VecDestroy(&G_z);
     VecDestroy(&tmp1);
     VecDestroy(&tmp2);
+    VecDestroy(&tmp2_l);
     for(int level = 0; level < geom->nk; level++) {
         VecDestroy(&velx_j[level]);
         VecDestroy(&dudz_i[level]);
