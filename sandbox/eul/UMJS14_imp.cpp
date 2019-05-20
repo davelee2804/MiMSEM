@@ -355,7 +355,7 @@ int main(int argc, char** argv) {
     rt->UpdateLocal();
     rt->HorizToVert();
 
-    //pe->solve_vert(velz, rho, rt, true);
+    pe->solve_vert(velz, rho, rt, true);
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
