@@ -59,6 +59,8 @@ class Euler {
         void diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec _F);
         void diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi);
 
+        void dump(Vec* velx, L2Vecs* velz, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* theta, int num);
+
         void solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
         void solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
         void solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
@@ -97,10 +99,6 @@ class Euler {
         Vec _tmpB2;
         Mat _V0_invV0_rt;
         Mat _DV0_invV0_rt;
-        Mat _V0_thetaV0_invDTV1;
-        Mat _V0_invV0_thetaV0_invDTV1;
-        Mat _DV0_invV0_thetaV0_invDTV1;
-        Mat _V10DT;
         Mat* PCz;
         // ...vertical velocity preconditioner
         Mat pcz_DTV1;
@@ -110,9 +108,20 @@ class Euler {
         Mat pcz_DV0_invV0_rt;
         Mat pcz_V1_PiDV0_invV0_rt;
         Mat pcz_DIV;
-        // ...theta preconditioner
+        // ...theta preconditioner (vertical)
         Mat pct_DTV1;
         Mat pct_V0_invDTV1;
+        Mat pct_V0_thetaV0_invDTV1;
+        Mat pct_V0_invV0_thetaV0_invDTV1;
+        Mat pct_DV0_invV0_thetaV0_invDTV1;
+        Mat pct_V10DT;
+        // ...theta preconditioner (horizontal)
+        Mat _DTM2;
+        Mat _M1invDTM2;
+        Mat _M1thetaM1invDTM2;
+        Mat _M1invM1thetaM1invDTM2;
+        Mat _DM1invM1thetaM1invDTM2;
+        Mat _KDT;
         // horiztonal vectors and matrices
         Mat _M1invM1;
         Mat _DM1invM1;
@@ -124,11 +133,4 @@ class Euler {
         Mat* PCx;
 
         Mat _PCz, _Muu, _Muh, _Mhu, _Mhh;
-
-        Mat _DTM2;
-        Mat _M1invDTM2;
-        Mat _M1thetaM1invDTM2;
-        Mat _M1invM1thetaM1invDTM2;
-        Mat _DM1invM1thetaM1invDTM2;
-        Mat _KDT;
 };

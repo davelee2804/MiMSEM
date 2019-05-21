@@ -364,12 +364,12 @@ Euler::~Euler() {
 
     MatDestroy(&pct_DTV1);
     MatDestroy(&pct_V0_invDTV1);
+    MatDestroy(&pct_V0_thetaV0_invDTV1);
+    MatDestroy(&pct_V0_invV0_thetaV0_invDTV1);
+    MatDestroy(&pct_DV0_invV0_thetaV0_invDTV1);
+    MatDestroy(&pct_V10DT);
 
     MatDestroy(&_V0_invV0_rt);
-    MatDestroy(&_V0_thetaV0_invDTV1);
-    MatDestroy(&_V0_invV0_thetaV0_invDTV1);
-    MatDestroy(&_DV0_invV0_thetaV0_invDTV1);
-    MatDestroy(&_V10DT);
 
     MatDestroy(&_PCz);
     MatDestroy(&_Muu);
@@ -463,11 +463,42 @@ void Euler::laplacian(bool assemble, Vec ui, Vec* ddu, int lev) {
     VecDestroy(&Du);
 }
 
+void Euler::dump(Vec* velx, L2Vecs* velz, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* theta, int num) {
+    char fieldname[100];
+    Vec wi;
+
+    theta->UpdateGlobal();
+    for(int ii = 0; ii < geom->nk+1; ii++) {
+        sprintf(fieldname, "theta");
+        geom->write2(theta->vh[ii], fieldname, num, ii, false);
+    }
+
+    for(int ii = 0; ii < geom->nk; ii++) {
+        if(velx) curl(true, velx[ii], &wi, ii, false);
+
+        if(velx) sprintf(fieldname, "vorticity");
+        if(velx) geom->write0(wi, fieldname, num, ii);
+        if(velx) sprintf(fieldname, "velocity_h");
+        if(velx) geom->write1(velx[ii], fieldname, num, ii);
+        sprintf(fieldname, "density");
+        geom->write2(rho->vh[ii], fieldname, num, ii, true);
+        sprintf(fieldname, "rhoTheta");
+        geom->write2(rt->vh[ii], fieldname, num, ii, true);
+        sprintf(fieldname, "exner");
+        geom->write2(exner->vh[ii], fieldname, num, ii, true);
+
+        if(velx) VecDestroy(&wi);
+    }
+    sprintf(fieldname, "velocity_z");
+    for(int ii = 0; ii < geom->nk-1; ii++) {
+        geom->write2(velz->vh[ii], fieldname, num, ii, false);
+    }
+}
+
 #define SOLVE_X
 #define SOLVE_Z
 
 void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
-    char fieldname[100];
     int done_l = 0, done;
     int elOrd2 = topo->elOrd*topo->elOrd;
     double norm_max_x, norm_max_z, norm_u, norm_du, norm_max_dz;
@@ -478,7 +509,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
     L2Vecs* velz_j = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* rho_j = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_j = new L2Vecs(geom->nk, topo, geom);
-    Vec du, fu, dw, fw, htmp, wi;
+    Vec du, fu, dw, fw, htmp;
     Vec* _F_x = new Vec[geom->nk];
     Vec* _G_x = new Vec[geom->nk];
     Vec* _F_z = new Vec[topo->nElsX*topo->nElsX];
@@ -683,36 +714,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
 
     // write output
     if(save) {
-        step++;
-
-        theta_j->UpdateGlobal();
-        for(int ii = 0; ii < geom->nk+1; ii++) {
-            sprintf(fieldname, "theta");
-            geom->write2(theta_j->vh[ii], fieldname, step, ii, false);
-        }
-
-        for(int ii = 0; ii < geom->nk; ii++) {
-            curl(true, velx_j[ii], &wi, ii, false);
-
-            sprintf(fieldname, "vorticity");
-            geom->write0(wi, fieldname, step, ii);
-            sprintf(fieldname, "velocity_h");
-            geom->write1(velx_j[ii], fieldname, step, ii);
-            sprintf(fieldname, "density");
-            geom->write2(rho_j->vh[ii], fieldname, step, ii, true);
-            sprintf(fieldname, "rhoTheta");
-            geom->write2(rt_j->vh[ii], fieldname, step, ii, true);
-            sprintf(fieldname, "exner");
-            geom->write2(exner->vh[ii], fieldname, step, ii, true);
-
-            VecDestroy(&wi);
-        }
-        sprintf(fieldname, "velocity_z");
-        for(int ii = 0; ii < geom->nk-1; ii++) {
-            geom->write2(velz_j->vh[ii], fieldname, step, ii, false);
-        }
+        dump(velx_j, velz_j, rho_j, rt_j, exner, theta_j, step++);
     }
-
     firstStep = false;
 
     VecDestroy(&dw);
@@ -747,7 +750,6 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
 }
 
 void Euler::solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
-    char fieldname[100];
     bool done = false;
     int elOrd2 = topo->elOrd*topo->elOrd;
     double norm_max_x, norm_max_z, norm_u, norm_du, norm_max_dz;
@@ -758,7 +760,7 @@ void Euler::solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_
     L2Vecs* velz_j = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* rho_j = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_j = new L2Vecs(geom->nk, topo, geom);
-    Vec du, fu, dw, fw, htmp, wi;
+    Vec du, fu, dw, fw, htmp;
     Vec* _F_x = new Vec[geom->nk];
     Vec* _G_x = new Vec[geom->nk];
     Vec* _F_z = new Vec[topo->nElsX*topo->nElsX];
@@ -958,36 +960,8 @@ void Euler::solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_
 
     // write output
     if(save) {
-        step++;
-
-        theta_j->UpdateGlobal();
-        for(int ii = 0; ii < geom->nk+1; ii++) {
-            sprintf(fieldname, "theta");
-            geom->write2(theta_j->vh[ii], fieldname, step, ii, false);
-        }
-
-        for(int ii = 0; ii < geom->nk; ii++) {
-            curl(true, velx_j[ii], &wi, ii, false);
-
-            sprintf(fieldname, "vorticity");
-            geom->write0(wi, fieldname, step, ii);
-            sprintf(fieldname, "velocity_h");
-            geom->write1(velx_j[ii], fieldname, step, ii);
-            sprintf(fieldname, "density");
-            geom->write2(rho_j->vh[ii], fieldname, step, ii, true);
-            sprintf(fieldname, "rhoTheta");
-            geom->write2(rt_j->vh[ii], fieldname, step, ii, true);
-            sprintf(fieldname, "exner");
-            geom->write2(exner->vh[ii], fieldname, step, ii, true);
-
-            VecDestroy(&wi);
-        }
-        sprintf(fieldname, "velocity_z");
-        for(int ii = 0; ii < geom->nk-1; ii++) {
-            geom->write2(velz_j->vh[ii], fieldname, step, ii, false);
-        }
+        dump(velx_j, velz_j, rho_j, rt_j, exner, theta_j, step++);
     }
-
     firstStep = false;
 
     VecDestroy(&dw);
@@ -1023,7 +997,6 @@ void Euler::solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_
 
 /*
 void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
-    char fieldname[100];
     int done = 0, done_l;
     int elOrd2 = topo->elOrd*topo->elOrd;
     double norm_max_z, norm_u, norm_du, norm_max_dz;
@@ -1164,23 +1137,7 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
 
     // write output
     if(save) {
-        theta_j->UpdateGlobal();
-        for(int ii = 0; ii < geom->nk+1; ii++) {
-            sprintf(fieldname, "theta");
-            geom->write2(theta_j->vh[ii], fieldname, 9999, ii, false);
-        }
-        for(int ii = 0; ii < geom->nk; ii++) {
-            sprintf(fieldname, "density");
-            geom->write2(rho_j->vh[ii], fieldname, 9999, ii, true);
-            sprintf(fieldname, "rhoTheta");
-            geom->write2(rt_j->vh[ii], fieldname, 9999, ii, true);
-            sprintf(fieldname, "exner");
-            geom->write2(exner->vh[ii], fieldname, 9999, ii, true);
-        }
-        sprintf(fieldname, "velocity_z");
-        for(int ii = 0; ii < geom->nk-1; ii++) {
-            geom->write2(velz_j->vh[ii], fieldname, 9999, ii, false);
-        }
+        dump(NULL, velz_j, rho_j, rt_j, exner, theta_j, 9999);
     }
 
     VecDestroy(&dw);
@@ -1200,7 +1157,6 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
 }
 */
 void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
-    char fieldname[100];
     int done = 0, done_l;
     int elOrd2 = topo->elOrd*topo->elOrd;
     double norm_max_z, norm_u, norm_du, norm_max_dz;
@@ -1342,23 +1298,7 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
 
     // write output
     if(save) {
-        theta_j->UpdateGlobal();
-        for(int ii = 0; ii < geom->nk+1; ii++) {
-            sprintf(fieldname, "theta");
-            geom->write2(theta_j->vh[ii], fieldname, 9999, ii, false);
-        }
-        for(int ii = 0; ii < geom->nk; ii++) {
-            sprintf(fieldname, "density");
-            geom->write2(rho_j->vh[ii], fieldname, 9999, ii, true);
-            sprintf(fieldname, "rhoTheta");
-            geom->write2(rt_j->vh[ii], fieldname, 9999, ii, true);
-            sprintf(fieldname, "exner");
-            geom->write2(exner->vh[ii], fieldname, 9999, ii, true);
-        }
-        sprintf(fieldname, "velocity_z");
-        for(int ii = 0; ii < geom->nk-1; ii++) {
-            geom->write2(velz_j->vh[ii], fieldname, 9999, ii, false);
-        }
+        dump(NULL, velz_j, rho_j, rt_j, exner, theta_j, 9999);
     }
 
     VecDestroy(&dw);
@@ -2418,12 +2358,16 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
     Vec theta_h, velx_l;
     MatReuse reuse;
     Mat M1inv, M1_f_inv;
+    //double thetaBar1, thetaBar2;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &velx_l);
 
     // horizontal part
     for(int level = 0; level < geom->nk; level++) {
+        //thetaBar1 = integrateTheta(theta->vl[level+0]);
+        //thetaBar2 = integrateTheta(theta->vl[level+1]);
+
         reuse = (_DTM2) ? MAT_REUSE_MATRIX : MAT_INITIAL_MATRIX;
 
         VecZeroEntries(theta_h);
@@ -2453,6 +2397,7 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
             MatMatMult(T->M, _DM1invM1thetaM1invDTM2, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCx[level]);
         }
 
+        //MatScale(M2->M, 1.0 - dt*GRAVITY*0.5/(thetaBar1 + thetaBar2)); // rescale for the bousinesque approximation
         MatAYPX(PCx[level], -1.0*dt*dt, M2->M, DIFFERENT_NONZERO_PATTERN);
 
         VecScatterBegin(topo->gtol_1, velx[level], velx_l, INSERT_VALUES, SCATTER_FORWARD);
@@ -2480,22 +2425,22 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
 
             MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pct_DTV1);
             MatMatMult(vo->VA_inv, pct_DTV1, reuse, PETSC_DEFAULT, &pct_V0_invDTV1);
-            MatMatMult(vo->VA, pct_V0_invDTV1, reuse, PETSC_DEFAULT, &_V0_thetaV0_invDTV1);
-            MatMatMult(vo->VA_inv, _V0_thetaV0_invDTV1, reuse, PETSC_DEFAULT, &_V0_invV0_thetaV0_invDTV1);
-            MatMatMult(vo->V10, _V0_invV0_thetaV0_invDTV1, reuse, PETSC_DEFAULT, &_DV0_invV0_thetaV0_invDTV1);
+            MatMatMult(vo->VA, pct_V0_invDTV1, reuse, PETSC_DEFAULT, &pct_V0_thetaV0_invDTV1);
+            MatMatMult(vo->VA_inv, pct_V0_thetaV0_invDTV1, reuse, PETSC_DEFAULT, &pct_V0_invV0_thetaV0_invDTV1);
+            MatMatMult(vo->V10, pct_V0_invV0_thetaV0_invDTV1, reuse, PETSC_DEFAULT, &pct_DV0_invV0_thetaV0_invDTV1);
 
             vo->AssembleConstWithRho(ex, ey, rt->vz[ei], vo->VB);
             if(firstStep) {
-                MatMatMult(vo->VB, _DV0_invV0_thetaV0_invDTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &PCz[ei]);
+                MatMatMult(vo->VB, pct_DV0_invV0_thetaV0_invDTV1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &PCz[ei]);
             } else {
-                MatMatMult(vo->VB, _DV0_invV0_thetaV0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCz[ei]);
+                MatMatMult(vo->VB, pct_DV0_invV0_thetaV0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCz[ei]);
             }
             MatScale(PCz[ei], -1.0*dt*dt); //TODO: check sign
 
             // add in the vertical advection part of the precinditioner
             vo->AssembleConLinWithW(ex, ey, velz[ei], vo->VBA);
-            MatMatMult(vo->VBA, vo->V01, reuse, PETSC_DEFAULT, &_V10DT);
-            MatAXPY(PCz[ei], +dt, _V10DT, DIFFERENT_NONZERO_PATTERN); // TODO: check sign
+            MatMatMult(vo->VBA, vo->V01, reuse, PETSC_DEFAULT, &pct_V10DT);
+            MatAXPY(PCz[ei], +dt, pct_V10DT, DIFFERENT_NONZERO_PATTERN); // TODO: check sign
 
             MatAssemblyBegin(PCz[ei], MAT_FINAL_ASSEMBLY);
             MatAssemblyEnd(  PCz[ei], MAT_FINAL_ASSEMBLY);
@@ -2685,8 +2630,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     double norm_rt_l, norm_rt_max, norm_rt_0;
     double norm_u_l, norm_u_max, norm_u_0;
     double norm_w_l, norm_w_g, norm_w_max, norm_w_0;
-    char fieldname[100];
-    Vec fTheta, dTheta, fu, du, fw, dw, F_x, G_x, F_z, G_z, tmp1, tmp2, tmp2_l, wi;
+    Vec fTheta, dTheta, fu, du, fw, dw, F_x, G_x, F_z, G_z, tmp1, tmp2, tmp2_l;
     Mat PC_u = NULL;
     Mat PC_w = NULL;
     PC pc;
@@ -2918,67 +2862,13 @@ if(!rank) cout << "|dw|: " << norm_w_l << "\t|w|: " << norm_w_0 << "\t|dw|/|w|: 
         if(!rank) cout << "|dTheta|/|Theta|: " << norm_rt_max << "\t|du|/|u|: " << norm_u_max << "\t|dw|/|w|: " << norm_w_max << endl;
 
         if(norm_rt_max < 1.0e-10 && norm_u_max < 1.0e-10 && norm_w_g < 1.0e-8) done = true;
-
-theta_h->UpdateGlobal();
-velz_j->VertToHoriz();
-velz_j->UpdateGlobal();
-for(int ii = 0; ii < geom->nk+1; ii++) {
-sprintf(fieldname, "theta");
-geom->write2(theta_h->vh[ii], fieldname, 9999, ii, false);
-}
-for(int ii = 0; ii < geom->nk; ii++) {
-curl(true, velx_j[ii], &wi, ii, false);
-sprintf(fieldname, "vorticity");
-geom->write0(wi, fieldname, 9999, ii);
-sprintf(fieldname, "velocity_h");
-geom->write1(velx_j[ii], fieldname, 9999, ii);
-sprintf(fieldname, "density");
-geom->write2(rho_j->vh[ii], fieldname, 9999, ii, true);
-sprintf(fieldname, "rhoTheta");
-geom->write2(rt_j->vh[ii], fieldname, 9999, ii, true);
-sprintf(fieldname, "exner");
-geom->write2(exner->vh[ii], fieldname, 9999, ii, true);
-VecDestroy(&wi);
-}
-sprintf(fieldname, "velocity_z");
-for(int ii = 0; ii < geom->nk-1; ii++) {
-geom->write2(velz_j->vh[ii], fieldname, 9999, ii, false);
-}
-
+dump(velx_j, velz_j, rho_j, rt_j, exner, theta_h, 9999);
     } while(!done);
 
     // write output
     if(save) {
-        step++;
-
-        theta_h->UpdateGlobal();
-        for(int ii = 0; ii < geom->nk+1; ii++) {
-            sprintf(fieldname, "theta");
-            geom->write2(theta_h->vh[ii], fieldname, step, ii, false);
-        }
-
-        for(int ii = 0; ii < geom->nk; ii++) {
-            curl(true, velx_j[ii], &wi, ii, false);
-
-            sprintf(fieldname, "vorticity");
-            geom->write0(wi, fieldname, step, ii);
-            sprintf(fieldname, "velocity_h");
-            geom->write1(velx_j[ii], fieldname, step, ii);
-            sprintf(fieldname, "density");
-            geom->write2(rho_j->vh[ii], fieldname, step, ii, true);
-            sprintf(fieldname, "rhoTheta");
-            geom->write2(rt_j->vh[ii], fieldname, step, ii, true);
-            sprintf(fieldname, "exner");
-            geom->write2(exner->vh[ii], fieldname, step, ii, true);
-
-            VecDestroy(&wi);
-        }
-        sprintf(fieldname, "velocity_z");
-        for(int ii = 0; ii < geom->nk-1; ii++) {
-            geom->write2(velz_j->vh[ii], fieldname, step, ii, false);
-        }
+        dump(velx_j, velz_j, rho_j, rt_j, exner, theta_h, step++);
     }
-
     firstStep = false;
 
     VecDestroy(&fTheta);
