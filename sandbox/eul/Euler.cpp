@@ -265,7 +265,8 @@ void Euler::initGZ() {
             for(kk = 0; kk < geom->nk; kk++) {
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
-                    Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+                    //Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+                    Q0[ii][ii]  = Q->A[ii][ii]*SCALE;
                     // for linear field we multiply by the vertical jacobian determinant when
                     // integrating, and do no other trasformations for the basis functions
                     Q0[ii][ii] *= 0.5;
