@@ -20,8 +20,10 @@
 #include "Euler.h"
 
 #define RAD_EARTH 6371220.0
+//#define RAD_EARTH (6371220.0/125.0)
 #define GRAVITY 9.80616
 #define OMEGA 7.29212e-5
+//#define OMEGA 0.0
 #define RD 287.0
 #define CP 1004.5
 #define CV 717.5
@@ -30,6 +32,7 @@
 #define MAX_IT 100
 #define VERT_TOL 1.0e-8
 #define RAYLEIGH 0.2
+//#define RAYLEIGH 0.0
 
 using namespace std;
 
@@ -1249,7 +1252,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 VecAYPX(tmp, -0.5*dt, rhs);
 
                 vo->AssembleLinear(ex, ey, VA);
-                MatAXPY(VA, +0.25*dt, DTV10_w, SAME_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
+                MatAXPY(VA, +0.25*dt, DTV10_w, DIFFERENT_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step //TODO invalid write??
                 MatAXPY(VA, -0.25*dt*dt*RD/CV, LAP, DIFFERENT_NONZERO_PATTERN);
                 MatAXPY(VA, +0.5*dt*RAYLEIGH, VR, DIFFERENT_NONZERO_PATTERN);
 

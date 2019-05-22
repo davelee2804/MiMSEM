@@ -28,6 +28,7 @@ using namespace std;
 #define TEQ 300.0
 #define GRAVITY 9.80616
 #define CP 1004.5
+#define CV 717.5
 #define RD 287.0
 #define P0 100000.0
 #define LAMBDA_C (2.0*M_PI/3.0)
@@ -35,16 +36,6 @@ using namespace std;
 #define THETA_PRIME_D 5000.0
 #define THETA_PRIME_DELTA 1.0
 #define THETA_PRIME_LZ 20000.0
-
-#define GAMMA 0.005
-#define CV 717.5
-#define TE 310.0
-#define TP 240.0
-#define T0 (0.5*(TE + TP))
-#define KP 3.0
-#define GAMMA 0.005
-#define VP 1.0
-#define D0 (RAD_EARTH/6.0)
 
 /*
 gravity wave on a reduced planet (DCMIP 2012 test case 3.1)
@@ -199,9 +190,9 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 120.0;
-    int nSteps = 12*24*30;
-    int dumpEvery = 360; //dump evert 12 hours
+    double dt = 1.0;
+    int nSteps = 3600; // 1 hour
+    int dumpEvery = 1;//100;
     ofstream file;
     Topo* topo;
     Geom* geom;
