@@ -32,6 +32,8 @@ class VertOps {
         Mat VBA;
         Mat VR;  // rayleigh friction operator
         Mat VAB_w;
+        Mat VA2; // vertical theta mass matrix (no boundary conditions)
+        Mat VAB2;
 
         void vertOps();
 
@@ -52,4 +54,6 @@ class VertOps {
         void AssembleLinConWithRho(int ex, int ey, Mat AB, Vec rho);
         void AssembleConLin(int ex, int ey, Mat BA);
         void AssembleConstEoS(int ex, int ey, Vec rt, Mat B);
+        void AssembleLinCon2(int ex, int ey, Mat AB);                // for the diagnosis of theta without boundary conditions
+        void AssembleLinearWithRho2(int ex, int ey, Vec rho, Mat A); // for the diagnosis of theta without boundary conditions
 };
