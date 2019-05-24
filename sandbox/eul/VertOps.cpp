@@ -87,7 +87,7 @@ VertOps::VertOps(Topo* _topo, Geom* _geom) {
 
     // for the diagnosis of theta without boundary conditions
     MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+1)*n2, (geom->nk+1)*n2, n2, NULL, &VA2);
-    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+1)*n2, (geom->nk+0)*n2, n2, NULL, &VAB2);
+    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+1)*n2, (geom->nk+0)*n2, 2*n2, NULL, &VAB2);
 
     vertOps();
 }
@@ -444,7 +444,7 @@ void VertOps::AssembleLinearWithRho2(int ex, int ey, Vec rho, Mat A) {
                 gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                 rk += rArray[kk*n2+jj]*gamma;
             }
-            Q0[ii][ii] *= 0.5*rk;
+            Q0[ii][ii] *= 0.5*rk/det;
         }
 
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
