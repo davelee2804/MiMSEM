@@ -37,7 +37,7 @@ Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     delete U;
 }
 
-void Umat::assemble(int lev, double scale) {
+void Umat::assemble(int lev, double scale, bool vert_scale) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_0;
     Wii* Q = new Wii(l->q, geom);
@@ -86,9 +86,11 @@ void Umat::assemble(int lev, double scale) {
                 Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qbb[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                if(vert_scale) {
+                    Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                    Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                    Qbb[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                }
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -1336,7 +1338,7 @@ WtQdUdz_mat::WtQdUdz_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdg
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
 }
 
-void WtQdUdz_mat::assemble(Vec u1, int lev, double scale) {
+void WtQdUdz_mat::assemble(Vec u1, double scale) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_2, *inds_0;
     double det, **J, ux[2];
@@ -1370,12 +1372,15 @@ void WtQdUdz_mat::assemble(Vec u1, int lev, double scale) {
                 //                    [-dx/db,  dx/da][du/dz]
                 // +J^{-T}.v.a
                 //Qab[ii][ii] = (-ux[1]*J[1][1] + ux[0]*J[0][1])*Q->A[ii][ii]*(scale/det/det);
-                Qab[ii][ii] = (-ux[1]*J[1][1] + ux[0]*J[0][1])*Q->A[ii][ii]*(scale/det);
+//                Qab[ii][ii] = (-ux[1]*J[1][1] + ux[0]*J[0][1])*Q->A[ii][ii]*(scale/det);
                 // -J^{-T}.u.b
                 //Qaa[ii][ii] = (+ux[1]*J[1][0] - ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det/det);
-                Qaa[ii][ii] = (+ux[1]*J[1][0] - ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det);
+//                Qaa[ii][ii] = (+ux[1]*J[1][0] - ux[0]*J[0][0])*Q->A[ii][ii]*(scale/det);
                 // vertical rescaling of jacobian determinant cancels with scaling of
                 // the H(curl) test function
+
+                Qaa[ii][ii] = (ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qab[ii][ii] = (ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]*(scale/det);
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQaa);

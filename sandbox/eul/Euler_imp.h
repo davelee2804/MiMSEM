@@ -65,7 +65,7 @@ class Euler {
         void solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
         void solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
         void solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
-        void assemble_precon_z(int ex, int ey, Vec theta, Vec rt_i, Vec rt_j, Vec exner, Vec velz, Mat* _PC);
+        void assemble_precon_z(int ex, int ey, Vec theta, Vec rho, Vec rt_i, Vec rt_j, Vec exner, Vec velz, Mat* _PC, double* thetaBar);
         void assemble_precon_x(int level, Vec* theta, Vec rt_i, Vec rt_j, Vec exner, Mat* _PC);
 
         void assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi,
@@ -81,9 +81,9 @@ class Euler {
                                  Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fu, bool add_curr);
         void assemble_residual_w(int ex, int ey, Vec theta, Vec Pi, Vec velz1, Vec velz2, Vec fw, bool add_curr);
 
-        double integrateTheta(Vec theta);
+        void integrateTheta(Vec* theta, double* thetaBar);
         void coriolisMatInv(Mat A, Mat* Ainv);
-        void assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz);
+        void assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* velx, Vec* velz);
 
         void repack_z(Vec x, Vec u, Vec rho, Vec rt);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt);
@@ -108,6 +108,7 @@ class Euler {
         Mat pcz_DV0_invV0_rt;
         Mat pcz_V1_PiDV0_invV0_rt;
         Mat pcz_DIV;
+        Mat pcz_BOUS;
         // ...theta preconditioner (vertical)
         Mat pct_DTV1;
         Mat pct_V0_invDTV1;

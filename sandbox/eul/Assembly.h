@@ -7,7 +7,7 @@ class Umat {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
-        void assemble(int lev, double scale);
+        void assemble(int lev, double scale, bool vert_scale);
 };
 
 class Wmat {
@@ -236,7 +236,7 @@ class WtQdUdz_mat {
         M1y_j_xy_i* V;
         M2_j_xy_i* W;
         Wii* Q;
-        void assemble(Vec u1, int lev, double scale);
+        void assemble(Vec u1, double scale);
 };
 
 class EoSvec {

@@ -361,6 +361,7 @@ Euler::~Euler() {
     MatDestroy(&pcz_V0_invV0_rt);
     MatDestroy(&pcz_DV0_invV0_rt);
     MatDestroy(&pcz_V1_PiDV0_invV0_rt);
+    MatDestroy(&pcz_BOUS);
 
     MatDestroy(&pct_DTV1);
     MatDestroy(&pct_V0_invDTV1);
@@ -396,7 +397,7 @@ void Euler::grad(bool assemble, Vec phi, Vec* u, int lev) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMphi);
 
     if(assemble) {
-        M1->assemble(lev, SCALE);
+        M1->assemble(lev, SCALE, true);
         M2->assemble(lev, SCALE, true);
     }
 
@@ -420,7 +421,7 @@ void Euler::curl(bool assemble, Vec u, Vec* w, int lev, bool add_f) {
 
     if(assemble) {
         m0->assemble(lev, SCALE);
-        M1->assemble(lev, SCALE);
+        M1->assemble(lev, SCALE, true);
     }
     MatMult(M1->M, u, Mu);
     MatMult(NtoE->E01, Mu, dMu);
@@ -501,7 +502,7 @@ void Euler::dump(Vec* velx, L2Vecs* velz, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner
 void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
     int done_l = 0, done;
     int elOrd2 = topo->elOrd*topo->elOrd;
-    double norm_max_x, norm_max_z, norm_u, norm_du, norm_max_dz;
+    double norm_max_x, norm_max_z, norm_u, norm_du, norm_max_dz, thetaBar[999];
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* exner = new L2Vecs(geom->nk, topo, geom);
@@ -553,12 +554,13 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
     // create the preconditioner operators
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &dw);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &fw);
+    integrateTheta(theta_j->vl, thetaBar);
     for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &_F_z[ii]);
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &_G_z[ii]);
 
         if(firstStep) PCz[ii] = NULL;
-        assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_i->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii]);
+        assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii], thetaBar);
     }
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
@@ -622,13 +624,14 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
         // update the vertical dynamics for this iteration
         if(!rank) cout << rank << ":\tassembling (vertical) residual vectors" << endl;
         norm_max_z = -1.0;
+        integrateTheta(theta_j->vl, thetaBar);
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             assemble_residual_z(ii%topo->nElsX, ii/topo->nElsX, theta_i->vz[ii], theta_j->vz[ii], exner->vz[ii],
                                 velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], 
                                 fw, _F_z[ii], _G_z[ii]);
             VecScale(fw, -1.0);
 
-            assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii]);
+            assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_j->vz[ii], rho_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii], thetaBar);
 
             KSPCreate(MPI_COMM_SELF, &ksp_z);
             KSPSetOperators(ksp_z, PCz[ii], PCz[ii]);
@@ -752,7 +755,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool
 void Euler::solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
     bool done = false;
     int elOrd2 = topo->elOrd*topo->elOrd;
-    double norm_max_x, norm_max_z, norm_u, norm_du, norm_max_dz;
+    double norm_max_x, norm_max_z, norm_u, norm_du, norm_max_dz, thetaBar[999];
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* exner = new L2Vecs(geom->nk, topo, geom);
@@ -811,12 +814,13 @@ void Euler::solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_
     // create the preconditioner operators
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &dw);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &fw);
+    integrateTheta(theta_j->vl, thetaBar);
     for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &_F_z[ii]);
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &_G_z[ii]);
 
         if(firstStep) PCz[ii] = NULL;
-        assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, _theta_h, rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii]);
+        assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, _theta_h, rho_i->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii], thetaBar);
     }
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
@@ -843,13 +847,14 @@ void Euler::solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_
         if(!rank) cout << rank << ":\tassembling (vertical) residual vectors" << endl;
         norm_max_dz = 0.0;
         norm_max_z = 1.0;
+        integrateTheta(theta_j->vl, thetaBar);
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             assemble_residual_z(ii%topo->nElsX, ii/topo->nElsX, theta_i->vz[ii], theta_j->vz[ii], exner->vz[ii],
                                 velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], 
                                 fw, _F_z[ii], _G_z[ii]);
             VecScale(fw, -1.0);
 
-            assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, _theta_h, rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii]);
+            assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, _theta_h, rho_i->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii], thetaBar);
             KSPCreate(MPI_COMM_SELF, &ksp_z);
             KSPSetOperators(ksp_z, PCz[ii], PCz[ii]);
             KSPGetPC(ksp_z, &pc);
@@ -1068,7 +1073,7 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
             VecAXPY(theta_j->vz[ii], 1.0, theta_i->vz[ii]);
             VecScale(theta_j->vz[ii], 0.5);
             if(firstStep) PCz[ii] = NULL;
-            assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii]);
+            assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_j->vz[ii], rho_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii], NULL);
 
             KSPCreate(MPI_COMM_SELF, &ksp_z);
             KSPSetOperators(ksp_z, PCz[ii], PCz[ii]);
@@ -1172,6 +1177,7 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
     PC pc;
     KSP ksp_z;
     int conv[9999];
+    double thetaBar[999];
 
     if(firstStep) {
         // assumed these have been initialised from the driver
@@ -1217,6 +1223,7 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
         // update the vertical dynamics for this iteration
         if(!rank) cout << rank << ":\tassembling (vertical) residual vectors" << endl;
         norm_max_z = -1.0;
+        integrateTheta(theta_j->vl, thetaBar);
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             if(conv[ii]) continue;
 
@@ -1228,7 +1235,7 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
             VecAXPY(theta_j->vz[ii], 1.0, theta_i->vz[ii]);
             VecScale(theta_j->vz[ii], 0.5);
             if(firstStep) PCz[ii] = NULL;
-            assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii]);
+            assemble_precon_z(ii%topo->nElsX, ii/topo->nElsX, theta_j->vz[ii], rho_i->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner->vz[ii], velz_j->vz[ii], &PCz[ii], thetaBar);
 
             KSPCreate(MPI_COMM_SELF, &ksp_z);
             KSPSetOperators(ksp_z, PCz[ii], PCz[ii]);
@@ -1317,9 +1324,11 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
     delete rt_j;
 }
 
-void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt_i, Vec rt_j, Vec exner, Vec velz, Mat* _PC) {
+void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rho, Vec rt_i, Vec rt_j, Vec exner, Vec velz, Mat* _PC, double* thetaBar) {
+    int n2 = topo->elOrd*topo->elOrd;
     MatReuse reuse = (!pcz_DTV1) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     MatReuse reuse_2 = (!*_PC) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    PetscScalar* tArray;
 
     vo->AssembleConst(ex, ey, vo->VB);
     MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pcz_DTV1);
@@ -1358,6 +1367,21 @@ void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rt_i, Vec rt_j, Vec
     vo->AssembleConLin(ex, ey, vo->VBA);
     MatMatMult(vo->V01, vo->VBA, reuse, PETSC_DEFAULT, &vo->VA);
     MatAXPY(*_PC, dt, vo->VA, DIFFERENT_NONZERO_PATTERN);
+
+    // add the boussinesque approximation
+/*
+    vo->AssembleLinearWithRT(ex, ey, rho, vo->VA, true);
+    MatMult(vo->VA, velz, _tmpA1);
+    MatMult(vo->VA_inv, _tmpA1, _tmpA2);
+    VecGetArray(_tmpA2, &tArray);
+    for(int ii = 0; ii < (geom->nk-1)*n2; ii++) {
+        tArray[ii] /= thetaBar[ii/n2+1];
+    }
+    VecRestoreArray(_tmpA2, &tArray);
+    vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
+    MatMatMult(vo->VBA, pcz_V0_invDTV1, reuse, PETSC_DEFAULT, &pcz_BOUS);
+    MatAXPY(*_PC, +dt*dt*GRAVITY, pcz_BOUS, DIFFERENT_NONZERO_PATTERN);
+*/
 }
 
 void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ainv) {
@@ -1401,7 +1425,7 @@ void Euler::assemble_precon_x(int level, Vec* theta, Vec rt_i, Vec rt_j, Vec exn
     VecAXPY(theta_h, 0.5, theta[level+1]);
 
     M2->assemble(level, SCALE, true);
-    M1->assemble(level, SCALE);
+    M1->assemble(level, SCALE, true);
     DiagMatInv(M1->M, topo->n1, topo->n1l, topo->nDofs1G, topo->gtol_1, &M1inv);
 
     T->assemble(rt_i, level, SCALE); 
@@ -1495,7 +1519,7 @@ void Euler::diagnose_F_x(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec _F) {
     VecAXPY(hu, 1.0/3.0, b);
 
     // solve the linear system
-    M1->assemble(level, SCALE);
+    M1->assemble(level, SCALE, true);
     KSPSolve(ksp1, hu, _F);
 
     VecDestroy(&hu);
@@ -1754,7 +1778,7 @@ void Euler::diagHorizVort(Vec* velx, Vec* dudz) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
     for(ii = 0; ii < geom->nk; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu[ii]);
-        M1->assemble(ii, SCALE);
+        M1->assemble(ii, SCALE, true);
         MatMult(M1->M, velx[ii], Mu[ii]);
     }
 
@@ -1789,7 +1813,7 @@ void Euler::assemble_residual_x(int level, Vec* theta1, Vec* theta2, Vec* dudz1,
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dudz_l);
 
     m0->assemble(level, SCALE);
-    M1->assemble(level, SCALE);
+    M1->assemble(level, SCALE, true);
     M2->assemble(level, SCALE, true);
 
     // assume theta2 is 0.5*(theta_i + theta_j)
@@ -1967,7 +1991,7 @@ void Euler::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
         VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(  scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-        M1->assemble(kk, SCALE);
+        M1->assemble(kk, SCALE, true);
         MatMult(UQ->M, bg, UQb);
         VecScale(UQb, SCALE);
         KSPSolve(ksp1, UQb, u[kk]);
@@ -2266,31 +2290,32 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt) {
     MatAssemblyEnd(  _PCz, MAT_FINAL_ASSEMBLY);
 }
 
-double Euler::integrateTheta(Vec theta) {
+void Euler::integrateTheta(Vec* theta, double* thetaBar) {
     int ei, mp1, mp12;
-    double th_l = 0.0, th_g, th_q, det;
+    double th_l, th_q, det;
     PetscScalar* tArray;
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    VecGetArray(theta, &tArray);
-    for(int ey = 0; ey < topo->nElsX; ey++) {
-        for(int ex = 0; ex < topo->nElsX; ex++) {
-            ei = ey*topo->nElsX + ex;
+    for(int level = 0; level < geom->nk+1; level++) {
+        th_l = 0.0;
+        VecGetArray(theta[level], &tArray);
+        for(int ey = 0; ey < topo->nElsX; ey++) {
+            for(int ex = 0; ex < topo->nElsX; ex++) {
+                ei = ey*topo->nElsX + ex;
 
-            for(int ii = 0; ii < mp12; ii++) {
-                det = geom->det[ei][ii];
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, tArray, &th_q);
-                th_l += det*quad->w[ii%mp1]*quad->w[ii/mp1]*th_q;
+                for(int ii = 0; ii < mp12; ii++) {
+                    det = geom->det[ei][ii];
+                    geom->interp2_g(ex, ey, ii%mp1, ii/mp1, tArray, &th_q);
+                    th_l += det*quad->w[ii%mp1]*quad->w[ii/mp1]*th_q;
+                }
             }
         }
+        VecRestoreArray(theta[level], &tArray);
+
+        MPI_Allreduce(&th_l, &thetaBar[level], 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     }
-    VecRestoreArray(theta, &tArray);
-
-    MPI_Allreduce(&th_l, &th_g, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-    return th_g;
 }
 
 void Euler::coriolisMatInv(Mat A, Mat* Ainv) {
@@ -2350,24 +2375,22 @@ void Euler::coriolisMatInv(Mat A, Mat* Ainv) {
     MatAssemblyEnd(  *Ainv, MAT_FINAL_ASSEMBLY);
 }
 
-void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz) {
-    int ei, elOrd2, nCols, level_k;
+void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* velx, Vec* velz) {
+    int ei, elOrd2, nCols, level_k, n2;
     int *inds2;
     const int *cols;
     const double* vals;
     Vec theta_h, velx_l;
     MatReuse reuse;
     Mat M1inv, M1_f_inv;
-    //double thetaBar1, thetaBar2;
+    double thetaBar[99];
+    PetscScalar* tArray;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &velx_l);
 
     // horizontal part
     for(int level = 0; level < geom->nk; level++) {
-        //thetaBar1 = integrateTheta(theta->vl[level+0]);
-        //thetaBar2 = integrateTheta(theta->vl[level+1]);
-
         reuse = (_DTM2) ? MAT_REUSE_MATRIX : MAT_INITIAL_MATRIX;
 
         VecZeroEntries(theta_h);
@@ -2379,7 +2402,7 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
         F->assemble(theta_h, level, false, SCALE);
         eos_mat->assemble(rt->vl[level], level, SCALE);
 
-        M1->assemble(level, SCALE);
+        M1->assemble(level, SCALE, true);
         DiagMatInv(M1->M, topo->n1, topo->n1l, topo->nDofs1G, topo->gtol_1, &M1inv);
 
         R->assemble(fl[level], level, SCALE);
@@ -2397,7 +2420,6 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
             MatMatMult(T->M, _DM1invM1thetaM1invDTM2, MAT_REUSE_MATRIX, PETSC_DEFAULT, &PCx[level]);
         }
 
-        //MatScale(M2->M, 1.0 - dt*GRAVITY*0.5/(thetaBar1 + thetaBar2)); // rescale for the bousinesque approximation
         MatAYPX(PCx[level], -1.0*dt*dt, M2->M, DIFFERENT_NONZERO_PATTERN);
 
         VecScatterBegin(topo->gtol_1, velx[level], velx_l, INSERT_VALUES, SCATTER_FORWARD);
@@ -2412,6 +2434,9 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
         MatAssemblyBegin(PCx[level], MAT_FINAL_ASSEMBLY);
         MatAssemblyEnd(  PCx[level], MAT_FINAL_ASSEMBLY);
     }
+
+    n2 = topo->elOrd*topo->elOrd;
+    integrateTheta(theta->vl, thetaBar);
 
     // vertical part
     for(int ey = 0; ey < topo->nElsX; ey++) {
@@ -2437,10 +2462,23 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rt, Vec* velx, Vec* velz)
             }
             MatScale(PCz[ei], -1.0*dt*dt); //TODO: check sign
 
-            // add in the vertical advection part of the precinditioner
+            // add the vertical advection part of the precinditioner
             vo->AssembleConLinWithW(ex, ey, velz[ei], vo->VBA);
             MatMatMult(vo->VBA, vo->V01, reuse, PETSC_DEFAULT, &pct_V10DT);
             MatAXPY(PCz[ei], +dt, pct_V10DT, DIFFERENT_NONZERO_PATTERN); // TODO: check sign
+
+            // add the boussinesque approximation
+            vo->AssembleLinearWithRT(ex, ey, rho->vz[ei], vo->VA, true);//TODO: multiply be thetaBar
+            MatMult(vo->VA, velz[ei], _tmpA1);
+            MatMult(vo->VA_inv, _tmpA1, _tmpA2);
+            VecGetArray(_tmpA2, &tArray);
+            for(int ii = 0; ii < (geom->nk-1)*n2; ii++) {
+                tArray[ii] /= thetaBar[ii/n2+1];
+            }
+            VecRestoreArray(_tmpA2, &tArray);
+            vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
+            MatMatMult(vo->VBA, pct_V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pct_V10DT);
+            MatAXPY(PCz[ei], +dt*dt*GRAVITY, pct_V10DT, DIFFERENT_NONZERO_PATTERN); 
 
             MatAssemblyBegin(PCz[ei], MAT_FINAL_ASSEMBLY);
             MatAssemblyEnd(  PCz[ei], MAT_FINAL_ASSEMBLY);
@@ -2505,7 +2543,7 @@ void Euler::assemble_residual_u(int level, Vec* theta, Vec* dudz1, Vec* dudz2, V
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dudz_l);
 
     m0->assemble(level, SCALE);
-    M1->assemble(level, SCALE);
+    M1->assemble(level, SCALE, true);
     M2->assemble(level, SCALE, true);
 
     // assume theta = 0.5*(theta_i + theta_j)
@@ -2600,11 +2638,10 @@ void Euler::assemble_residual_w(int ex, int ey, Vec theta, Vec Pi, Vec velz1, Ve
     diagnose_Phi_z(ex, ey, velz1, velz2, _Phi_z);
 
     // assemble the momentum equation residual
+    VecZeroEntries(fw);
     vo->AssembleLinear(ex, ey, vo->VA);
     if(add_curr) {
         MatMult(vo->VA, velz2, fw);
-    } else {
-        VecZeroEntries(fw);
     }
 
     MatMult(vo->VA, velz1, _tmpA1);
@@ -2623,13 +2660,16 @@ void Euler::assemble_residual_w(int ex, int ey, Vec theta, Vec Pi, Vec velz1, Ve
     VecAXPY(fw, +dt, _tmpA1); // pressure gradient term
 }
 
+//#define VELOCITY_PRECON
+
 void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
-    bool done = false;
+    bool done = false, do_lhs;
     int ei;
     int elOrd2 = topo->elOrd * topo->elOrd;
     double norm_rt_l, norm_rt_max, norm_rt_0;
     double norm_u_l, norm_u_max, norm_u_0;
     double norm_w_l, norm_w_g, norm_w_max, norm_w_0;
+    double thetaBar[999];
     Vec fTheta, dTheta, fu, du, fw, dw, F_x, G_x, F_z, G_z, tmp1, tmp2, tmp2_l;
     Mat PC_u = NULL;
     Mat PC_w = NULL;
@@ -2701,7 +2741,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     norm_rt_max = norm_u_max = norm_w_max = 0.0;
     do {
         // assemble the (density weighted potential temperature) preconditioners for all levels
-        assemblePreconTheta(theta_h, rt_j, velx_j, velz_j->vz);
+        assemblePreconTheta(theta_h, rho_j, rt_j, velx_j, velz_j->vz);
 
         rho_j->UpdateLocal();
         rho_j->HorizToVert();
@@ -2736,7 +2776,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
             VecAXPY(tmp2_l, 0.5, theta_h->vl[level+1]);
             F->assemble(tmp2_l, level, false, SCALE);
             MatMult(F->M, F_x, tmp1);
-            M1->assemble(level, SCALE);
+            M1->assemble(level, SCALE, true);
             KSPSolve(ksp1, tmp1, G_x);
             MatMult(EtoF->E21, G_x, tmp2);
             VecAXPY(dG_z->vh[level], 1.0, tmp2);
@@ -2762,21 +2802,27 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
 
             VecNorm(dTheta, NORM_2, &norm_rt_l);
             VecNorm(rt_j->vh[level], NORM_2, &norm_rt_0);
-if(!rank) cout << "|dTheta|: " << norm_rt_l << "\t|Theta|: " << norm_rt_0 << "\t|dTheta|/|Theta|: " << norm_rt_l/norm_rt_0 << endl;
+            if(!rank) cout << "|dTheta|: " << norm_rt_l << "\t|Theta|: " << norm_rt_0 << "\t|dTheta|/|Theta|: " << norm_rt_l/norm_rt_0 << endl;
             if(norm_rt_l/norm_rt_0 > norm_rt_max) norm_rt_max = norm_rt_l/norm_rt_0;
         }
         rt_j->UpdateLocal();
         rt_j->HorizToVert();
+
+#ifdef VELOCITY_PRECON
+        do_lhs = true;
+#else
+        do_lhs = false;
+#endif
 
         // update the exner pressure and horizontal velocity
         for(int level = 0; level < geom->nk; level++) {
             diagnose_Pi(level, rt_i->vl[level], rt_j->vl[level], exner->vh[level]);
 
             assemble_residual_u(level, theta_h->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, exner->vh[level],
-                                velx_i[level], velx_j[level], rho_i->vh[level], rho_j->vh[level], rt_i->vh[level], rt_j->vh[level], fu, false);
+                                velx_i[level], velx_j[level], rho_i->vh[level], rho_j->vh[level], rt_i->vh[level], rt_j->vh[level], fu, do_lhs);
             VecScale(fu, -1.0);
 
-/*
+#ifdef VELOCITY_PRECON
             PC_u = NULL;
             assemble_precon_x(level, theta_h->vl, rt_i->vl[level], rt_j->vl[level], exner->vl[level], &PC_u);
 
@@ -2794,14 +2840,15 @@ if(!rank) cout << "|dTheta|: " << norm_rt_l << "\t|Theta|: " << norm_rt_0 << "\t
             MatDestroy(&PC_u);
 
             VecAXPY(velx_j[level], 1.0, du);
-*/
-VecCopy(velx_j[level], du);
-KSPSolve(ksp1, fu, velx_j[level]);
-VecAYPX(du, -1.0, velx_j[level]);
+#else
+            VecCopy(velx_j[level], du);
+            KSPSolve(ksp1, fu, velx_j[level]);
+            VecAYPX(du, -1.0, velx_j[level]);
+#endif
 
             VecNorm(du, NORM_2, &norm_u_l);
             VecNorm(velx_j[level], NORM_2, &norm_u_0);
-if(!rank) cout << "|du|: " << norm_u_l << "\t|u|: " << norm_u_0 << "\t|du|/|u|: " << norm_u_l/norm_u_0 << endl;
+            if(!rank) cout << "|du|: " << norm_u_l << "\t|u|: " << norm_u_0 << "\t|du|/|u|: " << norm_u_l/norm_u_0 << endl;
             if(norm_u_l/norm_u_0 > norm_u_max) norm_u_max = norm_u_l/norm_u_0;
         }
         exner->UpdateLocal();
@@ -2810,35 +2857,41 @@ if(!rank) cout << "|du|: " << norm_u_l << "\t|u|: " << norm_u_0 << "\t|du|/|u|: 
         diagHorizVort(velx_j, dudz_j);
 
         // update the vertical velocity
+        integrateTheta(theta_h->vl, thetaBar);
         for(int ey = 0; ey < topo->nElsX; ey++) {
             for(int ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey * topo->nElsX + ex;
-                assemble_residual_w(ex, ey, theta_h->vz[ei], exner->vz[ei], velz_i->vz[ei], velz_j->vz[ei], fw, false);
+                assemble_residual_w(ex, ey, theta_h->vz[ei], exner->vz[ei], velz_i->vz[ei], velz_j->vz[ei], fw, do_lhs);
                 VecScale(fw, -1.0);
 
-                //PC_w = NULL;
-                //assemble_precon_z(ex, ey, theta_h->vz[ei], rt_i->vz[ei], rt_j->vz[ei], exner->vz[ei], velz_j->vz[ei], &PC_w);
-
                 KSPCreate(MPI_COMM_SELF, &ksp_z);
-                //KSPSetOperators(ksp_z, PC_w, PC_w);
-vo->AssembleLinear(ex, ey, vo->VA);
+#ifdef VELOCITY_PRECON
+                PC_w = NULL;
+                assemble_precon_z(ex, ey, theta_h->vz[ei], rho_j->vz[ei], rt_i->vz[ei], rt_j->vz[ei], exner->vz[ei], velz_j->vz[ei], &PC_w, thetaBar);
+
+                KSPSetOperators(ksp_z, PC_w, PC_w);
+#else
+                vo->AssembleLinear(ex, ey, vo->VA);
                 KSPSetOperators(ksp_z, vo->VA, vo->VA);
+#endif
                 KSPGetPC(ksp_z, &pc);
                 PCSetType(pc, PCLU);
                 KSPSetOptionsPrefix(ksp_z, "ksp_z_");
                 KSPSetFromOptions(ksp_z);
-                //KSPSolve(ksp_z, fw, dw);
-VecCopy(velz_j->vz[ei], dw);
-KSPSolve(ksp_z, fw, velz_j->vz[ei]);
-VecAYPX(dw, -1.0, velz_j->vz[ei]);
+#ifdef VELOCITY_PRECON
+                KSPSolve(ksp_z, fw, dw);
+                MatDestroy(&PC_w);
+                VecAXPY(velz_j->vz[ei], 1.0, dw);
+#else
+                VecCopy(velz_j->vz[ei], dw);
+                KSPSolve(ksp_z, fw, velz_j->vz[ei]);
+                VecAYPX(dw, -1.0, velz_j->vz[ei]);
+#endif
                 KSPDestroy(&ksp_z);
-                //MatDestroy(&PC_w);
-
-                //VecAXPY(velz_j->vz[ei], 1.0, dw);
 
                 VecNorm(dw, NORM_2, &norm_w_l);
                 VecNorm(velz_j->vz[ei], NORM_2, &norm_w_0);
-if(!rank) cout << "|dw|: " << norm_w_l << "\t|w|: " << norm_w_0 << "\t|dw|/|w|: " << norm_w_l/norm_w_0 << endl;
+                if(!rank) cout << "|dw|: " << norm_w_l << "\t|w|: " << norm_w_0 << "\t|dw|/|w|: " << norm_w_l/norm_w_0 << endl;
                 if(norm_w_l/norm_w_0 > norm_w_max) norm_w_max = norm_w_l/norm_w_0;
             }
         }
