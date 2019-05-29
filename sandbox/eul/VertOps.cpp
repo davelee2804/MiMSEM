@@ -110,6 +110,7 @@ VertOps::~VertOps() {
 
     MatDestroy(&V10);
     MatDestroy(&V01);
+    MatDestroy(&V10_full);
     MatDestroy(&VA);
     MatDestroy(&VB);
     MatDestroy(&VA_inv);
@@ -158,6 +159,22 @@ void VertOps::vertOps() {
     MatZeroEntries(V01);
     MatAXPY(V01, -1.0, V10t, SAME_NONZERO_PATTERN);
     MatDestroy(&V10t);
+
+    // create a second div operator over all vertical levels (for theta with non-homogeneous bcs)
+    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+1)*n2, n2, NULL, &V10_full);
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < n2; ii++) {
+            rows[0] = kk*n2 + ii;
+            // bottom of element
+            cols[0] = (kk+0)*n2 + ii;
+            MatSetValues(V10_full, 1, rows, 1, cols, &vm, INSERT_VALUES);
+            // top of element
+            cols[0] = (kk+1)*n2 + ii;
+            MatSetValues(V10_full, 1, rows, 1, cols, &vp, INSERT_VALUES);
+        }
+    }
+    MatAssemblyBegin(V10_full, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(V10_full, MAT_FINAL_ASSEMBLY);
 }
 
 /*
@@ -1226,6 +1243,55 @@ void VertOps::AssembleConstEoS(int ex, int ey, Vec rt, Mat B) {
         MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
     }
     VecRestoreArray(rt, &rArray);
+    MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+}
+
+void VertOps::AssembleConstWithThetaInv(int ex, int ey, Vec theta, Mat B) {
+    int ii, jj, kk, ei, mp1, mp12;
+    int *inds0;
+    double det, tb, tt, gamma;
+    int inds2k[99];
+    PetscScalar* tArray;
+
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    Q->assemble(ex, ey);
+
+    MatZeroEntries(B);
+
+    // assemble the matrices
+    VecGetArray(theta, &tArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+
+            tb = tt = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                tb += tArray[(kk+0)*n2+jj]*gamma;
+                tt += tArray[(kk+1)*n2+jj]*gamma;
+            }
+            Q0[ii][ii] *= 0.5*(tb + tt)/det;
+        }
+
+        // assemble the piecewise constant mass matrix for level k
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Inv(WtQW, WtQWinv, n2);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(theta, &tArray);
     MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
 }

@@ -2318,6 +2318,49 @@ void Euler::integrateTheta(Vec* theta, double* thetaBar) {
     }
 }
 
+// bous is an array of vertical local vectors (piecewise constant in the vertical)
+void Euler::initBousFac(L2Vecs* theta, Vec* bous) {
+    int ex, ey, ei, kk, mp1, mp12;
+    Vec bg, WQb;
+    WtQmat* WQ = new WtQmat(topo, geom, edge);
+    double tb[999];
+    L2Vecs* thetaBar = new L2Vecs(geom->nk+1, topo, geom);
+
+    integrateTheta(theta->vl, tb);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
+
+    M2->assemble(0, SCALE, false); // only need to assemble once if independent of vertical levels
+    for(kk = 0; kk < geom->nk+1; kk++) {
+        VecSet(bg, tb[kk]);
+        MatMult(WQ->M, bg, WQb);
+        VecScale(WQb, SCALE);
+        KSPSolve(ksp2, WQb, thetaBar->vh[kk]);
+    }
+    thetaBar->UpdateLocal();
+    thetaBar->HorizToVert();
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey * topo->nElsX + ex;
+            vo->AssembleConst(ex, ey, vo->VB);
+            vo->AssembleConstWithThetaInv(ex, ey, thetaBar->vz[ei], vo->VB_inv);
+            MatMult(vo->V10_full, thetaBar->vz[ei], _tmpB1);
+            MatMult(vo->VB, _tmpB1, _tmpB2);
+            MatMult(vo->VB_inv, _tmpB2, bous[ei]);
+        }
+    }
+
+    delete WQ;
+    delete thetaBar;
+    VecDestroy(&bg);
+    VecDestroy(&WQb);
+}
+
 void Euler::coriolisMatInv(Mat A, Mat* Ainv) {
     int mi, mf, nCols1, nCols2;
     const int *cols1, *cols2;
@@ -2468,7 +2511,8 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* vel
             MatAXPY(PCz[ei], +dt, pct_V10DT, DIFFERENT_NONZERO_PATTERN); // TODO: check sign
 
             // add the boussinesque approximation
-            vo->AssembleLinearWithRT(ex, ey, rho->vz[ei], vo->VA, true);//TODO: multiply be thetaBar
+/*
+            vo->AssembleLinearWithRT(ex, ey, rho->vz[ei], vo->VA, true);
             MatMult(vo->VA, velz[ei], _tmpA1);
             MatMult(vo->VA_inv, _tmpA1, _tmpA2);
             VecGetArray(_tmpA2, &tArray);
@@ -2479,6 +2523,7 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* vel
             vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
             MatMatMult(vo->VBA, pct_V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pct_V10DT);
             MatAXPY(PCz[ei], +dt*dt*GRAVITY, pct_V10DT, DIFFERENT_NONZERO_PATTERN); 
+*/
 
             MatAssemblyBegin(PCz[ei], MAT_FINAL_ASSEMBLY);
             MatAssemblyEnd(  PCz[ei], MAT_FINAL_ASSEMBLY);

@@ -82,6 +82,7 @@ class Euler {
         void assemble_residual_w(int ex, int ey, Vec theta, Vec Pi, Vec velz1, Vec velz2, Vec fw, bool add_curr);
 
         void integrateTheta(Vec* theta, double* thetaBar);
+        void initBousFac(L2Vecs* theta, Vec* bous);
         void coriolisMatInv(Mat A, Mat* Ainv);
         void assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* velx, Vec* velz);
 

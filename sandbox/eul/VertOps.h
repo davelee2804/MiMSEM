@@ -22,8 +22,9 @@ class VertOps {
         double** WtQWinv;
         double* WtQWflat;
 
-        Mat V01; // vertical divergence operator
-        Mat V10; // vertical gradient operator
+        Mat V01;      // vertical gradient operator
+        Mat V10;      // vertical divergence operator
+        Mat V10_full; // vertical divergence operator with non-homogeneous bcs
         Mat VA;
         Mat VB;
         Mat VA_inv;
@@ -56,4 +57,5 @@ class VertOps {
         void AssembleConstEoS(int ex, int ey, Vec rt, Mat B);
         void AssembleLinCon2(int ex, int ey, Mat AB);                // for the diagnosis of theta without boundary conditions
         void AssembleLinearWithRho2(int ex, int ey, Vec rho, Mat A); // for the diagnosis of theta without boundary conditions
+        void AssembleConstWithThetaInv(int ex, int ey, Vec theta, Mat B); // for the boussinesque term in the vertical preconditioner
 };
