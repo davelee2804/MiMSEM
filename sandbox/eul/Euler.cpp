@@ -146,11 +146,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
 
     KSPCreate(MPI_COMM_SELF, &kspColA);
     KSPSetOperators(kspColA, VA, VA);
-    //KSPSetTolerances(kspColA, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    //KSPSetType(kspColA, KSPGMRES);
     KSPGetPC(kspColA, &pc);
-    //PCSetType(pc, PCBJACOBI);
-    //PCBJacobiSetTotalBlocks(pc, n2, NULL);
     PCSetType(pc, PCLU);
     KSPSetOptionsPrefix(kspColA, "kspColA_");
     KSPSetFromOptions(kspColA);
@@ -423,7 +419,7 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
 
     // assemble the mass matrices for use in the weak form grad, curl and laplacian operators
     m0->assemble(lev, SCALE);
-    M1->assemble(lev, SCALE);
+    M1->assemble(lev, SCALE, true);
     M2->assemble(lev, SCALE, true);
 
     curl(false, uh, &wi, lev, true);
@@ -496,7 +492,7 @@ void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux) {
 
     for(kk = 0; kk < geom->nk; kk++) {
         F->assemble(pi[kk], kk, true, SCALE);
-        M1->assemble(kk, SCALE);
+        M1->assemble(kk, SCALE, true);
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fh);
         MatMult(EtoF->E21, Fh, Fp[kk]);
@@ -532,7 +528,7 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
         VecAXPY(theta_l, 0.5, pi[kk+1]);
         F->assemble(theta_l, kk, false, SCALE);
 
-        M1->assemble(kk, SCALE);
+        M1->assemble(kk, SCALE, true);
         MatMult(F->M, uh[kk], pu);
         KSPSolve(ksp1, pu, Fh);
         MatMult(EtoF->E21, Fh, Fp[kk]);
@@ -725,7 +721,7 @@ void Euler::grad(bool assemble, Vec phi, Vec* u, int lev) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMphi);
 
     if(assemble) {
-        M1->assemble(lev, SCALE);
+        M1->assemble(lev, SCALE, true);
         M2->assemble(lev, SCALE, true);
     }
 
@@ -749,7 +745,7 @@ void Euler::curl(bool assemble, Vec u, Vec* w, int lev, bool add_f) {
 
     if(assemble) {
         m0->assemble(lev, SCALE);
-        M1->assemble(lev, SCALE);
+        M1->assemble(lev, SCALE, true);
     }
     MatMult(M1->M, u, Mu);
     MatMult(NtoE->E01, Mu, dMu);
@@ -990,7 +986,7 @@ void Euler::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
         VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(  scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-        M1->assemble(kk, SCALE);
+        M1->assemble(kk, SCALE, true);
         MatMult(UQ->M, bg, UQb);
         VecScale(UQb, SCALE);
         KSPSolve(ksp1, UQb, u[kk]);
@@ -1179,6 +1175,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             vo->AssembleLinear(ex, ey, VA);
             MatMult(VA, velz_n[ei], rhs);
             VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
+            VecAXPY(rhs, -0.5*dt, uuz->vz[ei]); // subtract the horizontal advection of vertical velocity
 
             vo->AssembleRayleigh(ex, ey, VR);
 
@@ -1252,7 +1249,7 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
                 VecAYPX(tmp, -0.5*dt, rhs);
 
                 vo->AssembleLinear(ex, ey, VA);
-                MatAXPY(VA, +0.25*dt, DTV10_w, DIFFERENT_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step //TODO invalid write??
+                MatAXPY(VA, +0.25*dt, DTV10_w, DIFFERENT_NONZERO_PATTERN); // 0.5 for the nonlinear term and 0.5 for the time step
                 MatAXPY(VA, -0.25*dt*dt*RD/CV, LAP, DIFFERENT_NONZERO_PATTERN);
                 MatAXPY(VA, +0.5*dt*RAYLEIGH, VR, DIFFERENT_NONZERO_PATTERN);
 
@@ -1386,11 +1383,48 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
     delete l2_theta;
 }
 
+double Euler::int2(Vec ug) {
+    int ex, ey, ei, ii, mp1, mp12;
+    double det, uq, local, global;
+    PetscScalar *array_2;
+    Vec ul;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &ul);
+    VecScatterBegin(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    local = 0.0;
+
+    VecGetArray(ul, &array_2);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, &uq);
+
+                local += det*quad->w[ii%mp1]*quad->w[ii/mp1]*uq;
+            }
+        }
+    }
+    VecRestoreArray(ul, &array_2);
+
+    MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    VecDestroy(&ul);
+
+    return global;
+}
+
 void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     char filename[80];
     ofstream file;
     int kk, ex, ey, ei, n2;
-    double keh, kev, pe, ie, k2p, p2k;
+    double keh, kev, pe, ie, k2p, p2k, mass;
     double dot, loc1, loc2, loc3;
     Vec hu, M2Pi, w2, gRho, gi, zi;
     Mat BA;
@@ -1473,6 +1507,12 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     }
     MPI_Allreduce(&loc1, &pe,  1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
+    // mass
+    mass = 0.0;
+    for(kk = 0; kk < geom->nk; kk++) {
+        mass += int2(rho[kk]);
+    }
+
     if(!rank) {
         sprintf(filename, "output/energetics.dat");
         file.open(filename, ios::out | ios::app);
@@ -1487,6 +1527,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
         file << i2k << "\t";
         file << k2i_z << "\t";
         file << i2k_z << "\t";
+        file << mass << "\t";
         file << endl;
         file.close();
     }
@@ -1596,6 +1637,7 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             vo->AssembleLinear(ex, ey, VA);
             MatMult(VA, velz_n[ei], rhs);
             VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
+            VecAXPY(rhs, -0.5*dt, uuz->vz[ei]); // subtract the horizontal advection of vertical velocity
 
             vo->AssembleRayleigh(ex, ey, VR);
 
@@ -1809,11 +1851,14 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         rt_1->CopyFromVert(rt_0->vz);
         exner_prev->CopyFromVert(exner_i->vz);
 
+        AssembleVertMomVort(velx, velz_1);
         VertSolve(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz, velz, rho_0->vz, rt_0->vz, exner_prev->vz);
     } else {
         // pass in the current time level as well for q^{1} = q^{n} + F(q^{prev})
         // use the same horizontal kinetic energy as the previous horizontal solve, so don't assemble here
 #ifdef FIRST_STEP_EXPLICIT
+        velz_1->CopyFromVert(velz);
+        AssembleVertMomVort(velx, velz_1);
         VertSolve_Explicit(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz, velz, rho_0->vz, rt_0->vz, exner_prev->vz);
 #else
         for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
@@ -1846,7 +1891,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     HorizRHS(velx, rho_1->vl, rt_1->vl, exner_i->vh, Fu, Fp->vh, Ft->vh, velz_1->vh);
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
-        M1->assemble(ii, SCALE);
+        M1->assemble(ii, SCALE, true);
         MatMult(M1->M, velx[ii], bu);
         VecAXPY(bu, -dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx_2[ii]);
@@ -1873,7 +1918,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         VecZeroEntries(xu);
         VecAXPY(xu, 0.75, velx[ii]);
         VecAXPY(xu, 0.25, velx_2[ii]);
-        M1->assemble(ii, SCALE);
+        M1->assemble(ii, SCALE, true);
         MatMult(M1->M, xu, bu);
         VecAXPY(bu, -0.25*dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx_3[ii]);
@@ -1904,7 +1949,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         VecZeroEntries(xu);
         VecAXPY(xu, 1.0/3.0, velx[ii]);
         VecAXPY(xu, 2.0/3.0, velx_3[ii]);
-        M1->assemble(ii, SCALE);
+        M1->assemble(ii, SCALE, true);
         MatMult(M1->M, xu, bu);
         VecAXPY(bu, (-2.0/3.0)*dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx[ii]);
@@ -1939,6 +1984,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     velz_1->CopyToVert(velz);
     rho_5->CopyFromVert(rho_4->vz);
     rt_5->CopyFromVert(rt_4->vz);
+    AssembleVertMomVort(velx, velz_1);
     VertSolve(velz, rho_5->vz, rt_5->vz, exner_i->vz, velz_1->vz, rho_4->vz, rt_4->vz, exner_prev->vz);
 
     // update input vectors
@@ -2036,7 +2082,7 @@ void Euler::HorizVort(Vec* velx) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
     for(ii = 0; ii < geom->nk; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu[ii]);
-        M1->assemble(ii, SCALE);
+        M1->assemble(ii, SCALE, true);
         MatMult(M1->M, velx[ii], Mu[ii]);
     }
 
@@ -2057,12 +2103,16 @@ void Euler::HorizVort(Vec* velx) {
 }
 
 // compute the contribution of the vorticity vector to the vertical momentum equation
-void Euler::AssembleVertMomVort(Vec* velx) {
+// TODO: check the vertical metric terms!!!
+void Euler::AssembleVertMomVort(Vec* velx, L2Vecs* velz) {
     int kk;
-    Vec ul, tmp;
+    Vec ul, ug, tmp, tmp1, dwdx;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmp1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dwdx);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ug);
 
     for(kk = 0; kk < geom->nk-1; kk++) {
         VecZeroEntries(uuz->vh[kk]);
@@ -2083,22 +2133,36 @@ void Euler::AssembleVertMomVort(Vec* velx) {
         }
     }
 */
-    for(kk = 0; kk < geom->nk-1; kk++) {
-        VecScatterBegin(topo->gtol_1, velx[kk+0], ul, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  topo->gtol_1, velx[kk+0], ul, INSERT_VALUES, SCATTER_FORWARD);
-        Rz->assemble(ul, kk, SCALE);
-        MatMult(Rz->M, uz[kk], tmp);
-        VecAXPY(uuz->vh[kk], 0.5, tmp);
 
-        VecScatterBegin(topo->gtol_1, velx[kk+1], ul, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  topo->gtol_1, velx[kk+1], ul, INSERT_VALUES, SCATTER_FORWARD);
-        Rz->assemble(ul, kk, SCALE);
-        MatMult(Rz->M, uz[kk], tmp);
-        VecAXPY(uuz->vh[kk], 0.5, tmp);
+    velz->VertToHoriz();
+    velz->UpdateGlobal();
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        // take the horizontal gradient of the vertical velocity
+        // TODO both matrices are piecewise linear in the vertical. as such they
+        // should both be scaled by J_z = dz/2, however since the layer thicknesses
+        // are constant for now we just omit these. These will need to be updated
+        // for variable thickness layers.
+        M1->assemble(kk, SCALE, false);
+        M2->assemble(kk, SCALE, false);
+        MatMult(M2->M, velz->vh[kk], tmp);
+        MatMult(EtoF->E12, tmp, tmp1);
+        KSPSolve(ksp1, tmp1, dwdx); // horizontal gradient of vertical velocity
+
+        VecZeroEntries(ug);
+        VecAXPY(ug, 0.5, velx[kk+0]);
+        VecAXPY(ug, 0.5, velx[kk+1]);
+        VecScatterBegin(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+        
+        Rz->assemble(ul, SCALE);
+        MatMult(Rz->M, dwdx, uuz->vh[kk]); // horizontal advection of vertical velocity
     }
     uuz->UpdateLocal();
     uuz->HorizToVert();
 
     VecDestroy(&ul);
+    VecDestroy(&ug);
     VecDestroy(&tmp);
+    VecDestroy(&tmp1);
+    VecDestroy(&dwdx);
 }

@@ -81,12 +81,13 @@ class Euler {
 
         void VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
         void VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
+        double int2(Vec ug);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
 
         void DiagExner(Vec* rtz, L2Vecs* exner);
 
         void HorizVort(Vec* velx);
-        void AssembleVertMomVort(Vec* velx);
+        void AssembleVertMomVort(Vec* velx, L2Vecs* velz);
 
         L2Vecs* velz_prev;
         L2Vecs* rho_prev;
