@@ -2418,7 +2418,7 @@ void Euler::coriolisMatInv(Mat A, Mat* Ainv) {
     MatAssemblyEnd(  *Ainv, MAT_FINAL_ASSEMBLY);
 }
 
-void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* velx, Vec* velz) {
+void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* velx, Vec* velz, Vec* bous) {
     int ei, elOrd2, nCols, level_k, n2;
     int *inds2;
     const int *cols;
@@ -2426,8 +2426,6 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* vel
     Vec theta_h, velx_l;
     MatReuse reuse;
     Mat M1inv, M1_f_inv;
-    //double thetaBar[99];
-    //PetscScalar* tArray;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &velx_l);
@@ -2479,7 +2477,6 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* vel
     }
 
     n2 = topo->elOrd*topo->elOrd;
-    //integrateTheta(theta->vl, thetaBar);
 
     // vertical part
     for(int ey = 0; ey < topo->nElsX; ey++) {
@@ -2494,6 +2491,10 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* vel
             MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pct_DTV1);
             MatMatMult(vo->VA_inv, pct_DTV1, reuse, PETSC_DEFAULT, &pct_V0_invDTV1);
             MatMatMult(vo->VA, pct_V0_invDTV1, reuse, PETSC_DEFAULT, &pct_V0_thetaV0_invDTV1);
+            // add the boussinesque term to this inverse matrix on the left
+            vo->AssembleLinearWithBousInv(ex, ey, bous[ei], vo->VA);
+            MatAXPY(vo->VA_inv, 1.0/(dt*dt*GRAVITY), vo->VA, DIFFERENT_NONZERO_PATTERN);
+            //
             MatMatMult(vo->VA_inv, pct_V0_thetaV0_invDTV1, reuse, PETSC_DEFAULT, &pct_V0_invV0_thetaV0_invDTV1);
             MatMatMult(vo->V10, pct_V0_invV0_thetaV0_invDTV1, reuse, PETSC_DEFAULT, &pct_DV0_invV0_thetaV0_invDTV1);
 
@@ -2509,21 +2510,6 @@ void Euler::assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* vel
             vo->AssembleConLinWithW(ex, ey, velz[ei], vo->VBA);
             MatMatMult(vo->VBA, vo->V01, reuse, PETSC_DEFAULT, &pct_V10DT);
             MatAXPY(PCz[ei], +dt, pct_V10DT, DIFFERENT_NONZERO_PATTERN); // TODO: check sign
-
-            // add the boussinesque approximation
-/*
-            vo->AssembleLinearWithRT(ex, ey, rho->vz[ei], vo->VA, true);
-            MatMult(vo->VA, velz[ei], _tmpA1);
-            MatMult(vo->VA_inv, _tmpA1, _tmpA2);
-            VecGetArray(_tmpA2, &tArray);
-            for(int ii = 0; ii < (geom->nk-1)*n2; ii++) {
-                tArray[ii] /= thetaBar[ii/n2+1];
-            }
-            VecRestoreArray(_tmpA2, &tArray);
-            vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
-            MatMatMult(vo->VBA, pct_V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pct_V10DT);
-            MatAXPY(PCz[ei], +dt*dt*GRAVITY, pct_V10DT, DIFFERENT_NONZERO_PATTERN); 
-*/
 
             MatAssemblyBegin(PCz[ei], MAT_FINAL_ASSEMBLY);
             MatAssemblyEnd(  PCz[ei], MAT_FINAL_ASSEMBLY);
@@ -2705,7 +2691,7 @@ void Euler::assemble_residual_w(int ex, int ey, Vec theta, Vec Pi, Vec velz1, Ve
     VecAXPY(fw, +dt, _tmpA1); // pressure gradient term
 }
 
-//#define VELOCITY_PRECON
+#define VELOCITY_PRECON
 
 void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
     bool done = false, do_lhs;
@@ -2786,7 +2772,8 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
     norm_rt_max = norm_u_max = norm_w_max = 0.0;
     do {
         // assemble the (density weighted potential temperature) preconditioners for all levels
-        assemblePreconTheta(theta_h, rho_j, rt_j, velx_j, velz_j->vz);
+        initBousFac(theta_h, bous->vz);
+        assemblePreconTheta(theta_h, rho_j, rt_j, velx_j, velz_j->vz, bous->vz);
 
         rho_j->UpdateLocal();
         rho_j->HorizToVert();
@@ -2902,7 +2889,7 @@ void Euler::solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt
         diagHorizVort(velx_j, dudz_j);
 
         // update the vertical velocity
-        initBousFac(theta_h, bous->vz);
+        //initBousFac(theta_h, bous->vz);
         for(int ey = 0; ey < topo->nElsX; ey++) {
             for(int ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey * topo->nElsX + ex;

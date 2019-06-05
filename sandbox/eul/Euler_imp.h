@@ -84,7 +84,7 @@ class Euler {
         void integrateTheta(Vec* theta, double* thetaBar);
         void initBousFac(L2Vecs* theta, Vec* bous);
         void coriolisMatInv(Mat A, Mat* Ainv);
-        void assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* velx, Vec* velz);
+        void assemblePreconTheta(L2Vecs* theta, L2Vecs* rho, L2Vecs* rt, Vec* velx, Vec* velz, Vec* bous);
 
         void repack_z(Vec x, Vec u, Vec rho, Vec rt);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt);

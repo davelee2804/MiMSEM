@@ -58,4 +58,5 @@ class VertOps {
         void AssembleLinCon2(int ex, int ey, Mat AB);                // for the diagnosis of theta without boundary conditions
         void AssembleLinearWithRho2(int ex, int ey, Vec rho, Mat A); // for the diagnosis of theta without boundary conditions
         void AssembleConstWithThetaInv(int ex, int ey, Vec theta, Mat B); // for the boussinesque term in the vertical preconditioner
+        void AssembleLinearWithBousInv(int ex, int ey, Vec bous, Mat A);  // for the boussinesque term in the theta preconditioner
 };

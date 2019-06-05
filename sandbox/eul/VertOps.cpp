@@ -1295,3 +1295,54 @@ void VertOps::AssembleConstWithThetaInv(int ex, int ey, Vec theta, Mat B) {
     MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
 }
+
+void VertOps::AssembleLinearWithBousInv(int ex, int ey, Vec bous, Mat A) {
+    int kk, ii, jj, rows[99], ei, *inds0, mp1, mp12;
+    double det, bb, bt, gamma;
+    PetscScalar* bArray;
+
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+    mp1   = quad->n+1;
+    mp12  = mp1*mp1;
+
+    Q->assemble(ex, ey);
+
+    MatZeroEntries(A);
+
+    VecGetArray(bous, &bArray);
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+            // for linear field we multiply by the vertical jacobian determinant when
+            // integrating, and do no other trasformations for the basis functions
+            Q0[ii][ii] *= 0.5*(geom->thick[kk+0][inds0[ii]] + geom->thick[kk+1][inds0[ii]]);
+
+            bb = bt = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                bb += bArray[(kk+0)*n2+jj]*gamma;
+                bt += bArray[(kk+1)*n2+jj]*gamma;
+            }
+            bb /= geom->thick[kk+0][inds0[ii]];
+            bt /= geom->thick[kk+1][inds0[ii]];
+            Q0[ii][ii] *= (bb + bt)/det;
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+        // take the inverse
+        Inv(WtQW, WtQWinv, n2);
+        // add to matrix
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(A, W->nDofsJ, rows, W->nDofsJ, rows, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(bous, &bArray);
+
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+}
