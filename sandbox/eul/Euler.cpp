@@ -33,6 +33,7 @@
 #define VERT_TOL 1.0e-8
 #define RAYLEIGH 0.2
 //#define RAYLEIGH 0.0
+//#define WITH_UDWDX
 
 using namespace std;
 
@@ -266,7 +267,6 @@ void Euler::initGZ() {
             for(kk = 0; kk < geom->nk; kk++) {
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
-                    //Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
                     Q0[ii][ii]  = Q->A[ii][ii]*SCALE;
                     // for linear field we multiply by the vertical jacobian determinant when
                     // integrating, and do no other trasformations for the basis functions
@@ -1057,8 +1057,9 @@ void Euler::VertSolve(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec
             vo->AssembleLinear(ex, ey, VA);
             MatMult(VA, velz_n[ei], rhs);
             VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
+#ifdef WITH_UDWDX
             VecAXPY(rhs, -0.5*dt, uuz->vz[ei]); // subtract the horizontal advection of vertical velocity
-
+#endif
             vo->AssembleRayleigh(ex, ey, VR);
             vo->AssembleLinCon2(ex, ey, vo->VAB2);
 
@@ -1526,8 +1527,9 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             vo->AssembleLinear(ex, ey, VA);
             MatMult(VA, velz_n[ei], rhs);
             VecAXPY(rhs, -0.5*dt, gv[ei]); // subtract the +ve gravity
+#ifdef WITH_UDWDX
             VecAXPY(rhs, -0.5*dt, uuz->vz[ei]); // subtract the horizontal advection of vertical velocity
-
+#endif
             vo->AssembleRayleigh(ex, ey, VR);
 
             // assemble the operators
@@ -1552,7 +1554,6 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
                 MatMatMult(V0_inv, DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invDTV1);
             }
 
-            //diagThetaVert(ex, ey, AB, rho_n[ei], rt_n[ei], l2_theta->vz[ei]);
             vo->AssembleLinCon2(ex, ey, vo->VAB2);
             MatMult(vo->VAB2, rt_n[ei], frt);
             vo->AssembleLinearWithRho2(ex, ey, rho_n[ei], vo->VA2);
@@ -1739,14 +1740,19 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         rt_1->CopyFromVert(rt_0->vz);
         exner_prev->CopyFromVert(exner_i->vz);
 
+#ifdef WITH_UDWDX
         AssembleVertMomVort(velx, velz_1);
+#endif
         VertSolve(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz, velz, rho_0->vz, rt_0->vz, exner_prev->vz);
     } else {
         // pass in the current time level as well for q^{1} = q^{n} + F(q^{prev})
         // use the same horizontal kinetic energy as the previous horizontal solve, so don't assemble here
-#ifdef FIRST_STEP_EXPLICIT
+#ifdef WITH_UDWDX
         velz_1->CopyFromVert(velz);
         AssembleVertMomVort(velx, velz_1);
+#endif
+
+#ifdef FIRST_STEP_EXPLICIT
         VertSolve_Explicit(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz, velz, rho_0->vz, rt_0->vz, exner_prev->vz);
 #else
         for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
@@ -1872,7 +1878,9 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     velz_1->CopyToVert(velz);
     rho_5->CopyFromVert(rho_4->vz);
     rt_5->CopyFromVert(rt_4->vz);
+#ifdef WITH_UDWDX
     AssembleVertMomVort(velx, velz_1);
+#endif
     VertSolve(velz, rho_5->vz, rt_5->vz, exner_i->vz, velz_1->vz, rho_4->vz, rt_4->vz, exner_prev->vz);
 
     // update input vectors
