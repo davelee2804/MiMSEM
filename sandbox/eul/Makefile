@@ -21,7 +21,7 @@ OBJS = LinAlg.o \
        ElMats.o \
        VertOps.o \
        Assembly.o \
-       Euler_imp.o \
+       Euler.o \
        UMJS14.o
 
 mimsem: ${OBJS}

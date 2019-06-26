@@ -20,7 +20,7 @@
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define NK 24
+#define NK 30
 #define P0 100000.0
 #define RD 287.0
 #define GAMMA 0.005
@@ -313,8 +313,8 @@ int main(int argc, char** argv) {
     }
 
     // initialise the potential temperature top and bottom boundary conditions
-    pe->initTheta(pe->theta_b, theta_b_init);
-    pe->initTheta(pe->theta_t, theta_t_init);
+    //pe->initTheta(pe->theta_b, theta_b_init);
+    //pe->initTheta(pe->theta_t, theta_t_init);
 
     if(startStep == 0) {
         pe->init1(velx, u_init, v_init);
