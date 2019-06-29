@@ -15,7 +15,7 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
-#include "Euler_imp.h"
+#include "Euler_imp_3.h"
 
 using namespace std;
 
@@ -279,7 +279,7 @@ int main(int argc, char** argv) {
     Geom* geom;
     Euler* pe;
     Vec *velx;
-    L2Vecs *velz, *rho, *rt;
+    L2Vecs *velz, *rho, *rt, *exner;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 
@@ -302,6 +302,7 @@ int main(int argc, char** argv) {
     velz = new L2Vecs(geom->nk-1, topo, geom);
     rho = new L2Vecs(geom->nk, topo, geom);
     rt = new L2Vecs(geom->nk, topo, geom);
+    exner = new L2Vecs(geom->nk, topo, geom);
 
     // initialise the potential temperature top and bottom boundary conditions
     pe->initTheta(pe->theta_b, theta_b_init);
@@ -312,9 +313,10 @@ int main(int argc, char** argv) {
     VecScatterEnd(  topo->gtol_2, pe->theta_t, pe->theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
 
     if(startStep == 0) {
-        pe->init1(velx,    u_init, v_init);
-        pe->init2(rho->vh, rho_init  );
-        pe->init2(rt->vh,  rt_init   );
+        pe->init1(velx,      u_init, v_init);
+        pe->init2(rho->vh,   rho_init      );
+        pe->init2(rt->vh,    rt_init       );
+        pe->init2(exner->vh, exner_init    );
 
         for(ki = 0; ki < NK; ki++) {
             sprintf(fieldname,"velocity_h");
@@ -323,6 +325,8 @@ int main(int argc, char** argv) {
             geom->write2(rho->vh[ki],fieldname,0,ki, true);
             sprintf(fieldname,"rhoTheta");
             geom->write2(rt->vh[ki],fieldname,0,ki, true);
+            sprintf(fieldname,"exner");
+            geom->write2(exner->vh[ki],fieldname,0,ki, true);
         }
         {
             L2Vecs* theta = new L2Vecs(NK+1, topo, geom);
@@ -345,6 +349,8 @@ int main(int argc, char** argv) {
         LoadVecs(velx , NK, fieldname, startStep);
         sprintf(fieldname,"rhoTheta");
         LoadVecs(rt->vh   , NK, fieldname, startStep);
+        sprintf(fieldname,"exner");
+        LoadVecs(exner->vh, NK, fieldname, startStep);
         sprintf(fieldname,"velocity_z");
         LoadVecs(velz->vh, NK-1, fieldname, startStep);
     }
@@ -354,15 +360,28 @@ int main(int argc, char** argv) {
     rho->HorizToVert();
     rt->UpdateLocal();
     rt->HorizToVert();
+    exner->UpdateLocal();
+    exner->HorizToVert();
 
+/*
     pe->solve_vert(velz, rho, rt, true);
+    rt->UpdateLocal();
+    for(int ii = 0; ii < geom->nk; ii++) {
+        pe->diagnose_Pi(ii, rt->vl[ii], rt->vl[ii], exner->vh[ii]);
+    }
+    exner->UpdateLocal();
+    exner->HorizToVert();
+*/
+    
+    pe->solve_vert_exner(velz, rho, rt, exner, false);
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->solve_unsplit(velx, velz, rho, rt, dump);
+        pe->solve_vert_exner(velz, rho, rt, exner, dump);
+        //pe->solve_unsplit(velx, velz, rho, rt, dump);
     }
 
     for(ki = 0; ki < NK; ki++) {
@@ -372,6 +391,7 @@ int main(int argc, char** argv) {
     delete velz;
     delete rho;
     delete rt;
+    delete exner;
 
     delete pe;
     delete geom;

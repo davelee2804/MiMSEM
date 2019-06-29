@@ -17,7 +17,7 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
-#include "Euler_imp.h"
+#include "Euler_imp_3.h"
 
 #define RAD_EARTH 6371220.0
 #define GRAVITY 9.80616
@@ -243,8 +243,6 @@ void Euler::initGZ() {
             MatZeroEntries(BQ);
             for(kk = 0; kk < geom->nk; kk++) {
                 for(ii = 0; ii < mp12; ii++) {
-                    //det = geom->det[ei][ii];
-                    //Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
                     Q0[ii][ii]  = Q->A[ii][ii]*SCALE;
                     // for linear field we multiply by the vertical jacobian determinant when
                     // integrating, and do no other trasformations for the basis functions
@@ -1109,7 +1107,7 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
 
             VecNorm(velz_j->vz[ii], NORM_2, &norm_u);
             VecNorm(dw, NORM_2, &norm_du);
-            if(norm_du/norm_u < 1.0e-8) conv[ii] = 1;
+            if(norm_du/norm_u < 1.0e-6) conv[ii] = 1;
             if(norm_max_dz/norm_max_z < norm_du/norm_u) { 
                 norm_max_z = norm_u;
                 norm_max_dz = norm_du;
@@ -1151,7 +1149,6 @@ void Euler::solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save) {
         if(!rank) cout << itt++ << "\t|dz|: " << norm_max_dz << "\t|z|: " << norm_max_z << "\t|dz|/|z|: " << norm_max_dz/norm_max_z << endl;
 
         //if(norm_max_dz/norm_max_z < 1.0e-8) done = true;
-        if(norm_max_dz/norm_max_z < 1.0e-6) done = true;
         done_l = 1;
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) if(!conv[ii]) done_l = 0;
         MPI_Allreduce(&done_l, &done, 1, MPI_INT, MPI_LAND, MPI_COMM_WORLD);
@@ -1203,11 +1200,15 @@ void Euler::solve_vert_exner(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs
     L2Vecs* dF_z = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* dG_z = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* bous = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* F_exner = new L2Vecs(geom->nk, topo, geom);
     Vec fw, dw, de, Phi;
     PC pc;
+    Mat PC_z = NULL;
+    Mat PC_exner = NULL;
     KSP kspColA;
     KSP kspColB;
-KSP ksp_z;
+    KSP ksp_z = NULL;
+    KSP ksp_exner = NULL;
 
     elOrd2 = topo->elOrd*topo->elOrd;
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &fw);
@@ -1267,6 +1268,7 @@ KSP ksp_z;
 
         // update the exner pressure
         initBousFac(theta_h, bous->vz);
+
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
@@ -1283,6 +1285,24 @@ KSP ksp_z;
             MatMult(vo->V10, G_z->vz[ii], dG_z->vz[ii]);
 
             // implicit exner solve
+            exner_residual_z(ii%topo->nElsX, ii/topo->nElsX, rt_j->vz[ii], dG_z->vz[ii], exner_i->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
+            VecScale(F_exner->vz[ii], -1.0);
+            exner_precon_z(ii%topo->nElsX, ii/topo->nElsX, dG_z->vz[ii], exner_j->vz[ii], rt_j->vz[ii], bous->vz[ii], theta_h->vz[ii], &PC_exner);
+
+            KSPCreate(MPI_COMM_SELF, &ksp_exner);
+            KSPSetOperators(ksp_exner, PC_exner, PC_exner);
+            KSPGetPC(ksp_exner, &pc);
+            PCSetType(pc, PCLU);
+            KSPSetOptionsPrefix(ksp_exner, "ksp_exner_");
+            KSPSetFromOptions(ksp_exner);
+            KSPSolve(ksp_exner, F_exner->vz[ii], de);
+            KSPDestroy(&ksp_exner);
+            VecAXPY(exner_j->vz[ii], 1.0, de);
+
+            VecZeroEntries(exner_h->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_j->vz[ii]);
+
 /*
             vo->AssembleConstWithRho(ex, ey, rt_j->vz[ii], vo->VB);
             MatMult(vo->VB, exner_i->vz[ii], _tmpB1); // rhs
@@ -1307,10 +1327,10 @@ KSP ksp_z;
 
             //VecCopy(exner_j->vz[ii], de);
             //VecAXPY(de, -1.0, exner_i->vz[ii]);
+*/
             VecNorm(de, NORM_2, &norm_dx);
             VecNorm(exner_j->vz[ii], NORM_2, &norm_x);
             if(norm_dx/norm_x > max_norm_exner) max_norm_exner = norm_dx/norm_x;
-*/
 
             // update velocity
 /*
@@ -1335,21 +1355,15 @@ KSP ksp_z;
             VecAXPY(dw, -1.0, velz_j->vz[ii]);
 */
 
-            //MatMult(vo->VA, velz_j->vz[ii], _tmpA1);
-            //VecAXPY(fw, -1.0, _tmpA1);
-            //KSPSolve(kspColA, fw, dw);
-            //VecAXPY(velz_j->vz[ii], +1.0, dw);
-/////
             assemble_residual_z(ex, ey, theta_h->vz[ii], exner_h->vz[ii],
                                 velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], rt_i->vz[ii], rt_j->vz[ii],
                                 fw, F_z->vz[ii], G_z->vz[ii]);
             VecScale(fw, -1.0);
 
-            if(firstStep && !itt) PCz[ii] = NULL;
-            if(itt<2) assemble_precon_z(ex, ey, theta_h->vz[ii], rho_i->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner_h->vz[ii], &PCz[ii], bous->vz[ii]);
+            assemble_precon_z(ex, ey, theta_h->vz[ii], rho_i->vz[ii], rt_i->vz[ii], rt_j->vz[ii], exner_h->vz[ii], &PC_z, bous->vz[ii]);
 
             KSPCreate(MPI_COMM_SELF, &ksp_z);
-            KSPSetOperators(ksp_z, PCz[ii], PCz[ii]);
+            KSPSetOperators(ksp_z, PC_z, PC_z);
             KSPGetPC(ksp_z, &pc);
             PCSetType(pc, PCLU);
             KSPSetOptionsPrefix(ksp_z, "ksp_z_");
@@ -1357,14 +1371,23 @@ KSP ksp_z;
             KSPSolve(ksp_z, fw, dw);
             KSPDestroy(&ksp_z);
             VecAXPY(velz_j->vz[ii], 1.0, dw);
-//VecNorm(fw, NORM_2, &norm_x);
-//VecNorm(dw, NORM_2, &norm_dx);
-//if(!rank) cout << "\t|dw|: " << norm_dx << "\t|fw|: " << norm_x << endl;
-/////
 
             VecNorm(dw, NORM_2, &norm_dx);
             VecNorm(velz_j->vz[ii], NORM_2, &norm_x);
             if(norm_dx/norm_x > max_norm_w) max_norm_w = norm_dx/norm_x;
+
+/*
+            // mass flux
+            diagnose_F_z(ex, ey, velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], F_z->vz[ii]);
+            MatMult(vo->V10, F_z->vz[ii], dF_z->vz[ii]);
+
+            // temperature flux
+            vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+            vo->AssembleLinearWithTheta(ex, ey, theta_h->vz[ii], vo->VA);
+            MatMult(vo->VA, F_z->vz[ii], _tmpA1);
+            MatMult(vo->VA_inv, _tmpA1, G_z->vz[ii]);
+            MatMult(vo->V10, G_z->vz[ii], dG_z->vz[ii]);
+*/
 
             // undate density
             VecCopy(rho_j->vz[ii], de);
@@ -1394,6 +1417,7 @@ KSP ksp_z;
         }
         theta_h->VertToHoriz();
 
+/*
         rt_j->VertToHoriz();
         for(int ii = 0; ii < geom->nk; ii++) {
             VecCopy(exner_h->vh[ii], exner_j->vh[ii]);
@@ -1405,6 +1429,7 @@ KSP ksp_z;
         }
         exner_h->UpdateLocal();
         exner_h->HorizToVert();
+*/
 
         MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_exner = norm_x;
         MPI_Allreduce(&max_norm_w,     &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w     = norm_x;
@@ -1418,6 +1443,17 @@ KSP ksp_z;
                                  "\t|d_w|/|w|: "          << max_norm_w     <<
                                  "\t|d_rho|/|rho|: "      << max_norm_rho   <<
                                  "\t|d_rt|/|rt|: "        << max_norm_rt    << endl;
+velz_j->VertToHoriz();
+velz_j->UpdateGlobal();
+rho_j->VertToHoriz();
+rho_j->UpdateGlobal();
+rt_j->VertToHoriz();
+rt_j->UpdateGlobal();
+exner_j->VertToHoriz();
+exner_j->UpdateGlobal();
+theta_h->VertToHoriz();
+theta_h->UpdateGlobal();
+dump(NULL, velz_j, rho_j, rt_j, exner_j, theta_h, 9999);
     } while(!done);
 
     velz_i->CopyFromVert(velz_j->vz);
@@ -1452,10 +1488,12 @@ KSP ksp_z;
     delete dF_z;
     delete dG_z;
     delete bous;
+    delete F_exner;
     VecDestroy(&fw);
     VecDestroy(&dw);
     VecDestroy(&de);
     VecDestroy(&Phi);
+    MatDestroy(&PC_exner);
     KSPDestroy(&kspColA);
     KSPDestroy(&kspColB);
 }
@@ -1484,13 +1522,38 @@ void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rho, Vec rt_i, Vec 
     vo->AssembleLinear(ex, ey, vo->VA);
     MatAYPX(*_PC, -dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
 
-    vo->AssembleConLin(ex, ey, vo->VBA);
-    MatMatMult(vo->V01, vo->VBA, reuse, PETSC_DEFAULT, &vo->VA);
-    MatAXPY(*_PC, dt, vo->VA, DIFFERENT_NONZERO_PATTERN);
+    //vo->AssembleConLin(ex, ey, vo->VBA);
+    //MatMatMult(vo->V01, vo->VBA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &vo->VA);//TODO: need separate matrix for this
+    //MatAXPY(*_PC, dt, vo->VA, DIFFERENT_NONZERO_PATTERN);
 
     // add the boussinesque approximation
     vo->AssembleLinearWithRT(ex, ey, bous, vo->VA, true);
     MatAXPY(*_PC, dt*dt*GRAVITY, vo->VA, DIFFERENT_NONZERO_PATTERN);
+}
+
+void Euler::exner_precon_z(int ex, int ey, Vec dG, Vec exner, Vec rt, Vec bous, Vec theta, Mat *_PC) {
+    MatReuse reuse = (!*_PC) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pce_DTV1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, pce_DTV1, reuse, PETSC_DEFAULT, &pce_V0_invDTV1);
+    vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    MatMatMult(vo->VA, pce_V0_invDTV1, reuse, PETSC_DEFAULT, &pce_GRAD);
+
+    vo->AssembleLinearWithBousInv(ex, ey, bous, vo->VA);
+    MatAXPY(vo->VA_inv, dt*dt*GRAVITY, vo->VA, SAME_NONZERO_PATTERN);
+    MatMatMult(vo->V10, vo->VA_inv, reuse, PETSC_DEFAULT, &pce_DV0_invV0_rt);
+    vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
+    MatMatMult(vo->VB, pce_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pce_DIV);
+
+    MatMatMult(pce_DIV, pce_GRAD, reuse, PETSC_DEFAULT, _PC);
+
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatAYPX(*_PC, -dt*dt*RD/CV, vo->VB, DIFFERENT_NONZERO_PATTERN);
+
+    vo->AssembleConstWithRho(ex, ey, dG, vo->VB);
+    MatAXPY(*_PC, +dt*RD/CV, vo->VB, DIFFERENT_NONZERO_PATTERN);
 }
 
 void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ainv) {
@@ -1692,6 +1755,17 @@ void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
     M2->assemble(level, SCALE, true);
     KSPSolve(ksp2, eos->vg, Pi);
 */
+}
+
+// input vectors are all vertical
+void Euler::exner_residual_z(int ex, int ey, Vec rt, Vec dG, Vec exner_prev, Vec exner_curr, Vec F_exner) {
+    vo->AssembleConstWithRho(ex, ey, rt, vo->VB);
+    MatMult(vo->VB, exner_curr, F_exner);
+    MatMult(vo->VB, exner_prev, _tmpB1);
+    VecAXPY(F_exner, -1.0, _tmpB1);
+    vo->AssembleConstWithRho(ex, ey, dG, vo->VB);
+    MatMult(vo->VB, exner_curr, _tmpB1);
+    VecAXPY(F_exner, +dt*RD/CV, _tmpB1);
 }
 
 void Euler::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
@@ -2177,7 +2251,7 @@ void Euler::initTheta(Vec theta, ICfunc3D* func) {
 
 void Euler::integrateTheta(Vec* theta, double* tb) {
     int ei, mp1, mp12;
-    double th_l, th_q, det;
+    double th_l, th_q, det, vol_l, vol_g;
     PetscScalar* tArray;
 
     mp1 = quad->n + 1;
@@ -2185,6 +2259,7 @@ void Euler::integrateTheta(Vec* theta, double* tb) {
 
     for(int level = 0; level < geom->nk+1; level++) {
         th_l = 0.0;
+        vol_l = 0.0;
         VecGetArray(theta[level], &tArray);
         for(int ey = 0; ey < topo->nElsX; ey++) {
             for(int ex = 0; ex < topo->nElsX; ex++) {
@@ -2194,12 +2269,15 @@ void Euler::integrateTheta(Vec* theta, double* tb) {
                     det = geom->det[ei][ii];
                     geom->interp2_g(ex, ey, ii%mp1, ii/mp1, tArray, &th_q);
                     th_l += det*quad->w[ii%mp1]*quad->w[ii/mp1]*th_q;
+                    vol_l += det*quad->w[ii%mp1]*quad->w[ii/mp1];
                 }
             }
         }
         VecRestoreArray(theta[level], &tArray);
 
         MPI_Allreduce(&th_l, &tb[level], 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(&vol_l, &vol_g, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        tb[level] /= vol_g;
     }
 }
 
