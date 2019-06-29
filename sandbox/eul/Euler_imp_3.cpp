@@ -1205,6 +1205,8 @@ void Euler::solve_vert_exner(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs
     PC pc;
     Mat PC_z = NULL;
     Mat PC_exner = NULL;
+    Mat PC_div = NULL;
+    Mat PC_grad = NULL;
     KSP kspColA;
     KSP kspColB;
     KSP ksp_z = NULL;
@@ -1287,7 +1289,7 @@ void Euler::solve_vert_exner(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs
             // implicit exner solve
             exner_residual_z(ii%topo->nElsX, ii/topo->nElsX, rt_j->vz[ii], dG_z->vz[ii], exner_i->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
             VecScale(F_exner->vz[ii], -1.0);
-            exner_precon_z(ii%topo->nElsX, ii/topo->nElsX, dG_z->vz[ii], exner_j->vz[ii], rt_j->vz[ii], bous->vz[ii], theta_h->vz[ii], &PC_exner);
+            exner_precon_z(ii%topo->nElsX, ii/topo->nElsX, dG_z->vz[ii], exner_j->vz[ii], rt_j->vz[ii], bous->vz[ii], theta_h->vz[ii], &PC_exner, &PC_div, &PC_grad);
 
             KSPCreate(MPI_COMM_SELF, &ksp_exner);
             KSPSetOperators(ksp_exner, PC_exner, PC_exner);
@@ -1324,9 +1326,6 @@ void Euler::solve_vert_exner(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs
             VecZeroEntries(exner_h->vz[ii]);
             VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
             VecAXPY(exner_h->vz[ii], 0.5, exner_j->vz[ii]);
-
-            //VecCopy(exner_j->vz[ii], de);
-            //VecAXPY(de, -1.0, exner_i->vz[ii]);
 */
             VecNorm(de, NORM_2, &norm_dx);
             VecNorm(exner_j->vz[ii], NORM_2, &norm_x);
@@ -1531,7 +1530,7 @@ void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rho, Vec rt_i, Vec 
     MatAXPY(*_PC, dt*dt*GRAVITY, vo->VA, DIFFERENT_NONZERO_PATTERN);
 }
 
-void Euler::exner_precon_z(int ex, int ey, Vec dG, Vec exner, Vec rt, Vec bous, Vec theta, Mat *_PC) {
+void Euler::exner_precon_z(int ex, int ey, Vec dG, Vec exner, Vec rt, Vec bous, Vec theta, Mat *_PC, Mat *_DIV, Mat *_GRAD) {
     MatReuse reuse = (!*_PC) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
     vo->AssembleConst(ex, ey, vo->VB);
@@ -1539,13 +1538,17 @@ void Euler::exner_precon_z(int ex, int ey, Vec dG, Vec exner, Vec rt, Vec bous, 
     vo->AssembleLinearInv(ex, ey, vo->VA_inv);
     MatMatMult(vo->VA_inv, pce_DTV1, reuse, PETSC_DEFAULT, &pce_V0_invDTV1);
     vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
-    MatMatMult(vo->VA, pce_V0_invDTV1, reuse, PETSC_DEFAULT, &pce_GRAD);
+    MatMatMult(vo->VA, pce_V0_invDTV1, reuse, PETSC_DEFAULT, _GRAD);
 
-    vo->AssembleLinearWithBousInv(ex, ey, bous, vo->VA);
-    MatAXPY(vo->VA_inv, dt*dt*GRAVITY, vo->VA, SAME_NONZERO_PATTERN);
-    MatMatMult(vo->V10, vo->VA_inv, reuse, PETSC_DEFAULT, &pce_DV0_invV0_rt);
+    vo->AssembleLinearWithBousInv(ex, ey, bous, vo->VA_inv); // bous = 1.0 + dt^2/g (d theta/dz)/\bar{theta}
+    vo->AssembleLinearWithRho2(ex, ey, rt, vo->VA);
+    MatMatMult(vo->VA, vo->VA_inv, reuse, PETSC_DEFAULT, &pce_V0_V0_inv);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, pce_V0_V0_inv, reuse, PETSC_DEFAULT, &pce_V0_invV0_V0_inv);
+
+    MatMatMult(vo->V10, pce_V0_invV0_V0_inv, reuse, PETSC_DEFAULT, &pce_DV0_invV0_rt);
     vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
-    MatMatMult(vo->VB, pce_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pce_DIV);
+    MatMatMult(vo->VB, pce_DV0_invV0_rt, reuse, PETSC_DEFAULT, _DIV);
 
     MatMatMult(pce_DIV, pce_GRAD, reuse, PETSC_DEFAULT, _PC);
 
@@ -2322,6 +2325,12 @@ void Euler::initBousFac(L2Vecs* theta, Vec* bous) {
             //MatMult(vo->V10_full, thetaBar->vz[ei], _tmpB1);
             MatMult(vo->V10_full, theta->vz[ei], _tmpB1);
             MatMult(vo->VB, _tmpB1, _tmpB2);
+
+            // assemble as I + dt^2.g.(d theta/dz)/\bar{theta}
+            vo->AssembleConLin(ex, ey, vo->VBA);
+            MatMult(vo->VBA, thetaBar->vz[ei], _tmpB1);
+            VecAYPX(_tmpB2, dt*dt*GRAVITY, _tmpB1);
+
             MatMult(vo->VB_inv, _tmpB2, bous[ei]);
         }
     }
