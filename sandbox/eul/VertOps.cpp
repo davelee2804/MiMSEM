@@ -88,6 +88,7 @@ VertOps::VertOps(Topo* _topo, Geom* _geom) {
     // for the diagnosis of theta without boundary conditions
     MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+1)*n2, (geom->nk+1)*n2, n2, NULL, &VA2);
     MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+1)*n2, (geom->nk+0)*n2, 2*n2, NULL, &VAB2);
+    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+1)*n2, 2*n2, NULL, &VBA2);
 
     vertOps();
 }
@@ -120,6 +121,10 @@ VertOps::~VertOps() {
     MatDestroy(&VR);
 
     MatDestroy(&VAB_w);
+
+    MatDestroy(&VA2);
+    MatDestroy(&VAB2);
+    MatDestroy(&VBA2);
 }
 
 /*
@@ -1346,3 +1351,45 @@ void VertOps::AssembleLinearWithBousInv(int ex, int ey, Vec bous, Mat A) {
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
 }
+
+void VertOps::AssembleConLin2(int ex, int ey, Mat BA) {
+    int ii, kk, ei, mp1, mp12, rows[99], cols[99];
+    double det;
+
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+    ei    = ey*topo->nElsX + ex;
+
+    MatZeroEntries(BA);
+
+    Q->assemble(ex, ey);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 0.5;
+        }
+
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + (kk+0)*W->nDofsJ;
+        }
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            cols[ii] = ii + (kk+0)*W->nDofsJ;
+        }
+        MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            cols[ii] = ii + (kk+1)*W->nDofsJ;
+        }
+        MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+    }
+    MatAssemblyBegin(BA, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
+}
+
