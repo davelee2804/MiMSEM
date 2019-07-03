@@ -1200,6 +1200,7 @@ void Euler::solve_vert_exner(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs
     L2Vecs* dF_z = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* dG_z = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* bous = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_eos = new L2Vecs(geom->nk, topo, geom);
     Vec fw, dw, de, Phi, F_exner;
     PC pc;
     Mat PC_exner = NULL;
@@ -1269,12 +1270,21 @@ void Euler::solve_vert_exner(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs
         // update the exner pressure
         initBousFac(theta_h, bous->vz);
 
+        //for(int ii = 0; ii < geom->nk; ii++) {
+        //    diagnose_Pi(ii, rt_j->vl[ii], rt_j->vl[ii], rt_eos->vh[ii]);
+        //}
+        //rt_eos->UpdateLocal();
+        //rt_eos->HorizToVert();
+
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
 
             // implicit exner solve
             exner_residual_z(ex, ey, rt_j->vz[ii], dG_z->vz[ii], exner_i->vz[ii], exner_j->vz[ii], F_exner);
+            //VecCopy(exner_j->vz[ii], F_exner);
+            //VecAXPY(F_exner, -1.0, rt_eos->vz[ii]);
+
             VecScale(F_exner, -1.0);
 
             exner_precon_z(ex, ey, dG_z->vz[ii], exner_j->vz[ii], rt_j->vz[ii], bous->vz[ii], theta_h->vz[ii], &PC_exner, &PC_div, &PC_grad);
@@ -1378,6 +1388,7 @@ void Euler::solve_vert_exner(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs
             VecNorm(velz_j->vz[ii], NORM_2, &norm_x);
             if(norm_dx/norm_x > max_norm_w) max_norm_w = norm_dx/norm_x;
 
+/*
             // mass flux
             diagnose_F_z(ex, ey, velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], F_z->vz[ii]);
 
@@ -1386,7 +1397,6 @@ void Euler::solve_vert_exner(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs
             vo->AssembleLinearWithTheta(ex, ey, theta_h->vz[ii], vo->VA);
             MatMult(vo->VA, F_z->vz[ii], _tmpA1);
             MatMult(vo->VA_inv, _tmpA1, G_z->vz[ii]);
-/*
 */
 
             MatMult(vo->V10, F_z->vz[ii], dF_z->vz[ii]);
@@ -1491,6 +1501,7 @@ dump(NULL, velz_j, rho_j, rt_j, exner_j, theta_h, 9999);
     delete dF_z;
     delete dG_z;
     delete bous;
+    delete rt_eos;
     VecDestroy(&fw);
     VecDestroy(&dw);
     VecDestroy(&de);
@@ -1524,16 +1535,14 @@ void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rho, Vec rt_i, Vec 
     MatMatMult(vo->VB, pcz_V1_PiDV0_invV0_rt, reuse, PETSC_DEFAULT, &pcz_DIV);
 
     MatMatMult(pcz_GRAD, pcz_DIV, reuse_2, PETSC_DEFAULT, _PC);
-    vo->AssembleLinear(ex, ey, vo->VA);
+
+    // add the boussinesque approximation
+    vo->AssembleLinearWithRT(ex, ey, bous, vo->VA, true);
     MatAYPX(*_PC, -dt*dt*RD/CV, vo->VA, DIFFERENT_NONZERO_PATTERN);
 
     //vo->AssembleConLin(ex, ey, vo->VBA);
     //MatMatMult(vo->V01, vo->VBA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &vo->VA);//TODO: need separate matrix for this
     //MatAXPY(*_PC, dt, vo->VA, DIFFERENT_NONZERO_PATTERN);
-
-    // add the boussinesque approximation
-    vo->AssembleLinearWithRT(ex, ey, bous, vo->VA, true);
-    MatAXPY(*_PC, dt*dt*GRAVITY, vo->VA, DIFFERENT_NONZERO_PATTERN);
 }
 
 void Euler::exner_precon_z(int ex, int ey, Vec dG, Vec exner, Vec rt, Vec bous, Vec theta, Mat *_PC, Mat *_DIV, Mat *_GRAD) {
@@ -1768,13 +1777,12 @@ void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
 
 // input vectors are all vertical
 void Euler::exner_residual_z(int ex, int ey, Vec rt, Vec dG, Vec exner_prev, Vec exner_curr, Vec F_exner) {
-    vo->AssembleConstWithRho(ex, ey, rt, vo->VB);
-    MatMult(vo->VB, exner_curr, F_exner);
-    MatMult(vo->VB, exner_prev, _tmpB1);
-    VecAXPY(F_exner, -1.0, _tmpB1);
     vo->AssembleConstWithRho(ex, ey, dG, vo->VB);
     MatMult(vo->VB, exner_curr, _tmpB1);
-    VecAXPY(F_exner, +dt*RD/CV, _tmpB1);
+    vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB_inv);
+    MatMult(vo->VB_inv, _tmpB1, F_exner);
+    VecAYPX(F_exner, dt*RD/CV, exner_curr);
+    VecAXPY(F_exner, -1.0, exner_prev);
 }
 
 void Euler::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
