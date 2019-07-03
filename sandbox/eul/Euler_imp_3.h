@@ -66,10 +66,12 @@ class Euler {
         void solve_strang(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
         void solve_vert(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
         void solve_vert_exner(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save);
+        void solve_vert_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save);
         void solve_unsplit(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, bool save);
         void assemble_precon_z(int ex, int ey, Vec theta, Vec rho, Vec rt_i, Vec rt_j, Vec exner, Mat* _PC, Vec bous);
         void assemble_precon_x(int level, Vec* theta, Vec rt_i, Vec rt_j, Vec exner, Mat* _PC);
         void exner_precon_z(int ex, int ey, Vec dG, Vec exner, Vec rt, Vec bous, Vec theta, Mat *_PC, Mat* _DIV, Mat* _GRAD);
+        void assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec exner, Vec bous, Vec dG, Mat* _PC);
 
         void assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi,
                                  Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fu, Vec _F, Vec _G);
@@ -89,6 +91,9 @@ class Euler {
         void initBousFac(L2Vecs* theta, Vec* bous);
         void coriolisMatInv(Mat A, Mat* Ainv);
 
+        void repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
+        void unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
+
     private:
         Mat* PCz;
         // vertical vectors and matrices
@@ -100,6 +105,14 @@ class Euler {
         Vec _tmpB2;
         Mat _V0_invV0_rt;
         Mat _DV0_invV0_rt;
+        // ...coupled preconditioner
+        Mat pc_DTV1;
+        Mat pc_V0_invDTV1;
+        Mat pc_GRAD;
+        Mat pc_V0_invV0_rt;
+        Mat pc_DV0_invV0_rt;
+        Mat pc_V1DV0_invV0_rt;
+        Mat pc_V_PiDV0_invV0_rt;
         // ...vertical velocity preconditioner
         Mat pcz_DTV1;
         Mat pcz_V0_invDTV1;

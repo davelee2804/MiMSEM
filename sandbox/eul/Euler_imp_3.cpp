@@ -1514,6 +1514,213 @@ dump(NULL, velz_j, rho_j, rt_j, exner_j, theta_h, 9999);
     KSPDestroy(&kspColB);
 }
 
+void Euler::solve_vert_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save) {
+    bool done = false;
+    int ex, ey, elOrd2, itt = 0;
+    int nDofsTotal = (4*geom->nk - 1)*vo->n2;
+    double norm_x, norm_dx, max_norm_w, max_norm_exner, max_norm_rho, max_norm_rt;
+    L2Vecs* velz_j = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* F_z = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* G_z = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* dF_z = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* dG_z = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* bous = new L2Vecs(geom->nk, topo, geom);
+    Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F, dx;
+    PC pc;
+    Mat PC_coupled = NULL;
+    KSP ksp_coupled = NULL;
+
+    elOrd2 = topo->elOrd*topo->elOrd;
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_w);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_rho);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_rt);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_exner);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &d_w);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &d_rho);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &d_rt);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &d_exner);
+    VecCreateSeq(MPI_COMM_SELF, nDofsTotal, &F);
+    VecCreateSeq(MPI_COMM_SELF, nDofsTotal, &dx);
+
+    if(firstStep) {
+        // assumed these have been initialised from the driver
+        VecScatterBegin(topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, theta_b, theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterBegin(topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, theta_t, theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
+    }
+
+    velz_i->UpdateLocal();
+    velz_i->HorizToVert();
+    rho_i->UpdateLocal();
+    rho_i->HorizToVert();
+    rt_i->UpdateLocal();
+    rt_i->HorizToVert();
+    exner_i->UpdateLocal();
+    exner_i->HorizToVert();
+
+    velz_j->CopyFromVert(velz_i->vz);
+    rho_j->CopyFromVert(rho_i->vz);
+    rt_j->CopyFromVert(rt_i->vz);
+    exner_j->CopyFromVert(exner_i->vz);
+
+    // diagnose the potential temperature
+    diagTheta(rho_i->vz, rt_i->vz, theta_i);
+    theta_h->CopyFromVert(theta_i->vz);
+    theta_h->VertToHoriz();
+
+    for(int ii = 0; ii < geom->nk; ii++) {
+        diagnose_Pi(ii, rt_i->vl[ii], rt_i->vl[ii], exner_h->vh[ii]);
+    }
+    exner_h->UpdateLocal();
+    exner_h->HorizToVert();
+
+    do {
+        max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
+
+        // update the exner pressure
+        initBousFac(theta_h, bous->vz);
+
+        //for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        for(int ii = 0; ii < 2; ii++) {
+            ex = ii%topo->nElsX;
+            ey = ii/topo->nElsX;
+
+            // implicit coupled solve
+            assemble_residual_z(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
+                                rt_i->vz[ii], rt_j->vz[ii], F_w, F_z->vz[ii], G_z->vz[ii]);
+            exner_residual_z(ex, ey, rt_j->vz[ii], dG_z->vz[ii], exner_i->vz[ii], exner_j->vz[ii], F_exner);
+
+            vo->AssembleConst(ex, ey, vo->VB);
+            MatMult(vo->V10, F_z->vz[ii], dF_z->vz[ii]);
+            MatMult(vo->V10, G_z->vz[ii], dG_z->vz[ii]);
+
+            MatMult(vo->VB, rho_j->vz[ii], F_rho);
+            MatMult(vo->VB, rho_i->vz[ii], _tmpB1);
+            VecAXPY(F_rho, -1.0, _tmpB1);
+            MatMult(vo->VB, dF_z->vz[ii], _tmpB1);
+            VecAXPY(F_rho, dt, _tmpB1);
+
+            MatMult(vo->VB, rt_j->vz[ii], F_rt);
+            MatMult(vo->VB, rt_i->vz[ii], _tmpB1);
+            VecAXPY(F_rt, -1.0, _tmpB1);
+            MatMult(vo->VB, dG_z->vz[ii], _tmpB1);
+            VecAXPY(F_rt, dt, _tmpB1);
+
+            repack_z(F, F_w, F_rho, F_rt, F_exner);
+            VecScale(F, -1.0);
+
+            assemble_operator(ex, ey, theta_h->vz[ii], rho_j->vz[ii], rt_j->vz[ii], exner_j->vz[ii], bous->vz[ii], dG_z->vz[ii], &PC_coupled);
+
+            KSPCreate(MPI_COMM_SELF, &ksp_coupled);
+            KSPSetOperators(ksp_coupled, PC_coupled, PC_coupled);
+            KSPGetPC(ksp_coupled, &pc);
+            PCSetType(pc, PCLU);
+            KSPSetOptionsPrefix(ksp_coupled, "ksp_coupled_");
+            KSPSetFromOptions(ksp_coupled);
+            KSPSolve(ksp_coupled, F, dx);
+            KSPDestroy(&ksp_coupled);
+
+            unpack_z(dx, d_w, d_rho, d_rt, d_exner);
+            VecAXPY(velz_j->vz[ii],  1.0, d_w);
+            VecAXPY(rho_j->vz[ii],   1.0, d_rho);
+            VecAXPY(rt_j->vz[ii],    1.0, d_rt);
+            VecAXPY(exner_j->vz[ii], 1.0, d_exner);
+      
+            VecZeroEntries(exner_h->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_j->vz[ii]);
+
+            VecNorm(d_exner, NORM_2, &norm_dx);
+            VecNorm(exner_j->vz[ii], NORM_2, &norm_x);
+            if(norm_dx/norm_x > max_norm_exner) max_norm_exner = norm_dx/norm_x;
+
+            VecNorm(d_w, NORM_2, &norm_dx);
+            VecNorm(velz_j->vz[ii], NORM_2, &norm_x);
+            if(norm_dx/norm_x > max_norm_w) max_norm_w = norm_dx/norm_x;
+
+            VecNorm(d_rho, NORM_2, &norm_dx);
+            VecNorm(rho_j->vz[ii], NORM_2, &norm_x);
+            if(norm_dx/norm_x > max_norm_rho) max_norm_rho = norm_dx/norm_x;
+
+            VecNorm(d_rt, NORM_2, &norm_dx);
+            VecNorm(rt_j->vz[ii], NORM_2, &norm_x);
+            if(norm_dx/norm_x > max_norm_rt) max_norm_rt = norm_dx/norm_x;
+        }
+
+        diagTheta(rho_j->vz, rt_j->vz, theta_h);
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            VecAXPY(theta_h->vz[ii], 1.0, theta_i->vz[ii]);
+            VecScale(theta_h->vz[ii], 0.5);
+        }
+        theta_h->VertToHoriz();
+
+        MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_exner = norm_x;
+        MPI_Allreduce(&max_norm_w,     &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w     = norm_x;
+        MPI_Allreduce(&max_norm_rho,   &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rho   = norm_x;
+        MPI_Allreduce(&max_norm_rt,    &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rt    = norm_x;
+
+        itt++;
+
+        if(max_norm_exner < 1.0e-6 && max_norm_w < 1.0e-8 && max_norm_rho < 1.0e-6 && max_norm_rt < 1.0e-6) done = true;
+        if(!rank) cout << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
+                                 "\t|d_w|/|w|: "          << max_norm_w     <<
+                                 "\t|d_rho|/|rho|: "      << max_norm_rho   <<
+                                 "\t|d_rt|/|rt|: "        << max_norm_rt    << endl;
+    } while(!done);
+
+    velz_i->CopyFromVert(velz_j->vz);
+    rho_i->CopyFromVert(rho_j->vz);
+    rt_i->CopyFromVert(rt_j->vz);
+    exner_i->CopyFromVert(exner_h->vz);
+
+    velz_i->VertToHoriz();
+    velz_i->UpdateGlobal();
+    rho_i->VertToHoriz();
+    rho_i->UpdateGlobal();
+    rt_i->VertToHoriz();
+    rt_i->UpdateGlobal();
+    exner_i->VertToHoriz();
+    exner_i->UpdateGlobal();
+
+    // write output
+    if(save) {
+        step++;
+        dump(NULL, velz_i, rho_i, rt_i, exner_i, theta_h, step);
+    }
+
+    delete velz_j;
+    delete rho_j;
+    delete rt_j;
+    delete exner_j;
+    delete exner_h;
+    delete theta_i;
+    delete theta_h;
+    delete F_z;
+    delete G_z;
+    delete dF_z;
+    delete dG_z;
+    delete bous;
+    VecDestroy(&F_w);
+    VecDestroy(&F_rho);
+    VecDestroy(&F_rt);
+    VecDestroy(&F_exner);
+    VecDestroy(&d_w);
+    VecDestroy(&d_rho);
+    VecDestroy(&d_rt);
+    VecDestroy(&d_exner);
+    VecDestroy(&F);
+    VecDestroy(&dx);
+    MatDestroy(&PC_coupled);
+    KSPDestroy(&ksp_coupled);
+}
+
 void Euler::assemble_precon_z(int ex, int ey, Vec theta, Vec rho, Vec rt_i, Vec rt_j, Vec exner, Mat* _PC, Vec bous) {
     MatReuse reuse = (!pcz_DTV1) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     MatReuse reuse_2 = (!*_PC) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
@@ -1777,12 +1984,21 @@ void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
 
 // input vectors are all vertical
 void Euler::exner_residual_z(int ex, int ey, Vec rt, Vec dG, Vec exner_prev, Vec exner_curr, Vec F_exner) {
+    vo->AssembleConstWithRho(ex, ey, rt, vo->VB);
+    MatMult(vo->VB, exner_curr, F_exner);
+    MatMult(vo->VB, exner_prev, _tmpB1);
+    VecAXPY(F_exner, -1.0, _tmpB1);
+    vo->AssembleConstWithRho(ex, ey, dG, vo->VB);
+    MatMult(vo->VB, exner_curr, _tmpB1);
+    VecAXPY(F_exner, +dt*RD/CV, _tmpB1);
+/*
     vo->AssembleConstWithRho(ex, ey, dG, vo->VB);
     MatMult(vo->VB, exner_curr, _tmpB1);
     vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB_inv);
     MatMult(vo->VB_inv, _tmpB1, F_exner);
     VecAYPX(F_exner, dt*RD/CV, exner_curr);
     VecAXPY(F_exner, -1.0, exner_prev);
+*/
 }
 
 void Euler::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
@@ -2539,4 +2755,222 @@ void Euler::assemble_residual_w(int ex, int ey, Vec theta, Vec Pi, Vec velz1, Ve
     vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
     MatMult(vo->VA, _tmpA2, _tmpA1);
     VecAXPY(fw, +dt, _tmpA1); // pressure gradient term
+}
+
+void Euler::repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner) {
+    int ii, shift;
+    PetscScalar *xArray, *uArray, *rhoArray, *rtArray, *eArray;
+
+    VecGetArray(x,     &xArray  );
+    VecGetArray(u,     &uArray  );
+    VecGetArray(rho,   &rhoArray);
+    VecGetArray(rt,    &rtArray );
+    VecGetArray(exner, &eArray  );
+
+    for(ii = 0; ii < vo->n2*(geom->nk-1); ii++) {
+        xArray[ii] = uArray[ii];
+    }
+    shift = vo->n2*(geom->nk-1);
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        xArray[shift+ii] = rhoArray[ii];
+    }
+    shift += vo->n2*geom->nk;
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        xArray[shift+ii] = rtArray[ii];
+    }
+    shift += vo->n2*geom->nk;
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        xArray[shift+ii] = eArray[ii];
+    }
+
+    VecRestoreArray(x,     &xArray  );
+    VecRestoreArray(u,     &uArray  );
+    VecRestoreArray(rho,   &rhoArray);
+    VecRestoreArray(rt,    &rtArray );
+    VecRestoreArray(exner, &eArray  );
+}
+
+void Euler::unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner) {
+    int ii, shift;
+    PetscScalar *xArray, *uArray, *rhoArray, *rtArray, *eArray;
+
+    VecGetArray(x,     &xArray  );
+    VecGetArray(u,     &uArray  );
+    VecGetArray(rho,   &rhoArray);
+    VecGetArray(rt,    &rtArray );
+    VecGetArray(exner, &eArray  );
+
+    for(ii = 0; ii < vo->n2*(geom->nk-1); ii++) {
+        uArray[ii] = xArray[ii];
+    }
+    shift = vo->n2*(geom->nk-1);
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        rhoArray[ii] = xArray[shift+ii];
+    }
+    shift += vo->n2*geom->nk;
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        rtArray[ii] = xArray[shift+ii];
+    }
+    shift += vo->n2*geom->nk;
+    for(ii = 0; ii < vo->n2*geom->nk; ii++) {
+        eArray[ii] = xArray[shift+ii];
+    }
+
+    VecRestoreArray(x,     &xArray  );
+    VecRestoreArray(u,     &uArray  );
+    VecRestoreArray(rho,   &rhoArray);
+    VecRestoreArray(rt,    &rtArray );
+    VecRestoreArray(exner, &eArray  );
+}
+
+void Euler::assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec exner, Vec bous, Vec dG, Mat* _PC) {
+    int n2 = topo->elOrd*topo->elOrd;
+    int nDofsW = (geom->nk-1)*n2;
+    int nDofsRho = geom->nk*n2;
+    int nDofsTotal = nDofsW + 3*nDofsRho;
+    int mm, mi, mf, ri, ci;
+    int nCols;
+    const int *cols;
+    const double* vals;
+    int cols2[999];
+    MatReuse reuse = (!*_PC) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+
+    if(!*_PC) {
+        MatCreateSeqAIJ(MPI_COMM_SELF, nDofsTotal, nDofsTotal, 8*n2, NULL, _PC);
+    }
+    MatZeroEntries(*_PC);
+
+    // [u,u] block
+    vo->AssembleLinearWithRT(ex, ey, bous, vo->VA, true);
+    MatGetOwnershipRange(vo->VA, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(vo->VA, mm, &nCols, &cols, &vals);
+        ri = mm;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci];
+        }
+        MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(vo->VA, mm, &nCols, &cols, &vals);
+    }
+
+    // [u,exner] block
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pc_DTV1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, pc_DTV1, reuse, PETSC_DEFAULT, &pc_V0_invDTV1);
+    vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    MatMatMult(vo->VA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &pc_GRAD);
+    MatGetOwnershipRange(pc_GRAD, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(pc_GRAD, mm, &nCols, &cols, &vals);
+        ri = mm;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci] + nDofsW + 2*nDofsRho;
+        }
+        MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(pc_GRAD, mm, &nCols, &cols, &vals);
+    }
+
+    // [rho,u] block
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    vo->AssembleLinearWithRT(ex, ey, rho, vo->VA, true);
+    MatMatMult(vo->VA_inv, vo->VA, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, reuse, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_V1DV0_invV0_rt);
+    MatScale(pc_V1DV0_invV0_rt, dt);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(pc_V1DV0_invV0_rt, mm, &nCols, &cols, &vals);
+        ri = mm + nDofsW;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci];
+        }
+        MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(pc_V1DV0_invV0_rt, mm, &nCols, &cols, &vals);
+    }
+
+    // [rho,rho] block
+    MatGetOwnershipRange(vo->VB, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(vo->VB, mm, &nCols, &cols, &vals);
+        ri = mm + nDofsW;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci] + nDofsW;
+        }
+        MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(vo->VB, mm, &nCols, &cols, &vals);
+    }
+
+    // [rt,u] block
+    vo->AssembleLinearWithRT(ex, ey, rt, vo->VA, true);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V1DV0_invV0_rt);
+    MatScale(pc_V1DV0_invV0_rt, dt);
+    MatGetOwnershipRange(pc_V1DV0_invV0_rt, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(pc_V1DV0_invV0_rt, mm, &nCols, &cols, &vals);
+        ri = mm + nDofsW + nDofsRho;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci];
+        }
+        MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(pc_V1DV0_invV0_rt, mm, &nCols, &cols, &vals);
+    }
+
+    // [rt,rt] block
+    MatGetOwnershipRange(vo->VB, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(vo->VB, mm, &nCols, &cols, &vals);
+        ri = mm + nDofsW + nDofsRho;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci] + nDofsW + nDofsRho;
+        }
+        MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(vo->VB, mm, &nCols, &cols, &vals);
+    }
+
+    // [exner,u] block
+    vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_V_PiDV0_invV0_rt);
+    MatScale(pc_V_PiDV0_invV0_rt, dt*RD/CV);
+    MatGetOwnershipRange(pc_V_PiDV0_invV0_rt, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(pc_V_PiDV0_invV0_rt, mm, &nCols, &cols, &vals);
+        ri = mm + nDofsW + 2*nDofsRho;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci];
+        }
+        MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(pc_V_PiDV0_invV0_rt, mm, &nCols, &cols, &vals);
+    }
+
+    // [exner,rt] block
+    MatGetOwnershipRange(vo->VB, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(vo->VB, mm, &nCols, &cols, &vals);
+        ri = mm + nDofsW + 2*nDofsRho;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci] + nDofsW + nDofsRho;
+        }
+        MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(vo->VB, mm, &nCols, &cols, &vals);
+    }
+
+    // [exner,exner] block
+    vo->AssembleConst(ex, ey, vo->VB_inv);
+    vo->AssembleConstWithRho(ex, ey, dG, vo->VB);
+    MatAYPX(vo->VB, dt*RD/CV, vo->VB_inv, DIFFERENT_NONZERO_PATTERN);
+    MatGetOwnershipRange(vo->VB, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(vo->VB, mm, &nCols, &cols, &vals);
+        ri = mm + nDofsW + 2*nDofsRho;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci] + nDofsW + 2*nDofsRho;
+        }
+        MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(vo->VB, mm, &nCols, &cols, &vals);
+    }
+
+    MatAssemblyBegin(*_PC, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  *_PC, MAT_FINAL_ASSEMBLY);
 }
