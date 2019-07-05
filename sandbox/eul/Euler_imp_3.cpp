@@ -1616,7 +1616,7 @@ void Euler::solve_vert_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
             repack_z(F, F_w, F_rho, F_rt, F_exner);
             VecScale(F, -1.0);
 
-            assemble_operator(ex, ey, theta_h->vz[ii], rho_j->vz[ii], rt_j->vz[ii], exner_j->vz[ii], bous->vz[ii], dG_z->vz[ii], &PC_coupled);
+            assemble_operator(ex, ey, theta_h->vz[ii], velz_j->vz[ii], rho_j->vz[ii], rt_j->vz[ii], exner_j->vz[ii], bous->vz[ii], dG_z->vz[ii], &PC_coupled);
 
             KSPCreate(MPI_COMM_SELF, &ksp_coupled);
             KSPSetOperators(ksp_coupled, PC_coupled, PC_coupled);
@@ -2823,7 +2823,7 @@ void Euler::unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner) {
     VecRestoreArray(exner, &eArray  );
 }
 
-void Euler::assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec exner, Vec bous, Vec dG, Mat* _PC) {
+void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, Vec bous, Vec dG, Mat* _PC) {
     int n2 = topo->elOrd*topo->elOrd;
     int nDofsW = (geom->nk-1)*n2;
     int nDofsRho = geom->nk*n2;
@@ -2842,6 +2842,7 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec ex
 
     // [u,u] block
     vo->AssembleLinearWithRT(ex, ey, bous, vo->VA, true);
+    //vo->AssembleLinear(ex, ey, vo->VA);
     MatGetOwnershipRange(vo->VA, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(vo->VA, mm, &nCols, &cols, &vals);
@@ -2860,6 +2861,7 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec ex
     MatMatMult(vo->VA_inv, pc_DTV1, reuse, PETSC_DEFAULT, &pc_V0_invDTV1);
     vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
     MatMatMult(vo->VA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &pc_GRAD);
+    MatScale(pc_GRAD, dt);
     MatGetOwnershipRange(pc_GRAD, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(pc_GRAD, mm, &nCols, &cols, &vals);
@@ -2889,15 +2891,20 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec ex
     }
 
     // [rho,rho] block
-    MatGetOwnershipRange(vo->VB, &mi, &mf);
+    vo->AssembleLinConWithTheta(ex, ey, vo->VAB, velz);
+    MatMatMult(vo->VA_inv, vo->VAB, reuse, PETSC_DEFAULT, &pc_V0_invV01);
+    MatMatMult(vo->V10, pc_V0_invV01, reuse, PETSC_DEFAULT, &pc_DV0_invV01);
+    MatMatMult(vo->VB, pc_DV0_invV01, reuse, PETSC_DEFAULT, &pc_V1DV0_invV01);
+    MatAYPX(pc_V1DV0_invV01, dt, vo->VB, DIFFERENT_NONZERO_PATTERN);
+    MatGetOwnershipRange(pc_V1DV0_invV01, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
-        MatGetRow(vo->VB, mm, &nCols, &cols, &vals);
+        MatGetRow(pc_V1DV0_invV01, mm, &nCols, &cols, &vals);
         ri = mm + nDofsW;
         for(ci = 0; ci < nCols; ci++) {
             cols2[ci] = cols[ci] + nDofsW;
         }
         MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
-        MatRestoreRow(vo->VB, mm, &nCols, &cols, &vals);
+        MatRestoreRow(pc_V1DV0_invV01, mm, &nCols, &cols, &vals);
     }
 
     // [rt,u] block
@@ -2918,15 +2925,15 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec ex
     }
 
     // [rt,rt] block
-    MatGetOwnershipRange(vo->VB, &mi, &mf);
+    MatGetOwnershipRange(pc_V1DV0_invV01, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
-        MatGetRow(vo->VB, mm, &nCols, &cols, &vals);
+        MatGetRow(pc_V1DV0_invV01, mm, &nCols, &cols, &vals);
         ri = mm + nDofsW + nDofsRho;
         for(ci = 0; ci < nCols; ci++) {
             cols2[ci] = cols[ci] + nDofsW + nDofsRho;
         }
         MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
-        MatRestoreRow(vo->VB, mm, &nCols, &cols, &vals);
+        MatRestoreRow(pc_V1DV0_invV01, mm, &nCols, &cols, &vals);
     }
 
     // [exner,u] block
@@ -2957,7 +2964,7 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec ex
     }
 
     // [exner,exner] block
-    vo->AssembleConst(ex, ey, vo->VB_inv);
+    vo->AssembleConstWithRho(ex, ey, rt, vo->VB_inv);
     vo->AssembleConstWithRho(ex, ey, dG, vo->VB);
     MatAYPX(vo->VB, dt*RD/CV, vo->VB_inv, DIFFERENT_NONZERO_PATTERN);
     MatGetOwnershipRange(vo->VB, &mi, &mf);
