@@ -1531,6 +1531,7 @@ void Euler::solve_vert_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
     L2Vecs* dF_z = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* dG_z = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* bous = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_eos = new L2Vecs(geom->nk, topo, geom);
     Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F, dx;
     PC pc;
     Mat PC_coupled = NULL;
@@ -1587,8 +1588,14 @@ void Euler::solve_vert_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         // update the exner pressure
         initBousFac(theta_h, bous->vz);
 
-        //for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        for(int ii = 0; ii < 2; ii++) {
+        //rt_j->VertToHoriz();
+        //for(int ii = 0; ii < geom->nk; ii++) {
+        //    diagnose_Pi(ii, rt_j->vl[ii], rt_j->vl[ii], rt_eos->vh[ii]);
+        //}
+        //rt_eos->UpdateLocal();
+        //rt_eos->HorizToVert();
+
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
 
@@ -1596,6 +1603,8 @@ void Euler::solve_vert_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
             assemble_residual_z(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
                                 rt_i->vz[ii], rt_j->vz[ii], F_w, F_z->vz[ii], G_z->vz[ii]);
             exner_residual_z(ex, ey, rt_j->vz[ii], dG_z->vz[ii], exner_i->vz[ii], exner_j->vz[ii], F_exner);
+            //VecCopy(exner_j->vz[ii], F_exner);
+            //VecAXPY(F_exner, -1.0, rt_eos->vz[ii]);
 
             vo->AssembleConst(ex, ey, vo->VB);
             MatMult(vo->V10, F_z->vz[ii], dF_z->vz[ii]);
@@ -1707,6 +1716,7 @@ void Euler::solve_vert_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
     delete dF_z;
     delete dG_z;
     delete bous;
+    delete rt_eos;
     VecDestroy(&F_w);
     VecDestroy(&F_rho);
     VecDestroy(&F_rt);
@@ -2559,7 +2569,7 @@ void Euler::initBousFac(L2Vecs* theta, Vec* bous) {
             // assemble as I + dt^2.g.(d theta/dz)/\bar{theta}
             vo->AssembleConLin2(ex, ey, vo->VBA2);
             MatMult(vo->VBA2, thetaBar->vz[ei], _tmpB1);
-            VecAYPX(_tmpB2, dt*dt*GRAVITY, _tmpB1);
+            VecAYPX(_tmpB2, 0.25*dt*dt*GRAVITY, _tmpB1);
 
             MatMult(vo->VB_inv, _tmpB2, bous[ei]);
         }
@@ -2861,7 +2871,7 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
     MatMatMult(vo->VA_inv, pc_DTV1, reuse, PETSC_DEFAULT, &pc_V0_invDTV1);
     vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
     MatMatMult(vo->VA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &pc_GRAD);
-    MatScale(pc_GRAD, dt);
+    MatScale(pc_GRAD, 0.5*dt);
     MatGetOwnershipRange(pc_GRAD, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(pc_GRAD, mm, &nCols, &cols, &vals);
@@ -2879,7 +2889,7 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
     MatMatMult(vo->VA_inv, vo->VA, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
     MatMatMult(vo->V10, pc_V0_invV0_rt, reuse, PETSC_DEFAULT, &pc_DV0_invV0_rt);
     MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_V1DV0_invV0_rt);
-    MatScale(pc_V1DV0_invV0_rt, dt);
+    MatScale(pc_V1DV0_invV0_rt, 0.5*dt);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(pc_V1DV0_invV0_rt, mm, &nCols, &cols, &vals);
         ri = mm + nDofsW;
@@ -2895,7 +2905,7 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
     MatMatMult(vo->VA_inv, vo->VAB, reuse, PETSC_DEFAULT, &pc_V0_invV01);
     MatMatMult(vo->V10, pc_V0_invV01, reuse, PETSC_DEFAULT, &pc_DV0_invV01);
     MatMatMult(vo->VB, pc_DV0_invV01, reuse, PETSC_DEFAULT, &pc_V1DV0_invV01);
-    MatAYPX(pc_V1DV0_invV01, dt, vo->VB, DIFFERENT_NONZERO_PATTERN);
+    MatAYPX(pc_V1DV0_invV01, 0.5*dt, vo->VB, DIFFERENT_NONZERO_PATTERN);
     MatGetOwnershipRange(pc_V1DV0_invV01, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(pc_V1DV0_invV01, mm, &nCols, &cols, &vals);
@@ -2912,7 +2922,7 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
     MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
     MatMatMult(vo->V10, pc_V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DV0_invV0_rt);
     MatMatMult(vo->VB, pc_DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V1DV0_invV0_rt);
-    MatScale(pc_V1DV0_invV0_rt, dt);
+    MatScale(pc_V1DV0_invV0_rt, 0.5*dt);
     MatGetOwnershipRange(pc_V1DV0_invV0_rt, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(pc_V1DV0_invV0_rt, mm, &nCols, &cols, &vals);
@@ -2939,7 +2949,7 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
     // [exner,u] block
     vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
     MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_V_PiDV0_invV0_rt);
-    MatScale(pc_V_PiDV0_invV0_rt, dt*RD/CV);
+    MatScale(pc_V_PiDV0_invV0_rt, 0.5*dt*RD/CV);
     MatGetOwnershipRange(pc_V_PiDV0_invV0_rt, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(pc_V_PiDV0_invV0_rt, mm, &nCols, &cols, &vals);
@@ -2952,21 +2962,23 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
     }
 
     // [exner,rt] block
-    MatGetOwnershipRange(vo->VB, &mi, &mf);
+    MatMatMult(vo->VB, pc_DV0_invV01, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V1DV0_invV01);
+    MatAYPX(pc_V1DV0_invV01, 0.5*dt*RD/CV, vo->VB, DIFFERENT_NONZERO_PATTERN);
+    MatGetOwnershipRange(pc_V1DV0_invV01, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
-        MatGetRow(vo->VB, mm, &nCols, &cols, &vals);
+        MatGetRow(pc_V1DV0_invV01, mm, &nCols, &cols, &vals);
         ri = mm + nDofsW + 2*nDofsRho;
         for(ci = 0; ci < nCols; ci++) {
             cols2[ci] = cols[ci] + nDofsW + nDofsRho;
         }
         MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
-        MatRestoreRow(vo->VB, mm, &nCols, &cols, &vals);
+        MatRestoreRow(pc_V1DV0_invV01, mm, &nCols, &cols, &vals);
     }
 
     // [exner,exner] block
     vo->AssembleConstWithRho(ex, ey, rt, vo->VB_inv);
     vo->AssembleConstWithRho(ex, ey, dG, vo->VB);
-    MatAYPX(vo->VB, dt*RD/CV, vo->VB_inv, DIFFERENT_NONZERO_PATTERN);
+    MatAYPX(vo->VB, 0.5*dt*RD/CV, vo->VB_inv, DIFFERENT_NONZERO_PATTERN);
     MatGetOwnershipRange(vo->VB, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(vo->VB, mm, &nCols, &cols, &vals);
