@@ -304,14 +304,6 @@ int main(int argc, char** argv) {
     rt = new L2Vecs(geom->nk, topo, geom);
     exner = new L2Vecs(geom->nk, topo, geom);
 
-    // initialise the potential temperature top and bottom boundary conditions
-    pe->initTheta(pe->theta_b, theta_b_init);
-    pe->initTheta(pe->theta_t, theta_t_init);
-    VecScatterBegin(topo->gtol_2, pe->theta_b, pe->theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, pe->theta_b, pe->theta_b_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterBegin(topo->gtol_2, pe->theta_t, pe->theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, pe->theta_t, pe->theta_t_l, INSERT_VALUES, SCATTER_FORWARD);
-
     if(startStep == 0) {
         pe->init1(velx,      u_init, v_init);
         pe->init2(rho->vh,   rho_init      );
@@ -334,7 +326,8 @@ int main(int argc, char** argv) {
             rho->HorizToVert();
             rt->UpdateLocal();
             rt->HorizToVert();
-            pe->diagTheta(rho->vz, rt->vz, theta);
+            pe->diagTheta2(rho->vz, rt->vz, theta->vz);
+            theta->VertToHoriz();
             theta->UpdateGlobal();
             for(ki = 0; ki < NK+1; ki++) {
                 sprintf(fieldname,"theta");
@@ -371,9 +364,11 @@ int main(int argc, char** argv) {
     }
     exner->UpdateLocal();
     exner->HorizToVert();
-*/
-    
+
     pe->solve_vert_exner(velz, rho, rt, exner, false);
+*/
+    pe->solve_vert_coupled(velz, rho, rt, exner, false);
+/* 
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
@@ -383,6 +378,7 @@ int main(int argc, char** argv) {
         pe->solve_vert_exner(velz, rho, rt, exner, dump);
         //pe->solve_unsplit(velx, velz, rho, rt, dump);
     }
+*/
 
     for(ki = 0; ki < NK; ki++) {
         VecDestroy(&velx[ki]);

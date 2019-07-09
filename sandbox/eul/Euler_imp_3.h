@@ -35,10 +35,6 @@ class Euler {
         VertOps* vo;
         KSP ksp1;
         KSP ksp2;
-        Vec theta_b;             // bottom potential temperature bc
-        Vec theta_t;             // top potential temperature bc
-        Vec theta_b_l;           // bottom potential temperature bc
-        Vec theta_t_l;           // top potential temperature bc
         L2Vecs* thetaBar;
 
         double viscosity();
@@ -48,8 +44,7 @@ class Euler {
         void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
         void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
 
-        void thetaBCVec(int ex, int ey, Mat A, Vec bTheta);
-        void diagTheta(Vec* rho, Vec* rt, L2Vecs* theta);
+        void diagTheta2(Vec* rho, Vec* rt, Vec* theta);
         void diagHorizVort(Vec* velx, Vec* dudz);
         void diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi);
 
