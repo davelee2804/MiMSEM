@@ -1494,3 +1494,65 @@ void VertOps::AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B) {
     MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
 }
+
+void VertOps::Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs) {
+    int ii, jj, kk, ei, mp1, mp12;
+    int *inds0;
+    double det, rk, ek;
+    double rtq[99], rtj[99];
+    PetscScalar *rArray, *eArray, *fArray;
+
+    inds0 = topo->elInds0_l(ex, ey);
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+    ei    = ey*topo->nElsX + ex;
+
+    Q->assemble(ex, ey);
+
+    VecZeroEntries(eos_rhs);
+
+    // assemble the eos rhs vector
+    VecGetArray(rt, &rArray);
+    VecGetArray(exner, &eArray);
+    VecGetArray(eos_rhs, &fArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        // test function (0.5 at each vertical quadrature point) by jacobian determinant
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = 0.5*Q->A[ii][ii]*SCALE;
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+
+        // interpolate
+        for(ii = 0; ii < mp12; ii++) {
+            rk = ek = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                rk += W->A[ii][jj]*rArray[kk*n2+jj];
+                ek += W->A[ii][jj]*eArray[kk*n2+jj];
+            }
+            // scale by matric term and vertical basis function at quadrature point ii
+            det = geom->det[ei][ii];
+            rk *= 1.0/(det*geom->thick[kk][inds0[ii]]);
+            ek *= 1.0/(det*geom->thick[kk][inds0[ii]]);
+
+            rtq[ii] = log(ek) - (RD/CV)*log(rk) - log(CP) - (RD/CV)*log(RD/P0);
+        }
+
+        for(jj = 0; jj < n2; jj++) {
+            rtj[jj] = 0.0;
+            for(ii = 0; ii < mp12; ii++) {
+                rtj[jj] += WtQ[jj][ii]*rtq[ii];
+            }
+            // x 2 (once for each vertical quadrature point)
+            rtj[jj] *= 2.0;
+        }
+
+        // add to the vector
+        for(jj = 0; jj < n2; jj++) {
+            fArray[kk*n2+jj] = rtj[jj];
+        }
+    }
+    VecRestoreArray(rt, &rArray);
+    VecRestoreArray(exner, &eArray);
+    VecRestoreArray(eos_rhs, &fArray);
+}

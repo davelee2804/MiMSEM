@@ -63,4 +63,5 @@ class VertOps {
         void AssembleLinearWithBousInv(int ex, int ey, Vec bous, Mat A);  // for the boussinesque term in the theta preconditioner
         void AssembleConstWithEOS(int ex, int ey, Vec rt, Mat B);
         void AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B);
+        void Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs);
 };

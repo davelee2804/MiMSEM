@@ -31,7 +31,7 @@
 #define VERT_TOL 1.0e-8
 #define HORIZ_TOL 1.0e-12
 #define RAYLEIGH 0.2
-//#define EXNER_EOS
+#define EXNER_EOS
 
 using namespace std;
 
@@ -1554,12 +1554,12 @@ void Euler::solve_vert_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
 
 #ifdef EXNER_EOS
         // update the exner pressure
-        rt_j->VertToHoriz();
-        for(int ii = 0; ii < geom->nk; ii++) {
-            diagnose_Pi(ii, rt_j->vl[ii], rt_j->vl[ii], rt_eos->vh[ii]);
-        }
-        rt_eos->UpdateLocal();
-        rt_eos->HorizToVert();
+//        rt_j->VertToHoriz();
+//        for(int ii = 0; ii < geom->nk; ii++) {
+//            diagnose_Pi(ii, rt_j->vl[ii], rt_j->vl[ii], rt_eos->vh[ii]);
+//        }
+//        rt_eos->UpdateLocal();
+//        rt_eos->HorizToVert();
 #endif
 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
@@ -1571,8 +1571,9 @@ void Euler::solve_vert_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
             //assemble_residual_z(ex, ey, theta_h->vz[ii], exner_j->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
                                 rt_i->vz[ii], rt_j->vz[ii], F_w, F_z->vz[ii], G_z->vz[ii]);
 #ifdef EXNER_EOS
-            VecCopy(exner_j->vz[ii], F_exner);
-            VecAXPY(F_exner, -1.0, rt_eos->vz[ii]);
+            //VecCopy(exner_j->vz[ii], F_exner);
+            //VecAXPY(F_exner, -1.0, rt_eos->vz[ii]);
+            vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
 #else
             exner_residual_z(ex, ey, rt_j->vz[ii], dG_z->vz[ii], exner_i->vz[ii], exner_j->vz[ii], F_exner);
 #endif
@@ -1938,6 +1939,7 @@ void Euler::diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi) {
 
 // input vectors are all vertical
 void Euler::exner_residual_z(int ex, int ey, Vec rt, Vec dG, Vec exner_prev, Vec exner_curr, Vec F_exner) {
+#ifndef EXNER_EOS
     vo->AssembleConstWithRho(ex, ey, rt, vo->VB);
     MatMult(vo->VB, exner_curr, F_exner);
     MatMult(vo->VB, exner_prev, _tmpB1);
@@ -1945,6 +1947,7 @@ void Euler::exner_residual_z(int ex, int ey, Vec rt, Vec dG, Vec exner_prev, Vec
     vo->AssembleConstWithRho(ex, ey, dG, vo->VB);
     MatMult(vo->VB, exner_curr, _tmpB1);
     VecAXPY(F_exner, +dt*RD/CV, _tmpB1);
+#else
 /*
     vo->AssembleConstWithRho(ex, ey, dG, vo->VB);
     MatMult(vo->VB, exner_curr, _tmpB1);
@@ -1962,6 +1965,7 @@ void Euler::exner_residual_z(int ex, int ey, Vec rt, Vec dG, Vec exner_prev, Vec
     MatMult(vo->VB, _tmpB1, _tmpB2);
     VecAXPY(F_exner, -1.0, _tmpB2);
 */
+#endif
 }
 
 void Euler::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
@@ -2884,6 +2888,7 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
         MatRestoreRow(pc_V1DV0_invV01, mm, &nCols, &cols, &vals);
     }
 #else
+/*
     vo->AssembleConstWithEOS(ex, ey, rt, vo->VB);
     vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB_inv);
     MatMatMult(vo->VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
@@ -2900,12 +2905,12 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
         MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(pc_VBVB_rt_invVB_pi, mm, &nCols, &cols, &vals);
     }
-/*
+*/
     vo->AssembleConst(ex, ey, vo->VB);
     vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB_inv);
     MatMatMult(vo->VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
     MatMatMult(vo->VB, pc_VB_rt_invVB_pi, reuse, PETSC_DEFAULT, &pc_VBVB_rt_invVB_pi);
-    MatScale(pc_VBVB_rt_invVB_pi, -1.0);
+    MatScale(pc_VBVB_rt_invVB_pi, -RD/CV);
     MatGetOwnershipRange(pc_VBVB_rt_invVB_pi, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(pc_VBVB_rt_invVB_pi, mm, &nCols, &cols, &vals);
@@ -2916,7 +2921,6 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
         MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(pc_VBVB_rt_invVB_pi, mm, &nCols, &cols, &vals);
     }
-*/
 #endif
 
     // [exner,exner] block
@@ -2935,6 +2939,7 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
         MatRestoreRow(vo->VB, mm, &nCols, &cols, &vals);
     }
 #else
+/*
     vo->AssembleConst(ex, ey, vo->VB);
     MatGetOwnershipRange(vo->VB, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
@@ -2946,12 +2951,11 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
         MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(vo->VB, mm, &nCols, &cols, &vals);
     }
-/*
+*/
     vo->AssembleConst(ex, ey, vo->VB);
     vo->AssembleConstWithRhoInv(ex, ey, exner, vo->VB_inv);
     MatMatMult(vo->VB_inv, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
     MatMatMult(vo->VB, pc_VB_rt_invVB_pi, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_VBVB_rt_invVB_pi);
-    MatScale(pc_VBVB_rt_invVB_pi, CV/RD);
     MatGetOwnershipRange(pc_VBVB_rt_invVB_pi, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(pc_VBVB_rt_invVB_pi, mm, &nCols, &cols, &vals);
@@ -2962,7 +2966,6 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
         MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(pc_VBVB_rt_invVB_pi, mm, &nCols, &cols, &vals);
     }
-*/
 #endif
 
     // [u,theta] block
