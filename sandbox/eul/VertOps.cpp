@@ -845,7 +845,7 @@ void VertOps::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
 }
 
-void VertOps::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs) {
+void VertOps::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs, double factor, double exponent) {
     int ii, jj, kk, ei, mp1, mp12;
     int *inds0;
     double det, rk, fac;
@@ -857,7 +857,8 @@ void VertOps::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs) {
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
 
-    fac = CP*pow(RD/P0, RD/CV);
+    //fac = CP*pow(RD/P0, RD/CV);
+    fac = factor;
 
     Q->assemble(ex, ey);
 
@@ -870,7 +871,6 @@ void VertOps::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs) {
         // test function (0.5 at each vertical quadrature point) by jacobian determinant
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            //Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det);
             Q0[ii][ii] = 0.5*Q->A[ii][ii]*SCALE;
         }
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
@@ -884,7 +884,8 @@ void VertOps::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs) {
             // scale by matric term and vertical basis function at quadrature point ii
             det = geom->det[ei][ii];
             rk *= 1.0/(det*geom->thick[kk][inds0[ii]]);
-            rtq[ii] = fac*pow(rk, RD/CV);
+            //rtq[ii] = fac*pow(rk, RD/CV);
+            rtq[ii] = fac*pow(rk, exponent);
         }
 
         for(jj = 0; jj < n2; jj++) {
@@ -1393,3 +1394,103 @@ void VertOps::AssembleConLin2(int ex, int ey, Mat BA) {
     MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
 }
 
+void VertOps::AssembleConstWithEOS(int ex, int ey, Vec rt, Mat B) {
+    int ii, jj, kk, ei, mp1, mp12;
+    int *inds0;
+    double det, rk, rtq, gamma;
+    int inds2k[99];
+    PetscScalar* rArray;
+    double fac = CP*pow(RD/P0, RD/CV);
+
+    inds0 = topo->elInds0_l(ex, ey);
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+    ei    = ey*topo->nElsX + ex;
+
+    Q->assemble(ex, ey);
+
+    MatZeroEntries(B);
+
+    // assemble the matrices
+    VecGetArray(rt, &rArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
+            // for constant field we multiply by the vertical jacobian determinant when integrating, 
+            // then divide by the vertical jacobian for both the trial and the test functions
+            // vertical determinant is dz/2
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+
+            rk = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                rk += rArray[kk*n2+jj]*gamma;
+            }
+            rk *= 1.0/(det*geom->thick[kk][inds0[ii]]);
+            rtq = fac*pow(rk, RD/CV);
+            Q0[ii][ii] *= rtq;
+        }
+
+        // assemble the piecewise constant mass matrix for level k
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(rt, &rArray);
+    MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+}
+
+void VertOps::AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B) {
+    int ii, jj, kk, ei, mp1, mp12;
+    int *inds0;
+    double det, tb, tt, gamma;
+    int inds2k[99];
+    PetscScalar* tArray;
+
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    Q->assemble(ex, ey);
+
+    MatZeroEntries(B);
+
+    // assemble the matrices
+    VecGetArray(theta, &tArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+
+            tb = tt = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                tb += tArray[(kk+0)*n2+jj]*gamma;
+                tt += tArray[(kk+1)*n2+jj]*gamma;
+            }
+            Q0[ii][ii] *= 0.5*(tb + tt)/det;
+        }
+
+        // assemble the piecewise constant mass matrix for level k
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(theta, &tArray);
+    MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+}

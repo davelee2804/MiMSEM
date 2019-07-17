@@ -111,6 +111,12 @@ class Euler {
         Mat pc_V0_invV01;
         Mat pc_DV0_invV01;
         Mat pc_V1DV0_invV01;
+        Mat pc_VB_rt_invVB_pi;
+        Mat pc_VBVB_rt_invVB_pi;
+        Mat pc_V0V0_invV01;
+        Mat pc_DV0V0_invV01;
+        Mat pc_V1_invDV0V0_invV01;
+        Mat pc_V1V1_invDV0V0_invV01;
         // ...vertical velocity preconditioner
         Mat pcz_DTV1;
         Mat pcz_V0_invDTV1;

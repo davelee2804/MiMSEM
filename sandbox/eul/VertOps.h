@@ -51,7 +51,7 @@ class VertOps {
         void AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA);
         void AssembleRayleigh(int ex, int ey, Mat B);
         void AssembleConstInv(int ex, int ey, Mat B);
-        void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs);
+        void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs, double factor, double exponent);
         void AssembleLinConWithTheta(int ex, int ey, Mat AB, Vec theta);
         void AssembleLinConWithRho(int ex, int ey, Mat AB, Vec rho);
         void AssembleConLin(int ex, int ey, Mat BA);
@@ -61,4 +61,6 @@ class VertOps {
         void AssembleLinearWithRho2(int ex, int ey, Vec rho, Mat A); // for the diagnosis of theta without boundary conditions
         void AssembleConstWithThetaInv(int ex, int ey, Vec theta, Mat B); // for the boussinesque term in the vertical preconditioner
         void AssembleLinearWithBousInv(int ex, int ey, Vec bous, Mat A);  // for the boussinesque term in the theta preconditioner
+        void AssembleConstWithEOS(int ex, int ey, Vec rt, Mat B);
+        void AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B);
 };
