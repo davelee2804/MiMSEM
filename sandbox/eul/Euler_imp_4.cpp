@@ -729,7 +729,7 @@ void Euler::solve_vert_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs
             VecAXPY(F_rt, dt, _tmpB1);
 
             // solve schur complement 
-            assemble_operator_schur(ex, ey, theta_h->vz[ii], velz_j->vz[ii], rho_j->vz[ii], rt_j->vz[ii], exner_j->vz[ii], 
+            assemble_operator_schur(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_j->vz[ii], 
                                     F_w, F_rt, F_exner, d_w, d_rt, d_exner);
 
             VecAXPY(velz_j->vz[ii],  1.0, d_w);
@@ -738,10 +738,12 @@ void Euler::solve_vert_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs
             VecAXPY(exner_j->vz[ii], 1.0, d_exner);
 
             // update the density
-            diagnose_F_z(ex, ey, velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], F_z->vz[ii]);
-            MatMult(vo->V10, F_z->vz[ii], dF_z->vz[ii]);
+            //diagnose_F_z(ex, ey, velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], F_z->vz[ii]);
+            //MatMult(vo->V10, F_z->vz[ii], dF_z->vz[ii]);
+            VecCopy(rho_j->vz[ii], d_rho);
             VecCopy(rho_i->vz[ii], rho_j->vz[ii]);
             VecAXPY(rho_j->vz[ii], -dt, dF_z->vz[ii]);
+            VecAXPY(d_rho, -1.0, rho_j->vz[ii]);
 
             VecZeroEntries(exner_h->vz[ii]);
             VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
@@ -1691,6 +1693,7 @@ void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho
         MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &pc_N_rt_inv);
     }
     vo->Assemble_EOS_BlockInv(ex, ey, rt, pc_N_rt_inv);
+    MatScale(pc_N_rt_inv, -1.0*CV/RD);
     MatMatMult(vo->VB, pc_N_rt_inv, reuse, PETSC_DEFAULT, &pc_V1V1_rt_inv);
 
     // [exner,exner] block
@@ -1699,7 +1702,7 @@ void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho
     MatMatMult(vo->VB, pc_VB_rt_invVB_pi, reuse, PETSC_DEFAULT, &pc_VBVB_rt_invVB_pi);
 
     MatMatMult(pc_V1V1_rt_inv, pc_VBVB_rt_invVB_pi, reuse, PETSC_DEFAULT, &pc_V1V1_rt_invV1);
-    MatAXPY(_PCz, (-1.0)*(-1.0)*CV/RD, pc_V1V1_rt_invV1, DIFFERENT_NONZERO_PATTERN);
+    MatAXPY(_PCz, -1.0, pc_V1V1_rt_invV1, DIFFERENT_NONZERO_PATTERN);
 
     if(build_ksp) {
         PC pc;
@@ -1713,22 +1716,20 @@ void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho
 
     // assemble the rhs for the exner solve
     MatMult(pc_DIV, F_w, _tmpB1);
-    VecScale(_tmpA1, -0.5*dt);
     MatMult(pc_V1V1_rt_inv, F_exner, _tmpB2);
-    VecAXPY(_tmpB1, (-1.0)*(-1.0)*CV/RD, _tmpB2);
-    VecAXPY(_tmpB1, 1.0, F_rt);
-    VecScale(_tmpB1, -1.0);
+    VecAXPY(_tmpB1, 1.0, _tmpB2);
+    VecAXPY(_tmpB1, -1.0, F_rt);
     KSPSolve(ksp_exner, _tmpB1, dexner);
 
     // update the velocity
     MatMult(pc_GRAD, dexner, _tmpA1);
-    VecAYPX(_tmpA1, 0.5*dt, F_w);
+    VecAYPX(_tmpA1, 1.0, F_w);
     MatMult(vo->VA_inv, _tmpA1, dw);
     VecScale(dw, -1.0);
 
     // update the density weighted potential temperature
     MatMult(pc_VBVB_rt_invVB_pi, dexner, _tmpB1);
-    VecAYPX(_tmpB1, -1.0, F_exner);
+    VecAYPX(_tmpB1, 1.0, F_exner);
     MatMult(pc_N_rt_inv, _tmpB1, drt);
-    VecScale(drt, CV/RD);
+    VecScale(drt, -1.0);
 }
