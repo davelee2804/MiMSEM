@@ -64,4 +64,11 @@ class VertOps {
         void AssembleConstWithEOS(int ex, int ey, Vec rt, Mat B);
         void AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B);
         void Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs);
+        void Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Mat B);
+        // for the density corrections to the schur complement solution
+        void AssembleLinearWithThetaExp(int ex, int ey, Vec theta, double exponent, Mat A);
+        void AssembleLinearWithRhoExp(int ex, int ey, Vec rho, double exponent, Mat A);
+        void AssembleLinearWithRhoInv(int ex, int ey, Vec rho, Mat A);
+        void AssembleConstWithThetaExp(int ex, int ey, Vec theta, double exponent, Mat B);
+        void AssembleConstWithRhoExp(int ex, int ey, Vec rho, double exponent, Mat B);
 };
