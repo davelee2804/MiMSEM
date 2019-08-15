@@ -1557,14 +1557,14 @@ void VertOps::Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_r
     VecRestoreArray(eos_rhs, &fArray);
 }
 
-void VertOps::Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Mat B) {
+void VertOps::Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Vec theta, Mat B) {
     int ii, jj, kk, mp1, mp12, ei;
     int *inds0;
     int inds2k[99];
-    double tk, gamma, det;
+    double tk, tkp1, gamma, det;
     double **BinvB = new double*[W->nDofsJ];
     double **B_BinvB = new double*[W->nDofsJ];
-    PetscScalar* tArray;
+    PetscScalar *tArray, *_tArray;
 
     inds0 = topo->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
@@ -1580,6 +1580,7 @@ void VertOps::Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Mat B) {
     }
 
     VecGetArray(rt, &tArray);
+    if(theta) VecGetArray(theta, &_tArray);
     for(kk = 0; kk < geom->nk; kk++) {
         // assemble the layer-wise inverse matrix
         for(ii = 0; ii < mp12; ii++) {
@@ -1610,6 +1611,37 @@ void VertOps::Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Mat B) {
         // multiply operators
         Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQWinv, WtQW, BinvB);
         Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW, BinvB, B_BinvB);
+
+        // rho correction
+        if(theta) {
+            Inv(WtQW, WtQWinv, n2);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+                Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+
+                tk = tkp1 = 0.0;
+                for(jj = 0; jj < n2; jj++) {
+                    gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                    tk   += _tArray[(kk+0)*n2+jj]*gamma;
+                    tkp1 += _tArray[(kk+1)*n2+jj]*gamma;
+                }
+                Q0[ii][ii] *= 0.5*(tk + tkp1)/det;
+            }
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW, WtQWinv, BinvB);
+            for(ii = 0; ii < n2; ii++) {
+                BinvB[ii][ii] += 1.0;
+            }
+            Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, BinvB, B_BinvB, WtQW);
+            for(ii = 0; ii < n2; ii++) {
+                for(jj = 0; jj < n2; jj++) {
+                    B_BinvB[ii][jj] = WtQW[ii][jj];
+                }
+            }
+        }
+
         Inv(B_BinvB, WtQWinv, n2);
 
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
@@ -1620,6 +1652,7 @@ void VertOps::Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Mat B) {
         MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
     }
     VecRestoreArray(rt, &tArray);
+    if(theta) VecRestoreArray(theta, &_tArray);
     MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  B, MAT_FINAL_ASSEMBLY);
 
