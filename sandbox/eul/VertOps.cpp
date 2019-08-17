@@ -1302,10 +1302,11 @@ void VertOps::AssembleConstWithThetaInv(int ex, int ey, Vec theta, Mat B) {
     MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
 }
 
-void VertOps::AssembleLinearWithBousInv(int ex, int ey, Vec bous, Mat A) {
+void VertOps::AssembleLinearWithBousInv(int ex, int ey, Vec bous, bool add_I, Mat A) {
     int kk, ii, jj, rows[99], ei, *inds0, mp1, mp12;
     double det, bb, bt, gamma;
     PetscScalar* bArray;
+    double** WtQW_2;
 
     ei    = ey*topo->nElsX + ex;
     inds0 = topo->elInds0_l(ex, ey);
@@ -1316,14 +1317,19 @@ void VertOps::AssembleLinearWithBousInv(int ex, int ey, Vec bous, Mat A) {
 
     MatZeroEntries(A);
 
+    if(add_I) {
+        WtQW_2 = new double*[n2];
+        for(ii = 0; ii < n2; ii++) {
+            WtQW_2[ii] = new double[n2];
+        }
+    }
+
     VecGetArray(bous, &bArray);
     for(kk = 0; kk < geom->nk-1; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
             Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
-            // for linear field we multiply by the vertical jacobian determinant when
-            // integrating, and do no other trasformations for the basis functions
-            Q0[ii][ii] *= 0.5*(geom->thick[kk+0][inds0[ii]] + geom->thick[kk+1][inds0[ii]]);
+            //Q0[ii][ii] *= 0.5*(geom->thick[kk+0][inds0[ii]] + geom->thick[kk+1][inds0[ii]]);
 
             bb = bt = 0.0;
             for(jj = 0; jj < n2; jj++) {
@@ -1331,12 +1337,28 @@ void VertOps::AssembleLinearWithBousInv(int ex, int ey, Vec bous, Mat A) {
                 bb += bArray[(kk+0)*n2+jj]*gamma;
                 bt += bArray[(kk+1)*n2+jj]*gamma;
             }
-            bb /= geom->thick[kk+0][inds0[ii]];
-            bt /= geom->thick[kk+1][inds0[ii]];
-            Q0[ii][ii] *= (bb + bt)/det;
+            //bb /= geom->thick[kk+0][inds0[ii]];
+            //bt /= geom->thick[kk+1][inds0[ii]];
+            //Q0[ii][ii] *= (bb + bt)/det;
+            Q0[ii][ii] *= 0.5*(bb + bt)/det;
         }
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+        if(add_I) {
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+                Q0[ii][ii] *= 0.5*(geom->thick[kk+0][inds0[ii]] + geom->thick[kk+1][inds0[ii]]);
+            }
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW_2);
+            for(ii = 0; ii < n2; ii++) {
+                for(jj = 0; jj < n2; jj++) {
+                    WtQW[ii][jj] += WtQW_2[ii][jj];
+                } 
+            }
+        }
 
         // take the inverse
         Inv(WtQW, WtQWinv, n2);
@@ -1351,6 +1373,13 @@ void VertOps::AssembleLinearWithBousInv(int ex, int ey, Vec bous, Mat A) {
 
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+
+    if(add_I) {
+        for(ii = 0; ii < n2; ii++) {
+            delete[] WtQW_2[ii];
+        }
+        delete[] WtQW_2;
+    }
 }
 
 void VertOps::AssembleConLin2(int ex, int ey, Mat BA) {
@@ -1801,15 +1830,15 @@ void VertOps::AssembleLinearWithRhoInv(int ex, int ey, Vec rho, Mat A) {
     for(kk = 0; kk < geom->nk-1; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            QB[ii][ii] = Q->A[ii][ii]*(SCALE/det);
             rb = rt = 0.0;
             for(jj = 0; jj < n2; jj++) {
                 gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
                 rb += rArray[(kk+0)*n2+jj]*gamma;
                 rt += rArray[(kk+1)*n2+jj]*gamma;
             }
-            Q0[ii][ii] *= 0.5*(rb/(det*geom->thick[kk+0][inds0[ii]]) + rt/(det*geom->thick[kk+1][inds0[ii]]));
-            Q0[ii][ii] *= 0.5*(geom->thick[kk+0][inds0[ii]] + geom->thick[kk+1][inds0[ii]]);
+            //Q0[ii][ii] *= 0.5*(rb/(det*geom->thick[kk+0][inds0[ii]]) + rt/(det*geom->thick[kk+1][inds0[ii]]));
+            //Q0[ii][ii] *= 0.5*(geom->thick[kk+0][inds0[ii]] + geom->thick[kk+1][inds0[ii]]);
+            Q0[ii][ii] *= 0.5*(rb + rt)/det/det;
         }
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -1856,9 +1885,12 @@ void VertOps::AssembleConstWithThetaExp(int ex, int ey, Vec theta, double expone
                 tb += tArray[(kk+0)*n2+jj]*gamma;
                 tt += tArray[(kk+1)*n2+jj]*gamma;
             }
+            tb /= det;
+            tt /= det;
             ftb = pow(tb, exponent);
             ftt = pow(tt, exponent);
-            Q0[ii][ii] *= 0.5*(ftb + ftt)/det;
+            //Q0[ii][ii] *= 0.5*(ftb + ftt)/det;
+            Q0[ii][ii] *= 0.5*(ftb + ftt);
         }
 
         // assemble the piecewise constant mass matrix for level k

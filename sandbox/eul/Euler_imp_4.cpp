@@ -1779,6 +1779,9 @@ void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho
 }
 */
 
+//#define D_PI_D_RHO_CORRECTION
+#define D_THETA_D_RHO_CORRECTION
+
 void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
                                     Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner, Vec bous) {
     int n2 = topo->elOrd*topo->elOrd;
@@ -1796,15 +1799,17 @@ void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho
     // -- rho correction
     vo->AssembleLinearWithThetaExp(ex, ey, theta, RD/CV, vo->VA);
     MatMatMult(vo->VA, vo->VA_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
+#ifdef D_PI_D_RHO_CORRECTION
     vo->AssembleLinearWithRhoInv(ex, ey, rho, vo->VA_inv);
     MatMatMult(vo->VA_inv, pc_V0_invV0_rt, reuse, PETSC_DEFAULT, &pc_VA_invVAVA_inv);
     vo->AssembleLinearWithRhoExp(ex, ey, rho, RD/CV, vo->VA);
     MatMatMult(vo->VA, pc_VA_invVAVA_inv, reuse, PETSC_DEFAULT, &pc_dPidRho);
-    MatScale(pc_dPidRho, CP*pow(RD/P0, RD/CV));
+    MatScale(pc_dPidRho, CP*pow(RD/P0, RD/CV)*(RD/CV));
     VecSet(_tmpA1, 1.0);
     MatDiagonalSet(pc_dPidRho, _tmpA1, ADD_VALUES);
     MatMatMult(pc_dPidRho, pc_GRAD, reuse, PETSC_DEFAULT, &pc_GRAD_2);
     MatCopy(pc_GRAD_2, pc_GRAD, DIFFERENT_NONZERO_PATTERN);
+#endif
     
     // [rt,u] block
     vo->AssembleLinearWithRT(ex, ey, rt, vo->VA, true);
@@ -1814,14 +1819,18 @@ void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho
     MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_V1DV0_invV0_rt);
     MatScale(pc_V1DV0_invV0_rt, 0.5*dt);
 
-    vo->AssembleLinearWithRhoInv(ex, ey, bous, vo->VA_inv); // boussinesque correction
+    vo->AssembleLinearWithBousInv(ex, ey, bous, true, vo->VA_inv); // boussinesque correction
     MatMatMult(pc_V1DV0_invV0_rt, vo->VA_inv, reuse, PETSC_DEFAULT, &pc_DIV);
     MatMatMult(pc_DIV, pc_GRAD, reuse, PETSC_DEFAULT, &_PCz);
 
     if(build_ksp) {
         MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &pc_N_rt_inv);
     }
+#ifdef D_THETA_D_RHO_CORRECTION
     vo->Assemble_EOS_BlockInv(ex, ey, rt, theta, pc_N_rt_inv);
+#else
+    vo->Assemble_EOS_BlockInv(ex, ey, rt, NULL, pc_N_rt_inv);
+#endif
     MatScale(pc_N_rt_inv, -1.0*CV/RD);
 
     // [exner,exner] block
@@ -1833,6 +1842,7 @@ void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho
         MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &pc_VB_rho);
         MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &pc_VB_theta);
     }
+//#ifdef D_PI_D_RHO_CORRECTION
     vo->AssembleConstWithRhoExp(ex, ey, rho, RD/CV, pc_VB_rho);
     vo->AssembleConstWithRhoInv(ex, ey, rho, vo->VB_inv);
     MatMatMult(pc_VB_rho, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_VB_rho_exp);
@@ -1840,15 +1850,15 @@ void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho
     MatMatMult(pc_VB_rho_exp, pc_VB_theta, MAT_REUSE_MATRIX, PETSC_DEFAULT, &vo->VB);
     vo->AssembleConstInv(ex, ey, vo->VB_inv);
     MatMatMult(vo->VB, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_dPidRho_B);
-    MatScale(pc_dPidRho_B, CP*pow(RD/P0, RD/CV));
+    MatScale(pc_dPidRho_B, CP*pow(RD/P0, RD/CV)*(RD/CV));
     VecSet(_tmpB1, 1.0);
     MatDiagonalSet(pc_dPidRho_B, _tmpB1, ADD_VALUES);
     MatMatMult(pc_dPidRho_B, pc_VBVB_rt_invVB_pi, reuse, PETSC_DEFAULT, &pc_VBVB_rt_invVB_pi_2);
     MatCopy(pc_VBVB_rt_invVB_pi_2, pc_VBVB_rt_invVB_pi, DIFFERENT_NONZERO_PATTERN);
-/*
-*/
+//#endif
 
     // -- rho correction (dTheta/dRho)
+#ifdef D_THETA_D_RHO_CORRECTION
     vo->AssembleConstWithTheta(ex, ey, theta, pc_VB_theta);
     vo->AssembleConstInv(ex, ey, vo->VB_inv);
     MatMatMult(pc_VB_theta, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_dRTdRho_B);
@@ -1857,9 +1867,12 @@ void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho
     vo->AssembleConst(ex, ey, vo->VB);
     MatMatMult(pc_dRTdRho_B, vo->VB, reuse, PETSC_DEFAULT, &pc_M_rt);
 
-    //vo->AssembleConst(ex, ey, vo->VB);
-    //MatMatMult(vo->VB, pc_N_rt_inv, reuse, PETSC_DEFAULT, &pc_V1V1_rt_inv);
     MatMatMult(pc_M_rt, pc_N_rt_inv, reuse, PETSC_DEFAULT, &pc_V1V1_rt_inv);
+#else
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->VB, pc_N_rt_inv, reuse, PETSC_DEFAULT, &pc_V1V1_rt_inv);
+#endif
+
     MatMatMult(pc_V1V1_rt_inv, pc_VBVB_rt_invVB_pi, reuse, PETSC_DEFAULT, &pc_V1V1_rt_invV1);
     MatAXPY(_PCz, -1.0, pc_V1V1_rt_invV1, DIFFERENT_NONZERO_PATTERN);
 
@@ -1985,15 +1998,10 @@ void Euler::initBousFac(L2Vecs* theta, Vec* bous) {
             ei = ey * topo->nElsX + ex;
             vo->AssembleConst(ex, ey, vo->VB);
             vo->AssembleConstWithThetaInv(ex, ey, thetaBar->vz[ei], vo->VB_inv);
-            //MatMult(vo->V10_full, thetaBar->vz[ei], _tmpB1);
             MatMult(vo->V10_full, theta->vz[ei], _tmpB1);
             MatMult(vo->VB, _tmpB1, _tmpB2);
 
-            // assemble as I + dt^2.g.(d theta/dz)/\bar{theta}
-            vo->AssembleConLin2(ex, ey, vo->VBA2);
-            MatMult(vo->VBA2, thetaBar->vz[ei], _tmpB1);
-            VecAYPX(_tmpB2, 0.25*dt*dt*GRAVITY, _tmpB1);
-
+            VecScale(_tmpB2, 0.25*dt*dt*GRAVITY);
             MatMult(vo->VB_inv, _tmpB2, bous[ei]);
         }
     }
