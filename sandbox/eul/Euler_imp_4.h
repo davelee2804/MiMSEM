@@ -102,22 +102,38 @@ class Euler {
         Mat pc_V1DV0_invV01;
         Mat pc_VB_rt_invVB_pi;
         Mat pc_VBVB_rt_invVB_pi;
-        Mat pc_VBVB_rt_invVB_pi_2;
-
-        Mat pc_DIV;
-        Mat pc_V1V1_rt_inv;
-        Mat pc_V1V1_rt_invV1;
+        //Mat pc_VBVB_rt_invVB_pi_2;
+        // ...coupled preconditioner (2)
+        Mat pc_G;
+        Mat pc_A_u;
+        Mat pc_A_rt;
+        Mat pc_D_rho;
+        Mat pc_D_rt;
+        Mat pc_M_u;
+        Mat pc_M_u_inv;
+        Mat pc_N_exner;
+        Mat pc_N_exner_2;
         Mat pc_N_rt_inv;
+        Mat pc_D_rt_M_u_inv;
+        Mat pc_VB_N_rt_inv;
+        Mat pc_A_u_VB_inv;
+        Mat pc_A_rt_VB_inv;
+        Mat pc_A_rt_VB_inv_D_rho;
+
+        //Mat pc_DIV;
+        //Mat pc_V1V1_rt_inv;
+        //Mat pc_V1V1_rt_invV1;
+        //Mat pc_N_rt_inv;
         // ...rho corrections
-        Mat pc_GRAD_2;
-        Mat pc_VA_invVAVA_inv;
-        Mat pc_dPidRho;
-        Mat pc_VB_theta;
-        Mat pc_VB_rho;
-        Mat pc_VB_rho_exp;
-        Mat pc_dPidRho_B;
-        Mat pc_dRTdRho_B;
-        Mat pc_M_rt;
+        //Mat pc_GRAD_2;
+        //Mat pc_VA_invVAVA_inv;
+        //Mat pc_dPidRho;
+        //Mat pc_VB_theta;
+        //Mat pc_VB_rho;
+        //Mat pc_VB_rho_exp;
+        //Mat pc_dPidRho_B;
+        //Mat pc_dRTdRho_B;
+        //Mat pc_M_rt;
 
         Mat _PCz;
 };
