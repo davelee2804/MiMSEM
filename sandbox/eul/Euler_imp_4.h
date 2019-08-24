@@ -36,7 +36,8 @@ class Euler {
         KSP ksp1;
         KSP ksp2;
         KSP ksp_exner;
-        L2Vecs* thetaBar;
+        KSP ksp_exner_x;
+        KSP ksp_u;
 
         double viscosity();
         void coriolis();
@@ -60,12 +61,17 @@ class Euler {
 
         void solve_vert_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save);
         void solve_vert_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save);
+        void solve_horiz_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save);
+        void solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save);
         void assemble_operator(int ex, int ey, Vec velz, Vec theta, Vec rho, Vec rt, Vec exner, Mat* _PC);
         void assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
-                                     Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner, Vec bous);
+                                     Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner);
+
+        void assemble_schur_horiz(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
+                               Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, Vec du, Vec drho, Vec drt, Vec dexner);
 
         void assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi,
-                                 Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fu, Vec _F, Vec _G);
+                                 Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec fu, Vec _F, Vec _G);
         void assemble_residual_z(int ex, int ey, Vec theta, Vec Pi, 
                                  Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
 
@@ -77,9 +83,6 @@ class Euler {
 
         void repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
-
-        void integrateTheta(Vec* theta, double* thetaBar);
-        void initBousFac(L2Vecs* theta, Vec* bous);
 
     private:
         // vertical vectors and matrices
@@ -102,8 +105,7 @@ class Euler {
         Mat pc_V1DV0_invV01;
         Mat pc_VB_rt_invVB_pi;
         Mat pc_VBVB_rt_invVB_pi;
-        //Mat pc_VBVB_rt_invVB_pi_2;
-        // ...coupled preconditioner (2)
+        // .....schur preconditioner
         Mat pc_G;
         Mat pc_A_u;
         Mat pc_A_rt;
@@ -119,21 +121,36 @@ class Euler {
         Mat pc_A_u_VB_inv;
         Mat pc_A_rt_VB_inv;
         Mat pc_A_rt_VB_inv_D_rho;
+        Mat pc_G_VB_rho_inv;
+        Mat pc_M_rt;
+        Mat pc_M_rt_inv;
+        Mat pc_M_rt_VB_inv;
 
-        //Mat pc_DIV;
-        //Mat pc_V1V1_rt_inv;
-        //Mat pc_V1V1_rt_invV1;
-        //Mat pc_N_rt_inv;
-        // ...rho corrections
-        //Mat pc_GRAD_2;
-        //Mat pc_VA_invVAVA_inv;
-        //Mat pc_dPidRho;
-        //Mat pc_VB_theta;
-        //Mat pc_VB_rho;
-        //Mat pc_VB_rho_exp;
-        //Mat pc_dPidRho_B;
-        //Mat pc_dRTdRho_B;
-        //Mat pc_M_rt;
+        Mat pc_V0_invV0_rt_DT;
+        Mat pc_V0_invV0_rt_DT_VB_pi;
+        Mat pc_V0_invV0_rt_DT_VB_pi_VB_inv;
+        // ..... schur preconditioner (horizontal)
+        Mat pcx_D;
+        Mat pcx_G;
+        Mat pcx_M1invD12;
+        Mat pcx_M1invD12M2;
+        Mat pcx_D_Mu_inv;
+        Mat pcx_M1invF_rt;
+        Mat pcx_D21M1invF_rt;
+        Mat pcx_M2N_rt_inv;
+        Mat pcx_M2N_rt_invN_pi;
+        Mat pcx_LAP;
+        // .....rho corrections
+        Mat pcx_D_rho;
+        Mat pcx_D_prime;
+        Mat pcx_A_rtM2_inv;
+        Mat pcx_M1invF_rho;
+        Mat pcx_D21M1invF_rho;
+        Mat pcx_M1_exner_M1_inv;
+        Mat pcx_Au;
+        Mat pcx_Au_M2_inv;
+        Mat pcx_Mu_prime;
 
         Mat _PCz;
+        Mat _PCx;
 };

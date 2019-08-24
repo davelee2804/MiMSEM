@@ -173,7 +173,7 @@ class Whmat {
         Geom* geom;
         LagrangeEdge* e;
         Mat M;
-        void assemble(Vec rho, int lev, double scale);
+        void assemble(Vec rho, int lev, double scale, bool vert_scale_rho);
 };
 
 class Ut_mat {
@@ -272,4 +272,37 @@ class EoSmat {
         Wii* Q;
         Mat M;
         void assemble(Vec rt, int lev, double scale);
+};
+
+class WmatInv {
+    public:
+        WmatInv(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~WmatInv();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(int lev, double scale);
+};
+
+class WhmatInv {
+    public:
+        WhmatInv(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~WhmatInv();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(Vec rho, int lev, double scale);
+};
+
+class N_rt_Inv {
+    public:
+        N_rt_Inv(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~N_rt_Inv();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(Vec rho, int lev, double scale, bool do_inverse);
 };
