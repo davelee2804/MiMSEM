@@ -697,9 +697,6 @@ void Euler::solve_vert_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs
     theta_h->CopyFromVert(theta_i->vz);
     theta_h->VertToHoriz();
 
-    //for(int ii = 0; ii < geom->nk; ii++) {
-    //    diagnose_Pi(ii, rt_i->vl[ii], rt_i->vl[ii], exner_h->vh[ii]);
-    //}
     exner_h->CopyFromHoriz(exner_i->vh);
     exner_h->UpdateLocal();
     exner_h->HorizToVert();
@@ -2635,7 +2632,7 @@ void Euler::assemble_schur_horiz(int lev, Vec* theta, Vec velx, Vec rho, Vec rt,
     bool build_ksp = (!_PCx) ? true : false;
     MatReuse reuse = (!_PCx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     Vec wg, wl, theta_k, diag_g, ones_g, h_tmp;
-    Mat Mu_inv, M1_inv, Mu_prime;
+    Mat Mu_inv, M1_inv, Mu_prime, M1_OP;
     WmatInv* M2inv = new WmatInv(topo, geom, edge);
     WhmatInv* M2_rho_inv = new WhmatInv(topo, geom, edge);
     N_rt_Inv* M2_pi_inv = new N_rt_Inv(topo, geom, edge);
@@ -2664,13 +2661,56 @@ void Euler::assemble_schur_horiz(int lev, Vec* theta, Vec velx, Vec rho, Vec rt,
     MatZeroEntries(M1_inv);
     MatDiagonalSet(M1_inv, diag_g, INSERT_VALUES);
 
+    // laplacian
+    {
+        Vec m0_inv, ones_0;
+        Mat M2D, DTM2D, LAP_1, CTM1, M0_invCTM1, M0_inv, VISC, VISC2;
+
+        VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &m0_inv);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &ones_0);
+        VecSet(ones_0, 1.0);
+        VecPointwiseDivide(m0_inv, ones_0, m0->vg);
+
+        MatCreate(MPI_COMM_WORLD, &M0_inv);
+        MatSetSizes(M0_inv, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
+        MatSetType(M0_inv, MATMPIAIJ);
+        MatMPIAIJSetPreallocation(M0_inv, 1, PETSC_NULL, 1, PETSC_NULL);
+        MatDiagonalSet(M0_inv, m0_inv, INSERT_VALUES);
+
+        MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
+        MatMatMult(EtoF->E12, M2D, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTM2D);
+        MatMatMult(M1_inv, DTM2D, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &LAP_1);
+
+        MatMatMult(NtoE->E01, M1->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &CTM1);
+        MatMatMult(M0_inv, CTM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0_invCTM1);
+        MatMatMult(NtoE->E10, M0_invCTM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VISC);
+
+        MatAssemblyBegin(LAP_1, MAT_FINAL_ASSEMBLY);
+        MatAssemblyEnd(  LAP_1, MAT_FINAL_ASSEMBLY);
+        MatAXPY(VISC, 1.0, LAP_1, DIFFERENT_NONZERO_PATTERN);
+        MatScale(VISC, del2);
+        MatMatMult(VISC, VISC, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VISC2);
+        MatMatMult(M1->M, VISC2, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M1_OP);  
+        MatScale(M1_OP, 0.5*dt);
+
+        VecDestroy(&m0_inv);
+        VecDestroy(&ones_0);
+        MatDestroy(&M2D);
+        MatDestroy(&DTM2D);
+        MatDestroy(&LAP_1);
+        MatDestroy(&CTM1);
+        MatDestroy(&M0_invCTM1);
+        MatDestroy(&M0_inv);
+        MatDestroy(&VISC);
+        MatDestroy(&VISC2);
+    }
+
     // [u,u] block
     curl(false, velx, &wg, lev, true);
     VecScatterBegin(topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
     R->assemble(wl, lev, SCALE);
     MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
-    coriolisMatInv(R->M, &Mu_inv);
 
     // [u,exner] block
     VecZeroEntries(theta_k);
@@ -2716,10 +2756,22 @@ void Euler::assemble_schur_horiz(int lev, Vec* theta, Vec velx, Vec rho, Vec rt,
     MatMatMult(pcx_Au, M2inv->M, reuse, PETSC_DEFAULT, &pcx_Au_M2_inv);
     MatMatMult(pcx_Au_M2_inv, pcx_D_rho, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mu_prime); // invalid read on the second pass
     MatAYPX(Mu_prime, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
-    MatDestroy(&Mu_inv);
     coriolisMatInv(Mu_prime, &Mu_inv);
+
+    MatAXPY(M1_OP, 1.0, Mu_prime, DIFFERENT_NONZERO_PATTERN);
     MatMult(pcx_Au_M2_inv, F_rho, diag_g);
     VecAXPY(F_u, -1.0, diag_g);
+
+    // setup the corrected velocity mass matrix solver
+    KSPCreate(MPI_COMM_WORLD, &ksp_u);
+    KSPSetOperators(ksp_u, M1_OP, M1_OP);
+    KSPSetTolerances(ksp_u, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp_u, KSPGMRES);
+    KSPGetPC(ksp_u, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+    KSPSetOptionsPrefix(ksp_u, "ksp1_");
+    KSPSetFromOptions(ksp_u);
 
     // build the preconditioner
     MatMatMult(pcx_D, Mu_inv, reuse, PETSC_DEFAULT, &pcx_D_Mu_inv);
@@ -2745,6 +2797,8 @@ void Euler::assemble_schur_horiz(int lev, Vec* theta, Vec velx, Vec rho, Vec rt,
     MatMult(pcx_M2N_rt_inv, F_exner, h_tmp);
     VecAXPY(F_rt, -1.0, h_tmp);
     MatMult(pcx_D_Mu_inv, F_u, h_tmp);
+    //KSPSolve(ksp_u, F_u, ones_g);
+    //MatMult(pcx_D, ones_g, h_tmp);
     VecAXPY(F_rt, -1.0, h_tmp);
     VecScale(F_rt, -1.0);
 
@@ -2768,15 +2822,6 @@ void Euler::assemble_schur_horiz(int lev, Vec* theta, Vec velx, Vec rho, Vec rt,
 
     //MatMult(Mu_inv, F_u, du);
     // actual solve for delta u update improves convergence
-    KSPCreate(MPI_COMM_WORLD, &ksp_u);
-    KSPSetOperators(ksp_u, Mu_prime, Mu_prime);
-    KSPSetTolerances(ksp_u, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp_u, KSPGMRES);
-    KSPGetPC(ksp_u, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
-    KSPSetOptionsPrefix(ksp_u, "ksp1_");
-    KSPSetFromOptions(ksp_u);
     KSPSolve(ksp_u, F_u, du);
     KSPDestroy(&ksp_u);
 
@@ -2799,6 +2844,7 @@ void Euler::assemble_schur_horiz(int lev, Vec* theta, Vec velx, Vec rho, Vec rt,
     MatDestroy(&Mu_inv);
     MatDestroy(&M1_inv);
     MatDestroy(&Mu_prime);
+    MatDestroy(&M1_OP);
     delete M2inv;
     delete M2_pi_inv;
     delete M2_rt_inv;
