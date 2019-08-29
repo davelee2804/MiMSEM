@@ -2966,6 +2966,8 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
         MatMult(pc_N_rt_inv, _tmpB1, drt->vz[ei]);
         VecScale(drt->vz[ei], -1.0);
     }
+    drt->VertToHoriz();
+    drt->UpdateGlobal();
 
     VecDestroy(&wl);
     VecDestroy(&theta_k);
@@ -3038,6 +3040,10 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
     exner_i->HorizToVert();
     exner_j->CopyFromVert(exner_i->vz);
     exner_h->CopyFromVert(exner_i->vz);
+    exner_j->VertToHoriz();
+    exner_h->VertToHoriz();
+    exner_j->UpdateGlobal();
+    exner_h->UpdateGlobal();
 
     // diagnose the vorticity terms
     diagHorizVort(velx_i, dudz_i);
@@ -3166,7 +3172,7 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
         
         if(!rank) cout << itt << ":\t|d_exner|: "        << max_norm_exner <<
                                  "\t|exner|: "           << norm_x         <<
-                                 "\t|d_exner|/|exner|: " << max_norm_exner << 
+                                 "\t|d_exner|/|exner|: " << max_norm_exner/norm_x << 
                                  "\t|d_u|/|u|: "         << max_norm_u     <<
                                  "\t|d_w|/|w|: "         << max_norm_w     << endl;
         max_norm_exner /= norm_x;        
