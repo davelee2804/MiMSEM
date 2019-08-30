@@ -145,7 +145,7 @@ void Schur::RepackFromHoriz(Vec* vx, Vec v) {
     PetscScalar *vxArray, *vArray;
 
     VecZeroEntries(vl);
-    VecGetArray(v, &vArray);
+    VecGetArray(vl, &vArray);
     for(int kk = 0; kk < geom->nk; kk++) {
         VecGetArray(vx[kk], &vxArray);
         for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
@@ -157,7 +157,7 @@ void Schur::RepackFromHoriz(Vec* vx, Vec v) {
         }
         VecRestoreArray(vx[kk], &vxArray);
     }
-    VecRestoreArray(v, &vArray);
+    VecRestoreArray(vl, &vArray);
 
     // scatter to the global vector
     VecScatterBegin(scat, vl, v, ADD_VALUES, SCATTER_REVERSE);

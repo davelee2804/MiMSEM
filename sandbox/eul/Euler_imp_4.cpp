@@ -33,7 +33,7 @@
 #define HORIZ_TOL 1.0e-12
 #define RAYLEIGH 0.2
 
-//#define EXPLICIT_RHO_UPDATE
+#define EXPLICIT_RHO_UPDATE
 //#define EXPLICIT_THETA_UPDATE
 
 using namespace std;
@@ -2703,7 +2703,6 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
     for(int kk = 0; kk < geom->nk; kk++) {
         reuse = (!_PCx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
-        m0->assemble(kk, SCALE);
         M1->assemble(kk, SCALE, true);
         M2->assemble(kk, SCALE, true);
         M2inv->assemble(kk, SCALE);
@@ -2868,9 +2867,11 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
         MatScale(VISC, del2);
         MatMatMult(VISC, VISC, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VISC2);
         MatMatMult(M1->M, VISC2, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M1_OP);  
-        MatScale(M1_OP, 0.5*dt);
+        MatAYPX(M1_OP, 0.5*dt, Mu_prime, DIFFERENT_NONZERO_PATTERN);
 
-        MatAXPY(M1_OP, 1.0, Mu_prime, DIFFERENT_NONZERO_PATTERN);
+        MatMult(pcx_G, dexner->vh[kk], ones_g);
+        VecAXPY(F_u[kk], 1.0, ones_g);
+        VecScale(F_u[kk], -1.0);
 
         KSPCreate(MPI_COMM_WORLD, &ksp_u);
         KSPSetOperators(ksp_u, M1_OP, M1_OP);
@@ -2882,7 +2883,6 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
         KSPSetOptionsPrefix(ksp_u, "ksp1_");
         KSPSetFromOptions(ksp_u);
         KSPSolve(ksp_u, F_u[kk], du[kk]);
-        VecScale(du[kk], -1.0);
         KSPDestroy(&ksp_u);
 
         MatDestroy(&M2D);
@@ -2893,6 +2893,7 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
         MatDestroy(&VISC);
         MatDestroy(&VISC2);
         MatDestroy(&M1_OP);
+        MatDestroy(&Mu_prime);
     }
 
     for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
@@ -3027,23 +3028,15 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
 
-    velz_i->UpdateLocal();
-    velz_i->HorizToVert();
-    velz_j->CopyFromVert(velz_i->vz);
-    rho_i->UpdateLocal();
-    rho_i->HorizToVert();
-    rho_j->CopyFromVert(rho_i->vz);
-    rt_i->UpdateLocal();
-    rt_i->HorizToVert();
-    rt_j->CopyFromVert(rt_i->vz);
-    exner_i->UpdateLocal();
-    exner_i->HorizToVert();
-    exner_j->CopyFromVert(exner_i->vz);
-    exner_h->CopyFromVert(exner_i->vz);
-    exner_j->VertToHoriz();
-    exner_h->VertToHoriz();
-    exner_j->UpdateGlobal();
-    exner_h->UpdateGlobal();
+    velz_i->UpdateLocal();  velz_i->HorizToVert();
+    rho_i->UpdateLocal();   rho_i->HorizToVert();
+    rt_i->UpdateLocal();    rt_i->HorizToVert();
+    exner_i->UpdateLocal(); exner_i->HorizToVert();
+    velz_j->CopyFromVert(velz_i->vz);   velz_j->VertToHoriz();  velz_j->UpdateGlobal();
+    rho_j->CopyFromVert(rho_i->vz);     rho_j->VertToHoriz();   rho_j->UpdateGlobal();
+    rt_j->CopyFromVert(rho_i->vz);      rt_j->VertToHoriz();    rt_j->UpdateGlobal();
+    exner_j->CopyFromVert(exner_i->vz); exner_j->VertToHoriz(); exner_j->UpdateGlobal();
+    exner_h->CopyFromVert(exner_i->vz); exner_h->VertToHoriz(); exner_h->UpdateGlobal();
 
     // diagnose the vorticity terms
     diagHorizVort(velx_i, dudz_i);
@@ -3080,18 +3073,13 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
             diagHorizVort(velx_j, dudz_j);
         }
 
-        // construct the exner pressure residual
-        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-            vo->Assemble_EOS_Residual(ii%topo->nElsX, ii/topo->nElsX, rt_j->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
-        }
-        F_exner->VertToHoriz();
-        F_exner->UpdateGlobal();
-
+        // assemble the residual vectors
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
 
-            // assemble the residual vectors
+            vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
+
             assemble_residual_z(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
                                 rt_i->vz[ii], rt_j->vz[ii], F_w->vz[ii], F_z, G_z);
 
@@ -3105,13 +3093,15 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
             MatMult(vo->VB, dF_z, F_rho->vz[ii]);
             MatMult(vo->VB, dG_z, F_rt->vz[ii]);
         }
+        F_exner->VertToHoriz();
+        F_exner->UpdateGlobal();
         F_rho->VertToHoriz();
         F_rho->UpdateGlobal();
         F_rt->VertToHoriz();
         F_rt->UpdateGlobal();
 
         for(int lev = 0; lev < geom->nk; lev++) {
-            // velocity residual
+            // horizontal velocity residual
             assemble_residual_x(lev, theta_h->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, exner_h->vh[lev], 
                                 velx_i[lev], velx_j[lev], rho_i->vh[lev], rho_j->vh[lev], F_u[lev], _F, _G);
 
@@ -3147,6 +3137,7 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
         MPI_Allreduce(&max_norm_u, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_u = norm_x;
 
         exner_j->UpdateLocal();
+        VecZeroEntries(schur->b);
         schur->RepackFromHoriz(exner_j->vl, schur->b);
         VecNorm(schur->b, NORM_2, &norm_x);
         VecNorm(schur->x, NORM_2, &max_norm_exner);
@@ -3180,6 +3171,9 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
 
         itt++;
     } while(!done);
+
+    velz_j->VertToHoriz();
+    velz_j->UpdateGlobal();
 
     // update the input/output fields
     for(int lev = 0; lev < geom->nk; lev++) {
