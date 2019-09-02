@@ -3058,13 +3058,12 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
             rt_j->UpdateLocal();
             rt_j->HorizToVert();
             exner_j->HorizToVert(); // local update already done
+            diagTheta2(rho_j->vz, rt_j->vz, theta_h->vz);
             for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
                 VecZeroEntries(exner_h->vz[ii]);
                 VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
                 VecAXPY(exner_h->vz[ii], 0.5, exner_j->vz[ii]);
-            }
-            diagTheta2(rho_j->vz, rt_j->vz, theta_h->vz);
-            for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+
                 VecScale(theta_h->vz[ii], 0.5);
                 VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
             }

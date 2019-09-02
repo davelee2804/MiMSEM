@@ -174,7 +174,7 @@ void Schur::UnpackToHoriz(Vec v, Vec* vx) {
     VecScatterBegin(scat, v, vl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  scat, v, vl, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecGetArray(v, &vArray);
+    VecGetArray(vl, &vArray);
     for(int kk = 0; kk < geom->nk; kk++) {
         VecGetArray(vx[kk], &vxArray);
         for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
@@ -186,7 +186,7 @@ void Schur::UnpackToHoriz(Vec v, Vec* vx) {
         }
         VecRestoreArray(vx[kk], &vxArray);
     }
-    VecRestoreArray(v, &vArray);
+    VecRestoreArray(vl, &vArray);
 }
 
 Schur::~Schur() {
