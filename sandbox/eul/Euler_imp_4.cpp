@@ -3007,7 +3007,7 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
     Vec* dudz_j = new Vec[geom->nk];
     Vec* F_u    = new Vec[geom->nk];
     Vec* d_u    = new Vec[geom->nk];
-    Vec _F, _G, dF, dG, F_z, G_z, dF_z, dG_z, h_tmp;
+    Vec _F, _G, dF, dG, F_z, G_z, dF_z, dG_z, h_tmp, dtheta;
 
     for(int lev = 0; lev < geom->nk; lev++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_j[lev]);
@@ -3048,6 +3048,7 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
     theta_h->CopyFromVert(theta_i->vz);
     theta_i->VertToHoriz();
     theta_h->VertToHoriz();
+    theta_h->UpdateGlobal();
 
     do {
         max_norm_u = max_norm_w = max_norm_exner = 0.0;
@@ -3068,6 +3069,7 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
                 VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
             }
             theta_h->VertToHoriz();
+            theta_h->UpdateGlobal();
 
             diagHorizVort(velx_j, dudz_j);
         }
@@ -3112,6 +3114,26 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
             VecAXPY(F_rho->vh[lev], dt, h_tmp);
             MatMult(M2->M, dG, h_tmp);
             VecAXPY(F_rt->vh[lev], dt, h_tmp);
+
+            // add in the viscous term
+            M1->assemble(lev, SCALE, true);
+            VecZeroEntries(dF);
+            VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
+            VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
+
+            grad(false, dF, &dtheta, lev);
+            F->assemble(rho_j->vl[lev], lev, true, SCALE);
+            MatMult(F->M, dtheta, _F);
+            VecDestroy(&dtheta);
+
+            KSPSolve(ksp1, _F, _G);
+            MatMult(EtoF->E21, _G, dG);
+
+            grad(false, dG, &dtheta, lev);
+            MatMult(EtoF->E21, dtheta, dG);
+            VecDestroy(&dtheta);
+            MatMult(M2->M, dG, dF);
+            VecAXPY(F_rt->vh[lev], dt*del2*del2, dF);
         }
         F_rho->UpdateLocal();
         F_rho->HorizToVert();
