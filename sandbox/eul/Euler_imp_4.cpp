@@ -2557,6 +2557,9 @@ void Euler::assemble_schur_horiz(int lev, Vec* theta, Vec velx, Vec rho, Vec rt,
     delete M2_rho_inv;
 }
 
+//#define DO_VERT
+#define DO_HORIZ
+
 void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, 
                               Vec* F_u, Vec* F_w, L2Vecs* F_rho, L2Vecs* F_rt, L2Vecs* F_exner,
                               Vec* du, Vec* dw, L2Vecs* drho, L2Vecs* drt, L2Vecs* dexner) {
@@ -2666,7 +2669,7 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
 
         MatMult(pc_A_u_VB_inv, F_rho->vz[ei], _tmpA1);
         VecAXPY(F_w[ei], -1.0, _tmpA1);
-    
+
         MatMult(pc_A_rt_VB_inv, F_rho->vz[ei], _tmpB1);
         VecAXPY(F_rt->vz[ei], -1.0, _tmpB1);
 
@@ -2686,13 +2689,15 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
 
         MatMatMult(pc_D_rt, pc_M_u_inv, reuse, PETSC_DEFAULT, &pc_D_rt_M_u_inv);
         MatMatMult(pc_D_rt_M_u_inv, pc_G, reuse, PETSC_DEFAULT, &_PCz);
+#ifndef DO_VERT
+        MatZeroEntries(_PCz);
+#endif
         MatAXPY(_PCz, 1.0, pc_N_exner_2, DIFFERENT_NONZERO_PATTERN);
         MatScale(_PCz, -1.0);
-
+#ifdef DO_VERT
         MatMult(pc_D_rt_M_u_inv, F_w[ei], _tmpB1);
         VecAXPY(F_rt->vz[ei], -1.0, _tmpB1);
-        VecScale(F_rt->vz[ei], -1.0);
-
+#endif
         // add to the global system
         schur->AddFromVertMat(ei, _PCz);
     }
@@ -2772,23 +2777,24 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
         MatMatMult(pcx_D, Mu_inv, reuse, PETSC_DEFAULT, &pcx_D_Mu_inv);
         MatMatMult(pcx_D_Mu_inv, pcx_G, reuse, PETSC_DEFAULT, &_PCx);
         MatScale(_PCx, -1.0);
-
+#ifdef DO_HORIZ
         // update the rhs
         MatMult(pcx_D_Mu_inv, F_u[kk], h_tmp);
         VecAXPY(F_rt->vh[kk], -1.0, h_tmp);
-        VecScale(F_rt->vh[kk], -1.0);
-
         // add to the global system
         schur->AddFromHorizMat(kk, _PCx);
-
+#endif
         MatDestroy(&Mu_prime);
         MatDestroy(&Mu_inv);
     }
-    F_rt->UpdateLocal();
-    schur->RepackFromHoriz(F_rt->vl, schur->b);
-
     MatAssemblyBegin(schur->M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  schur->M, MAT_FINAL_ASSEMBLY);
+
+    for(int kk = 0; kk < geom->nk; kk++) {
+        VecScale(F_rt->vh[kk], -1.0);
+    }
+    F_rt->UpdateLocal();
+    schur->RepackFromHoriz(F_rt->vl, schur->b);
 
     // update the exner pressure
     KSPSolve(schur->ksp, schur->b, schur->x);
@@ -2797,6 +2803,7 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
     dexner->UpdateGlobal();
 
     // update the horizontal velocity
+#ifdef DO_HORIZ
     for(int kk = 0; kk < geom->nk; kk++) {
         m0->assemble(kk, SCALE);
         M1->assemble(kk, SCALE, true);
@@ -2895,6 +2902,7 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
         MatDestroy(&M1_OP);
         MatDestroy(&Mu_prime);
     }
+#endif
 
     for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
         ex = ei%topo->nElsX;
@@ -2946,13 +2954,13 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
         VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
         MatZeroEntries(pc_M_u_inv);
         MatDiagonalSet(pc_M_u_inv, _tmpA2, INSERT_VALUES);
-
+#ifdef DO_VERT
         // update the vertical velocity
         MatMult(pc_G, dexner->vz[ei], _tmpA1);
         VecAXPY(_tmpA1, 1.0, F_w[ei]);
         MatMult(pc_M_u_inv, _tmpA1, dw[ei]);
         VecScale(dw[ei], -1.0);
-
+#endif
         // update the density
 /*
         MatMult(pc_D_rho, dw[ei], _tmpB1);
@@ -2960,7 +2968,6 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
         MatMult(vo->VB_inv, _tmpB1, drho->vz[ei]);
         VecScale(drho->vz[ei], -1.0); // TODO: horiztonal flux update
 */
-
         // update the density weighted potential temperature
         MatMult(pc_N_exner, dexner->vz[ei], _tmpB1);
         VecAXPY(_tmpB1, 1.0, F_exner->vz[ei]);
@@ -2985,7 +2992,7 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
 void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save) {
     bool done = false;
     int itt = 0, elOrd2 = topo->elOrd*topo->elOrd, ex, ey;
-    double max_norm_u, max_norm_w, max_norm_exner, norm_x;
+    double max_norm_u, max_norm_w, max_norm_rt, max_norm_exner, norm_x;
     L2Vecs* velz_j = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* rho_j = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_j = new L2Vecs(geom->nk, topo, geom);
@@ -3051,7 +3058,7 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
     theta_h->UpdateGlobal();
 
     do {
-        max_norm_u = max_norm_w = max_norm_exner = 0.0;
+        max_norm_u = max_norm_w = max_norm_rt = max_norm_exner = 0.0;
 
         if(itt) {
             rho_j->UpdateLocal();
@@ -3080,10 +3087,13 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
             ey = ii/topo->nElsX;
 
             vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
-
+#ifdef DO_VERT
             assemble_residual_z(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
                                 rt_i->vz[ii], rt_j->vz[ii], F_w->vz[ii], F_z, G_z);
-
+#else
+            VecZeroEntries(F_z);
+            VecZeroEntries(G_z);
+#endif
             vo->AssembleConst(ex, ey, vo->VB);
             MatMult(vo->V10, F_z, dF_z);
             MatMult(vo->V10, G_z, dG_z);
@@ -3101,11 +3111,11 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
         F_rt->VertToHoriz();
         F_rt->UpdateGlobal();
 
+#ifdef DO_HORIZ
         for(int lev = 0; lev < geom->nk; lev++) {
             // horizontal velocity residual
             assemble_residual_x(lev, theta_h->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, exner_h->vh[lev], 
                                 velx_i[lev], velx_j[lev], rho_i->vh[lev], rho_j->vh[lev], F_u[lev], _F, _G);
-
             // density and density weighted potential temperature residuals horiztonal flux components
             M2->assemble(lev, SCALE, true);
             MatMult(EtoF->E21, _F, dF);
@@ -3116,6 +3126,7 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
             VecAXPY(F_rt->vh[lev], dt, h_tmp);
 
             // add in the viscous term
+/*
             M1->assemble(lev, SCALE, true);
             VecZeroEntries(dF);
             VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
@@ -3134,7 +3145,9 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
             VecDestroy(&dtheta);
             MatMult(M2->M, dG, dF);
             VecAXPY(F_rt->vh[lev], dt*del2*del2, dF);
+*/
         }
+#endif
         F_rho->UpdateLocal();
         F_rho->HorizToVert();
         F_rt->UpdateLocal();
@@ -3144,18 +3157,23 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
                           F_u, F_w->vz, F_rho, F_rt, F_exner, d_u, d_w->vz, d_rho, d_rt, d_exner);
 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+#ifdef DO_VERT
             VecAXPY(velz_j->vz[ii], 1.0, d_w->vz[ii]);
+#endif
             max_norm_w = MaxNorm(d_w->vz[ii], velz_j->vz[ii], max_norm_w);
         }
         MPI_Allreduce(&max_norm_w, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w = norm_x;
-
         for(int lev = 0; lev < geom->nk; lev++) {
+#ifdef DO_HORIZ
             VecAXPY(velx_j[lev],      1.0, d_u[lev]        );
+#endif
             VecAXPY(rt_j->vh[lev],    1.0, d_rt->vh[lev]   );
             VecAXPY(exner_j->vh[lev], 1.0, d_exner->vh[lev]);
             max_norm_u = MaxNorm(d_u[lev], velx_j[lev], max_norm_u);
+            max_norm_rt = MaxNorm(d_rt->vh[lev], rt_j->vh[lev], max_norm_rt);
         }
-        MPI_Allreduce(&max_norm_u, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_u = norm_x;
+        MPI_Allreduce(&max_norm_u,  &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_u  = norm_x;
+        MPI_Allreduce(&max_norm_rt, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rt = norm_x;
 
         exner_j->UpdateLocal();
         VecZeroEntries(schur->b);
@@ -3166,15 +3184,21 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
         // udpate the density
         for(int lev = 0; lev < geom->nk; lev++) {
             VecCopy(rho_i->vh[lev], l2_tmp->vh[lev]);
+#ifdef DO_HORIZ
             diagnose_F_x(lev, velx_i[lev], velx_j[lev], rho_i->vh[lev], rho_j->vh[lev], _F);
             MatMult(EtoF->E21, _F, dF);
             VecAXPY(l2_tmp->vh[lev], -dt, dF);
+#endif
         }
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+#ifdef DO_VERT
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
             diagnose_F_z(ex, ey, velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], F_z);
             MatMult(vo->V10, F_z, rho_j->vz[ii]);
+#else
+            VecZeroEntries(rho_j->vz[ii]);
+#endif
         }
         rho_j->VertToHoriz();
         rho_j->UpdateGlobal();
@@ -3185,6 +3209,7 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
         if(!rank) cout << itt << ":\t|d_exner|: "        << max_norm_exner <<
                                  "\t|exner|: "           << norm_x         <<
                                  "\t|d_exner|/|exner|: " << max_norm_exner/norm_x << 
+                                 "\t|d_rt|/|rt|: "       << max_norm_rt    << 
                                  "\t|d_u|/|u|: "         << max_norm_u     <<
                                  "\t|d_w|/|w|: "         << max_norm_w     << endl;
         max_norm_exner /= norm_x;        
