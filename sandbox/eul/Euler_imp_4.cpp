@@ -2557,7 +2557,7 @@ void Euler::assemble_schur_horiz(int lev, Vec* theta, Vec velx, Vec rho, Vec rt,
     delete M2_rho_inv;
 }
 
-//#define DO_VERT
+#define DO_VERT
 #define DO_HORIZ
 
 void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, 
@@ -3041,7 +3041,7 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
     exner_i->UpdateLocal(); exner_i->HorizToVert();
     velz_j->CopyFromVert(velz_i->vz);   velz_j->VertToHoriz();  velz_j->UpdateGlobal();
     rho_j->CopyFromVert(rho_i->vz);     rho_j->VertToHoriz();   rho_j->UpdateGlobal();
-    rt_j->CopyFromVert(rho_i->vz);      rt_j->VertToHoriz();    rt_j->UpdateGlobal();
+    rt_j->CopyFromVert(rt_i->vz);       rt_j->VertToHoriz();    rt_j->UpdateGlobal();
     exner_j->CopyFromVert(exner_i->vz); exner_j->VertToHoriz(); exner_j->UpdateGlobal();
     exner_h->CopyFromVert(exner_i->vz); exner_h->VertToHoriz(); exner_h->UpdateGlobal();
 
@@ -3077,6 +3077,8 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
             }
             theta_h->VertToHoriz();
             theta_h->UpdateGlobal();
+            exner_h->VertToHoriz();
+            exner_h->UpdateGlobal();
 
             diagHorizVort(velx_j, dudz_j);
         }
@@ -3228,7 +3230,7 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
     velz_i->CopyFromHoriz(velz_j->vh);
     rho_i->CopyFromHoriz(rho_j->vh);
     rt_i->CopyFromHoriz(rt_j->vh);
-    exner_i->CopyFromHoriz(exner_h->vh);
+    exner_i->CopyFromHoriz(exner_j->vh);
 
     // write output
     if(save) {
