@@ -12,6 +12,8 @@
 using namespace std;
 using std::string;
 
+//#define CONTIGUOUS_2FORM_ELEMENT_DOFS
+
 Topo::Topo(int _pi) {
     Vec vl, vg;
 
@@ -255,7 +257,11 @@ int* Topo::elInds2_l(int ex, int ey) {
     kk = 0;
     for(iy = 0; iy < elOrd ; iy++) {
         for(ix = 0; ix < elOrd; ix++) {
+#ifdef CONTIGUOUS_2FORM_ELEMENT_DOFS
+            inds2_l[kk] = (ey*nElsX + ex)*elOrd*elOrd + iy*elOrd+ix;
+#else
             inds2_l[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix;
+#endif
             kk++;
         }
     }
@@ -308,10 +314,17 @@ int* Topo::elInds1y_g(int ex, int ey) {
 int* Topo::elInds2_g(int ex, int ey) {
     int ix, iy, kk;
 
+#ifdef CONTIGUOUS_2FORM_ELEMENT_DOFS
+    inds2_g = elInds2_l(ex, ey);
+#endif
     kk = 0;
     for(iy = 0; iy < elOrd ; iy++) {
         for(ix = 0; ix < elOrd; ix++) {
+#ifdef CONTIGUOUS_2FORM_ELEMENT_DOFS
+            inds2_g[kk] += loc2[0];
+#else
             inds2_g[kk] = loc2[(ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix];
+#endif
             kk++;
         }
     }
