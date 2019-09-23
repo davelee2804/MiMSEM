@@ -1301,34 +1301,6 @@ void Euler::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
     VecDestroy(&dG_z);
 }
 
-void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ainv) {
-    int ii;
-    Vec diag_u_l, diag_u_g;
-    PetscScalar* uArray;
-
-    VecCreateSeq(MPI_COMM_SELF, nk, &diag_u_l);
-    VecCreateMPI(MPI_COMM_WORLD, nkl, nDofskG, &diag_u_g);
-
-    MatGetDiagonal(A, diag_u_g);
-    VecScatterBegin(gtol_k, diag_u_g, diag_u_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  gtol_k, diag_u_g, diag_u_l, INSERT_VALUES, SCATTER_FORWARD);
-    VecGetArray(diag_u_l, &uArray);
-    for(ii = 0; ii < nk; ii++) {
-        uArray[ii] = 1.0/uArray[ii];
-    }
-    VecRestoreArray(diag_u_l, &uArray);
-    VecScatterBegin(gtol_k, diag_u_l, diag_u_g, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  gtol_k, diag_u_l, diag_u_g, INSERT_VALUES, SCATTER_REVERSE);
-    MatCreate(MPI_COMM_WORLD, Ainv);
-    MatSetSizes(*Ainv, nkl, nkl, nDofskG, nDofskG);
-    MatSetType(*Ainv, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(*Ainv, 1, PETSC_NULL, 1, PETSC_NULL);
-    MatDiagonalSet(*Ainv, diag_u_g, INSERT_VALUES);
-
-    VecDestroy(&diag_u_l);
-    VecDestroy(&diag_u_g);
-}
-
 void Euler::diagnose_F_x(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec _F) {
     Vec hu, b, h1l, h2l;
 
@@ -2557,6 +2529,72 @@ void Euler::assemble_schur_horiz(int lev, Vec* theta, Vec velx, Vec rho, Vec rt,
     delete M2_rho_inv;
 }
 
+/*
+perform the (horiztonal) updates:
+  N_{\Pi}'     = -M_{\Theta}(N_{\Theta})^{-1}N_{\Pi}
+  F_{\Theta}'' = F_{\Theta}' - M_{\Theta}(N_{\Theta})^{-1}F_{\Pi}
+
+where M_{\Theta} includes the biharmonic viscosity for the density weighted potential temperature
+*/
+void Euler::horizontal_corrections(int lev, Vec rho, Vec rt, Vec exner, Vec F_rt, Vec F_exner, Mat* N_pi_prime) {
+    MatReuse reuse = (!N_pi_prime) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    WhmatInv* M2_rho_inv = new WhmatInv(topo, geom, edge);
+    N_rt_Inv* M2_pi_inv  = new N_rt_Inv(topo, geom, edge);
+    Vec ones_g, diag_g, F_tmp;
+    Mat M1_inv;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &diag_g);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ones_g);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &F_tmp);
+
+    MatCreate(MPI_COMM_WORLD, &M1_inv);
+    MatSetSizes(M1_inv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M1_inv, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M1_inv, 1, PETSC_NULL, 1, PETSC_NULL);
+    MatZeroEntries(M1_inv);
+
+    M2_pi_inv->assemble(rt, lev, SCALE, true);
+    MatScale(M2_pi_inv->M, -1.0*CV/RD);
+
+    // viscosity operator
+    M2->assemble(lev, SCALE, true);
+    M1->assemble(lev, SCALE, true);
+    MatGetDiagonal(M1->M, diag_g);
+    VecSet(ones_g, 1.0);
+    VecPointwiseDivide(diag_g, ones_g, diag_g);
+    MatDiagonalSet(M1_inv, diag_g, INSERT_VALUES);
+
+    M2_rho_inv->assemble(rho, lev, SCALE);
+    MatMatMult(M2_rho_inv->M, M2->M, reuse, PETSC_DEFAULT, &pcx_M2_invM2);
+    MatMatMult(M2->M, pcx_M2_invM2, reuse, PETSC_DEFAULT, &pcx_M2M2_invM2);
+    MatMatMult(EtoF->E12, pcx_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_DT_M2M2_invM2);
+    MatMatMult(M1_inv, pcx_DT_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_M1_invDT_M2M2_invM2);
+    MatMatMult(EtoF->E21, pcx_M1_invDT_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_LAP_Theta);
+
+    MatMatMult(M2->M, pcx_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_M2_LAP_Theta);
+    MatMatMult(EtoF->E12, pcx_M2_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_DT_LAP_Theta);
+    MatMatMult(M1_inv, pcx_DT_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_M1_invDT_LAP_Theta);
+    MatMatMult(EtoF->E21, pcx_M1_invDT_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_D_M1_invDT_LAP_Theta);
+    MatMatMult(M2->M, pcx_D_M1_invDT_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_LAP2_Theta);
+
+    MatAYPX(pcx_LAP2_Theta, 0.5*dt*del2*del2, M2->M, DIFFERENT_NONZERO_PATTERN);
+    MatMatMult(pcx_LAP2_Theta, M2_pi_inv->M, reuse, PETSC_DEFAULT, &pcx_M2_Theta_N_Theta_inv);
+
+    M2_pi_inv->assemble(exner, lev, SCALE, false);
+    MatMatMult(pcx_M2_Theta_N_Theta_inv, M2_pi_inv->M, reuse, PETSC_DEFAULT, N_pi_prime);
+    MatScale(*N_pi_prime, -1.0);
+
+    MatMult(pcx_M2_Theta_N_Theta_inv, F_exner, F_tmp);
+    VecAXPY(F_rt, -1.0, F_tmp);
+
+    delete M2_rho_inv;
+    delete M2_pi_inv;
+    VecDestroy(&ones_g);
+    VecDestroy(&diag_g);
+    VecDestroy(&F_tmp);
+    MatDestroy(&M1_inv);
+}
+
 #define DO_VERT
 #define DO_HORIZ
 
@@ -2674,6 +2712,7 @@ void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, 
         VecAXPY(F_rt->vz[ei], -1.0, _tmpB1);
 
         // 2. density weighted potential temperature correction
+        // TODO: add temperature equation biharmonic viscosity to the mass matrix VB here
         MatMatMult(vo->VB, pc_N_rt_inv, reuse, PETSC_DEFAULT, &pc_VB_N_rt_inv);
         MatMatMult(pc_VB_N_rt_inv, pc_N_exner, reuse, PETSC_DEFAULT, &pc_N_exner_2);
         MatMult(pc_VB_N_rt_inv, F_exner->vz[ei], _tmpB1);
@@ -3128,7 +3167,6 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
             VecAXPY(F_rt->vh[lev], dt, h_tmp);
 
             // add in the viscous term
-/*
             M1->assemble(lev, SCALE, true);
             VecZeroEntries(dF);
             VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
@@ -3147,7 +3185,6 @@ void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
             VecDestroy(&dtheta);
             MatMult(M2->M, dG, dF);
             VecAXPY(F_rt->vh[lev], dt*del2*del2, dF);
-*/
         }
 #endif
         F_rho->UpdateLocal();

@@ -91,6 +91,8 @@ class Euler {
         void repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
 
+        void horizontal_corrections(int lev, Vec rho, Vec rt, Vec exner, Vec F_rt, Vec F_exner, Mat* N_pi_prime);
+
     private:
         // vertical vectors and matrices
         Vec _Phi_z;
@@ -150,6 +152,18 @@ class Euler {
         Mat pcx_M1_exner_M1_inv;
         Mat pcx_Au;
         Mat pcx_Au_M2_inv;
+        // .....potential temperature corrections
+        Mat pcx_M2_invM2;
+        Mat pcx_M2M2_invM2;
+        Mat pcx_DT_M2M2_invM2;
+        Mat pcx_M1_invDT_M2M2_invM2;
+        Mat pcx_LAP_Theta;
+        Mat pcx_M2_LAP_Theta;
+        Mat pcx_DT_LAP_Theta;
+        Mat pcx_M1_invDT_LAP_Theta;
+        Mat pcx_D_M1_invDT_LAP_Theta;
+        Mat pcx_LAP2_Theta;
+        Mat pcx_M2_Theta_N_Theta_inv;
 
         Mat _PCz;
         Mat _PCx;
