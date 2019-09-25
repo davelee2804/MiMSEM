@@ -8,6 +8,7 @@ class HorizSolve {
         double del2;
         bool do_visc;
         int rank;
+        int size;
         int step;
         bool firstStep;
         GaussLobatto* quad;
@@ -93,6 +94,8 @@ class HorizSolve {
         Mat pcx_M2M2_invM2;
         Mat pcx_DT_M2M2_invM2;
         Mat pcx_M1_invDT_M2M2_invM2;
+        Mat pcx_M1_rhoM1_invDT_M2M2_invM2;
+        Mat pcx_M1_invM1_rhoM1_invDT_M2M2_invM2;
         Mat pcx_LAP_Theta;
         Mat pcx_M2_LAP_Theta;
         Mat pcx_DT_LAP_Theta;

@@ -423,7 +423,7 @@ void HorizSolve::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs*
     L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* velz_j = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* F_exner = new L2Vecs(geom->nk, topo, geom);
-    Vec fu, frho, frt, fexner, du, drho, drt, dexner, _F, _G, dF, dG, dtheta, u_tmp;
+    Vec fu, frho, frt, fexner, du, drho, drt, dexner, _F, _G, dF, dG, dtheta, u_tmp_1, u_tmp_2;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &frho);
@@ -437,7 +437,8 @@ void HorizSolve::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs*
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_G);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dF);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dG);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp_1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp_2);
     
 
     for(lev = 0; lev < geom->nk; lev++) {
@@ -503,24 +504,26 @@ void HorizSolve::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs*
             MatMult(M2->M, dG, frt);
 
             // add in the viscous term
-            M1->assemble(lev, SCALE, true);
-            VecZeroEntries(dF);
-            VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
-            VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
+            if(do_visc) {
+                M1->assemble(lev, SCALE, true);
+                VecZeroEntries(dF);
+                VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
+                VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
 
-            grad(false, dF, &dtheta, lev);
-            F->assemble(rho_j->vl[lev], lev, true, SCALE);
-            MatMult(F->M, dtheta, u_tmp);
-            VecDestroy(&dtheta);
+                grad(false, dF, &dtheta, lev);
+                F->assemble(rho_j->vl[lev], lev, true, SCALE);
+                MatMult(F->M, dtheta, u_tmp_1);
+                VecDestroy(&dtheta);
 
-            KSPSolve(ksp1, u_tmp, _G);
-            MatMult(EtoF->E21, _G, dG);
+                KSPSolve(ksp1, u_tmp_1, u_tmp_2);
+                MatMult(EtoF->E21, u_tmp_2, dG);
 
-            grad(false, dG, &dtheta, lev);
-            MatMult(EtoF->E21, dtheta, dG);
-            VecDestroy(&dtheta);
-            MatMult(M2->M, dG, dF);
-            VecAXPY(frt, dt*del2*del2, dF);
+                grad(false, dG, &dtheta, lev);
+                MatMult(EtoF->E21, dtheta, dG);
+                VecDestroy(&dtheta);
+                MatMult(M2->M, dG, dF);
+                VecAXPY(frt, dt*del2*del2, dF);
+            }
 
             // delta updates  - velx is a global vector, while theta and exner are local vectors
             assemble_schur(lev, theta_h->vl, velx_j[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
@@ -535,6 +538,13 @@ void HorizSolve::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs*
             MatMult(EtoF->E21, _F, rho_j->vh[lev]);
             VecAYPX(rho_j->vh[lev], -dt, rho_i->vh[lev]);
             VecAXPY(drho, -1.0, rho_j->vh[lev]);
+
+#ifdef EXPLICIT_THETA_UPDATE
+            VecCopy(rt_j->vh[lev], drt);
+            MatMult(EtoF->E21, _G, rt_j->vh[lev]);
+            VecAYPX(rt_j->vh[lev], -dt, rt_i->vh[lev]);
+            VecAXPY(drt, -1.0, rt_j->vh[lev]);
+#endif
 
             max_norm_exner = MaxNorm(dexner, exner_j->vh[lev], max_norm_exner);
             max_norm_u     = MaxNorm(du,     velx_j[lev],      max_norm_u    );
@@ -602,7 +612,8 @@ void HorizSolve::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs*
     VecDestroy(&_G);
     VecDestroy(&dF);
     VecDestroy(&dG);
-    VecDestroy(&u_tmp);
+    VecDestroy(&u_tmp_1);
+    VecDestroy(&u_tmp_2);
     delete rho_j;
     delete rt_j;
     delete exner_j;
@@ -994,7 +1005,7 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     MatZeroEntries(M1_inv);
     MatDiagonalSet(M1_inv, diag_g, INSERT_VALUES);
 
-    {   // biharmonic viscosity
+    if(do_visc) {   // biharmonic viscosity
         Vec m0_inv, ones_0;
         Mat M2D, DTM2D, LAP_1, CTM1, M0_invCTM1, M0_inv, VISC, VISC2;
 
@@ -1090,13 +1101,17 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     MatAYPX(Mu_prime, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
     coriolisMatInv(Mu_prime, &Mu_inv);
 
-    MatAXPY(M1_OP, 1.0, Mu_prime, DIFFERENT_NONZERO_PATTERN);
+    if(do_visc) MatAXPY(M1_OP, 1.0, Mu_prime, DIFFERENT_NONZERO_PATTERN);
     MatMult(pcx_Au_M2_inv, F_rho, diag_g);
     VecAXPY(F_u, -1.0, diag_g);
 
     // setup the corrected velocity mass matrix solver
     KSPCreate(MPI_COMM_WORLD, &ksp_u);
-    KSPSetOperators(ksp_u, M1_OP, M1_OP);
+    if(do_visc) {
+        KSPSetOperators(ksp_u, M1_OP, M1_OP);
+    } else {
+        KSPSetOperators(ksp_u, Mu_prime, Mu_prime);
+    }
     KSPSetTolerances(ksp_u, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp_u, KSPGMRES);
     KSPGetPC(ksp_u, &pc);
@@ -1111,14 +1126,23 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
 
     M2_rt_inv->assemble(rt, lev, SCALE, true);
     MatScale(M2_rt_inv->M, -1.0*CV/RD);
-/*
-    {   // temperature viscosity (biharmonic)
+
+    if(do_visc) {   // temperature viscosity (biharmonic)
         M2_rho_inv->assemble(rho, lev, SCALE);
         MatMatMult(M2_rho_inv->M, M2->M, reuse, PETSC_DEFAULT, &pcx_M2_invM2);
         MatMatMult(M2->M, pcx_M2_invM2, reuse, PETSC_DEFAULT, &pcx_M2M2_invM2);
         MatMatMult(EtoF->E12, pcx_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_DT_M2M2_invM2);
+
+        MatGetDiagonal(M1->M, diag_g);
+        VecPointwiseDivide(diag_g, ones_g, diag_g);
+        MatZeroEntries(M1_inv);
+        MatDiagonalSet(M1_inv, diag_g, INSERT_VALUES);
+
         MatMatMult(M1_inv, pcx_DT_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_M1_invDT_M2M2_invM2);
-        MatMatMult(EtoF->E21, pcx_M1_invDT_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_LAP_Theta);
+        F->assemble(rho, lev, true, SCALE);
+        MatMatMult(F->M, pcx_M1_invDT_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_M1_rhoM1_invDT_M2M2_invM2);
+        MatMatMult(M1_inv, pcx_M1_rhoM1_invDT_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_M1_invM1_rhoM1_invDT_M2M2_invM2);
+        MatMatMult(EtoF->E21, pcx_M1_invM1_rhoM1_invDT_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_LAP_Theta);
 
         MatMatMult(M2->M, pcx_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_M2_LAP_Theta);
         MatMatMult(EtoF->E12, pcx_M2_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_DT_LAP_Theta);
@@ -1127,10 +1151,10 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
         MatMatMult(M2->M, pcx_D_M1_invDT_LAP_Theta, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &pcx_LAP2_Theta);
 
         MatAYPX(pcx_LAP2_Theta, 0.5*dt*del2*del2, M2->M, DIFFERENT_NONZERO_PATTERN);
+        MatMatMult(pcx_LAP2_Theta, M2_rt_inv->M, reuse, PETSC_DEFAULT, &pcx_M2N_rt_inv);
+    } else {
+        MatMatMult(M2->M, M2_rt_inv->M, reuse, PETSC_DEFAULT, &pcx_M2N_rt_inv);
     }
-    MatMatMult(pcx_LAP2_Theta, M2_rt_inv->M, reuse, PETSC_DEFAULT, &pcx_M2N_rt_inv);
-*/
-    MatMatMult(M2->M, M2_rt_inv->M, reuse, PETSC_DEFAULT, &pcx_M2N_rt_inv);
     M2_pi_inv->assemble(exner, lev, SCALE, false);
     MatMatMult(pcx_M2N_rt_inv, M2_pi_inv->M, reuse, PETSC_DEFAULT, &pcx_M2N_rt_invN_pi);
 
@@ -1179,11 +1203,12 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     VecScale(du, -1.0);
 
     // density weighted potential temperature update
+#ifndef EXPLICIT_THETA_UPDATE
     MatMult(M2_pi_inv->M, dexner, h_tmp);
     VecAXPY(F_exner, 1.0, h_tmp);
     MatMult(M2_rt_inv->M, F_exner, drt);
     VecScale(drt, -1.0);
-
+#endif
     // note: do the density update outside!
 
     VecDestroy(&wl);
@@ -1195,10 +1220,8 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     MatDestroy(&Mu_inv);
     MatDestroy(&M1_inv);
     MatDestroy(&Mu_prime);
-    MatDestroy(&M1_OP);
-/*
-    MatDestroy(&pcx_LAP2_Theta);
-*/
+    if(do_visc) MatDestroy(&M1_OP);
+    if(do_visc) MatDestroy(&pcx_LAP2_Theta);
     delete M2inv;
     delete M2_pi_inv;
     delete M2_rt_inv;
