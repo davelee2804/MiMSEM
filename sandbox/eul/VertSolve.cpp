@@ -942,11 +942,19 @@ void VertSolve::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec
     MatScale(pc_G, 0.5*dt);
 
     // [u,rho] block
+/*
     vo->AssembleLinearWithRT(ex, ey, exner, vo->VA, true);
     vo->AssembleLinearWithRhoInv(ex, ey, rho, vo->VA_inv);
     MatMatMult(vo->VA, vo->VA_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
     MatMatMult(pc_V0_invV0_rt, pc_G, reuse, PETSC_DEFAULT, &pc_A_u);
     MatScale(pc_A_u, RD/CV);
+*/
+    vo->AssembleLinearWithRhoInv(ex, ey, rho, vo->VA_inv);
+    MatMatMult(vo->VA, vo->VA_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(pc_V0_invV0_rt, vo->V01, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
+    vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
+    MatMatMult(pc_V0_invV0_rt_DT, vo->VB, reuse, PETSC_DEFAULT, &pc_A_u);
+    MatScale(pc_A_u, 0.5*dt*RD/CV);
 
     // [rho,u] block
     vo->AssembleLinearWithRT(ex, ey, rho, vo->VA, true);

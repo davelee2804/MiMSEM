@@ -166,7 +166,7 @@ void VertOps::vertOps() {
     MatDestroy(&V10t);
 
     // create a second div operator over all vertical levels (for theta with non-homogeneous bcs)
-    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+1)*n2, n2, NULL, &V10_full);
+    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+1)*n2, 2*n2, NULL, &V10_full);
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < n2; ii++) {
             rows[0] = kk*n2 + ii;

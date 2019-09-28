@@ -78,6 +78,7 @@ class VertSolve {
         Mat pc_A_rt_VB_inv;
         Mat pc_A_rt_VB_inv_D_rho;
         Mat pc_M_rt;
+        Mat pc_V0_invV0_rt_DT;
 
         Mat _PCz;
 };
