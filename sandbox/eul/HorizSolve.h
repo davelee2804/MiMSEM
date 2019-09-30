@@ -87,6 +87,7 @@ class HorizSolve {
         Mat pcx_D21M1invF_rho;
         Mat pcx_M1_exner_M1_inv;
         Mat pcx_Au;
+        Mat pcx_Au_2;
         Mat pcx_Au_M2_inv;
         Mat pcx_Mu_prime;
         // ..... temperature equation viscosity 
@@ -102,6 +103,15 @@ class HorizSolve {
         Mat pcx_M1_invDT_LAP_Theta;
         Mat pcx_D_M1_invDT_LAP_Theta;
         Mat pcx_LAP2_Theta;
+        // ..... rho corrections (Theta)
+        Mat pcx_DTM2_inv;
+        Mat pcx_KDTM2_inv;
+        Mat pcx_M2M2_inv;
+        Mat pcx_U_GRAD_theta;
+        // ..... rho corrections (velx)
+        Mat pcx_M2_rho_invM2;
+        Mat pcx_M2_exnerM2_rho_invM2;
+        Mat pcx_DTM2_exnerM2_rho_invM2;
 
         Mat _PCx;
 };

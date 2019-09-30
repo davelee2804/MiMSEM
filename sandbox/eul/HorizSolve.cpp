@@ -27,10 +27,6 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-#define MAX_IT 100
-#define VERT_TOL 1.0e-8
-#define HORIZ_TOL 1.0e-12
-#define RAYLEIGH 0.2
 
 //#define EXPLICIT_RHO_UPDATE
 //#define EXPLICIT_THETA_UPDATE
@@ -523,6 +519,7 @@ void HorizSolve::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs*
                 VecDestroy(&dtheta);
                 MatMult(M2->M, dG, dF);
                 VecAXPY(frt, dt*del2*del2, dF);
+                //VecAXPY(frt, 4.0*dt*del2*del2, dF);
             }
 
             // delta updates  - velx is a global vector, while theta and exner are local vectors
@@ -848,6 +845,7 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
     KSPSolve(ksp1, utmp, _G);
 
     // second voritcity term
+/*
     VecZeroEntries(utmp);
     if(level > 0) {
         VecZeroEntries(dudz_h);
@@ -880,6 +878,7 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
         VecAXPY(utmp, 0.5, dp);
     }
     VecAXPY(fu, 1.0, utmp);
+*/
     VecScale(fu, dt);
 
     // assemble the mass matrix terms
@@ -1080,10 +1079,82 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     MatScale(pcx_D_rho, 0.5*dt);
 
     // density corrections
+/*
+    {
+        Vec velx_l, du_l, ones_2;
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &velx_l);
+        VecCreateSeq(MPI_COMM_SELF, topo->n2, &du_l);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &ones_2);
+        VecSet(ones_2, 1.0);
+
+        VecScatterBegin(topo->gtol_1, velx, velx_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, velx, velx_l, INSERT_VALUES, SCATTER_FORWARD);
+        K->assemble(velx_l, lev, SCALE);
+
+        MatMatMult(EtoF->E12, M2inv->M, reuse, PETSC_DEFAULT, &pcx_DTM2_inv);
+        MatMatMult(K->M, pcx_DTM2_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &pcx_KDTM2_inv);
+
+        MatMult(EtoF->E21, velx, ones_2);
+        VecScatterBegin(topo->gtol_2, ones_2, du_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_2, ones_2, du_l, INSERT_VALUES, SCATTER_FORWARD);
+        T->assemble(du_l, lev, SCALE, true);
+        MatMatMult(T->M, M2inv->M, reuse, PETSC_DEFAULT, &pcx_M2M2_inv);
+        MatAXPY(pcx_KDTM2_inv, 0.5, pcx_M2M2_inv, DIFFERENT_NONZERO_PATTERN);
+        
+        MatScale(pcx_KDTM2_inv, dt);
+        VecSet(ones_2, 1.0);
+        MatDiagonalSet(pcx_KDTM2_inv, ones_2, ADD_VALUES);
+
+        T->assemble(theta_k, lev, SCALE, false);
+        MatMatMult(pcx_KDTM2_inv, T->M, reuse, PETSC_DEFAULT, &pcx_U_GRAD_theta);
+
+        MatAssemblyBegin(pcx_U_GRAD_theta, MAT_FINAL_ASSEMBLY);
+        MatAssemblyEnd(  pcx_U_GRAD_theta, MAT_FINAL_ASSEMBLY);
+
+        VecDestroy(&velx_l);
+        VecDestroy(&du_l);
+        VecDestroy(&ones_2);
+    }
+    MatMatMult(pcx_U_GRAD_theta, M2inv->M, reuse, PETSC_DEFAULT, &pcx_A_rtM2_inv);
+*/
+/*
+    {
+        Vec velx_l;
+        Mat Kt, DM1_inv, DM1_invKt, DM1_invKtM2_inv, DM1_invKtM2_invM2_theta, pcx_A_rt;
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &velx_l);
+        VecScatterBegin(topo->gtol_1, velx, velx_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, velx, velx_l, INSERT_VALUES, SCATTER_FORWARD);
+        K->assemble(velx_l, lev, SCALE);
+        MatTranspose(K->M, MAT_INITIAL_MATRIX, &Kt);
+        T->assemble(theta_k, lev, SCALE, false);
+        MatMatMult(EtoF->E21, M1_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DM1_inv);
+        MatMatMult(DM1_inv, Kt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DM1_invKt);
+        MatMatMult(DM1_invKt, M2inv->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DM1_invKtM2_inv);
+        MatMatMult(DM1_invKtM2_inv, T->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DM1_invKtM2_invM2_theta);
+        MatMatMult(M2->M, DM1_invKtM2_invM2_theta, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &pcx_A_rt);
+        MatAYPX(pcx_A_rt, dt, T->M, DIFFERENT_NONZERO_PATTERN);
+        MatAssemblyBegin(pcx_A_rt, MAT_FINAL_ASSEMBLY);
+        MatAssemblyEnd(  pcx_A_rt, MAT_FINAL_ASSEMBLY);
+        MatMatMult(pcx_A_rt, M2inv->M, reuse, PETSC_DEFAULT, &pcx_A_rtM2_inv);
+
+        VecDestroy(&velx_l);
+        MatDestroy(&Kt);
+        MatDestroy(&DM1_inv);
+        MatDestroy(&DM1_invKt);
+        MatDestroy(&DM1_invKtM2_inv);
+        MatDestroy(&DM1_invKtM2_invM2_theta);
+        MatDestroy(&pcx_A_rt);
+    }
+*/
     T->assemble(theta_k, lev, SCALE, false);
     MatMatMult(T->M, M2inv->M, reuse, PETSC_DEFAULT, &pcx_A_rtM2_inv);
+MatAssemblyBegin(pcx_A_rtM2_inv, MAT_FINAL_ASSEMBLY);
+MatAssemblyEnd(  pcx_A_rtM2_inv, MAT_FINAL_ASSEMBLY);
     MatMatMult(pcx_A_rtM2_inv, pcx_D_rho, reuse, PETSC_DEFAULT, &pcx_D_prime);
-    MatAXPY(pcx_D, -1.0, pcx_D_prime, SAME_NONZERO_PATTERN);
+MatAssemblyBegin(pcx_D_prime, MAT_FINAL_ASSEMBLY);
+MatAssemblyEnd(  pcx_D_prime, MAT_FINAL_ASSEMBLY);
+    //MatAXPY(pcx_D, -1.0, pcx_D_prime, SAME_NONZERO_PATTERN);
+MatAYPX(pcx_D_prime, -1.0, pcx_D, SAME_NONZERO_PATTERN);
     MatMult(pcx_A_rtM2_inv, F_rho, h_tmp);
     VecAXPY(F_rt, -1.0, h_tmp);
 
@@ -1092,10 +1163,48 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     MatZeroEntries(M1_inv);
     MatDiagonalSet(M1_inv, diag_g, INSERT_VALUES);
 
+/*
     F->assemble(exner, lev, true, SCALE);
     MatMatMult(F->M, M1_inv, reuse, PETSC_DEFAULT, &pcx_M1_exner_M1_inv);
     MatMatMult(pcx_M1_exner_M1_inv, pcx_G, reuse, PETSC_DEFAULT, &pcx_Au);
     MatScale(pcx_Au, RD/CV);
+*/
+F->assemble(theta_k, lev, false, SCALE);
+MatMatMult(F->M, M1_inv, reuse, PETSC_DEFAULT, &pcx_M1_exner_M1_inv);
+MatMatMult(pcx_M1_exner_M1_inv, EtoF->E12, reuse, PETSC_DEFAULT, &pcx_DTM2_exnerM2_rho_invM2);
+T->assemble(exner, lev, SCALE, true);
+//MatMatMult(pcx_DTM2_exnerM2_rho_invM2, T->M, reuse, PETSC_DEFAULT, &pcx_Au);
+//MatScale(pcx_Au, 0.5*dt*RD/CV);
+MatMatMult(pcx_DTM2_exnerM2_rho_invM2, T->M, reuse, PETSC_DEFAULT, &pcx_Au_2);
+MatScale(pcx_Au_2, 0.5*dt*RD/CV);
+
+{
+Mat M1_thetaM1_rho_invM1, M1_thetaM1_rho_invM1M1_rho_inv, M1_thetaM1_rho_invM1M1_rho_inv_DT;
+F->assemble(exner, lev, true, SCALE);
+MatMatMult(pcx_M1_exner_M1_inv, F->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M1_thetaM1_rho_invM1);
+MatMatMult(M1_thetaM1_rho_invM1, M1_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M1_thetaM1_rho_invM1M1_rho_inv);
+MatMatMult(M1_thetaM1_rho_invM1M1_rho_inv, EtoF->E12, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M1_thetaM1_rho_invM1M1_rho_inv_DT);
+T->assemble(rho, lev, SCALE, true);
+MatMatMult(M1_thetaM1_rho_invM1M1_rho_inv_DT, T->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &pcx_Au);
+MatAYPX(pcx_Au, -0.5*dt*RD/CV, pcx_Au_2, DIFFERENT_NONZERO_PATTERN);
+MatAssemblyBegin(pcx_Au, MAT_FINAL_ASSEMBLY);
+MatAssemblyEnd(  pcx_Au, MAT_FINAL_ASSEMBLY);
+MatDestroy(&M1_thetaM1_rho_invM1);
+MatDestroy(&M1_thetaM1_rho_invM1M1_rho_inv);
+MatDestroy(&M1_thetaM1_rho_invM1M1_rho_inv_DT);
+}
+
+/*
+    {
+        M2_rho_inv->assemble(rho, lev, SCALE);
+        MatMatMult(M2_rho_inv->M, M2->M, reuse, PETSC_DEFAULT, &pcx_M2_rho_invM2);
+        T->assemble(exner, lev, SCALE, true);
+        MatMatMult(T->M, pcx_M2_rho_invM2, reuse, PETSC_DEFAULT, &pcx_M2_exnerM2_rho_invM2);
+        MatMatMult(EtoF->E12, pcx_M2_exnerM2_rho_invM2, reuse, PETSC_DEFAULT, &pcx_DTM2_exnerM2_rho_invM2);
+        MatMatMult(M1_inv, pcx_DTM2_exnerM2_rho_invM2, reuse, PETSC_DEFAULT, &pcx_Au);
+        MatScale(pcx_Au, 0.5*dt*RD/CV);
+    }
+*/
     MatMatMult(pcx_Au, M2inv->M, reuse, PETSC_DEFAULT, &pcx_Au_M2_inv);
     MatMatMult(pcx_Au_M2_inv, pcx_D_rho, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mu_prime); // invalid read on the second pass
     MatAYPX(Mu_prime, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
@@ -1104,6 +1213,7 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     if(do_visc) MatAXPY(M1_OP, 1.0, Mu_prime, DIFFERENT_NONZERO_PATTERN);
     MatMult(pcx_Au_M2_inv, F_rho, diag_g);
     VecAXPY(F_u, -1.0, diag_g);
+MatDestroy(&pcx_Au);
 
     // setup the corrected velocity mass matrix solver
     KSPCreate(MPI_COMM_WORLD, &ksp_u);
@@ -1121,7 +1231,8 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     KSPSetFromOptions(ksp_u);
 
     // build the preconditioner
-    MatMatMult(pcx_D, Mu_inv, reuse, PETSC_DEFAULT, &pcx_D_Mu_inv);
+    //MatMatMult(pcx_D, Mu_inv, reuse, PETSC_DEFAULT, &pcx_D_Mu_inv);
+MatMatMult(pcx_D_prime, Mu_inv, reuse, PETSC_DEFAULT, &pcx_D_Mu_inv);
     MatMatMult(pcx_D_Mu_inv, pcx_G, reuse, PETSC_DEFAULT, &pcx_LAP);
 
     M2_rt_inv->assemble(rt, lev, SCALE, true);
@@ -1151,6 +1262,7 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
         MatMatMult(M2->M, pcx_D_M1_invDT_LAP_Theta, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &pcx_LAP2_Theta);
 
         MatAYPX(pcx_LAP2_Theta, 0.5*dt*del2*del2, M2->M, DIFFERENT_NONZERO_PATTERN);
+        //MatAYPX(pcx_LAP2_Theta, 4.0*0.5*dt*del2*del2, M2->M, DIFFERENT_NONZERO_PATTERN);
         MatMatMult(pcx_LAP2_Theta, M2_rt_inv->M, reuse, PETSC_DEFAULT, &pcx_M2N_rt_inv);
     } else {
         MatMatMult(M2->M, M2_rt_inv->M, reuse, PETSC_DEFAULT, &pcx_M2N_rt_inv);
@@ -1163,7 +1275,8 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     MatAssemblyBegin(pcx_LAP, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (pcx_LAP, MAT_FINAL_ASSEMBLY);
 
-    if(!_PCx) MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
+    //if(!_PCx) MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
+if(!_PCx) MatMatMult(pcx_D_prime, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
     MatZeroEntries(_PCx);
     MatAXPY(_PCx, -1.0, pcx_LAP, DIFFERENT_NONZERO_PATTERN);
     MatAXPY(_PCx, -1.0, pcx_M2N_rt_invN_pi, DIFFERENT_NONZERO_PATTERN);
