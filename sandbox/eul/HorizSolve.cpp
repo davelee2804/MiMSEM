@@ -526,21 +526,23 @@ void HorizSolve::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs*
                            fu, frho, frt, F_exner->vh[lev], du, drho, drt, dexner);
 
             VecAXPY(velx_j[lev], 1.0, du);
-            VecAXPY(rt_j->vh[lev], 1.0, drt);
-            VecAXPY(exner_j->vh[lev], 1.0, dexner);
-
-            // update the density
+#ifdef EXPLICIT_RHO_UPDATE
             VecCopy(rho_j->vh[lev], drho);
             MatMult(EtoF->E21, _F, rho_j->vh[lev]);
             VecAYPX(rho_j->vh[lev], -dt, rho_i->vh[lev]);
             VecAXPY(drho, -1.0, rho_j->vh[lev]);
-
+#else
+            VecAXPY(rho_j->vh[lev], 1.0, drho);
+#endif
 #ifdef EXPLICIT_THETA_UPDATE
             VecCopy(rt_j->vh[lev], drt);
             MatMult(EtoF->E21, _G, rt_j->vh[lev]);
             VecAYPX(rt_j->vh[lev], -dt, rt_i->vh[lev]);
             VecAXPY(drt, -1.0, rt_j->vh[lev]);
+#else
+            VecAXPY(rt_j->vh[lev], 1.0, drt);
 #endif
+            VecAXPY(exner_j->vh[lev], 1.0, dexner);
 
             max_norm_exner = MaxNorm(dexner, exner_j->vh[lev], max_norm_exner);
             max_norm_u     = MaxNorm(du,     velx_j[lev],      max_norm_u    );
@@ -1076,19 +1078,6 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     MatScale(pcx_D_rho, 0.5*dt);
 
     // density corrections
-/*
-    T->assemble(theta_k, lev, SCALE, false);
-    MatMatMult(T->M, M2inv->M, reuse, PETSC_DEFAULT, &pcx_A_rtM2_inv);
-    MatAssemblyBegin(pcx_A_rtM2_inv, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  pcx_A_rtM2_inv, MAT_FINAL_ASSEMBLY);
-    MatMatMult(pcx_A_rtM2_inv, pcx_D_rho, reuse, PETSC_DEFAULT, &pcx_D_prime);
-    MatAssemblyBegin(pcx_D_prime, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  pcx_D_prime, MAT_FINAL_ASSEMBLY);
-    MatAYPX(pcx_D_prime, -1.0, pcx_D, SAME_NONZERO_PATTERN);
-    MatMult(pcx_A_rtM2_inv, F_rho, h_tmp);
-    VecAXPY(F_rt, -1.0, h_tmp);
-*/
-
     MatGetDiagonal(F->M, diag_g);
     VecPointwiseDivide(diag_g, ones_g, diag_g);
     MatZeroEntries(M1_inv);
@@ -1120,9 +1109,12 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     MatMatMult(pcx_Au, M2inv->M, reuse, PETSC_DEFAULT, &pcx_Au_M2_inv);
     MatMatMult(pcx_Au_M2_inv, pcx_D_rho, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mu_prime); // invalid read on the second pass
     MatAYPX(Mu_prime, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
-    coriolisMatInv(Mu_prime, &Mu_inv);
-
-    if(do_visc) MatAXPY(M1_OP, 1.0, Mu_prime, DIFFERENT_NONZERO_PATTERN);
+    if(do_visc) { 
+        MatAXPY(M1_OP, 1.0, Mu_prime, DIFFERENT_NONZERO_PATTERN);
+        coriolisMatInv(M1_OP, &Mu_inv);
+    } else {
+        coriolisMatInv(Mu_prime, &Mu_inv);
+    }
     MatMult(pcx_Au_M2_inv, F_rho, diag_g);
     VecAXPY(F_u, -1.0, diag_g);
     MatDestroy(&pcx_Au);
@@ -1143,7 +1135,6 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     KSPSetFromOptions(ksp_u);
 
     // build the preconditioner
-    //MatMatMult(pcx_D_prime, Mu_inv, reuse, PETSC_DEFAULT, &pcx_D_Mu_inv);
     MatMatMult(pcx_D, Mu_inv, reuse, PETSC_DEFAULT, &pcx_D_Mu_inv);
     MatMatMult(pcx_D_Mu_inv, pcx_G, reuse, PETSC_DEFAULT, &pcx_LAP);
 
@@ -1186,7 +1177,6 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     MatAssemblyBegin(pcx_LAP, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (pcx_LAP, MAT_FINAL_ASSEMBLY);
 
-    //if(!_PCx) MatMatMult(pcx_D_prime, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
     if(!_PCx) MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
     MatZeroEntries(_PCx);
     MatAXPY(_PCx, -1.0, pcx_LAP, DIFFERENT_NONZERO_PATTERN);
@@ -1219,12 +1209,10 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     MatMult(pcx_G, dexner, ones_g);
     VecAXPY(F_u, 1.0, ones_g);
 
-    //MatMult(Mu_inv, F_u, du);
     // actual solve for delta u update improves convergence
     KSPSolve(ksp_u, F_u, du);
-    KSPDestroy(&ksp_u);
-
     VecScale(du, -1.0);
+    KSPDestroy(&ksp_u);
 
     // density weighted potential temperature update
 #ifndef EXPLICIT_THETA_UPDATE
@@ -1233,7 +1221,12 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     MatMult(M2_rt_inv->M, F_exner, drt);
     VecScale(drt, -1.0);
 #endif
-    // note: do the density update outside!
+#ifndef EXPLICIT_RHO_UPDATE
+    MatMult(pcx_D_rho, du, h_tmp);
+    VecAXPY(F_rho, 1.0, h_tmp);
+    MatMult(M2inv->M, F_rho, drho);
+    VecScale(drho, -1.0);
+#endif
 
     VecDestroy(&wl);
     VecDestroy(&wg);
