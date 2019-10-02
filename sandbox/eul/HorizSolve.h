@@ -30,6 +30,10 @@ class HorizSolve {
         EoSmat* eos_mat;
         Ut_mat* M1t;
         UtQWmat* Rh;
+        WmatInv* M2inv;
+        WhmatInv* M2_rho_inv;
+        N_rt_Inv* M2_pi_inv;
+        N_rt_Inv* M2_rt_inv;
         Vec* fg;                 // coriolis vector (global)
         Vec* fl;                 // coriolis vector (local)
         Vec* gv;                 // gravity vector
@@ -64,6 +68,9 @@ class HorizSolve {
                                  Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec fu, Vec _F, Vec _G);
 
         void coriolisMatInv(Mat A, Mat* Ainv);
+        void assemble_biharmonic(int lev, MatReuse reuse, Mat* BVISC);
+        void assemble_biharmonic_temp(int lev, Vec rho, MatReuse reuse, Mat* BVISC);
+        void assemble_rho_correction(int lev, Vec rho, Vec exner, Vec theta_k, MatReuse reuse, Vec diag_g, Vec ones_g, Mat* Au);
 
         double MaxNorm(Vec dx, Vec x, double max_norm);
 
@@ -74,11 +81,16 @@ class HorizSolve {
         Mat pcx_M1invD12;
         Mat pcx_M1invD12M2;
         Mat pcx_D_Mu_inv;
-        Mat pcx_M1invF_rt;
-        Mat pcx_D21M1invF_rt;
         Mat pcx_M2N_rt_inv;
         Mat pcx_M2N_rt_invN_pi;
         Mat pcx_LAP;
+        Mat pcx_M0_inv;
+        Mat pcx_M1_inv;
+        Mat pcx_M2D;
+        Mat pcx_M2DM1_inv;
+        Mat pcx_DTM2D;
+        Mat pcx_CTM1;
+        Mat pcx_M0_invCTM1;
         // ..... rho corrections
         Mat pcx_D_rho;
         Mat pcx_D_prime;
@@ -103,15 +115,14 @@ class HorizSolve {
         Mat pcx_M1_invDT_LAP_Theta;
         Mat pcx_D_M1_invDT_LAP_Theta;
         Mat pcx_LAP2_Theta;
-        // ..... rho corrections (Theta)
-        Mat pcx_DTM2_inv;
-        Mat pcx_KDTM2_inv;
-        Mat pcx_M2M2_inv;
-        Mat pcx_U_GRAD_theta;
         // ..... rho corrections (velx)
         Mat pcx_M2_rho_invM2;
         Mat pcx_M2_exnerM2_rho_invM2;
         Mat pcx_DTM2_exnerM2_rho_invM2;
+
+        Mat pcx_M1_thetaM1_rho_invM1;
+        Mat pcx_M1_thetaM1_rho_invM1M1_rho_inv;
+        Mat pcx_M1_thetaM1_rho_invM1M1_rho_inv_DT;
 
         Mat _PCx;
 };
