@@ -17,7 +17,7 @@ class VertSolve {
         Vec* zv;                 // level height vector
         VertOps* vo;
         KSP ksp_exner;
-        KSP ksp_exner_x;
+        KSP ksp_w;
 
         void initGZ();
 
@@ -37,6 +37,10 @@ class VertSolve {
 
         void repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
+
+        void assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, bool eos_update);
+        void det_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner,
+                        Vec F_w, Vec F_rho, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner);
 
         double MaxNorm(Vec dx, Vec x, double max_norm);
 
@@ -75,10 +79,12 @@ class VertSolve {
         Mat pc_D_rt_M_u_inv;
         Mat pc_VB_N_rt_inv;
         Mat pc_A_u_VB_inv;
-        Mat pc_A_rt_VB_inv;
-        Mat pc_A_rt_VB_inv_D_rho;
-        Mat pc_M_rt;
+        // .....density correction (velocity equation)
         Mat pc_V0_invV0_rt_DT;
+        //Mat pc_V0_thetaV0_invV0_exner;
+        //Mat pc_V0_thetaV0_invV0_exnerV0_inv;
+        //Mat pc_V0_thetaV0_invV0_exnerV0_invDT;
+        //Mat pc_A_u_2;
 
         Mat _PCz;
 };
