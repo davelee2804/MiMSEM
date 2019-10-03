@@ -390,6 +390,7 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
     Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F_z, G_z, dF_z, dG_z;
+    PC pc;
 
     elOrd2 = topo->elOrd*topo->elOrd;
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_w);
@@ -455,8 +456,20 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
             // solve schur complement 
             //assemble_operator_schur(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_j->vz[ii], 
             //                        F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner);
-            assemble_operator_schur(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
-                                    F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner);
+            //assemble_operator_schur(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            //                        F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner);
+            assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], F_w, F_rho, F_rt, F_exner, true);
+            if(!itt) {
+                KSPCreate(MPI_COMM_SELF, &ksp_exner);
+                KSPSetOperators(ksp_exner, _PCz, _PCz);
+                KSPGetPC(ksp_exner, &pc);
+                PCSetType(pc, PCLU);
+                KSPSetOptionsPrefix(ksp_exner, "ksp_exner_");
+                KSPSetFromOptions(ksp_exner);
+            }
+            KSPSolve(ksp_exner, F_rt, d_exner);
+            set_deltas(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+                       F_w, F_rho, F_exner, d_w, d_rho, d_rt, d_exner);
 
             VecAXPY(velz_j->vz[ii],  1.0, d_w);
             VecAXPY(rho_j->vz[ii],   1.0, d_rho);
@@ -1108,7 +1121,7 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
     VecScale(F_rt, -1.0);
 }
 
-void VertSolve::det_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
+void VertSolve::set_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
                            Vec F_w, Vec F_rho, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner) {
     // [u,exner] block
     vo->AssembleConst(ex, ey, vo->VB);
