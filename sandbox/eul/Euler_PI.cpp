@@ -419,6 +419,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
+            VecZeroEntries(d_rt->vz[ii]);
             vert->set_deltas(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
                        F_w->vz[ii], F_rho->vz[ii], F_exner->vz[ii], d_w->vz[ii], d_rho->vz[ii], d_rt->vz[ii], d_exner->vz[ii], true, false);
 
@@ -446,8 +447,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
 
         VecZeroEntries(schur->b);
         schur->RepackFromHoriz(exner_j->vl, schur->b);
-        VecNorm(schur->b, NORM_2, &max_norm_exner);
-        VecNorm(schur->x, NORM_2, &norm_x);
+        VecNorm(schur->b, NORM_2, &norm_x);
+        VecNorm(schur->x, NORM_2, &max_norm_exner);
         max_norm_exner /= norm_x;
 
         // update additional fields
@@ -460,15 +461,16 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
             VecScale(theta_h->vz[ii], 0.5);
             VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
         }
+        theta_h->VertToHoriz();
+        exner_h->VertToHoriz(); exner_h->UpdateGlobal();
         horiz->diagHorizVort(velx_j, dudz_j);
 
         if(!rank) cout << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
                                   "\t|d_u|/|u|: "         << max_norm_u     <<
                                   "\t|d_w|/|w|: "         << max_norm_w     << endl;
 
-        if(max_norm_exner < 1.0e-8 && max_norm_u < 1.0e-8 && max_norm_w < 1.0e-8) done = true;
-
         firstStep = false;
+        if(max_norm_exner < 1.0e-8 && max_norm_u < 1.0e-8 && max_norm_w < 1.0e-8) done = true;
         itt++;
     } while(!done);
 
