@@ -378,7 +378,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         // build the preconditioner matrix
         MatZeroEntries(schur->M);
         for(int lev = 0; lev < geom->nk; lev++) {
-            horiz->assemble_and_update(lev, theta_h->vl, velx_j[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
+            horiz->assemble_and_update(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
                                        F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], 
                                        d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], true, !firstStep, false);
 
@@ -411,7 +411,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         d_exner->UpdateGlobal();
 
         for(int lev = 0; lev < geom->nk; lev++) {
-            horiz->set_deltas(lev, theta_h->vl, velx_j[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
+            //horiz->set_deltas(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
+            horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
                        F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false);
         }
         d_rho->UpdateLocal(); d_rho->HorizToVert();
@@ -419,10 +420,15 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
+
             VecZeroEntries(d_rt->vz[ii]);
-            vert->set_deltas(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+
+            //vert->set_deltas(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            vert->set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_j->vz[ii], 
                        F_w->vz[ii], F_rho->vz[ii], F_exner->vz[ii], d_w->vz[ii], d_rho->vz[ii], d_rt->vz[ii], d_exner->vz[ii], true, false);
 
+            // inverse assembled in function above
+            MatMult(vo->VB_inv, F_rho->vz[ii], d_rho->vz[ii]);
             VecScale(d_rho->vz[ii], -1.0);
             VecScale(d_rt->vz[ii], -1.0);
         }
@@ -432,7 +438,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
             VecAXPY(velx_j[lev], 1.0, d_u[lev]);
             max_norm_u = MaxNorm(d_u[lev], velx_j[lev], max_norm_u);
         }
-        MPI_Allreduce(&max_norm_u,  &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_u = norm_x;
+        MPI_Allreduce(&max_norm_u, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_u = norm_x;
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             VecAXPY(velz_j->vz[ii],  1.0, d_w->vz[ii]    );
             VecAXPY(rho_j->vz[ii],   1.0, d_rho->vz[ii]  );
@@ -443,6 +449,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         rho_j->VertToHoriz();   rho_j->UpdateGlobal();
         rt_j->VertToHoriz();    rt_j->UpdateGlobal();
         exner_j->VertToHoriz(); exner_j->UpdateGlobal();
+        velz_j->VertToHoriz();  velz_j->UpdateGlobal();
         MPI_Allreduce(&max_norm_w, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w = norm_x;
 
         VecZeroEntries(schur->b);
@@ -461,7 +468,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
             VecScale(theta_h->vz[ii], 0.5);
             VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
         }
-        theta_h->VertToHoriz();
+        theta_h->VertToHoriz(); theta_h->UpdateGlobal();
         exner_h->VertToHoriz(); exner_h->UpdateGlobal();
         horiz->diagHorizVort(velx_j, dudz_j);
 
