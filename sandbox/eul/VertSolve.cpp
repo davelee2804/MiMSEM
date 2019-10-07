@@ -458,7 +458,7 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
             //                        F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner);
             //assemble_operator_schur(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
             //                        F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner);
-            assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], F_w, F_rho, F_rt, F_exner, true);
+            assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], F_w, F_rho, F_rt, F_exner, true, true);
             if(!itt) {
                 KSPCreate(MPI_COMM_SELF, &ksp_exner);
                 KSPSetOperators(ksp_exner, _PCz, _PCz);
@@ -469,7 +469,7 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
             }
             KSPSolve(ksp_exner, F_rt, d_exner);
             set_deltas(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
-                       F_w, F_rho, F_exner, d_w, d_rho, d_rt, d_exner);
+                       F_w, F_rho, F_exner, d_w, d_rho, d_rt, d_exner, false, true);
 
             VecAXPY(velz_j->vz[ii],  1.0, d_w);
             VecAXPY(rho_j->vz[ii],   1.0, d_rho);
@@ -1032,7 +1032,8 @@ void VertSolve::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec
     VecScale(drho, -1.0);
 }
 
-void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, bool eos_update) {
+void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, 
+    bool eos_update, bool neg_scale) {
     int n2 = topo->elOrd*topo->elOrd;
     bool build_ksp = (!_PCz) ? true : false;
     MatReuse reuse = (!_PCz) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
@@ -1114,15 +1115,18 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
     if(eos_update) {
         MatAXPY(_PCz, 1.0, pc_N_exner_2, DIFFERENT_NONZERO_PATTERN);
     }
-    MatScale(_PCz, -1.0); // TODO: don't scale here??
+    MatScale(_PCz, -1.0);
 
     MatMult(pc_D_rt_M_u_inv, F_w, _tmpB1);
     VecAXPY(F_rt, -1.0, _tmpB1);
-    VecScale(F_rt, -1.0);
+    if(neg_scale) {
+        VecScale(F_rt, -1.0);
+    }
 }
 
 void VertSolve::set_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
-                           Vec F_w, Vec F_rho, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner) {
+                           Vec F_w, Vec F_rho, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner, 
+                           bool add_delta, bool neg_scale) {
     // [u,exner] block
     vo->AssembleConst(ex, ey, vo->VB);
     MatMatMult(vo->V01, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DTV1);
@@ -1192,12 +1196,24 @@ void VertSolve::set_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt,
     // -- density weighted potential temperature
     MatMult(pc_N_exner, dexner, _tmpB1);
     VecAXPY(_tmpB1, 1.0, F_exner);
-    MatMult(pc_N_rt_inv, _tmpB1, drt);
-    VecScale(drt, -1.0);
+    MatMult(pc_N_rt_inv, _tmpB1, _tmpB2);
+    if(add_delta) VecAXPY(drt, 1.0, _tmpB2);
+    else          VecCopy(_tmpB2, drt);
+    if(neg_scale) VecScale(drt, -1.0);
 
     // -- density
     MatMult(pc_D_rho, dw, _tmpB1);
+    VecAXPY(F_rho, 1.0, _tmpB1);
+    if(neg_scale) {
+        MatMult(vo->VB_inv, F_rho, drho);
+        VecScale(drho, -1.0);
+    }
+/*
+    MatMult(pc_D_rho, dw, _tmpB1);
     VecAXPY(_tmpB1, 1.0, F_rho);
-    MatMult(vo->VB_inv, _tmpB1, drho);
-    VecScale(drho, -1.0);
+    MatMult(vo->VB_inv, _tmpB1, _tmpB2);
+    if(add_delta) VecAXPY(drho, 1.0, _tmpB2);
+    else          VecCopy(_tmpB2, drho);
+    if(neg_scale) VecScale(drho, -1.0);
+*/
 }

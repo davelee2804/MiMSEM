@@ -10,7 +10,6 @@ class HorizSolve {
         int rank;
         int size;
         int step;
-        bool firstStep;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
@@ -72,7 +71,15 @@ class HorizSolve {
         void assemble_biharmonic_temp(int lev, Vec rho, MatReuse reuse, Mat* BVISC);
         void assemble_rho_correction(int lev, Vec rho, Vec exner, Vec theta_k, MatReuse reuse, Vec diag_g, Vec ones_g, Mat* Au);
 
+        void assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
+                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, Vec du, Vec drho, Vec drt, Vec dexner, 
+                                 bool eos_update, bool build_pc, bool neg_scale);
+        void set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
+                        Vec F_u, Vec F_rho, Vec F_exner, Vec du, Vec drho, Vec drt, Vec dexner, bool do_rt, bool neg_scale);
+
         double MaxNorm(Vec dx, Vec x, double max_norm);
+
+        Mat _PCx;
 
     private:
         // ..... schur preconditioner (horizontal)
@@ -93,10 +100,6 @@ class HorizSolve {
         Mat pcx_M0_invCTM1;
         // ..... rho corrections
         Mat pcx_D_rho;
-        Mat pcx_D_prime;
-        Mat pcx_A_rtM2_inv;
-        Mat pcx_M1invF_rho;
-        Mat pcx_D21M1invF_rho;
         Mat pcx_M1_exner_M1_inv;
         Mat pcx_Au;
         Mat pcx_Au_2;
@@ -104,11 +107,8 @@ class HorizSolve {
         Mat pcx_Mu_prime;
         // ..... temperature equation viscosity 
         Mat pcx_M2_invM2;
-        Mat pcx_M2M2_invM2;
-        Mat pcx_DT_M2M2_invM2;
         Mat pcx_M1_invDT_M2M2_invM2;
         Mat pcx_M1_rhoM1_invDT_M2M2_invM2;
-        Mat pcx_M1_invM1_rhoM1_invDT_M2M2_invM2;
         Mat pcx_LAP_Theta;
         Mat pcx_M2_LAP_Theta;
         Mat pcx_DT_LAP_Theta;
@@ -123,6 +123,4 @@ class HorizSolve {
         Mat pcx_M1_thetaM1_rho_invM1;
         Mat pcx_M1_thetaM1_rho_invM1M1_rho_inv;
         Mat pcx_M1_thetaM1_rho_invM1M1_rho_inv_DT;
-
-        Mat _PCx;
 };

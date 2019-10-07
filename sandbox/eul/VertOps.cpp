@@ -22,10 +22,13 @@
 using namespace std;
 
 VertOps::VertOps(Topo* _topo, Geom* _geom) {
+    int N2;
+
     topo = _topo;
     geom = _geom;
 
     n2 = topo->elOrd*topo->elOrd;
+    N2 = (n2 > 1) ? n2 : 4;
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -47,48 +50,48 @@ VertOps::VertOps(Topo* _topo, Geom* _geom) {
     MatCreate(MPI_COMM_SELF, &VA);
     MatSetType(VA, MATSEQAIJ);
     MatSetSizes(VA, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(VA, 2*n2, PETSC_NULL);
+    MatSeqAIJSetPreallocation(VA, 2*N2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &VB);
     MatSetType(VB, MATSEQAIJ);
     MatSetSizes(VB, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(VB, n2, PETSC_NULL);
+    MatSeqAIJSetPreallocation(VB, N2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &VA_inv);
     MatSetType(VA_inv, MATSEQAIJ);
     MatSetSizes(VA_inv, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(VA_inv, 2*n2, PETSC_NULL);
+    MatSeqAIJSetPreallocation(VA_inv, 2*N2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &VB_inv);
     MatSetType(VB_inv, MATSEQAIJ);
     MatSetSizes(VB_inv, geom->nk*n2, geom->nk*n2, geom->nk*n2, geom->nk*n2);
-    MatSeqAIJSetPreallocation(VB_inv, n2, PETSC_NULL);
+    MatSeqAIJSetPreallocation(VB_inv, N2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &VAB);
     MatSetType(VAB, MATSEQAIJ);
     MatSetSizes(VAB, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
-    MatSeqAIJSetPreallocation(VAB, 2*n2, PETSC_NULL);
+    MatSeqAIJSetPreallocation(VAB, 2*N2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &VBA);
     MatSetType(VBA, MATSEQAIJ);
     MatSetSizes(VBA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(VBA, 2*n2, PETSC_NULL);
+    MatSeqAIJSetPreallocation(VBA, 2*N2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &VR);
     MatSetType(VR, MATSEQAIJ);
     MatSetSizes(VR, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
-    MatSeqAIJSetPreallocation(VR, 2*n2, PETSC_NULL);
+    MatSeqAIJSetPreallocation(VR, 2*N2, PETSC_NULL);
 
     // for the density and temperature equation preconditioner
     MatCreate(MPI_COMM_SELF, &VAB_w);
     MatSetType(VAB_w, MATSEQAIJ);
     MatSetSizes(VAB_w, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
-    MatSeqAIJSetPreallocation(VAB_w, 4*n2, PETSC_NULL);
+    MatSeqAIJSetPreallocation(VAB_w, 4*N2, PETSC_NULL);
 
     // for the diagnosis of theta without boundary conditions
-    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+1)*n2, (geom->nk+1)*n2, n2, NULL, &VA2);
-    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+1)*n2, (geom->nk+0)*n2, 2*n2, NULL, &VAB2);
-    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+1)*n2, 2*n2, NULL, &VBA2);
+    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+1)*n2, (geom->nk+1)*n2, N2, NULL, &VA2);
+    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+1)*n2, (geom->nk+0)*n2, 2*N2, NULL, &VAB2);
+    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+1)*n2, 2*N2, NULL, &VBA2);
 
     vertOps();
 }
@@ -1563,6 +1566,8 @@ void VertOps::Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_r
             det = geom->det[ei][ii];
             rk *= 1.0/(det*geom->thick[kk][inds0[ii]]);
             ek *= 1.0/(det*geom->thick[kk][inds0[ii]]);
+if(ek<0.0)ek=1.0e-8;//cout<<"ERROR! -ve exner pressure: "<<ek<<endl;
+if(rk<0.0)rk=1.0e-8;//cout<<"ERROR! -ve potential temp: "<<rk<<endl;
 
             rtq[ii] = log(ek) - (RD/CV)*log(rk) - log(CP) - (RD/CV)*log(RD/P0);
         }
