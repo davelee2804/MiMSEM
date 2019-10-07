@@ -383,6 +383,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
                                        d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], true, !firstStep, false);
 
             schur->AddFromHorizMat(lev, horiz->_PCx);
+MatDestroy(&horiz->_PCx);
         }
         F_rho->UpdateLocal();   F_rho->HorizToVert();
         F_rt->UpdateLocal();    F_rt->HorizToVert();
@@ -770,6 +771,8 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
     Vec* d_u    = new Vec[geom->nk];
     Vec _F, _G, dF, dG, F_z, G_z, dF_z, dG_z, h_tmp, u_tmp_1, u_tmp_2, dtheta;
     VertOps* vo = vert->vo;
+    PC pc;
+    KSP ksp_exner;
 
     for(int lev = 0; lev < geom->nk; lev++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_j[lev]);
@@ -887,10 +890,29 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
                                        F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], 
                                        d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], true, !firstStep, false);
 
+/*
             schur->AddFromHorizMat(lev, horiz->_PCx);
+*/
+VecScale(F_rt->vh[lev], -1.0);
+            KSPCreate(MPI_COMM_WORLD, &ksp_exner);
+            MatAssemblyBegin(horiz->_PCx, MAT_FINAL_ASSEMBLY);
+            MatAssemblyEnd(  horiz->_PCx, MAT_FINAL_ASSEMBLY);
+            KSPSetOperators(ksp_exner, horiz->_PCx, horiz->_PCx);
+            KSPSetTolerances(ksp_exner, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+            KSPSetType(ksp_exner, KSPGMRES);
+            KSPGetPC(ksp_exner, &pc);
+            PCSetType(pc, PCBJACOBI);
+            PCBJacobiSetTotalBlocks(pc, 6*topo->nElsX*topo->nElsX, NULL);
+            KSPSetOptionsPrefix(ksp_exner, "ksp_exner_x_");
+            KSPSetFromOptions(ksp_exner);
+            KSPSolve(ksp_exner, F_rt->vh[lev], d_exner->vh[lev]);
+            KSPDestroy(&ksp_exner);
+            MatDestroy(&horiz->_PCx);
         }
         F_rho->UpdateLocal();   F_rho->HorizToVert();
         F_rt->UpdateLocal();    F_rt->HorizToVert();
+
+/*
 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             VecScale(F_rt->vz[ii], -1.0);
@@ -908,6 +930,7 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
         // update the delta vectors
         d_exner->HorizToVert();
         d_exner->UpdateGlobal();
+*/
 
         for(int lev = 0; lev < geom->nk; lev++) {
             horiz->set_deltas(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
@@ -917,9 +940,11 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
         }
         d_rho->UpdateLocal(); d_rho->HorizToVert();
 d_rt->UpdateLocal(); d_rt->HorizToVert();
+d_exner->UpdateLocal(); d_exner->HorizToVert();
         
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             // inverse assembled in function above
+            vo->AssembleConstInv(ex, ey, vo->VB_inv);
             MatMult(vo->VB_inv, F_rho->vz[ii], d_rho->vz[ii]);
             VecScale(d_rho->vz[ii], -1.0);
             VecScale(d_rt->vz[ii], -1.0);
@@ -937,18 +962,22 @@ d_rt->UpdateLocal(); d_rt->HorizToVert();
             VecAXPY(exner_j->vz[ii], 1.0, d_exner->vz[ii]);
             max_norm_rho = MaxNorm(d_rho->vz[ii], rho_j->vz[ii], max_norm_rho);
             max_norm_rt  = MaxNorm(d_rt->vz[ii],  rt_j->vz[ii],  max_norm_rt );
+max_norm_exner = MaxNorm(d_exner->vz[ii], exner_j->vz[ii], max_norm_exner);
         }
         rho_j->VertToHoriz();   rho_j->UpdateGlobal();
         rt_j->VertToHoriz();    rt_j->UpdateGlobal();
         exner_j->VertToHoriz(); exner_j->UpdateGlobal();
         MPI_Allreduce(&max_norm_rho, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rho = norm_x;
         MPI_Allreduce(&max_norm_rt,  &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rt  = norm_x;
+MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_exner = norm_x;
 
+/*
         VecZeroEntries(schur->b);
         schur->RepackFromHoriz(exner_j->vl, schur->b);
         VecNorm(schur->b, NORM_2, &norm_x);
         VecNorm(schur->x, NORM_2, &max_norm_exner);
         max_norm_exner /= norm_x;
+*/
 
         // update additional fields
         horiz->diagTheta2(rho_j->vz, rt_j->vz, theta_h->vz);
