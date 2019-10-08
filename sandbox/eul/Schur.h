@@ -15,4 +15,11 @@ class Schur {
         void RepackFromVert(Vec* vz, Vec v);
         void RepackFromHoriz(Vec* vx, Vec v);
         void UnpackToHoriz(Vec v, Vec* vx);
+
+    private:
+        int elOrd;
+        int nElsX;
+        int* inds2;
+        int* elInds2_l(int ex, int ey);
+        int* elInds2_g(int ex, int ey);
 };

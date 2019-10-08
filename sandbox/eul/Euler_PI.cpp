@@ -383,7 +383,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
                                        d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], true, !firstStep, false);
 
             schur->AddFromHorizMat(lev, horiz->_PCx);
-MatDestroy(&horiz->_PCx);
+//MatDestroy(&horiz->_PCx);
         }
         F_rho->UpdateLocal();   F_rho->HorizToVert();
         F_rt->UpdateLocal();    F_rt->HorizToVert();
@@ -745,6 +745,7 @@ void Euler::solve_vert(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i,
     VecDestroy(&dG_z);
 }
 
+//#define LAYER_SOLVE
 void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save) {
     bool done = false;
     int itt = 0, elOrd2 = topo->elOrd*topo->elOrd, ex, ey;
@@ -771,8 +772,10 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
     Vec* d_u    = new Vec[geom->nk];
     Vec _F, _G, dF, dG, F_z, G_z, dF_z, dG_z, h_tmp, u_tmp_1, u_tmp_2, dtheta;
     VertOps* vo = vert->vo;
+#ifdef LAYER_SOLVE
     PC pc;
     KSP ksp_exner;
+#endif
 
     for(int lev = 0; lev < geom->nk; lev++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_j[lev]);
@@ -886,14 +889,12 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
         // build the preconditioner matrix
         MatZeroEntries(schur->M);
         for(int lev = 0; lev < geom->nk; lev++) {
-            horiz->assemble_and_update(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
+            //horiz->assemble_and_update(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
+            horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
                                        F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], 
                                        d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], true, !firstStep, false);
-
-/*
-            schur->AddFromHorizMat(lev, horiz->_PCx);
-*/
-VecScale(F_rt->vh[lev], -1.0);
+#ifdef LAYER_SOLVE
+            VecScale(F_rt->vh[lev], -1.0);
             KSPCreate(MPI_COMM_WORLD, &ksp_exner);
             MatAssemblyBegin(horiz->_PCx, MAT_FINAL_ASSEMBLY);
             MatAssemblyEnd(  horiz->_PCx, MAT_FINAL_ASSEMBLY);
@@ -907,13 +908,15 @@ VecScale(F_rt->vh[lev], -1.0);
             KSPSetFromOptions(ksp_exner);
             KSPSolve(ksp_exner, F_rt->vh[lev], d_exner->vh[lev]);
             KSPDestroy(&ksp_exner);
-            MatDestroy(&horiz->_PCx);
+//            MatDestroy(&horiz->_PCx);
+#else
+            schur->AddFromHorizMat(lev, horiz->_PCx);
+#endif
         }
         F_rho->UpdateLocal();   F_rho->HorizToVert();
         F_rt->UpdateLocal();    F_rt->HorizToVert();
 
-/*
-
+#ifndef LAYER_SOLVE
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             VecScale(F_rt->vz[ii], -1.0);
         }
@@ -930,11 +933,11 @@ VecScale(F_rt->vh[lev], -1.0);
         // update the delta vectors
         d_exner->HorizToVert();
         d_exner->UpdateGlobal();
-*/
+#endif
 
         for(int lev = 0; lev < geom->nk; lev++) {
-            horiz->set_deltas(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
-            //horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
+            //horiz->set_deltas(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
+            horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
                        F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], true, false);
                        //F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false);
         }
