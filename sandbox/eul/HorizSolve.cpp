@@ -1245,7 +1245,6 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &diag_g);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ones_g);
 
-//if(build_pc){
     m0->assemble(lev, SCALE);
     M1->assemble(lev, SCALE, true);
     M2->assemble(lev, SCALE, true);
@@ -1300,11 +1299,9 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
     } else {
         coriolisMatInv(Mu_prime, &Mu_inv);
     }
-//}
     MatMult(pcx_Au_M2_inv, F_rho, diag_g);
     VecAXPY(F_u, -1.0, diag_g);
 
-//if(build_pc) {
     MatDestroy(&pcx_Au);
 
     // build the preconditioner
@@ -1328,13 +1325,13 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
     MatAssemblyBegin(pcx_LAP, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (pcx_LAP, MAT_FINAL_ASSEMBLY);
 
-    MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
+//    MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
+if(!_PCx)MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
     MatZeroEntries(_PCx);
     MatAXPY(_PCx, -1.0, pcx_LAP, DIFFERENT_NONZERO_PATTERN);
     MatAXPY(_PCx, -1.0, pcx_M2N_rt_invN_pi, DIFFERENT_NONZERO_PATTERN);
     MatAssemblyBegin(_PCx, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (_PCx, MAT_FINAL_ASSEMBLY);
-//}
 
     // update the rhs
     if(eos_update) {
@@ -1361,9 +1358,10 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
 void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
                             Vec F_u, Vec F_rho, Vec F_exner, Vec du, Vec drho, Vec drt, Vec dexner, 
                             bool do_rt, bool neg_scale) {
+    int size;
     MatReuse reuse = MAT_REUSE_MATRIX;
     Vec wg, wl, theta_k, diag_g, ones_g, h_tmp;
-    Mat Mu_inv, Mu_prime, M1_OP;
+    Mat Mu_prime, M1_OP;
     PC pc;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
@@ -1433,7 +1431,9 @@ void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec 
     KSPSetType(ksp_u, KSPGMRES);
     KSPGetPC(ksp_u, &pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+//    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp_u, "ksp_u_");
     KSPSetFromOptions(ksp_u);
 
@@ -1468,7 +1468,6 @@ void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec 
     VecDestroy(&h_tmp);
     VecDestroy(&diag_g);
     VecDestroy(&ones_g);
-    MatDestroy(&Mu_inv);
     MatDestroy(&Mu_prime);
     KSPDestroy(&ksp_u);
     if(do_visc) MatDestroy(&M1_OP);
