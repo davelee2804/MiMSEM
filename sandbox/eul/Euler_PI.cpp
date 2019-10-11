@@ -42,7 +42,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     vert  = new VertSolve(topo, geom, dt);
     horiz = new HorizSolve(topo, geom, dt);
 
-    schur = new Schur(topo, geom);
+    schur = new Schur(topo, geom, false);
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 }
@@ -376,14 +376,18 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
 
         // build the preconditioner matrix
         MatZeroEntries(schur->M);
+        if(schur->precon) MatZeroEntries(schur->P);
         for(int lev = 0; lev < geom->nk; lev++) {
             //horiz->assemble_and_update(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
             horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
                                        F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], 
                                        d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], true, !firstStep, false);
 
-            schur->AddFromHorizMat(lev, horiz->_PCx);
-//MatDestroy(&horiz->_PCx);
+            schur->AddFromHorizMat(lev, horiz->_PCx, schur->M);
+            if(schur->precon) {
+                horiz->T->assemble(exner_j->vl[lev], lev, SCALE, true);
+                schur->AddFromHorizMat(lev, horiz->T->M, schur->P);
+            }
         }
         F_rho->UpdateLocal();   F_rho->HorizToVert();
         F_rt->UpdateLocal();    F_rt->HorizToVert();
@@ -402,10 +406,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         // solve for the exner pressure update
         VecZeroEntries(schur->b);
         schur->RepackFromHoriz(F_rt->vl, schur->b);
-        MatAssemblyBegin(schur->M, MAT_FINAL_ASSEMBLY);
-        MatAssemblyEnd(  schur->M, MAT_FINAL_ASSEMBLY);
-        KSPSolve(schur->ksp, schur->b, schur->x);
-        schur->UnpackToHoriz(schur->x, d_exner->vl);
+
+        schur->Solve(d_exner);
 
         // update the delta vectors
         d_exner->HorizToVert();
@@ -612,6 +614,7 @@ void Euler::solve_vert(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i,
 
         // build the preconditioner matrix
         MatZeroEntries(schur->M);
+        if(schur->precon) MatZeroEntries(schur->P);
         F_rho->UpdateLocal();   F_rho->HorizToVert();
         F_rt->UpdateLocal();    F_rt->HorizToVert();
 
@@ -773,8 +776,11 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
     Vec _F, _G, dF, dG, F_z, G_z, dF_z, dG_z, h_tmp, u_tmp_1, u_tmp_2, dtheta;
     VertOps* vo = vert->vo;
 #ifdef LAYER_SOLVE
+    int size;
     PC pc;
     KSP ksp_exner;
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 #endif
 
     for(int lev = 0; lev < geom->nk; lev++) {
@@ -888,6 +894,7 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
 
         // build the preconditioner matrix
         MatZeroEntries(schur->M);
+        if(schur->precon) MatZeroEntries(schur->P);
         for(int lev = 0; lev < geom->nk; lev++) {
             //horiz->assemble_and_update(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
             horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
@@ -903,14 +910,16 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
             KSPSetType(ksp_exner, KSPGMRES);
             KSPGetPC(ksp_exner, &pc);
             PCSetType(pc, PCBJACOBI);
-            PCBJacobiSetTotalBlocks(pc, 6*topo->nElsX*topo->nElsX, NULL);
+            PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
             KSPSetOptionsPrefix(ksp_exner, "ksp_exner_x_");
             KSPSetFromOptions(ksp_exner);
             KSPSolve(ksp_exner, F_rt->vh[lev], d_exner->vh[lev]);
             KSPDestroy(&ksp_exner);
-//            MatDestroy(&horiz->_PCx);
 #else
-            schur->AddFromHorizMat(lev, horiz->_PCx);
+            schur->AddFromHorizMat(lev, horiz->_PCx, schur->M);
+//horiz->T->assemble(exner_j->vl[lev], lev, SCALE, true);
+//schur->AddFromHorizMat(lev, horiz->T->M, schur->P);
+//schur->AddFromHorizMat(lev, horiz->M2_pi_inv->M, schur->P);
 #endif
         }
         F_rho->UpdateLocal();   F_rho->HorizToVert();
@@ -925,10 +934,8 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
         // solve for the exner pressure update
         VecZeroEntries(schur->b);
         schur->RepackFromHoriz(F_rt->vl, schur->b);
-        MatAssemblyBegin(schur->M, MAT_FINAL_ASSEMBLY);
-        MatAssemblyEnd(  schur->M, MAT_FINAL_ASSEMBLY);
-        KSPSolve(schur->ksp, schur->b, schur->x);
-        schur->UnpackToHoriz(schur->x, d_exner->vl);
+
+        schur->Solve(d_exner);
 
         // update the delta vectors
         d_exner->HorizToVert();
@@ -942,8 +949,8 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
                        //F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false);
         }
         d_rho->UpdateLocal(); d_rho->HorizToVert();
-d_rt->UpdateLocal(); d_rt->HorizToVert();
-d_exner->UpdateLocal(); d_exner->HorizToVert();
+        d_rt->UpdateLocal(); d_rt->HorizToVert();
+        d_exner->UpdateLocal(); d_exner->HorizToVert();
         
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             // inverse assembled in function above
@@ -1048,5 +1055,3 @@ MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
     VecDestroy(&u_tmp_1);
     VecDestroy(&u_tmp_2);
 }
-
-//#define COLUMN_SOLVE
