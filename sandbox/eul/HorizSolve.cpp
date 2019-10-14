@@ -27,6 +27,7 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
+//#define SCALE 1.0e+11
 
 using namespace std;
 
@@ -546,7 +547,7 @@ void HorizSolve::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs*
                            fu, frho, frt, F_exner->vh[lev], du, drho, drt, dexner);
 /*
             assemble_and_update(lev, theta_h->vl, velx_j[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
-                                fu, frho, frt, F_exner->vh[lev], du, drho, drt, dexner, true, (itt)? false : true, true);
+                                fu, frho, frt, F_exner->vh[lev], true, (itt)? false : true, true);
             PC pc;
             KSPCreate(MPI_COMM_WORLD, &ksp_exner_x);
             KSPSetOperators(ksp_exner_x, _PCx, _PCx);
@@ -1233,8 +1234,7 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
 }
 
 void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
-                                     Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, Vec du, Vec drho, Vec drt, Vec dexner, 
-                                     bool eos_update, bool build_pc, bool neg_scale) {
+                                     Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, bool eos_update, bool neg_scale) {
     MatReuse reuse = (!_PCx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     Vec wg, wl, theta_k, diag_g, ones_g, h_tmp;
     Mat Mu_inv, Mu_prime, M1_OP;
@@ -1326,7 +1326,7 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
     MatAssemblyEnd  (pcx_LAP, MAT_FINAL_ASSEMBLY);
 
 //    MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
-if(!_PCx)MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
+    if(!_PCx) MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
     MatZeroEntries(_PCx);
     MatAXPY(_PCx, -1.0, pcx_LAP, DIFFERENT_NONZERO_PATTERN);
     MatAXPY(_PCx, -1.0, pcx_M2N_rt_invN_pi, DIFFERENT_NONZERO_PATTERN);
@@ -1353,6 +1353,18 @@ if(!_PCx)MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
     MatDestroy(&Mu_prime);
     if(do_visc) MatDestroy(&M1_OP);
     if(do_visc) MatDestroy(&pcx_LAP2_Theta);
+
+    // assemble the left preconditioner
+    /*{
+        coriolisMatInv(R->M, &Mu_inv);
+        MatMatMult(pcx_D, Mu_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_D_Mu_inv);
+        MatMatMult(pcx_D_Mu_inv, pcx_G, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_LAP);
+        MatScale(pcx_LAP, -1.0);
+        MatAXPY(pcx_LAP, -1.0, pcx_M2N_rt_invN_pi, DIFFERENT_NONZERO_PATTERN);
+        MatAssemblyBegin(pcx_LAP, MAT_FINAL_ASSEMBLY);
+        MatAssemblyEnd  (pcx_LAP, MAT_FINAL_ASSEMBLY);
+        MatDestroy(&Mu_inv);
+    }*/
 }
 
 void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 

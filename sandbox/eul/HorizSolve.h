@@ -72,14 +72,15 @@ class HorizSolve {
         void assemble_rho_correction(int lev, Vec rho, Vec exner, Vec theta_k, MatReuse reuse, Vec diag_g, Vec ones_g, Mat* Au);
 
         void assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
-                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, Vec du, Vec drho, Vec drt, Vec dexner, 
-                                 bool eos_update, bool build_pc, bool neg_scale);
+                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, bool eos_update, bool neg_scale);
         void set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
                         Vec F_u, Vec F_rho, Vec F_exner, Vec du, Vec drho, Vec drt, Vec dexner, bool do_rt, bool neg_scale);
 
         double MaxNorm(Vec dx, Vec x, double max_norm);
 
         Mat _PCx;
+        Mat pcx_LAP;
+        Mat pcx_M2N_rt_invN_pi;
 
     private:
         // ..... schur preconditioner (horizontal)
@@ -89,8 +90,8 @@ class HorizSolve {
         Mat pcx_M1invD12M2;
         Mat pcx_D_Mu_inv;
         Mat pcx_M2N_rt_inv;
-        Mat pcx_M2N_rt_invN_pi;
-        Mat pcx_LAP;
+        //Mat pcx_M2N_rt_invN_pi;
+        //Mat pcx_LAP;
         Mat pcx_M0_inv;
         Mat pcx_M1_inv;
         Mat pcx_M2D;
