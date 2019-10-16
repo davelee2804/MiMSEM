@@ -393,8 +393,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         MatZeroEntries(schur->M);
         if(schur->precon) MatZeroEntries(schur->P);
         for(int lev = 0; lev < geom->nk; lev++) {
-            //horiz->assemble_and_update(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
-            horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
+            //horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
+            horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
                                        F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], true, false);
 
             schur->AddFromHorizMat(lev, horiz->_PCx, schur->M);
@@ -409,7 +409,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
-            vert->assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            //vert->assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            vert->assemble_and_update(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], 
                                       F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii], false, false);
 
             schur->AddFromVertMat(ii, vert->_PCz);
@@ -428,8 +429,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         d_exner->UpdateGlobal();
 
         for(int lev = 0; lev < geom->nk; lev++) {
-            //horiz->set_deltas(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
-            horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
+            //horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
+            horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
                        F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false);
         }
         F_rho->UpdateLocal(); F_rho->HorizToVert();
@@ -440,8 +441,8 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
 
             VecZeroEntries(d_rt->vz[ii]);
 
-            vert->set_deltas(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
-            //vert->set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_j->vz[ii], 
+            //vert->set_deltas(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            vert->set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], 
                        F_w->vz[ii], F_rho->vz[ii], F_exner->vz[ii], d_w->vz[ii], d_rho->vz[ii], d_rt->vz[ii], d_exner->vz[ii], true, false);
 
             // inverse assembled in function above
@@ -498,7 +499,7 @@ if(!rank) cout << "MAX |d_vel_x|/|vel_x|: " << max_vel_x << ", level: " << max_v
 {
 double nrm_u = GlobalNorm(geom->nk, d_u, velx_j);
 double nrm_e = GlobalNorm(geom->nk, d_exner->vh, exner_j->vh);
-cout << "GLOBAL |d_exner|/|exner|: " << nrm_e << ",\t|d_vel_x|/|vel_x|: " << nrm_u << endl;
+if(!rank) cout << "GLOBAL |d_exner|/|exner|: " << nrm_e << ",\t|d_vel_x|/|vel_x|: " << nrm_u << endl;
 }
 
         VecZeroEntries(schur->b);
@@ -530,6 +531,7 @@ cout << "GLOBAL |d_exner|/|exner|: " << nrm_e << ",\t|d_vel_x|/|vel_x|: " << nrm
         firstStep = false;
         if(max_norm_exner < 1.0e-8 && max_norm_u < 1.0e-8 && max_norm_w < 1.0e-8) done = true;
         itt++;
+        if(itt > 10) done = true;
     } while(!done);
 
     // write output
