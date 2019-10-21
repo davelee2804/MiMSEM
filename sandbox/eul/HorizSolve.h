@@ -40,7 +40,6 @@ class HorizSolve {
         KSP ksp1;
         KSP ksp2;
         KSP ksp_exner;
-        KSP ksp_exner_x;
         KSP ksp_u;
 
         double viscosity();

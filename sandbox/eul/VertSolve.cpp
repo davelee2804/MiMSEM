@@ -189,7 +189,10 @@ VertSolve::~VertSolve() {
 
     delete vo;
 
-    MatDestroy(&_PCz);
+    if(_PCz) {
+        MatDestroy(&_PCz);
+        KSPDestroy(&ksp_exner);
+    }
 }
 
 double VertSolve::MaxNorm(Vec dx, Vec x, double max_norm) {
@@ -1112,6 +1115,7 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
 
     MatMatMult(pc_D_rt, pc_M_u_inv, reuse, PETSC_DEFAULT, &pc_D_rt_M_u_inv);
     MatMatMult(pc_D_rt_M_u_inv, pc_G, reuse, PETSC_DEFAULT, &_PCz);
+    MatMatMult(pc_D_rt_M_u_inv, pc_G, reuse, PETSC_DEFAULT, &pc_LAP); // TODO: optimize
     if(eos_update) {
         MatAXPY(_PCz, 1.0, pc_N_exner_2, DIFFERENT_NONZERO_PATTERN);
     }
@@ -1121,6 +1125,16 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
     VecAXPY(F_rt, -1.0, _tmpB1);
     if(neg_scale) {
         VecScale(F_rt, -1.0);
+    }
+
+    if(build_ksp) {
+        PC pc;
+        KSPCreate(MPI_COMM_SELF, &ksp_exner);
+        KSPSetOperators(ksp_exner, _PCz, _PCz);
+        KSPGetPC(ksp_exner, &pc);
+        PCSetType(pc, PCLU);
+        KSPSetOptionsPrefix(ksp_exner, "ksp_exner_z_");
+        KSPSetFromOptions(ksp_exner);
     }
 }
 
@@ -1216,4 +1230,156 @@ void VertSolve::set_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt,
     else          VecCopy(_tmpB2, drho);
     if(neg_scale) VecScale(drho, -1.0);
 */
+}
+
+/****************************************************************************************************************************************/
+
+void VertSolve::update_residuals(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec exner, Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner) {
+    // [u,exner] block
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->V01, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DTV1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, pc_DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invDTV1);
+    vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    MatMatMult(vo->VA, pc_V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_G);
+    MatScale(pc_G, 0.5*dt);
+
+    // [u,rho] block
+    vo->AssembleLinearWithRhoInv(ex, ey, rho, vo->VA_inv);
+    MatMatMult(vo->VA, vo->VA_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(pc_V0_invV0_rt, vo->V01, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
+    vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
+    MatMatMult(pc_V0_invV0_rt_DT, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_A_u);
+    MatScale(pc_A_u, 0.5*dt*RD/CV);
+
+    // [rho,u] block
+    vo->AssembleLinearWithRT(ex, ey, rho, vo->VA, true);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_D_rho);
+    MatScale(pc_D_rho, 0.5*dt);
+
+    // [rt,u] block
+    vo->AssembleLinearWithRT(ex, ey, rt, vo->VA, true);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_D_rt);
+    MatScale(pc_D_rt, 0.5*dt);
+
+    // [exner,rt] block
+    vo->Assemble_EOS_BlockInv(ex, ey, rt, NULL, pc_N_rt_inv);
+    MatScale(pc_N_rt_inv, -1.0*CV/RD);
+
+    // [exner,exner] block
+    vo->AssembleConst(ex, ey, vo->VB);
+    vo->AssembleConstWithRhoInv(ex, ey, exner, vo->VB_inv);
+    MatMatMult(vo->VB_inv, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
+    MatMatMult(vo->VB, pc_VB_rt_invVB_pi, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_N_exner);
+
+    // 1. density corrections
+    vo->AssembleConstInv(ex, ey, vo->VB_inv);
+    MatMatMult(pc_A_u, vo->VB_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_A_u_VB_inv);
+    MatMatMult(pc_A_u_VB_inv, pc_D_rho, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_M_u);
+
+    vo->AssembleLinear(ex, ey, vo->VA);
+    MatAYPX(pc_M_u, -1.0, vo->VA, DIFFERENT_NONZERO_PATTERN);
+
+    MatMult(pc_A_u_VB_inv, F_rho, _tmpA1);
+    VecAXPY(F_w, -1.0, _tmpA1);
+    
+    // 2. density weighted potential temperature correction
+    MatMatMult(vo->VB, pc_N_rt_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_VB_N_rt_inv);
+    MatMatMult(pc_VB_N_rt_inv, pc_N_exner, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_N_exner_2);
+    MatMult(pc_VB_N_rt_inv, F_exner, _tmpB1);
+    VecAXPY(F_rt, -1.0, _tmpB1);
+
+    // 3. schur complement solve for exner pressure
+    MatGetDiagonal(pc_M_u, _tmpA1);
+    VecSet(_tmpA2, 1.0);
+    VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
+    MatZeroEntries(pc_M_u_inv);
+    MatDiagonalSet(pc_M_u_inv, _tmpA2, INSERT_VALUES);
+
+    MatMatMult(pc_D_rt, pc_M_u_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_D_rt_M_u_inv);
+    MatMatMult(pc_D_rt_M_u_inv, pc_G, MAT_REUSE_MATRIX, PETSC_DEFAULT, &_PCz);
+    MatMult(pc_D_rt_M_u_inv, F_w, _tmpB1);
+    VecAXPY(F_rt, -1.0, _tmpB1);
+}
+
+void VertSolve::assemble_pc(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec exner, bool eos_update) {
+    // [u,exner] block
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->V01, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DTV1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, pc_DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invDTV1);
+    vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    MatMatMult(vo->VA, pc_V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_G);
+    MatScale(pc_G, 0.5*dt);
+
+    // [u,rho] block
+    vo->AssembleLinearWithRhoInv(ex, ey, rho, vo->VA_inv);
+    MatMatMult(vo->VA, vo->VA_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(pc_V0_invV0_rt, vo->V01, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
+    vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
+    MatMatMult(pc_V0_invV0_rt_DT, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_A_u);
+    MatScale(pc_A_u, 0.5*dt*RD/CV);
+
+    // [rho,u] block
+    vo->AssembleLinearWithRT(ex, ey, rho, vo->VA, true);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_D_rho);
+    MatScale(pc_D_rho, 0.5*dt);
+
+    // [rt,u] block
+    vo->AssembleLinearWithRT(ex, ey, rt, vo->VA, true);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_D_rt);
+    MatScale(pc_D_rt, 0.5*dt);
+
+    // [exner,rt] block
+    vo->Assemble_EOS_BlockInv(ex, ey, rt, NULL, pc_N_rt_inv);
+    MatScale(pc_N_rt_inv, -1.0*CV/RD);
+
+    // [exner,exner] block
+    vo->AssembleConst(ex, ey, vo->VB);
+    vo->AssembleConstWithRhoInv(ex, ey, exner, vo->VB_inv);
+    MatMatMult(vo->VB_inv, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
+    MatMatMult(vo->VB, pc_VB_rt_invVB_pi, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_N_exner);
+
+    // 1. density corrections
+    vo->AssembleConstInv(ex, ey, vo->VB_inv);
+    MatMatMult(pc_A_u, vo->VB_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_A_u_VB_inv);
+    MatMatMult(pc_A_u_VB_inv, pc_D_rho, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_M_u);
+
+    vo->AssembleLinear(ex, ey, vo->VA);
+    MatAYPX(pc_M_u, -1.0, vo->VA, DIFFERENT_NONZERO_PATTERN);
+
+    // 2. density weighted potential temperature correction
+    if(eos_update) {
+        MatMatMult(vo->VB, pc_N_rt_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_VB_N_rt_inv);
+        MatMatMult(pc_VB_N_rt_inv, pc_N_exner, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_N_exner_2);
+    }
+
+    // 3. schur complement solve for exner pressure
+    MatGetDiagonal(pc_M_u, _tmpA1);
+    VecSet(_tmpA2, 1.0);
+    VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
+    MatZeroEntries(pc_M_u_inv);
+    MatDiagonalSet(pc_M_u_inv, _tmpA2, INSERT_VALUES);
+
+    MatMatMult(pc_D_rt, pc_M_u_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_D_rt_M_u_inv);
+    MatMatMult(pc_D_rt_M_u_inv, pc_G, MAT_REUSE_MATRIX, PETSC_DEFAULT, &_PCz);
+    MatMatMult(pc_D_rt_M_u_inv, pc_G, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_LAP); // TODO: optimize
+    if(eos_update) {
+        MatAXPY(_PCz, 1.0, pc_N_exner_2, DIFFERENT_NONZERO_PATTERN);
+    }
+    MatScale(_PCz, -1.0);
 }

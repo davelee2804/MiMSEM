@@ -44,9 +44,14 @@ class VertSolve {
                         Vec F_w, Vec F_rho, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner, 
                         bool add_delta, bool neg_scale);
 
+
+        void update_residuals(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec exner, Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner);
+        void assemble_pc(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec exner, bool eos_update);
+
         double MaxNorm(Vec dx, Vec x, double max_norm);
 
         Mat _PCz;
+        Mat pc_LAP;
 
     private:
         // vertical vectors and matrices
@@ -85,8 +90,4 @@ class VertSolve {
         Mat pc_A_u_VB_inv;
         // .....density correction (velocity equation)
         Mat pc_V0_invV0_rt_DT;
-        //Mat pc_V0_thetaV0_invV0_exner;
-        //Mat pc_V0_thetaV0_invV0_exnerV0_inv;
-        //Mat pc_V0_thetaV0_invV0_exnerV0_invDT;
-        //Mat pc_A_u_2;
 };

@@ -27,7 +27,6 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-//#define SCALE 1.0e+11
 
 using namespace std;
 
@@ -312,6 +311,11 @@ HorizSolve::~HorizSolve() {
     delete[] gv;
     delete[] zv;
 
+    if(_PCx) {
+        MatDestroy(&_PCx);
+        KSPDestroy(&ksp_exner);
+    }
+
     delete m0;
     delete M1;
     delete M2;
@@ -549,16 +553,16 @@ void HorizSolve::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs*
             assemble_and_update(lev, theta_h->vl, velx_j[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
                                 fu, frho, frt, F_exner->vh[lev], true, (itt)? false : true, true);
             PC pc;
-            KSPCreate(MPI_COMM_WORLD, &ksp_exner_x);
-            KSPSetOperators(ksp_exner_x, _PCx, _PCx);
-            KSPSetTolerances(ksp_exner_x, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-            KSPSetType(ksp_exner_x, KSPGMRES);
-            KSPGetPC(ksp_exner_x, &pc);
+            KSPCreate(MPI_COMM_WORLD, &ksp_exner);
+            KSPSetOperators(ksp_exner, _PCx, _PCx);
+            KSPSetTolerances(ksp_exner, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+            KSPSetType(ksp_exner, KSPGMRES);
+            KSPGetPC(ksp_exner, &pc);
             PCSetType(pc, PCBJACOBI);
             PCBJacobiSetTotalBlocks(pc, 6*topo->nElsX*topo->nElsX, NULL);
-            KSPSetOptionsPrefix(ksp_exner_x, "ksp_exner_x_");
-            KSPSetFromOptions(ksp_exner_x);
-            KSPSolve(ksp_exner_x, frt, dexner);
+            KSPSetOptionsPrefix(ksp_exner, "ksp_exner_");
+            KSPSetFromOptions(ksp_exner);
+            KSPSolve(ksp_exner, frt, dexner);
             MatDestroy(&_PCx);
             set_deltas(lev, theta_h->vl, velx_j[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
                        fu, frho, F_exner->vh[lev], du, drho, drt, dexner, true, true);
@@ -1174,17 +1178,17 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
 
     // exner pressure solve
     if(build_ksp) {
-        KSPCreate(MPI_COMM_WORLD, &ksp_exner_x);
-        KSPSetOperators(ksp_exner_x, _PCx, _PCx);
-        KSPSetTolerances(ksp_exner_x, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-        KSPSetType(ksp_exner_x, KSPGMRES);
-        KSPGetPC(ksp_exner_x, &pc);
+        KSPCreate(MPI_COMM_WORLD, &ksp_exner);
+        KSPSetOperators(ksp_exner, _PCx, _PCx);
+        KSPSetTolerances(ksp_exner, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+        KSPSetType(ksp_exner, KSPGMRES);
+        KSPGetPC(ksp_exner, &pc);
         PCSetType(pc, PCBJACOBI);
         PCBJacobiSetTotalBlocks(pc, 6*topo->nElsX*topo->nElsX, NULL);
-        KSPSetOptionsPrefix(ksp_exner_x, "ksp_exner_x_");
-        KSPSetFromOptions(ksp_exner_x);
+        KSPSetOptionsPrefix(ksp_exner, "ksp_exner_");
+        KSPSetFromOptions(ksp_exner);
     }
-    KSPSolve(ksp_exner_x, F_rt, dexner);
+    KSPSolve(ksp_exner, F_rt, dexner);
 
     // velocity update
     MatMult(pcx_G, dexner, ones_g);
@@ -1236,6 +1240,7 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
 void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
                                      Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, bool eos_update, bool neg_scale) {
     MatReuse reuse = (!_PCx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    bool set_ksp = (!_PCx) ? true : false;
     Vec wg, wl, theta_k, diag_g, ones_g, h_tmp;
     Mat Mu_inv, Mu_prime, M1_OP;
 
@@ -1325,7 +1330,6 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
     MatAssemblyBegin(pcx_LAP, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (pcx_LAP, MAT_FINAL_ASSEMBLY);
 
-//    MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
     if(!_PCx) MatMatMult(pcx_D, pcx_G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
     MatZeroEntries(_PCx);
     MatAXPY(_PCx, -1.0, pcx_LAP, DIFFERENT_NONZERO_PATTERN);
@@ -1344,6 +1348,22 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
         VecScale(F_rt, -1.0);
     }
 
+    if(set_ksp) {
+        int size;
+        PC pc;
+        MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+        KSPCreate(MPI_COMM_WORLD, &ksp_exner);
+        KSPSetOperators(ksp_exner, _PCx, _PCx);
+        KSPSetTolerances(ksp_exner, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+        KSPSetType(ksp_exner, KSPGMRES);
+        KSPGetPC(ksp_exner, &pc);
+        PCSetType(pc, PCBJACOBI);
+        PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+        KSPSetOptionsPrefix(ksp_exner, "ksp_exner_x_");
+        KSPSetFromOptions(ksp_exner);
+    }
+
     VecDestroy(&wl);
     VecDestroy(&theta_k);
     VecDestroy(&h_tmp);
@@ -1353,18 +1373,6 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
     MatDestroy(&Mu_prime);
     if(do_visc) MatDestroy(&M1_OP);
     if(do_visc) MatDestroy(&pcx_LAP2_Theta);
-
-    // assemble the left preconditioner
-    /*{
-        coriolisMatInv(R->M, &Mu_inv);
-        MatMatMult(pcx_D, Mu_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_D_Mu_inv);
-        MatMatMult(pcx_D_Mu_inv, pcx_G, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_LAP);
-        MatScale(pcx_LAP, -1.0);
-        MatAXPY(pcx_LAP, -1.0, pcx_M2N_rt_invN_pi, DIFFERENT_NONZERO_PATTERN);
-        MatAssemblyBegin(pcx_LAP, MAT_FINAL_ASSEMBLY);
-        MatAssemblyEnd  (pcx_LAP, MAT_FINAL_ASSEMBLY);
-        MatDestroy(&Mu_inv);
-    }*/
 }
 
 void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
