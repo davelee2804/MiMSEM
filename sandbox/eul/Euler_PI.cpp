@@ -1652,7 +1652,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
 
-            vert->update_residuals(ex, ey, theta_h->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            //vert->update_residuals(ex, ey, theta_h->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            vert->update_residuals(ex, ey, theta_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii], 
                                    F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii]);
 
             if(itt) {
