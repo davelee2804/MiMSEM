@@ -29,4 +29,7 @@ class Euler {
         void init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* h, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
+
+        void GlobalNorms(int itt, Vec* duh, Vec* uh, L2Vecs* duz, L2Vecs* uz, L2Vecs* drho, L2Vecs* rho, L2Vecs* drt, L2Vecs* rt, L2Vecs* dexner, L2Vecs* exner,
+                         double* norm_u, double* norm_w, double* norm_rho, double* norm_rt, double* norm_exner, Vec h_tmp, Vec u_tmp, Vec u_tmp_z);
 };

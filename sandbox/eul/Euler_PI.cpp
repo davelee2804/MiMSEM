@@ -1479,16 +1479,91 @@ void Euler::solve_split(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
     VecDestroy(&u_tmp_2);
 }
 
+void Euler::GlobalNorms(int itt, Vec* duh, Vec* uh, L2Vecs* duz, L2Vecs* uz, L2Vecs* drho, L2Vecs* rho, L2Vecs* drt, L2Vecs* rt, L2Vecs* dexner, L2Vecs* exner,
+                        double* norm_u, double* norm_w, double* norm_rho, double* norm_rt, double* norm_exner, Vec h_tmp, Vec u_tmp, Vec u_tmp_z) {
+    double norm_x_rho, norm_dx_rho, norm_x_rt, norm_dx_rt, norm_x_exner, norm_dx_exner, norm_dx_u, norm_x_u, dot_x, dot_dx;
+
+    norm_x_rho = norm_dx_rho = 0.0;
+    norm_x_rt = norm_dx_rt = 0.0;
+    norm_x_exner = norm_dx_exner = 0.0;
+    for(int kk = 0; kk < geom->nk; kk++) {
+        horiz->M2->assemble(kk, SCALE, true);
+
+        // density
+        MatMult(horiz->M2->M, drho->vh[kk], h_tmp);
+        VecDot(drho->vh[kk], h_tmp, &dot_dx);
+        MatMult(horiz->M2->M, rho->vh[kk], h_tmp);
+        VecDot(rho->vh[kk], h_tmp, &dot_x);
+        norm_x_rho += dot_x;
+        norm_dx_rho += dot_dx;
+
+        // density weighted potential temperature
+        MatMult(horiz->M2->M, drt->vh[kk], h_tmp);
+        VecDot(drt->vh[kk], h_tmp, &dot_dx);
+        MatMult(horiz->M2->M, rt->vh[kk], h_tmp);
+        VecDot(rt->vh[kk], h_tmp, &dot_x);
+        norm_x_rt += dot_x;
+        norm_dx_rt += dot_dx;
+
+        // exner
+        MatMult(horiz->M2->M, dexner->vh[kk], h_tmp);
+        VecDot(dexner->vh[kk], h_tmp, &dot_dx);
+        MatMult(horiz->M2->M, exner->vh[kk], h_tmp);
+        VecDot(exner->vh[kk], h_tmp, &dot_x);
+        norm_x_exner += dot_x;
+        norm_dx_exner += dot_dx;
+    }
+    *norm_rho = sqrt(norm_dx_rho/norm_x_rho);
+    *norm_rt = sqrt(norm_dx_rt/norm_x_rt);
+    *norm_exner = sqrt(norm_dx_exner/norm_x_exner);
+
+    // vertical velocity
+    norm_x_u = norm_dx_u = 0.0;
+    for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        vert->vo->AssembleLinear(ii%topo->nElsX, ii/topo->nElsX, vert->vo->VA);
+        MatMult(vert->vo->VA, duz->vz[ii], u_tmp_z);
+        VecDot(duz->vz[ii], u_tmp_z, &dot_dx);
+        MatMult(vert->vo->VA, uz->vz[ii], u_tmp_z);
+        VecDot(uz->vz[ii], u_tmp_z, &dot_x);
+        norm_x_u += dot_x;
+        norm_dx_u += dot_dx;
+    }
+    MPI_Allreduce(&norm_x_u, &dot_x, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&norm_dx_u, &dot_dx, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    *norm_w = sqrt(dot_dx/dot_x);
+
+    // horizontal velocity
+    norm_x_u = norm_dx_u = 0.0;
+    for(int kk = 0; kk < geom->nk; kk++) {
+        horiz->M1->assemble(kk, SCALE, true);
+        MatMult(horiz->M1->M, duh[kk], u_tmp);
+        VecDot(duh[kk], u_tmp, &dot_dx);
+        MatMult(horiz->M1->M, uh[kk], u_tmp);
+        VecDot(uh[kk], u_tmp, &dot_x);
+        norm_x_u += dot_x;
+        norm_dx_u += dot_dx;
+    }
+    *norm_u = sqrt(norm_dx_u/norm_x_u);
+
+    if(!rank) cout << itt << ":\t|d_exner|/|exner|: " << *norm_exner << 
+                              "\t|d_rho|/|rho|: "     << *norm_rho   <<
+                              "\t|d_rt|/|rt|: "       << *norm_rt    <<
+                              "\t|d_u|/|u|: "         << *norm_u     <<
+                              "\t|d_w|/|w|: "         << *norm_w     << endl;
+}
+
 // Gauss-Seidel splitting of horiztonal and vertical pressure updates
 void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save) {
     bool done = false;
     int itt = 0, elOrd2 = topo->elOrd*topo->elOrd, ex, ey;
-    double max_norm_u, max_norm_w, max_norm_rho, max_norm_rt, max_norm_exner, norm_x;
+    double max_norm_u, max_norm_w, max_norm_rho, max_norm_rt, max_norm_exner;
     L2Vecs* velz_j  = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* rho_j   = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_j    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rho_h   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_h    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* F_w     = new L2Vecs(geom->nk-1, topo, geom);
@@ -1538,6 +1613,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
     rt_j->CopyFromVert(rt_i->vz);       rt_j->VertToHoriz();    rt_j->UpdateGlobal();
     exner_j->CopyFromVert(exner_i->vz); exner_j->VertToHoriz(); exner_j->UpdateGlobal();
     exner_h->CopyFromVert(exner_i->vz); exner_h->VertToHoriz(); exner_h->UpdateGlobal();
+    rho_h->CopyFromVert(rho_i->vz); rho_h->VertToHoriz(); rho_h->UpdateGlobal();
+    rt_h->CopyFromVert(rt_i->vz); rt_h->VertToHoriz(); rt_h->UpdateGlobal();
 
     // diagnose the vorticity terms
     horiz->diagHorizVort(velx_i, dudz_i);
@@ -1554,8 +1631,6 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
     vert->assemble_and_update(0, 0, theta_h->vz[0], velz_i->vz[0], rho_i->vz[0], rt_i->vz[0], exner_h->vz[0], F_z, dF_z, dF_z, dF_z, true, false);
 
     do {
-        max_norm_u = max_norm_w = max_norm_rho = max_norm_rt = max_norm_exner = 0.0;
-
         // residual vectors (vertical components)
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
@@ -1642,7 +1717,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
 
         // build the preconditioner matrix
         for(int lev = 0; lev < geom->nk; lev++) {
-            horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
+            //horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
+            horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
                                        F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], false, false); // eos update done with vert residual update
 
             VecScale(F_rt->vh[lev], -1.0);
@@ -1663,7 +1739,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
-            vert->assemble_pc(ex, ey, theta_h->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], true);
+            //vert->assemble_pc(ex, ey, theta_h->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], true);
+            vert->assemble_pc(ex, ey, theta_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii], true);
 
             VecCopy(F_rt->vz[ii], dF_z);
             VecAXPY(dF_z, 1.0, lap_d_exner->vz[ii]);
@@ -1673,7 +1750,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
 
         // back substitution
         for(int lev = 0; lev < geom->nk; lev++) {
-            horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
+            //horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
+            horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
                        F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false);
         }
         F_rho->UpdateLocal(); F_rho->HorizToVert();
@@ -1684,7 +1762,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
 
             VecZeroEntries(d_rt->vz[ii]);
 
-            vert->set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], 
+            //vert->set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], 
+            vert->set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii], 
                        F_w->vz[ii], F_rho->vz[ii], F_exner->vz[ii], d_w->vz[ii], d_rho->vz[ii], d_rt->vz[ii], d_exner->vz[ii], true, false);
 
             // inverse assembled in function above
@@ -1696,26 +1775,17 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
         // update solutions
         for(int lev = 0; lev < geom->nk; lev++) {
             VecAXPY(velx_j[lev], 1.0, d_u[lev]);
-            max_norm_u = MaxNorm(d_u[lev], velx_j[lev], max_norm_u);
         }
-        MPI_Allreduce(&max_norm_u, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_u = norm_x;
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             VecAXPY(velz_j->vz[ii],  1.0, d_w->vz[ii]    );
             VecAXPY(rho_j->vz[ii],   1.0, d_rho->vz[ii]  );
             VecAXPY(rt_j->vz[ii],    1.0, d_rt->vz[ii]   );
             VecAXPY(exner_j->vz[ii], 1.0, d_exner->vz[ii]);
-            max_norm_w     = MaxNorm(d_w->vz[ii],     velz_j->vz[ii],  max_norm_w    );
-            max_norm_rho   = MaxNorm(d_rho->vz[ii],   rho_j->vz[ii],   max_norm_rho  );
-            max_norm_rt    = MaxNorm(d_rt->vz[ii],    rt_j->vz[ii],    max_norm_rt   );
-            max_norm_exner = MaxNorm(d_exner->vz[ii], exner_j->vz[ii], max_norm_exner);
         }
         rho_j->VertToHoriz();   rho_j->UpdateGlobal();
         rt_j->VertToHoriz();    rt_j->UpdateGlobal();
         exner_j->VertToHoriz(); exner_j->UpdateGlobal();
         velz_j->VertToHoriz();  velz_j->UpdateGlobal();
-        MPI_Allreduce(&max_norm_w, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w = norm_x;
-        MPI_Allreduce(&max_norm_rho, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rho = norm_x;
-        MPI_Allreduce(&max_norm_rt,  &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rt  = norm_x;
 
         // update additional fields
         horiz->diagTheta2(rho_j->vz, rt_j->vz, theta_h->vz);
@@ -1726,16 +1796,24 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
 
             VecScale(theta_h->vz[ii], 0.5);
             VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
+
+            VecZeroEntries(rho_h->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_i->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_j->vz[ii]);
+            VecZeroEntries(rt_h->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_i->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
         }
         theta_h->VertToHoriz(); theta_h->UpdateGlobal();
         exner_h->VertToHoriz(); exner_h->UpdateGlobal();
+        rho_h->VertToHoriz(); rho_h->UpdateGlobal();
+        rt_h->VertToHoriz(); rt_h->UpdateGlobal();
         horiz->diagHorizVort(velx_j, dudz_j);
 
-        if(!rank) cout << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
-                                  "\t|d_rho|/|rho|: "     << max_norm_rho   <<
-                                  "\t|d_rt|/|rt|: "       << max_norm_rt    <<
-                                  "\t|d_u|/|u|: "         << max_norm_u     <<
-                                  "\t|d_w|/|w|: "         << max_norm_w     << endl;
+        d_rho->VertToHoriz(); d_rho->UpdateGlobal();
+        d_rt->VertToHoriz(); d_rt->UpdateGlobal();
+        GlobalNorms(itt, d_u, velx_j, d_w, velz_j, d_rho, rho_j, d_rt, rt_j, d_exner, exner_j,
+                    &max_norm_u, &max_norm_w, &max_norm_rho, &max_norm_rt, &max_norm_exner, h_tmp, u_tmp_1, F_z);
 
         firstStep = false;
         if(max_norm_exner < 1.0e-8 && max_norm_u < 1.0e-8 && max_norm_w < 1.0e-8) done = true;
@@ -1751,6 +1829,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
     delete rt_j;
     delete exner_j;
     delete exner_h;
+    delete rho_h;
+    delete rt_h;
     delete theta_i;
     delete theta_h;
     delete F_w;
