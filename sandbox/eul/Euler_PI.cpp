@@ -473,34 +473,6 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         MPI_Allreduce(&max_norm_rho, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rho = norm_x;
         MPI_Allreduce(&max_norm_rt,  &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rt  = norm_x;
 
-{
-double max_exner, max_vel_x, nrm_d, nrm_x;
-int max_exner_k, max_vel_x_k;
-max_exner = max_vel_x = 0.0;
-for(int kk = 0; kk < geom->nk; kk++) {
-VecNorm(d_exner->vh[kk], NORM_2, &nrm_d);
-VecNorm(exner_j->vh[kk], NORM_2, &nrm_x);
-if(nrm_d/nrm_x > max_exner) {
-max_exner = nrm_d/nrm_x;
-max_exner_k = kk;
-}
-VecNorm(d_u[kk], NORM_2, &nrm_d);
-VecNorm(velx_j[kk], NORM_2, &nrm_x);
-if(nrm_d/nrm_x > max_vel_x) {
-max_vel_x = nrm_d/nrm_x;
-max_vel_x_k = kk;
-}
-}
-if(!rank) cout << "MAX |d_exner|/|exner|: " << max_exner << ", level: " << max_exner_k << endl;
-if(!rank) cout << "MAX |d_vel_x|/|vel_x|: " << max_vel_x << ", level: " << max_vel_x_k << endl;
-}
-
-{
-double nrm_u = GlobalNorm(geom->nk, d_u, velx_j);
-double nrm_e = GlobalNorm(geom->nk, d_exner->vh, exner_j->vh);
-if(!rank) cout << "GLOBAL |d_exner|/|exner|: " << nrm_e << ",\t|d_vel_x|/|vel_x|: " << nrm_u << endl;
-}
-
         VecZeroEntries(schur->b);
         schur->RepackFromHoriz(exner_j->vl, schur->b);
         VecNorm(schur->b, NORM_2, &norm_x);
@@ -1033,28 +1005,6 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
         MPI_Allreduce(&max_norm_rho, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rho = norm_x;
         MPI_Allreduce(&max_norm_rt,  &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rt  = norm_x;
         MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_exner = norm_x;
-
-{
-double max_exner, max_vel_x, nrm_d, nrm_x;
-int max_exner_k, max_vel_x_k;
-max_exner = max_vel_x = 0.0;
-for(int kk = 0; kk < geom->nk; kk++) {
-VecNorm(d_exner->vh[kk], NORM_2, &nrm_d);
-VecNorm(exner_j->vh[kk], NORM_2, &nrm_x);
-if(nrm_d/nrm_x > max_exner) {
-max_exner = nrm_d/nrm_x;
-max_exner_k = kk;
-}
-VecNorm(d_u[kk], NORM_2, &nrm_d);
-VecNorm(velx_j[kk], NORM_2, &nrm_x);
-if(nrm_d/nrm_x > max_vel_x) {
-max_vel_x = nrm_d/nrm_x;
-max_vel_x_k = kk;
-}
-}
-if(!rank) cout << "MAX |d_exner|/|exner|: " << max_exner << ", level: " << max_exner_k << endl;
-if(!rank) cout << "MAX |d_vel_x|/|vel_x|: " << max_vel_x << ", level: " << max_vel_x_k << endl;
-}
 
 /*
         VecZeroEntries(schur->b);
@@ -1820,6 +1770,15 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
         itt++;
         if(itt > 10) done = true;
     } while(!done);
+
+    // copy the solutions back to the input vectors
+    velz_i->CopyFromHoriz(velz_j->vh);
+    rho_i->CopyFromHoriz(rho_j->vh);
+    rt_i->CopyFromHoriz(rt_j->vh);
+    exner_i->CopyFromHoriz(exner_j->vh);
+    for(int kk = 0; kk < geom->nk; kk++) {
+        VecCopy(velx_j[kk], velx_i[kk]);
+    }
 
     // write output
     if(save) dump(velx_i, velz_i, rho_i, rt_i, exner_i, theta_h, step++);

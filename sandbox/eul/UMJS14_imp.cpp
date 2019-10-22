@@ -15,7 +15,10 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
-#include "Euler_imp_3.h"
+#include "Schur.h"
+#include "VertSolve.h"
+#include "HorizSolve.h"
+#include "Euler_PI.h"
 
 using namespace std;
 
@@ -265,15 +268,51 @@ void LoadVecsVert(Vec* vecs, int nk, char* fieldname, int step, Topo* topo, Geom
     delete l2Vecs;
 }
 
+void write(HorizSolve* hs, Vec* velx, L2Vecs* velz, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* theta, int num) {
+    char fieldname[100];
+    Vec wi;
+    Geom* geom = hs->geom;
+
+    if(theta) {
+        theta->UpdateGlobal();
+        for(int ii = 0; ii < geom->nk+1; ii++) {
+            sprintf(fieldname, "theta");
+            geom->write2(theta->vh[ii], fieldname, num, ii, false);
+        }
+    }
+    for(int ii = 0; ii < geom->nk; ii++) {
+        if(velx) hs->curl(true, velx[ii], &wi, ii, false);
+
+        if(velx) sprintf(fieldname, "vorticity");
+        if(velx) hs->geom->write0(wi, fieldname, num, ii);
+        if(velx) sprintf(fieldname, "velocity_h");
+        if(velx) hs->geom->write1(velx[ii], fieldname, num, ii);
+        sprintf(fieldname, "density");
+        geom->write2(rho->vh[ii], fieldname, num, ii, true);
+        sprintf(fieldname, "rhoTheta");
+        geom->write2(rt->vh[ii], fieldname, num, ii, true);
+        sprintf(fieldname, "exner");
+        geom->write2(exner->vh[ii], fieldname, num, ii, true);
+
+        if(velx) VecDestroy(&wi);
+    }
+    if(velz) {
+        sprintf(fieldname, "velocity_z");
+        for(int ii = 0; ii < geom->nk-1; ii++) {
+            geom->write2(velz->vh[ii], fieldname, num, ii, false);
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     int size, rank, step, ki;
     static char help[] = "petsc";
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 120.0;
-    int nSteps = 1;
-    int dumpEvery = 1; //dump evert 12 hours
+    double dt = 600.0;//360.0;
+    int nSteps = 10*24*10;
+    int dumpEvery = 20; //dump every two hours (for now)
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -326,7 +365,7 @@ int main(int argc, char** argv) {
             rho->HorizToVert();
             rt->UpdateLocal();
             rt->HorizToVert();
-            pe->diagTheta2(rho->vz, rt->vz, theta->vz);
+            pe->horiz->diagTheta2(rho->vz, rt->vz, theta->vz);
             theta->VertToHoriz();
             theta->UpdateGlobal();
             for(ki = 0; ki < NK+1; ki++) {
@@ -367,18 +406,38 @@ int main(int argc, char** argv) {
 
     pe->solve_vert_exner(velz, rho, rt, exner, false);
 */
-    pe->solve_vert_coupled(velz, rho, rt, exner, false);
-/* 
+    if(startStep==0) {
+        L2Vecs* rho_tmp = new L2Vecs(geom->nk, topo, geom);
+        L2Vecs* rt_tmp = new L2Vecs(geom->nk, topo, geom);
+        L2Vecs* exner_tmp = new L2Vecs(geom->nk, topo, geom);
+        rho_tmp->CopyFromHoriz(rho->vh);
+        rt_tmp->CopyFromHoriz(rt->vh);
+        exner_tmp->CopyFromHoriz(exner->vh);
 
+        pe->vert->solve_coupled(velz, rho, rt, exner);
+
+        rho->CopyFromHoriz(rho_tmp->vh);
+        rt->CopyFromHoriz(rt_tmp->vh);
+        exner->CopyFromHoriz(exner_tmp->vh);
+        delete rho_tmp;
+        delete rt_tmp;
+        delete exner_tmp;
+
+        write(pe->horiz, velx, velz, rho, rt, exner, NULL, 1);
+    }
+
+    //pe->step = 5;
+    //pe->solve_gs(velx, velz, rho, rt, exner, true);
+    //write(hs, velx, velz, rho, rt, exner, NULL, 2);
+    
+    pe->step = 2;
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->solve_vert_exner(velz, rho, rt, exner, dump);
-        //pe->solve_unsplit(velx, velz, rho, rt, dump);
+        pe->solve_gs(velx, velz, rho, rt, exner, dump);
     }
-*/
 
     for(ki = 0; ki < NK; ki++) {
         VecDestroy(&velx[ki]);
