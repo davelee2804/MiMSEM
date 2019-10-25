@@ -75,6 +75,9 @@ class HorizSolve {
         void set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
                         Vec F_u, Vec F_rho, Vec F_exner, Vec du, Vec drho, Vec drt, Vec dexner, bool do_rt, bool neg_scale);
 
+        void update_residuals(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner);
+        void assemble_pc(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, bool eos_update);
+
         double MaxNorm(Vec dx, Vec x, double max_norm);
 
         Mat _PCx;

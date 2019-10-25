@@ -462,6 +462,7 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
             //assemble_operator_schur(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
             //                        F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner);
             assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], F_w, F_rho, F_rt, F_exner, true, true);
+            MatScale(_PCz, -1.0);
             if(!itt) {
                 KSPCreate(MPI_COMM_SELF, &ksp_exner);
                 KSPSetOperators(ksp_exner, _PCz, _PCz);
@@ -658,6 +659,11 @@ void VertSolve::assemble_residual_z(int ex, int ey, Vec theta, Vec Pi,
     // update the temperature equation flux
     MatMult(vo->VA, _F, _tmpA1); // includes theta
     MatMult(vo->VA_inv, _tmpA1, _G);
+
+    // add the rayleigh friction
+    //vo->AssembleRayleigh(ex, ey, vo->VA);
+    //MatMult(vo->VA, velz2, _tmpA1);
+    //VecAXPY(fw, dt*RAYLEIGH, _tmpA1);
 }
 
 void VertSolve::repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner) {
@@ -1036,7 +1042,7 @@ void VertSolve::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec
 }
 
 void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, 
-    bool eos_update, bool neg_scale) {
+    bool eos_update, bool eos_update_mat) {
     int n2 = topo->elOrd*topo->elOrd;
     bool build_ksp = (!_PCz) ? true : false;
     MatReuse reuse = (!_PCz) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
@@ -1098,11 +1104,13 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
     VecAXPY(F_w, -1.0, _tmpA1);
     
     // 2. density weighted potential temperature correction
-    if(eos_update) {
+    if(eos_update_mat) {
         MatMatMult(vo->VB, pc_N_rt_inv, reuse, PETSC_DEFAULT, &pc_VB_N_rt_inv);
         MatMatMult(pc_VB_N_rt_inv, pc_N_exner, reuse, PETSC_DEFAULT, &pc_N_exner_2);
-        MatMult(pc_VB_N_rt_inv, F_exner, _tmpB1);
-        VecAXPY(F_rt, -1.0, _tmpB1);
+        if(eos_update) {
+            MatMult(pc_VB_N_rt_inv, F_exner, _tmpB1);
+            VecAXPY(F_rt, -1.0, _tmpB1);
+        }
     }
 
     // 3. schur complement solve for exner pressure
@@ -1116,16 +1124,13 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
     MatMatMult(pc_D_rt, pc_M_u_inv, reuse, PETSC_DEFAULT, &pc_D_rt_M_u_inv);
     MatMatMult(pc_D_rt_M_u_inv, pc_G, reuse, PETSC_DEFAULT, &_PCz);
     MatMatMult(pc_D_rt_M_u_inv, pc_G, reuse, PETSC_DEFAULT, &pc_LAP); // TODO: optimize
-    if(eos_update) {
+    if(eos_update_mat) {
         MatAXPY(_PCz, 1.0, pc_N_exner_2, DIFFERENT_NONZERO_PATTERN);
     }
     MatScale(_PCz, -1.0);
 
     MatMult(pc_D_rt_M_u_inv, F_w, _tmpB1);
     VecAXPY(F_rt, -1.0, _tmpB1);
-    if(neg_scale) {
-        VecScale(F_rt, -1.0);
-    }
 
     if(build_ksp) {
         PC pc;

@@ -39,7 +39,7 @@ class VertSolve {
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
 
         void assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, 
-                                 bool eos_update, bool neg_scale);
+                                 bool eos_update, bool eos_update_mat);
         void set_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner,
                         Vec F_w, Vec F_rho, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner, 
                         bool add_delta, bool neg_scale);

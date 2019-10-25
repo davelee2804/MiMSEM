@@ -637,7 +637,7 @@ void Euler::solve_vert(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i,
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
             vert->assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
-                                      F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii], true, false);
+                                      F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii], true, true);
 
             VecScale(F_rt->vz[ii], -1.0);
 #ifdef COLUMN_SOLVE
@@ -1269,7 +1269,7 @@ void Euler::solve_split(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
                 ex = ii%topo->nElsX;
                 ey = ii/topo->nElsX;
                 vert->assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
-                                          F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii], !firstStep, false);
+                                          F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii], !firstStep, !firstStep);//??
 
                 if(firstStep) {
                     schur->AddFromVertMat(ii, vert->_PCz);
@@ -1502,7 +1502,13 @@ void Euler::GlobalNorms(int itt, Vec* duh, Vec* uh, L2Vecs* duz, L2Vecs* uz, L2V
                               "\t|d_w|/|w|: "         << *norm_w     << endl;
 }
 
-// Gauss-Seidel splitting of horiztonal and vertical pressure updates
+// TODO (fixing drift over subsequent time steps):
+// *) solve as vertical then horizontal gauss-seidel splitting at each newton iteration
+// *) alternate vertical/horizontal and horizontal/vertical gauss-seidel splitting between time steps
+// *) is the exner pressure residual assembly ok??
+// *) do the viscous terms at the new time level only
+
+// Gauss-Seidel splitting of horiztonal and vertical pressure updates (horiztonal then vertical)
 void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save) {
     bool done = false;
     int itt = 0, elOrd2 = topo->elOrd*topo->elOrd, ex, ey;
@@ -1526,6 +1532,7 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
     L2Vecs* d_exner = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* lap_d_exner = new L2Vecs(geom->nk, topo, geom);
     Vec* velx_j = new Vec[geom->nk];
+    Vec* velx_h = new Vec[geom->nk];
     Vec* dudz_i = new Vec[geom->nk];
     Vec* dudz_j = new Vec[geom->nk];
     Vec* F_u    = new Vec[geom->nk];
@@ -1536,6 +1543,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
     for(int lev = 0; lev < geom->nk; lev++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_j[lev]);
         VecCopy(velx_i[lev], velx_j[lev]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_h[lev]);
+        VecCopy(velx_i[lev], velx_h[lev]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_i[lev]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_j[lev]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &F_u[lev]);
@@ -1578,7 +1587,7 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
     theta_h->UpdateGlobal();
 
     // just to initialise everything...
-    vert->assemble_and_update(0, 0, theta_h->vz[0], velz_i->vz[0], rho_i->vz[0], rt_i->vz[0], exner_h->vz[0], F_z, dF_z, dF_z, dF_z, true, false);
+    vert->assemble_and_update(0, 0, theta_h->vz[0], velz_i->vz[0], rho_i->vz[0], rt_i->vz[0], exner_h->vz[0], F_z, dF_z, dF_z, dF_z, true, true);
 
     do {
         // residual vectors (vertical components)
@@ -1669,7 +1678,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
         // build the preconditioner matrix
         for(int lev = 0; lev < geom->nk; lev++) {
             //horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
-            horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
+            //horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
+            horiz->assemble_and_update(lev, theta_h->vl, velx_h[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
                                        F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], false, false); // eos update done with vert residual update
 
             VecScale(F_rt->vh[lev], -1.0);
@@ -1702,7 +1712,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
         // back substitution
         for(int lev = 0; lev < geom->nk; lev++) {
             //horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
-            horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
+            //horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
+            horiz->set_deltas(lev, theta_h->vl, velx_h[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
                        F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false);
         }
         F_rho->UpdateLocal(); F_rho->HorizToVert();
@@ -1714,6 +1725,329 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
             VecZeroEntries(d_rt->vz[ii]);
 
             //vert->set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], 
+            vert->set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii], 
+                       F_w->vz[ii], F_rho->vz[ii], F_exner->vz[ii], d_w->vz[ii], d_rho->vz[ii], d_rt->vz[ii], d_exner->vz[ii], true, false);
+
+            // inverse assembled in function above
+            MatMult(vo->VB_inv, F_rho->vz[ii], d_rho->vz[ii]);
+            VecScale(d_rho->vz[ii], -1.0);
+            VecScale(d_rt->vz[ii], -1.0);
+        }
+
+        // update solutions
+        for(int lev = 0; lev < geom->nk; lev++) {
+            VecAXPY(velx_j[lev], 1.0, d_u[lev]);
+            VecZeroEntries(velx_h[lev]);
+            VecAXPY(velx_h[lev], 0.5, velx_i[lev]);
+            VecAXPY(velx_h[lev], 0.5, velx_j[lev]);
+        }
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            VecAXPY(velz_j->vz[ii],  1.0, d_w->vz[ii]    );
+            VecAXPY(rho_j->vz[ii],   1.0, d_rho->vz[ii]  );
+            VecAXPY(rt_j->vz[ii],    1.0, d_rt->vz[ii]   );
+            VecAXPY(exner_j->vz[ii], 1.0, d_exner->vz[ii]);
+        }
+        rho_j->VertToHoriz();   rho_j->UpdateGlobal();
+        rt_j->VertToHoriz();    rt_j->UpdateGlobal();
+        exner_j->VertToHoriz(); exner_j->UpdateGlobal();
+        velz_j->VertToHoriz();  velz_j->UpdateGlobal();
+
+        // update additional fields
+        horiz->diagTheta2(rho_j->vz, rt_j->vz, theta_h->vz);
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            VecZeroEntries(exner_h->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_j->vz[ii]);
+
+            VecScale(theta_h->vz[ii], 0.5);
+            VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
+
+            VecZeroEntries(rho_h->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_i->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_j->vz[ii]);
+            VecZeroEntries(rt_h->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_i->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
+        }
+        theta_h->VertToHoriz(); theta_h->UpdateGlobal();
+        exner_h->VertToHoriz(); exner_h->UpdateGlobal();
+        rho_h->VertToHoriz(); rho_h->UpdateGlobal();
+        rt_h->VertToHoriz(); rt_h->UpdateGlobal();
+        horiz->diagHorizVort(velx_j, dudz_j);
+
+        d_rho->VertToHoriz(); d_rho->UpdateGlobal();
+        d_rt->VertToHoriz(); d_rt->UpdateGlobal();
+        GlobalNorms(itt, d_u, velx_j, d_w, velz_j, d_rho, rho_j, d_rt, rt_j, d_exner, exner_j,
+                    &max_norm_u, &max_norm_w, &max_norm_rho, &max_norm_rt, &max_norm_exner, h_tmp, u_tmp_1, F_z);
+
+        firstStep = false;
+        if(max_norm_exner < 1.0e-8 && max_norm_u < 1.0e-8 && max_norm_w < 1.0e-8) done = true;
+        itt++;
+        if(itt > 10) done = true;
+    } while(!done);
+
+    // copy the solutions back to the input vectors
+    velz_i->CopyFromHoriz(velz_j->vh);
+    rho_i->CopyFromHoriz(rho_j->vh);
+    rt_i->CopyFromHoriz(rt_j->vh);
+    exner_i->CopyFromHoriz(exner_j->vh);
+    for(int kk = 0; kk < geom->nk; kk++) {
+        VecCopy(velx_j[kk], velx_i[kk]);
+    }
+
+    // write output
+    if(save) dump(velx_i, velz_i, rho_i, rt_i, exner_i, theta_h, step++);
+
+    delete velz_j;
+    delete rho_j;
+    delete rt_j;
+    delete exner_j;
+    delete exner_h;
+    delete rho_h;
+    delete rt_h;
+    delete theta_i;
+    delete theta_h;
+    delete F_w;
+    delete F_rho;
+    delete F_rt;
+    delete F_exner;
+    delete d_w;
+    delete d_rho;
+    delete d_rt;
+    delete d_exner;
+    delete lap_d_exner;
+    for(int lev = 0; lev < geom->nk; lev++) {
+        VecDestroy(&velx_j[lev]);
+        VecDestroy(&velx_h[lev]);
+        VecDestroy(&dudz_i[lev]);
+        VecDestroy(&dudz_j[lev]);
+        VecDestroy(&F_u[lev]);
+        VecDestroy(&d_u[lev]);
+    }
+    delete[] velx_j;
+    delete[] velx_h;
+    delete[] dudz_i;
+    delete[] dudz_j;
+    delete[] F_u;
+    delete[] d_u;
+    VecDestroy(&_F);
+    VecDestroy(&_G);
+    VecDestroy(&dF);
+    VecDestroy(&dG);
+    VecDestroy(&F_z);
+    VecDestroy(&G_z);
+    VecDestroy(&dF_z);
+    VecDestroy(&dG_z);
+    VecDestroy(&h_tmp);
+    VecDestroy(&u_tmp_1);
+    VecDestroy(&u_tmp_2);
+}
+
+// Gauss-Seidel splitting of horiztonal and vertical pressure updates (vertical then horizontal)
+void Euler::solve_gs_vh(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save) {
+    bool done = false;
+    int itt = 0, elOrd2 = topo->elOrd*topo->elOrd, ex, ey;
+    double max_norm_u, max_norm_w, max_norm_rho, max_norm_rt, max_norm_exner;
+    L2Vecs* velz_j  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_j   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_j    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rho_h   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_h    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* F_w     = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* F_rho   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* F_rt    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* F_exner = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* d_w     = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* d_rho   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* d_rt    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* d_exner = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* lap_d_exner = new L2Vecs(geom->nk, topo, geom);
+    Vec* velx_j = new Vec[geom->nk];
+    Vec* dudz_i = new Vec[geom->nk];
+    Vec* dudz_j = new Vec[geom->nk];
+    Vec* F_u    = new Vec[geom->nk];
+    Vec* d_u    = new Vec[geom->nk];
+    Vec _F, _G, dF, dG, F_z, G_z, dF_z, dG_z, h_tmp, u_tmp_1, u_tmp_2, dtheta;
+    VertOps* vo = vert->vo;
+
+    for(int lev = 0; lev < geom->nk; lev++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_j[lev]);
+        VecCopy(velx_i[lev], velx_j[lev]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_i[lev]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_j[lev]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &F_u[lev]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &d_u[lev]);
+    }
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_G);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dF);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dG);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp_1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp_2);
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
+
+    velz_i->UpdateLocal();  velz_i->HorizToVert();
+    rho_i->UpdateLocal();   rho_i->HorizToVert();
+    rt_i->UpdateLocal();    rt_i->HorizToVert();
+    exner_i->UpdateLocal(); exner_i->HorizToVert();
+    velz_j->CopyFromVert(velz_i->vz);   velz_j->VertToHoriz();  velz_j->UpdateGlobal();
+    rho_j->CopyFromVert(rho_i->vz);     rho_j->VertToHoriz();   rho_j->UpdateGlobal();
+    rt_j->CopyFromVert(rt_i->vz);       rt_j->VertToHoriz();    rt_j->UpdateGlobal();
+    exner_j->CopyFromVert(exner_i->vz); exner_j->VertToHoriz(); exner_j->UpdateGlobal();
+    exner_h->CopyFromVert(exner_i->vz); exner_h->VertToHoriz(); exner_h->UpdateGlobal();
+    rho_h->CopyFromVert(rho_i->vz); rho_h->VertToHoriz(); rho_h->UpdateGlobal();
+    rt_h->CopyFromVert(rt_i->vz); rt_h->VertToHoriz(); rt_h->UpdateGlobal();
+
+    // diagnose the vorticity terms
+    horiz->diagHorizVort(velx_i, dudz_i);
+    for(int lev = 0; lev < geom->nk; lev++) {
+        VecCopy(dudz_i[lev], dudz_j[lev]);
+    }
+    horiz->diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz);
+    theta_h->CopyFromVert(theta_i->vz);
+    theta_i->VertToHoriz();
+    theta_h->VertToHoriz();
+    theta_h->UpdateGlobal();
+
+    // just to initialise everything...
+    horiz->assemble_and_update(0, theta_h->vl, velx_i[0], rho_h->vl[0], rt_h->vl[0], exner_h->vl[0], _F, dF, dF, dF, true, false);
+
+    do {
+        // residual vectors (vertical components)
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            ex = ii%topo->nElsX;
+            ey = ii/topo->nElsX;
+
+            // exner pressure residual vectors
+            vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
+
+            // vertical velocity residual vectors
+            vert->assemble_residual_z(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
+                                rt_i->vz[ii], rt_j->vz[ii], F_w->vz[ii], F_z, G_z);
+
+            // density and density weighted potential temperature residual vectors (vertical components)
+            vo->AssembleConst(ex, ey, vo->VB);
+            MatMult(vo->V10, F_z, dF_z);
+            MatMult(vo->V10, G_z, dG_z);
+            VecAYPX(dF_z, dt, rho_j->vz[ii]);
+            VecAYPX(dG_z, dt, rt_j->vz[ii]);
+            VecAXPY(dF_z, -1.0, rho_i->vz[ii]);
+            VecAXPY(dG_z, -1.0, rt_i->vz[ii]);
+            MatMult(vo->VB, dF_z, F_rho->vz[ii]);
+            MatMult(vo->VB, dG_z, F_rt->vz[ii]);
+        }
+        F_exner->VertToHoriz(); F_exner->UpdateGlobal();
+        F_rho->VertToHoriz();   F_rho->UpdateGlobal();
+        F_rt->VertToHoriz();    F_rt->UpdateGlobal();
+
+        // residual vectors (horizontal components)
+        for(int lev = 0; lev < geom->nk; lev++) {
+            // horizontal velocity residual vectors
+            horiz->assemble_residual_x(lev, theta_h->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, exner_h->vh[lev], 
+                                velx_i[lev], velx_j[lev], rho_i->vh[lev], rho_j->vh[lev], F_u[lev], _F, _G);
+
+            // density and density weighted potential temperature residual vectors (horizontal components)
+            horiz->M2->assemble(lev, SCALE, true);
+            MatMult(horiz->EtoF->E21, _F, dF);
+            MatMult(horiz->EtoF->E21, _G, dG);
+            MatMult(horiz->M2->M, dF, h_tmp);
+            VecAXPY(F_rho->vh[lev], dt, h_tmp);
+            MatMult(horiz->M2->M, dG, h_tmp);
+            VecAXPY(F_rt->vh[lev], dt, h_tmp);
+
+            if(horiz->do_visc) {
+                horiz->M1->assemble(lev, SCALE, true);
+                VecZeroEntries(dF);
+                VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
+                VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
+
+                horiz->grad(false, dF, &dtheta, lev);
+                horiz->F->assemble(rho_j->vl[lev], lev, true, SCALE);
+                MatMult(horiz->F->M, dtheta, u_tmp_1);
+                VecDestroy(&dtheta);
+
+                KSPSolve(horiz->ksp1, u_tmp_1, u_tmp_2);
+                MatMult(horiz->EtoF->E21, u_tmp_2, dG);
+
+                horiz->grad(false, dG, &dtheta, lev);
+                MatMult(horiz->EtoF->E21, dtheta, dG);
+                VecDestroy(&dtheta);
+                MatMult(horiz->M2->M, dG, dF);
+                VecAXPY(F_rt->vh[lev], dt*horiz->del2*horiz->del2, dF);
+            }
+        }
+        F_rho->UpdateLocal(); F_rho->HorizToVert();
+        F_rt->UpdateLocal();  F_rt->HorizToVert();
+
+        // update the density weighted potential temperature residuals with the vertical velocity residual gradient
+        for(int lev = 0; lev < geom->nk; lev++) {
+            horiz->update_residuals(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
+                                    F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev]);
+
+            if(itt) {
+                MatMult(horiz->_PCx, d_exner->vh[lev], lap_d_exner->vh[lev]);
+            }
+        }
+        F_rho->UpdateLocal(); F_rho->HorizToVert();
+        F_rt->UpdateLocal();  F_rt->HorizToVert();
+        if(itt) {
+            lap_d_exner->UpdateLocal(); lap_d_exner->HorizToVert();
+        }
+
+        // build the preconditioner matrix
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            ex = ii%topo->nElsX;
+            ey = ii/topo->nElsX;
+
+            vert->assemble_and_update(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii], 
+                                      F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii], false, true); // eos update for F_rt done with horiz residual update
+
+            VecScale(F_rt->vz[ii], -1.0);
+            VecCopy(F_rt->vz[ii], dF_z);
+            if(itt) {
+                VecAXPY(dF_z, 1.0, lap_d_exner->vz[ii]);
+            }
+            KSPSolve(vert->ksp_exner, dF_z, d_exner->vz[ii]);
+            // replace DM^{-1}G\delta\Pi with horiztonal update
+            if(itt) {
+                MatMult(vert->pc_LAP, d_exner->vz[ii], lap_d_exner->vz[ii]);
+            }
+        }
+        F_rho->VertToHoriz();       F_rho->UpdateGlobal();
+        F_rt->VertToHoriz();        F_rt->UpdateGlobal();
+        lap_d_exner->VertToHoriz(); lap_d_exner->UpdateGlobal();
+
+        for(int lev = 0; lev < geom->nk; lev++) {
+            horiz->assemble_pc(lev, theta_h->vl, F_u[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], true);
+
+            VecCopy(F_rt->vh[lev], dF);
+            VecAXPY(dF, 1.0, lap_d_exner->vh[lev]);
+            KSPSolve(horiz->ksp_exner, dF, d_exner->vh[lev]);
+        }
+        d_exner->UpdateLocal(); d_exner->HorizToVert();
+
+        // back substitution
+        for(int lev = 0; lev < geom->nk; lev++) {
+            horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
+                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false);
+        }
+        F_rho->UpdateLocal(); F_rho->HorizToVert();
+        
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            ex = ii%topo->nElsX;
+            ey = ii/topo->nElsX;
+
+            VecZeroEntries(d_rt->vz[ii]);
+
             vert->set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii], 
                        F_w->vz[ii], F_rho->vz[ii], F_exner->vz[ii], d_w->vz[ii], d_rho->vz[ii], d_rt->vz[ii], d_exner->vz[ii], true, false);
 

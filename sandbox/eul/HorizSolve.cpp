@@ -27,6 +27,7 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
+//#define RAYLEIGH 0.2
 
 using namespace std;
 
@@ -912,8 +913,14 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
     // assemble the mass matrix terms
     MatMult(M1->M, velx2, utmp);
     VecAXPY(fu, +1.0, utmp);
+#ifdef RAYLEIGH
+    if(level == geom->nk-1) VecAXPY(fu, +0.5*dt*RAYLEIGH, utmp);
+#endif
     MatMult(M1->M, velx1, utmp);
     VecAXPY(fu, -1.0, utmp);
+//#ifdef RAYLEIGH
+//    if(level == geom->nk-1) VecAXPY(fu, -0.5*dt*RAYLEIGH, utmp);
+//#endif
 
     if(do_visc) {
         VecZeroEntries(utmp);
@@ -1100,6 +1107,9 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     VecScatterEnd(  topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
     R->assemble(wl, lev, SCALE);
     MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
+#ifdef RAYLEIGH
+    MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+#endif
 
     // [u,exner] block
     VecZeroEntries(theta_k);
@@ -1266,6 +1276,9 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
     VecScatterEnd(  topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
     R->assemble(wl, lev, SCALE);
     MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
+#ifdef RAYLEIGH
+    MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+#endif
     VecDestroy(&wg);
 
     // [u,exner] block
@@ -1406,6 +1419,9 @@ void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec 
     VecScatterEnd(  topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
     R->assemble(wl, lev, SCALE);
     MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
+#ifdef RAYLEIGH
+    MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+#endif
 
     // [u,exner] block
     VecZeroEntries(theta_k);
@@ -1491,4 +1507,226 @@ void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec 
     MatDestroy(&Mu_prime);
     KSPDestroy(&ksp_u);
     if(do_visc) MatDestroy(&M1_OP);
+}
+
+/***************************************************************************************/
+
+// update F_u (for density residual), F_rt (for exner residual and horiztonal velocity residual), 
+// and assemble the laplacian term of the preconditioner
+void HorizSolve::update_residuals(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner) {
+    Vec wg, wl, theta_k, diag_g, ones_g, h_tmp;
+    Mat Mu_inv, Mu_prime, M1_OP;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &diag_g);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ones_g);
+
+    m0->assemble(lev, SCALE);
+    M1->assemble(lev, SCALE, true);
+    M2->assemble(lev, SCALE, true);
+    M2inv->assemble(lev, SCALE);
+
+    MatGetDiagonal(M1->M, diag_g);
+    VecSet(ones_g, 1.0);
+    VecPointwiseDivide(diag_g, ones_g, diag_g);
+    MatDiagonalSet(pcx_M1_inv, diag_g, INSERT_VALUES);
+
+    // [u,u] block
+    curl(false, velx, &wg, lev, true);
+    VecScatterBegin(topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
+    R->assemble(wl, lev, SCALE);
+    MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
+#ifdef RAYLEIGH
+    MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+#endif
+    VecDestroy(&wg);
+
+    // [u,exner] block
+    VecZeroEntries(theta_k);
+    VecAXPY(theta_k, 0.5, theta[lev+0]);
+    VecAXPY(theta_k, 0.5, theta[lev+1]);
+    F->assemble(theta_k, lev, false, SCALE);
+    MatMatMult(pcx_M1_inv, EtoF->E12, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M1invD12);
+    MatMatMult(pcx_M1invD12, M2->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M1invD12M2);
+    MatMatMult(F->M, pcx_M1invD12M2, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_G);
+    MatScale(pcx_G, 0.5*dt);
+
+    MatMatMult(M2->M, EtoF->E21, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M2D);
+    MatMatMult(pcx_M2D, pcx_M1_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M2DM1_inv);
+    // [rt,u] block
+    F->assemble(rt, lev, true, SCALE);
+    MatMatMult(pcx_M2DM1_inv, F->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_D);
+    MatScale(pcx_D, 0.5*dt);
+    // [rho,u] block
+    F->assemble(rho, lev, true, SCALE);
+    MatMatMult(pcx_M2DM1_inv, F->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_D_rho);
+    MatScale(pcx_D_rho, 0.5*dt);
+
+    // biharmonic viscosity operator
+    if(do_visc) assemble_biharmonic(lev, MAT_REUSE_MATRIX, &M1_OP);
+
+    // density corrections
+    assemble_rho_correction(lev, rho, exner, theta_k, MAT_REUSE_MATRIX, diag_g, ones_g, &pcx_Au);
+
+    MatMatMult(pcx_Au, M2inv->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_Au_M2_inv);
+    MatMatMult(pcx_Au_M2_inv, pcx_D_rho, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mu_prime); // invalid read on the second pass
+    MatAYPX(Mu_prime, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
+    if(do_visc) { 
+        MatAXPY(M1_OP, 1.0, Mu_prime, DIFFERENT_NONZERO_PATTERN);
+        coriolisMatInv(M1_OP, &Mu_inv);
+    } else {
+        coriolisMatInv(Mu_prime, &Mu_inv);
+    }
+    MatMult(pcx_Au_M2_inv, F_rho, diag_g);
+    VecAXPY(F_u, -1.0, diag_g);
+
+    MatDestroy(&pcx_Au);
+
+    // build the preconditioner
+    MatMatMult(pcx_D, Mu_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_D_Mu_inv);
+    MatMatMult(pcx_D_Mu_inv, pcx_G, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_LAP);
+    MatAssemblyBegin(pcx_LAP, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (pcx_LAP, MAT_FINAL_ASSEMBLY);
+
+    M2_rt_inv->assemble(rt, lev, SCALE, true);
+    MatScale(M2_rt_inv->M, -1.0*CV/RD);
+
+    if(do_visc) {   // temperature viscosity (biharmonic)
+        assemble_biharmonic_temp(lev, rho, MAT_REUSE_MATRIX, &pcx_LAP2_Theta);
+        MatMatMult(pcx_LAP2_Theta, M2_rt_inv->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M2N_rt_inv);
+    } else {
+        MatMatMult(M2->M, M2_rt_inv->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M2N_rt_inv);
+    }
+
+    MatZeroEntries(_PCx);
+    MatAXPY(_PCx, -1.0, pcx_LAP, DIFFERENT_NONZERO_PATTERN);
+    MatAssemblyBegin(_PCx, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (_PCx, MAT_FINAL_ASSEMBLY);
+
+    // update the rhs
+    MatMult(pcx_M2N_rt_inv, F_exner, h_tmp);
+    VecAXPY(F_rt, -1.0, h_tmp);
+    MatMult(pcx_D_Mu_inv, F_u, h_tmp);
+    VecAXPY(F_rt, -1.0, h_tmp);
+
+    VecDestroy(&wl);
+    VecDestroy(&theta_k);
+    VecDestroy(&h_tmp);
+    VecDestroy(&diag_g);
+    VecDestroy(&ones_g);
+    MatDestroy(&Mu_inv);
+    MatDestroy(&Mu_prime);
+    if(do_visc) MatDestroy(&M1_OP);
+    if(do_visc) MatDestroy(&pcx_LAP2_Theta);
+}
+
+void HorizSolve::assemble_pc(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, bool eos_update) {
+    Vec wg, wl, theta_k, diag_g, ones_g, h_tmp;
+    Mat Mu_inv, Mu_prime, M1_OP;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &diag_g);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ones_g);
+
+    m0->assemble(lev, SCALE);
+    M1->assemble(lev, SCALE, true);
+    M2->assemble(lev, SCALE, true);
+    M2inv->assemble(lev, SCALE);
+
+    MatGetDiagonal(M1->M, diag_g);
+    VecSet(ones_g, 1.0);
+    VecPointwiseDivide(diag_g, ones_g, diag_g);
+    MatDiagonalSet(pcx_M1_inv, diag_g, INSERT_VALUES);
+
+    // [u,u] block
+    curl(false, velx, &wg, lev, true);
+    VecScatterBegin(topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
+    R->assemble(wl, lev, SCALE);
+    MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
+#ifdef RAYLEIGH
+    MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+#endif
+    VecDestroy(&wg);
+
+    // [u,exner] block
+    VecZeroEntries(theta_k);
+    VecAXPY(theta_k, 0.5, theta[lev+0]);
+    VecAXPY(theta_k, 0.5, theta[lev+1]);
+    F->assemble(theta_k, lev, false, SCALE);
+    MatMatMult(pcx_M1_inv, EtoF->E12, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M1invD12);
+    MatMatMult(pcx_M1invD12, M2->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M1invD12M2);
+    MatMatMult(F->M, pcx_M1invD12M2, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_G);
+    MatScale(pcx_G, 0.5*dt);
+
+    MatMatMult(M2->M, EtoF->E21, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M2D);
+    MatMatMult(pcx_M2D, pcx_M1_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M2DM1_inv);
+    // [rt,u] block
+    F->assemble(rt, lev, true, SCALE);
+    MatMatMult(pcx_M2DM1_inv, F->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_D);
+    MatScale(pcx_D, 0.5*dt);
+    // [rho,u] block
+    F->assemble(rho, lev, true, SCALE);
+    MatMatMult(pcx_M2DM1_inv, F->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_D_rho);
+    MatScale(pcx_D_rho, 0.5*dt);
+
+    // biharmonic viscosity operator
+    if(do_visc) assemble_biharmonic(lev, MAT_REUSE_MATRIX, &M1_OP);
+
+    // density corrections
+    assemble_rho_correction(lev, rho, exner, theta_k, MAT_REUSE_MATRIX, diag_g, ones_g, &pcx_Au);
+
+    MatMatMult(pcx_Au, M2inv->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_Au_M2_inv);
+    MatMatMult(pcx_Au_M2_inv, pcx_D_rho, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mu_prime); // invalid read on the second pass
+    MatAYPX(Mu_prime, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
+    if(do_visc) { 
+        MatAXPY(M1_OP, 1.0, Mu_prime, DIFFERENT_NONZERO_PATTERN);
+        coriolisMatInv(M1_OP, &Mu_inv);
+    } else {
+        coriolisMatInv(Mu_prime, &Mu_inv);
+    }
+
+    MatDestroy(&pcx_Au);
+
+    // build the preconditioner
+    MatMatMult(pcx_D, Mu_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_D_Mu_inv);
+    MatMatMult(pcx_D_Mu_inv, pcx_G, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_LAP);
+
+    M2_rt_inv->assemble(rt, lev, SCALE, true);
+    MatScale(M2_rt_inv->M, -1.0*CV/RD);
+
+    if(do_visc) {   // temperature viscosity (biharmonic)
+        assemble_biharmonic_temp(lev, rho, MAT_REUSE_MATRIX, &pcx_LAP2_Theta);
+        MatMatMult(pcx_LAP2_Theta, M2_rt_inv->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M2N_rt_inv);
+    } else {
+        MatMatMult(M2->M, M2_rt_inv->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M2N_rt_inv);
+    }
+    M2_pi_inv->assemble(exner, lev, SCALE, false);
+    MatMatMult(pcx_M2N_rt_inv, M2_pi_inv->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M2N_rt_invN_pi);
+
+    MatAssemblyBegin(pcx_M2N_rt_invN_pi, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (pcx_M2N_rt_invN_pi, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(pcx_LAP, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (pcx_LAP, MAT_FINAL_ASSEMBLY);
+
+    MatZeroEntries(_PCx);
+    MatAXPY(_PCx, -1.0, pcx_LAP, DIFFERENT_NONZERO_PATTERN);
+    MatAXPY(_PCx, -1.0, pcx_M2N_rt_invN_pi, DIFFERENT_NONZERO_PATTERN);
+    MatAssemblyBegin(_PCx, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (_PCx, MAT_FINAL_ASSEMBLY);
+
+    VecDestroy(&wl);
+    VecDestroy(&theta_k);
+    VecDestroy(&h_tmp);
+    VecDestroy(&diag_g);
+    VecDestroy(&ones_g);
+    MatDestroy(&Mu_inv);
+    MatDestroy(&Mu_prime);
+    if(do_visc) MatDestroy(&M1_OP);
+    if(do_visc) MatDestroy(&pcx_LAP2_Theta);
 }
