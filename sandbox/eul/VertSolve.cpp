@@ -661,9 +661,13 @@ void VertSolve::assemble_residual_z(int ex, int ey, Vec theta, Vec Pi,
     MatMult(vo->VA_inv, _tmpA1, _G);
 
     // add the rayleigh friction
-    //vo->AssembleRayleigh(ex, ey, vo->VA);
-    //MatMult(vo->VA, velz2, _tmpA1);
-    //VecAXPY(fw, dt*RAYLEIGH, _tmpA1);
+#ifdef RAYLEIGH
+    vo->AssembleRayleigh(ex, ey, vo->VA);
+    MatMult(vo->VA, velz2, _tmpA1);
+    VecAXPY(fw, 0.5*dt*RAYLEIGH, _tmpA1);
+    MatMult(vo->VA, velz1, _tmpA1);
+    VecAXPY(fw, 0.5*dt*RAYLEIGH, _tmpA1);
+#endif
 }
 
 void VertSolve::repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner) {
@@ -1099,6 +1103,10 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
 
     vo->AssembleLinear(ex, ey, vo->VA);
     MatAYPX(pc_M_u, -1.0, vo->VA, DIFFERENT_NONZERO_PATTERN);
+#ifdef RAYLEIGH
+    vo->AssembleRayleigh(ex, ey, vo->VA);
+    MatAXPY(pc_M_u, 0.5*dt*RAYLEIGH, vo->VA, DIFFERENT_NONZERO_PATTERN);
+#endif
 
     MatMult(pc_A_u_VB_inv, F_rho, _tmpA1);
     VecAXPY(F_w, -1.0, _tmpA1);
@@ -1197,6 +1205,10 @@ void VertSolve::set_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt,
 
     vo->AssembleLinear(ex, ey, vo->VA);
     MatAYPX(pc_M_u, -1.0, vo->VA, DIFFERENT_NONZERO_PATTERN);
+#ifdef RAYLEIGH
+    vo->AssembleRayleigh(ex, ey, vo->VA);
+    MatAXPY(pc_M_u, 0.5*dt*RAYLEIGH, vo->VA, DIFFERENT_NONZERO_PATTERN);
+#endif
 
     // 3. schur complement solve for exner pressure
     MatGetDiagonal(pc_M_u, _tmpA1);
@@ -1366,6 +1378,10 @@ void VertSolve::assemble_pc(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec exne
 
     vo->AssembleLinear(ex, ey, vo->VA);
     MatAYPX(pc_M_u, -1.0, vo->VA, DIFFERENT_NONZERO_PATTERN);
+#ifdef RAYLEIGH
+    vo->AssembleRayleigh(ex, ey, vo->VA);
+    MatAXPY(pc_M_u, 0.5*dt*RAYLEIGH, vo->VA, DIFFERENT_NONZERO_PATTERN);
+#endif
 
     // 2. density weighted potential temperature correction
     if(eos_update) {

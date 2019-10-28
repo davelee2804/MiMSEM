@@ -27,7 +27,7 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-//#define RAYLEIGH 0.2
+#define RAYLEIGH 0.2
 
 using namespace std;
 
@@ -918,9 +918,9 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
 #endif
     MatMult(M1->M, velx1, utmp);
     VecAXPY(fu, -1.0, utmp);
-//#ifdef RAYLEIGH
-//    if(level == geom->nk-1) VecAXPY(fu, -0.5*dt*RAYLEIGH, utmp);
-//#endif
+#ifdef RAYLEIGH
+    if(level == geom->nk-1) VecAXPY(fu, +0.5*dt*RAYLEIGH, utmp);
+#endif
 
     if(do_visc) {
         VecZeroEntries(utmp);
@@ -1108,7 +1108,7 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
     R->assemble(wl, lev, SCALE);
     MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
 #ifdef RAYLEIGH
-    MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+    if(lev == geom->nk-1) MatAXPY(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
 #endif
 
     // [u,exner] block
@@ -1277,7 +1277,7 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
     R->assemble(wl, lev, SCALE);
     MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
 #ifdef RAYLEIGH
-    MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+    if(lev == geom->nk-1) MatAXPY(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
 #endif
     VecDestroy(&wg);
 
@@ -1420,7 +1420,7 @@ void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec 
     R->assemble(wl, lev, SCALE);
     MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
 #ifdef RAYLEIGH
-    MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+    if(lev == geom->nk-1) MatAXPY(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
 #endif
 
     // [u,exner] block
@@ -1540,7 +1540,7 @@ void HorizSolve::update_residuals(int lev, Vec* theta, Vec velx, Vec rho, Vec rt
     R->assemble(wl, lev, SCALE);
     MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
 #ifdef RAYLEIGH
-    MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+    if(lev == geom->nk-1) MatAXPY(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
 #endif
     VecDestroy(&wg);
 
@@ -1650,7 +1650,7 @@ void HorizSolve::assemble_pc(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec
     R->assemble(wl, lev, SCALE);
     MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
 #ifdef RAYLEIGH
-    MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+    if(lev == geom->nk-1) MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
 #endif
     VecDestroy(&wg);
 
