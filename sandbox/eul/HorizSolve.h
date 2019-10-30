@@ -71,12 +71,12 @@ class HorizSolve {
         void assemble_rho_correction(int lev, Vec rho, Vec exner, Vec theta_k, MatReuse reuse, Vec diag_g, Vec ones_g, Mat* Au);
 
         void assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
-                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, bool eos_update, bool neg_scale);
+                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, bool eos_update, bool neg_scale, L2Vecs* velz_i, L2Vecs* velz_j);
         void set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
-                        Vec F_u, Vec F_rho, Vec F_exner, Vec du, Vec drho, Vec drt, Vec dexner, bool do_rt, bool neg_scale);
+                        Vec F_u, Vec F_rho, Vec F_exner, Vec du, Vec drho, Vec drt, Vec dexner, bool do_rt, bool neg_scale, L2Vecs* velz_i, L2Vecs* velz_j);
 
-        void update_residuals(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner);
-        void assemble_pc(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, bool eos_update);
+        void update_residuals(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, L2Vecs* velz_i, L2Vecs* velz_j);
+        void assemble_pc(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, bool eos_update, L2Vecs* velz_i, L2Vecs* velz_j);
 
         double MaxNorm(Vec dx, Vec x, double max_norm);
 

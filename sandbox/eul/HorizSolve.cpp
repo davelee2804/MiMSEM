@@ -1248,14 +1248,15 @@ void HorizSolve::assemble_schur(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, 
 }
 
 void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
-                                     Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, bool eos_update, bool neg_scale) {
+                                     Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner, bool eos_update, bool neg_scale, L2Vecs* velz_i, L2Vecs* velz_j) {
     MatReuse reuse = (!_PCx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     bool set_ksp = (!_PCx) ? true : false;
-    Vec wg, wl, theta_k, diag_g, ones_g, h_tmp;
+    Vec wg, wl, theta_k, diag_g, ones_g, h_tmp, velz_h_l;
     Mat Mu_inv, Mu_prime, M1_OP;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &velz_h_l);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &diag_g);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ones_g);
@@ -1280,6 +1281,19 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
     if(lev == geom->nk-1) MatAXPY(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
 #endif
     VecDestroy(&wg);
+    if(velz_i && velz_j) {
+        VecZeroEntries(velz_h_l);
+        if(lev > 0) {
+            VecAXPY(velz_h_l, 1.0/(geom->thick[lev-1][0]+geom->thick[lev+0][0]), velz_i->vl[lev-1]);
+            VecAXPY(velz_h_l, 1.0/(geom->thick[lev-1][0]+geom->thick[lev+0][0]), velz_j->vl[lev-1]);
+        }
+        if(lev < geom->nk-1) {
+            VecAXPY(velz_h_l, 1.0/(geom->thick[lev+0][0]+geom->thick[lev+1][0]), velz_i->vl[lev+0]);
+            VecAXPY(velz_h_l, 1.0/(geom->thick[lev+0][0]+geom->thick[lev+1][0]), velz_j->vl[lev+0]);
+        }
+        F->assemble(velz_h_l, lev, false, SCALE);
+        MatAXPY(R->M, 0.5*dt, F->M, DIFFERENT_NONZERO_PATTERN);
+    }
 
     // [u,exner] block
     VecZeroEntries(theta_k);
@@ -1382,6 +1396,7 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
     VecDestroy(&h_tmp);
     VecDestroy(&diag_g);
     VecDestroy(&ones_g);
+    VecDestroy(&velz_h_l);
     MatDestroy(&Mu_inv);
     MatDestroy(&Mu_prime);
     if(do_visc) MatDestroy(&M1_OP);
@@ -1390,15 +1405,16 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx, Vec rho, Vec
 
 void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, 
                             Vec F_u, Vec F_rho, Vec F_exner, Vec du, Vec drho, Vec drt, Vec dexner, 
-                            bool do_rt, bool neg_scale) {
+                            bool do_rt, bool neg_scale, L2Vecs* velz_i, L2Vecs* velz_j) {
     int size;
     MatReuse reuse = MAT_REUSE_MATRIX;
-    Vec wg, wl, theta_k, diag_g, ones_g, h_tmp;
+    Vec wg, wl, theta_k, diag_g, ones_g, h_tmp, velz_h;
     Mat Mu_prime, M1_OP;
     PC pc;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &velz_h);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &diag_g);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ones_g);
@@ -1422,6 +1438,19 @@ void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec 
 #ifdef RAYLEIGH
     if(lev == geom->nk-1) MatAXPY(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
 #endif
+    if(velz_i && velz_j) {
+        VecZeroEntries(velz_h);
+        if(lev > 0) {
+            VecAXPY(velz_h, 1.0/(geom->thick[lev-1][0]+geom->thick[lev+0][0]), velz_i->vl[lev-1]);
+            VecAXPY(velz_h, 1.0/(geom->thick[lev-1][0]+geom->thick[lev+0][0]), velz_j->vl[lev-1]);
+        }
+        if(lev < geom->nk-1) {
+            VecAXPY(velz_h, 1.0/(geom->thick[lev+0][0]+geom->thick[lev+1][0]), velz_i->vl[lev+0]);
+            VecAXPY(velz_h, 1.0/(geom->thick[lev+0][0]+geom->thick[lev+1][0]), velz_j->vl[lev+0]);
+        }
+        F->assemble(velz_h, lev, false, SCALE);
+        MatAXPY(R->M, 0.5*dt, F->M, DIFFERENT_NONZERO_PATTERN);
+    }
 
     // [u,exner] block
     VecZeroEntries(theta_k);
@@ -1504,6 +1533,7 @@ void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec 
     VecDestroy(&h_tmp);
     VecDestroy(&diag_g);
     VecDestroy(&ones_g);
+    VecDestroy(&velz_h);
     MatDestroy(&Mu_prime);
     KSPDestroy(&ksp_u);
     if(do_visc) MatDestroy(&M1_OP);
@@ -1513,12 +1543,14 @@ void HorizSolve::set_deltas(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec 
 
 // update F_u (for density residual), F_rt (for exner residual and horiztonal velocity residual), 
 // and assemble the laplacian term of the preconditioner
-void HorizSolve::update_residuals(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner) {
-    Vec wg, wl, theta_k, diag_g, ones_g, h_tmp;
+void HorizSolve::update_residuals(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, Vec F_u, Vec F_rho, Vec F_rt, Vec F_exner,
+                                  L2Vecs* velz_i, L2Vecs* velz_j) {
+    Vec wg, wl, theta_k, diag_g, ones_g, h_tmp, velz_h;
     Mat Mu_inv, Mu_prime, M1_OP;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &velz_h);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &diag_g);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ones_g);
@@ -1543,6 +1575,19 @@ void HorizSolve::update_residuals(int lev, Vec* theta, Vec velx, Vec rho, Vec rt
     if(lev == geom->nk-1) MatAXPY(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
 #endif
     VecDestroy(&wg);
+    if(velz_i && velz_j) {
+        VecZeroEntries(velz_h);
+        if(lev > 0) {
+            VecAXPY(velz_h, 1.0/(geom->thick[lev-1][0]+geom->thick[lev+0][0]), velz_i->vl[lev-1]);
+            VecAXPY(velz_h, 1.0/(geom->thick[lev-1][0]+geom->thick[lev+0][0]), velz_j->vl[lev-1]);
+        }
+        if(lev < geom->nk-1) {
+            VecAXPY(velz_h, 1.0/(geom->thick[lev+0][0]+geom->thick[lev+1][0]), velz_i->vl[lev+0]);
+            VecAXPY(velz_h, 1.0/(geom->thick[lev+0][0]+geom->thick[lev+1][0]), velz_j->vl[lev+0]);
+        }
+        F->assemble(velz_h, lev, false, SCALE);
+        MatAXPY(R->M, 0.5*dt, F->M, DIFFERENT_NONZERO_PATTERN);
+    }
 
     // [u,exner] block
     VecZeroEntries(theta_k);
@@ -1617,18 +1662,20 @@ void HorizSolve::update_residuals(int lev, Vec* theta, Vec velx, Vec rho, Vec rt
     VecDestroy(&h_tmp);
     VecDestroy(&diag_g);
     VecDestroy(&ones_g);
+    VecDestroy(&velz_h);
     MatDestroy(&Mu_inv);
     MatDestroy(&Mu_prime);
     if(do_visc) MatDestroy(&M1_OP);
     if(do_visc) MatDestroy(&pcx_LAP2_Theta);
 }
 
-void HorizSolve::assemble_pc(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, bool eos_update) {
-    Vec wg, wl, theta_k, diag_g, ones_g, h_tmp;
+void HorizSolve::assemble_pc(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec exner, bool eos_update, L2Vecs* velz_i, L2Vecs* velz_j) {
+    Vec wg, wl, theta_k, diag_g, ones_g, h_tmp, velz_h;
     Mat Mu_inv, Mu_prime, M1_OP;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &velz_h);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &diag_g);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ones_g);
@@ -1653,6 +1700,19 @@ void HorizSolve::assemble_pc(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec
     if(lev == geom->nk-1) MatAYPX(R->M, 0.5*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
 #endif
     VecDestroy(&wg);
+    if(velz_i && velz_j) {
+        VecZeroEntries(velz_h);
+        if(lev > 0) {
+            VecAXPY(velz_h, 1.0/(geom->thick[lev-1][0]+geom->thick[lev+0][0]), velz_i->vl[lev-1]);
+            VecAXPY(velz_h, 1.0/(geom->thick[lev-1][0]+geom->thick[lev+0][0]), velz_j->vl[lev-1]);
+        }
+        if(lev < geom->nk-1) {
+            VecAXPY(velz_h, 1.0/(geom->thick[lev+0][0]+geom->thick[lev+1][0]), velz_i->vl[lev+0]);
+            VecAXPY(velz_h, 1.0/(geom->thick[lev+0][0]+geom->thick[lev+1][0]), velz_j->vl[lev+0]);
+        }
+        F->assemble(velz_h, lev, false, SCALE);
+        MatAXPY(R->M, 0.5*dt, F->M, DIFFERENT_NONZERO_PATTERN);
+    }
 
     // [u,exner] block
     VecZeroEntries(theta_k);
@@ -1725,6 +1785,7 @@ void HorizSolve::assemble_pc(int lev, Vec* theta, Vec velx, Vec rho, Vec rt, Vec
     VecDestroy(&h_tmp);
     VecDestroy(&diag_g);
     VecDestroy(&ones_g);
+    VecDestroy(&velz_h);
     MatDestroy(&Mu_inv);
     MatDestroy(&Mu_prime);
     if(do_visc) MatDestroy(&M1_OP);

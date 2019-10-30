@@ -393,7 +393,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         for(int lev = 0; lev < geom->nk; lev++) {
             //horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
             horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
-                                       F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], true, false);
+                                       F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], true, false, NULL, NULL);
 
             schur->AddFromHorizMat(lev, horiz->_PCx, schur->M);
             if(schur->precon) {
@@ -429,7 +429,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
         for(int lev = 0; lev < geom->nk; lev++) {
             //horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
             horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
-                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false);
+                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false, NULL, NULL);
         }
         F_rho->UpdateLocal(); F_rho->HorizToVert();
         
@@ -922,7 +922,7 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
             //horiz->assemble_and_update(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
             //horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
             horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
-                                       F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], true, false);
+                                       F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], true, false, NULL, NULL);
 
             VecScale(F_rt->vh[lev], -1.0);
 #ifdef LAYER_SOLVE
@@ -981,8 +981,8 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
             //horiz->set_deltas(lev, theta_i->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_i->vl[lev], 
             //horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
             horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
-                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], true, false);
-                       //F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false);
+                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], true, false, NULL, NULL);
+                       //F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false, NULL, NULL);
         }
         F_rho->UpdateLocal(); F_rho->HorizToVert();
         d_rt->UpdateLocal(); d_rt->HorizToVert();
@@ -1244,7 +1244,7 @@ void Euler::solve_split(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
         if(do_horiz || firstStep) {
             for(int lev = 0; lev < geom->nk; lev++) {
                 horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
-                                           F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], true, false);
+                                           F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], true, false, NULL, NULL);
 
                 if(firstStep) {
                     schur->AddFromHorizMat(lev, horiz->_PCx, schur->M);
@@ -1315,7 +1315,7 @@ void Euler::solve_split(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
         if(do_horiz || firstStep) {
             for(int lev = 0; lev < geom->nk; lev++) {
                 horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
-                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], !firstStep, false);
+                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], !firstStep, false, NULL, NULL);
             }
         }
         F_rho->UpdateLocal(); F_rho->HorizToVert();
@@ -1688,7 +1688,7 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
             //horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
             //horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
             horiz->assemble_and_update(lev, theta_h->vl, velx_h[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
-                                       F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], false, false); // eos update done with vert residual update
+                                       F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], false, false, velz_i, velz_j); // eos update done with vert residual update
 
             VecScale(F_rt->vh[lev], -1.0);
             VecCopy(F_rt->vh[lev], h_tmp);
@@ -1722,7 +1722,7 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
             //horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
             //horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
             horiz->set_deltas(lev, theta_h->vl, velx_h[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
-                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false);
+                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false, velz_i, velz_j);
         }
         F_rho->UpdateLocal(); F_rho->HorizToVert();
         
@@ -1927,7 +1927,7 @@ void Euler::solve_gs_vh(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
     theta_h->UpdateGlobal();
 
     // just to initialise everything...
-    horiz->assemble_and_update(0, theta_h->vl, velx_i[0], rho_h->vl[0], rt_h->vl[0], exner_h->vl[0], _F, dF, dF, dF, true, false);
+    horiz->assemble_and_update(0, theta_h->vl, velx_i[0], rho_h->vl[0], rt_h->vl[0], exner_h->vl[0], _F, dF, dF, dF, true, false, NULL, NULL);
 
     do {
         // residual vectors (vertical components)
@@ -1999,7 +1999,7 @@ void Euler::solve_gs_vh(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
         // update the density weighted potential temperature residuals with the vertical velocity residual gradient
         for(int lev = 0; lev < geom->nk; lev++) {
             horiz->update_residuals(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
-                                    F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev]);
+                                    F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], NULL, NULL);
 
             if(itt) {
                 MatMult(horiz->_PCx, d_exner->vh[lev], lap_d_exner->vh[lev]);
@@ -2035,7 +2035,7 @@ void Euler::solve_gs_vh(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
         lap_d_exner->VertToHoriz(); lap_d_exner->UpdateGlobal();
 
         for(int lev = 0; lev < geom->nk; lev++) {
-            horiz->assemble_pc(lev, theta_h->vl, F_u[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], true);
+            horiz->assemble_pc(lev, theta_h->vl, F_u[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], true, NULL, NULL);
 
             VecCopy(F_rt->vh[lev], dF);
             VecAXPY(dF, 1.0, lap_d_exner->vh[lev]);
@@ -2046,7 +2046,7 @@ void Euler::solve_gs_vh(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
         // back substitution
         for(int lev = 0; lev < geom->nk; lev++) {
             horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
-                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false);
+                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false, NULL, NULL);
         }
         F_rho->UpdateLocal(); F_rho->HorizToVert();
         
