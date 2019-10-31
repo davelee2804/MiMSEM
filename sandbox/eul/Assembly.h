@@ -64,6 +64,20 @@ class Pvec {
         void assemble(int lev, double scale);
 };
 
+class Phvec {
+    public:
+        Phvec(Topo* _topo, Geom* _geom, LagrangeNode* _l);
+        ~Phvec();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        Wii* Q;
+        PetscScalar* entries;
+        Vec vl;
+        Vec vg;
+        void assemble(Vec hl, int lev, double scale);
+};
+
 class WtQmat {
     public:
         WtQmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);

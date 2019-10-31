@@ -17,6 +17,7 @@ class HorizSolve {
         Geom* geom;
         VertOps* vo;
         Pvec* m0;
+        Phvec* mh0;
         Umat* M1;
         Wmat* M2;
         E10mat* NtoE;
@@ -56,6 +57,7 @@ class HorizSolve {
         void diagnose_F_x(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec _F);
         void diagnose_Phi_x(int level, Vec u1, Vec u2, Vec* Phi);
         void diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu);
+        void diagnose_qxF(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec F, Vec* qxF);
 
         void solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i);
 

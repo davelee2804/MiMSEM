@@ -51,6 +51,7 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
 
     // 0 form lumped mass matrix (vector)
     m0 = new Pvec(topo, geom, node);
+    mh0 = new Phvec(topo, geom, node);
 
     // 1 form mass matrix
     M1 = new Umat(topo, geom, node, edge);
@@ -318,6 +319,7 @@ HorizSolve::~HorizSolve() {
     }
 
     delete m0;
+    delete mh0;
     delete M1;
     delete M2;
 
@@ -757,6 +759,54 @@ void HorizSolve::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
     VecDestroy(&uh);
 }
 
+void HorizSolve::diagnose_qxF(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec F, Vec* qxF) {
+    Vec uh, hh, hl, rhs, dMu, Mu, qh, ql;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &rhs);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &dMu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &qh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, qxF);
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
+
+    VecZeroEntries(uh);
+    VecAXPY(uh, 0.5, u1);
+    VecAXPY(uh, 0.5, u2);
+    VecZeroEntries(hh);
+    VecAXPY(hh, 0.5, h1);
+    VecAXPY(hh, 0.5, h2);
+
+    VecScatterBegin(topo->gtol_2, hh, hl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_2, hh, hl, INSERT_VALUES, SCATTER_FORWARD);
+
+    m0->assemble(level, SCALE);
+    mh0->assemble(hl, level, SCALE);
+    M1->assemble(level, SCALE, true);
+
+    VecPointwiseMult(rhs, m0->vg, fg[level]);
+    MatMult(M1->M, uh, Mu);
+    MatMult(NtoE->E01, Mu, dMu);
+    VecAXPY(rhs, 1.0, dMu);
+    VecPointwiseDivide(qh, rhs, mh0->vg);
+
+    VecScatterBegin(topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);
+    R->assemble(ql, level, SCALE);
+    MatMult(R->M, F, *qxF);
+
+    VecDestroy(&rhs);
+    VecDestroy(&dMu);
+    VecDestroy(&Mu);
+    VecDestroy(&uh);
+    VecDestroy(&hh);
+    VecDestroy(&qh);
+    VecDestroy(&hl);
+    VecDestroy(&ql);
+}
+
 /* All vectors, rho, rt and theta are VERTICAL vectors */
 void HorizSolve::diagTheta2(Vec* rho, Vec* rt, Vec* theta) {
     int ex, ey, n2, ei;
@@ -861,6 +911,7 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
     diagnose_Phi_x(level, velx1, velx2, &Phi);
     grad(false, Pi, &dPi, level);
     diagnose_wxu(level, velx1, velx2, &wxu);
+    //diagnose_qxF(level, velx1, velx2, rho1, rho2, _F, &wxu);
 
     MatMult(EtoF->E12, Phi, fu);
     VecAXPY(fu, 1.0, wxu);

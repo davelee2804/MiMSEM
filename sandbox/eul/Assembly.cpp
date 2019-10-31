@@ -415,6 +415,65 @@ Pvec::~Pvec() {
     delete Q;
 }
 
+Phvec::Phvec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
+    topo = _topo;
+    geom = _geom;
+    l = _l;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vg);
+
+    entries = new PetscScalar[(l->n+1)*(l->n+1)];
+
+    Q = new Wii(l->q, geom);
+}
+
+void Phvec::assemble(Vec hl, int lev, double scale) {
+    int ii, ex, ey, ei, np1, np12, *inds_l;
+    double hi;
+    PetscScalar* hArray;
+
+    VecZeroEntries(vl);
+    VecZeroEntries(vg);
+
+    np1 = l->n + 1;
+    np12 = np1*np1;
+
+    VecGetArray(hl, &hArray);
+
+    // assemble values into local vector
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            Q->assemble(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+
+            inds_l = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < np12; ii++) {
+                entries[ii]  = scale*Q->A[ii][ii]*geom->det[ei][ii];
+                entries[ii] *= 1.0/geom->thick[lev][inds_l[ii]];
+
+                geom->interp2_g(ex, ey, ii%np1, ii/np1, hArray, &hi);
+                hi *= 1.0/geom->thick[lev][inds_l[ii]];
+                entries[ii] *= hi;
+            }
+            VecSetValues(vl, np12, inds_l, entries, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(hl, &hArray);
+
+    // scatter values to global vector
+    VecScatterBegin(topo->gtol_0, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_0, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+}
+
+Phvec::~Phvec() {
+    delete[] entries;
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+    delete Q;
+}
+
 // Assumes quadrature points and 0 forms are the same (for now)
 WtQmat::WtQmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     topo = _topo;
@@ -1845,7 +1904,7 @@ N_rt_Inv::N_rt_Inv(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 }
 
 void N_rt_Inv::assemble(Vec rho, int lev, double scale, bool do_inverse) {
-    int ex, ey, ei, mp1, mp12, ii, *inds, *inds0;
+    int ex, ey, ei, mp1, mp12, ii, jj, *inds, *inds0;
     double det, p;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
@@ -1901,6 +1960,7 @@ void N_rt_Inv::assemble(Vec rho, int lev, double scale, bool do_inverse) {
             Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQWinv, WtQW, BinvB);
             Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW, BinvB, BBinvB);
             if(do_inverse) {
+                for(ii = 0; ii < W->nDofsJ; ii++) for(jj = 0; jj < W->nDofsJ; jj++) WtQWinv[ii][jj] = 0.0;
                 Inv(BBinvB, WtQWinv, W->nDofsJ);
                 Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
             } else {
