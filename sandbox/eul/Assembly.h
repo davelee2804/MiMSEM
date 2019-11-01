@@ -320,3 +320,24 @@ class N_rt_Inv {
         Mat M;
         void assemble(Vec rho, int lev, double scale, bool do_inverse);
 };
+
+class PtQUt_mat {
+    public:
+        PtQUt_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~PtQUt_mat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        double* QUflat;
+        double* QVflat;
+        double** Qaa;
+        double** Qab;
+        double** QU;
+        double** QV;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        Wii* Q;
+        void assemble(Vec u1, int lev, double scale);
+};

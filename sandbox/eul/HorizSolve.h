@@ -34,6 +34,7 @@ class HorizSolve {
         WhmatInv* M2_rho_inv;
         N_rt_Inv* M2_pi_inv;
         N_rt_Inv* M2_rt_inv;
+        PtQUt_mat* APV;
         Vec* fg;                 // coriolis vector (global)
         Vec* fl;                 // coriolis vector (local)
         Vec* gv;                 // gravity vector
@@ -58,6 +59,7 @@ class HorizSolve {
         void diagnose_Phi_x(int level, Vec u1, Vec u2, Vec* Phi);
         void diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu);
         void diagnose_qxF(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec F, Vec* qxF);
+        void upwind_vort(int lev, Vec uh, Vec qh);
 
         void solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i);
 

@@ -91,6 +91,8 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     M2_pi_inv = new N_rt_Inv(topo, geom, edge);
     M2_rt_inv = new N_rt_Inv(topo, geom, edge);
 
+    APV = new PtQUt_mat(topo, geom, node, edge);
+
     // coriolis vector (projected onto 0 forms)
     coriolis();
 
@@ -338,6 +340,7 @@ HorizSolve::~HorizSolve() {
     delete M2_pi_inv;
     delete M2_rt_inv;
     delete M2_rho_inv;
+    delete APV;
 
     delete edge;
     delete node;
@@ -792,6 +795,8 @@ void HorizSolve::diagnose_qxF(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec F, 
     VecAXPY(rhs, 1.0, dMu);
     VecPointwiseDivide(qh, rhs, mh0->vg);
 
+    upwind_vort(level, uh, qh);
+
     VecScatterBegin(topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);
     R->assemble(ql, level, SCALE);
@@ -805,6 +810,28 @@ void HorizSolve::diagnose_qxF(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec F, 
     VecDestroy(&qh);
     VecDestroy(&hl);
     VecDestroy(&ql);
+}
+
+void HorizSolve::upwind_vort(int lev, Vec uh, Vec qh) {
+    Vec ul, dq, apv;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &apv);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dq);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+
+    VecScatterBegin(topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    MatMult(NtoE->E10, qh, dq);
+    APV->assemble(ul, lev, SCALE);
+    MatMult(APV->M, dq, apv);
+    m0->assemble(lev, SCALE);
+    VecPointwiseDivide(apv, apv, m0->vg);
+    VecAXPY(qh, -0.2*dt, apv);
+
+    VecDestroy(&ul);
+    VecDestroy(&dq);
+    VecDestroy(&apv);
 }
 
 /* All vectors, rho, rt and theta are VERTICAL vectors */

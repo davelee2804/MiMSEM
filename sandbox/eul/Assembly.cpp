@@ -1989,3 +1989,94 @@ void N_rt_Inv::assemble(Vec rho, int lev, double scale, bool do_inverse) {
 N_rt_Inv::~N_rt_Inv() {
     MatDestroy(&M);
 }
+
+//
+PtQUt_mat::PtQUt_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    l = _l;
+    e = _e;
+
+    U = new M1x_j_xy_i(l, e);
+    V = new M1y_j_xy_i(l, e);
+    Q = new Wii(l->q, geom);
+    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    QU = Alloc2D(Q->nDofsJ, U->nDofsJ);
+    QV = Alloc2D(Q->nDofsJ, V->nDofsJ);
+    QUflat = new double[Q->nDofsJ*U->nDofsJ];
+    QVflat = new double[Q->nDofsJ*V->nDofsJ];
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n0l, topo->n1l, topo->nDofs0G, topo->nDofs1G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+}
+
+void PtQUt_mat::assemble(Vec u1, int lev, double scale) {
+    int ex, ey, ei, ii, mp1, mp12;
+    int *inds_x, *inds_y, *inds_0;
+    double det, **J, ux[2];
+    PetscScalar *u1Array;
+
+    mp1 = l->n + 1;
+    mp12 = mp1*mp1;
+
+    VecGetArray(u1, &u1Array);
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            Q->assemble(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            inds_0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
+                // horiztontal velocity is piecewise constant in the vertical
+                ux[0] *= 1.0/geom->thick[lev][inds_0[ii]];
+                ux[1] *= 1.0/geom->thick[lev][inds_0[ii]];
+
+                Qaa[ii][ii] = (-ux[1]*J[0][0] + ux[0]*J[1][0])*Q->A[ii][ii]*scale;
+                Qab[ii][ii] = (-ux[1]*J[0][1] + ux[0]*J[1][1])*Q->A[ii][ii]*scale;
+
+                // rescale by the inverse of the vertical determinant (piecewise 
+                // constant in the vertical)
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+            }
+
+            Mult_DF_IP(Q->nDofsJ, U->nDofsJ, U->nDofsI, Qaa, U->A, QU);
+            Mult_DF_IP(Q->nDofsJ, V->nDofsJ, V->nDofsI, Qab, V->A, QV);
+
+            Flat2D_IP(Q->nDofsJ, U->nDofsJ, QU, QUflat);
+            Flat2D_IP(Q->nDofsJ, V->nDofsJ, QV, QVflat);
+
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+            inds_0 = topo->elInds0_g(ex, ey);
+
+            MatSetValues(M, Q->nDofsJ, inds_0, U->nDofsJ, inds_x, QUflat, ADD_VALUES);
+            MatSetValues(M, Q->nDofsJ, inds_0, V->nDofsJ, inds_y, QVflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(u1, &u1Array);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+}
+
+PtQUt_mat::~PtQUt_mat() {
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(Q->nDofsI, Qab);
+    Free2D(Q->nDofsJ, QU);
+    Free2D(Q->nDofsJ, QV);
+    delete[] QUflat;
+    delete[] QVflat;
+    delete U;
+    delete V;
+    delete Q;
+    MatDestroy(&M);
+}

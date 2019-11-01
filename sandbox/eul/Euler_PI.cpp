@@ -1046,6 +1046,15 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
         itt++;
     } while(!done);
 
+    // copy the solutions back to the input vectors
+    velz_i->CopyFromHoriz(velz_j->vh);
+    rho_i->CopyFromHoriz(rho_j->vh);
+    rt_i->CopyFromHoriz(rt_j->vh);
+    exner_i->CopyFromHoriz(exner_j->vh);
+    for(int kk = 0; kk < geom->nk; kk++) {
+        VecCopy(velx_j[kk], velx_i[kk]);
+    }
+
     // write output
     if(save) dump(velx_i, velz_i, rho_i, rt_i, exner_i, theta_h, step++);
 
