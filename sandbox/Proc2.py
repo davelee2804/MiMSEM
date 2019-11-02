@@ -71,10 +71,10 @@ class Proc:
 
 		# global offsets
 		self.shift0 = self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc
-		#self.shift1x = self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc
-		#self.shift1y = 6*self.nDofsXFace*self.nDofsXFace + self.shift1x
-		self.shift1 = 2*(self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc)
-		self.shift2 = self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc
+		#self.shift1 = 2*(self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc)
+		#self.shift2 = self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc
+		self.shift1 = 2*(self.faceID*self.nDofsXFace*self.nDofsXFace + (self.procY*self.nProcsX+self.procX)*self.nDofsXProc*self.nDofsXProc)
+		self.shift2 = self.faceID*self.nDofsXFace*self.nDofsXFace + (self.procY*self.nProcsX+self.procX)*self.nDofsXProc*self.nDofsXProc
 
 		# global index arrays
 		self.loc0 = np.zeros(self.n0g,dtype=np.int32)
@@ -101,19 +101,32 @@ class Proc:
 		# global indices of local x normal edges
 		for iy in np.arange(self.nDofsXProc):
 			for ix in np.arange(self.nDofsXProc):
-				#self.loc1x[iy*(self.nDofsXProc+1) + ix] = self.shift1x + iy*self.nDofsXFace + ix
-				self.loc1x[iy*(self.nDofsXProc+1) + ix] = self.shift1 + 2*(iy*self.nDofsXFace + ix)
+				#self.loc1x[iy*(self.nDofsXProc+1) + ix] = self.shift1 + 2*(iy*self.nDofsXFace + ix)
+				ey = iy / self.polyDeg
+				py = iy % self.polyDeg
+				ex = ix / self.polyDeg
+				px = ix % self.polyDeg
+				self.loc1x[iy*(self.nDofsXProc+1) + ix] = self.shift1 + 2*((ey*self.nElsXProc + ex)*self.polyDeg*self.polyDeg + py*self.polyDeg+px)
 
 		# global indices of local y normal edges
 		for iy in np.arange(self.nDofsXProc):
 			for ix in np.arange(self.nDofsXProc):
-				#self.loc1y[iy*(self.nDofsXProc) + ix] = self.shift1y + iy*self.nDofsXFace + ix
-				self.loc1y[iy*(self.nDofsXProc) + ix] = self.shift1 + 2*(iy*self.nDofsXFace + ix) + 1
+				#self.loc1y[iy*(self.nDofsXProc) + ix] = self.shift1 + 2*(iy*self.nDofsXFace + ix) + 1
+				ey = iy / self.polyDeg
+				py = iy % self.polyDeg
+				ex = ix / self.polyDeg
+				px = ix % self.polyDeg
+				self.loc1y[iy*(self.nDofsXProc) + ix] = self.shift1 + 2*((ey*self.nElsXProc + ex)*self.polyDeg*self.polyDeg + py*self.polyDeg+px) + 1
 
 		# global indices of local faces
 		for iy in np.arange(self.nDofsXProc):
 			for ix in np.arange(self.nDofsXProc):
-				self.loc2[iy*(self.nDofsXProc) + ix] = self.shift2 + iy*self.nDofsXFace + ix
+				#self.loc2[iy*(self.nDofsXProc) + ix] = self.shift2 + iy*self.nDofsXFace + ix
+				ey = iy / self.polyDeg
+				py = iy % self.polyDeg
+				ex = ix / self.polyDeg
+				px = ix % self.polyDeg
+				self.loc2[iy*self.nDofsXProc + ix] = self.shift2 + (ey*self.nElsXProc + ex)*self.polyDeg*self.polyDeg + py*self.polyDeg+px
 
 	# define global indices for remote nodes/edges/faces
 	def buildGlobalArrays(self):
