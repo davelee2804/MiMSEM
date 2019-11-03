@@ -341,3 +341,35 @@ class PtQUt_mat {
         Wii* Q;
         void assemble(Vec u1, int lev, double scale);
 };
+
+class PtQUmat {
+    public:
+        PtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~PtQUmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        double* QUflat;
+        double* QVflat;
+        double** Qaa;
+        double** Qab;
+        double** QU;
+        double** QV;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        Wii* Q;
+        void assemble(Vec u1, int lev, double scale);
+};
+
+class WtQPmat {
+    public:
+        WtQPmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~WtQPmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(int lev, double scale);
+};
