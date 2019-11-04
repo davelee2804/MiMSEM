@@ -27,7 +27,7 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-#define RAYLEIGH 0.2
+//#define RAYLEIGH 0.2
 
 using namespace std;
 
@@ -701,6 +701,7 @@ void HorizSolve::diagnose_F_x(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec _F)
 }
 
 void HorizSolve::diagnose_Phi_x(int level, Vec u1, Vec u2, Vec* Phi) {
+/*
     Vec u1l, u2l, b;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &u1l);
@@ -732,6 +733,69 @@ void HorizSolve::diagnose_Phi_x(int level, Vec u1, Vec u2, Vec* Phi) {
     VecDestroy(&u1l);
     VecDestroy(&u2l);
     VecDestroy(&b);
+*/
+    double alpha = 0.3;
+    Vec u1l, u2l, b, bt, b0, b0t;
+    PtQUmat* K_v = new PtQUmat(topo, geom, node, edge);
+    WtQPmat* M20 = new WtQPmat(topo, geom, edge);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &u1l);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &u2l);
+
+    VecScatterBegin(topo->gtol_1, u1, u1l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, u1, u1l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_1, u2, u2l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, u2, u2l, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &b);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Phi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &bt);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &b0);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &b0t);
+    VecZeroEntries(*Phi);
+
+    VecZeroEntries(bt);
+    VecZeroEntries(b0t);
+
+    // u^2 terms (0.5 factor incorportated into the matrix assembly)
+    K->assemble(u1l, level, SCALE);
+
+    MatMult(K->M, u1, b);
+    VecAXPY(bt, 1.0/3.0, b);
+
+    MatMult(K->M, u2, b);
+    VecAXPY(bt, 1.0/3.0, b);
+
+    K->assemble(u2l, level, SCALE);
+
+    MatMult(K->M, u2, b);
+    VecAXPY(bt, 1.0/3.0, b);
+
+    // 
+    K_v->assemble(u1l, level, SCALE);
+    MatMult(K_v->M, u1, b0);
+    VecAXPY(b0t, 1.0/3.0, b0);
+    MatMult(K_v->M, u2, b0);
+    VecAXPY(b0t, 1.0/3.0, b0);
+    K_v->assemble(u2l, level, SCALE);
+    MatMult(K_v->M, u2, b0);
+    VecAXPY(b0t, 1.0/3.0, b0);
+    m0->assemble(level, SCALE);
+    VecPointwiseDivide(b0, b0t, m0->vg);
+    M20->assemble(level, SCALE);
+    MatMult(M20->M, b0, b);
+
+    VecAXPY(*Phi, alpha, bt);
+    VecAXPY(*Phi, 1.0-alpha, b);
+
+    VecDestroy(&u1l);
+    VecDestroy(&u2l);
+    VecDestroy(&b);
+    VecDestroy(&bt);
+    VecDestroy(&b0);
+    VecDestroy(&b0t);
+    delete K_v;
+    delete M20;
 }
 
 void HorizSolve::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
@@ -741,6 +805,8 @@ void HorizSolve::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, wxu);
 
+    // assume the vertex and volume mass matrices have already been assembled
+    // TODO compute once for half step
     curl(false, u1, &w1, level, true);
     curl(false, u2, &w2, level, true);
     VecAXPY(w1, 1.0, w2);
@@ -785,9 +851,8 @@ void HorizSolve::diagnose_qxF(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec F, 
     VecScatterBegin(topo->gtol_2, hh, hl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, hh, hl, INSERT_VALUES, SCATTER_FORWARD);
 
-    m0->assemble(level, SCALE);
+    // assume the vertex and volume mass matrices have already been assembled
     mh0->assemble(hl, level, SCALE);
-    M1->assemble(level, SCALE, true);
 
     VecPointwiseMult(rhs, m0->vg, fg[level]);
     MatMult(M1->M, uh, Mu);
@@ -795,7 +860,7 @@ void HorizSolve::diagnose_qxF(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec F, 
     VecAXPY(rhs, 1.0, dMu);
     VecPointwiseDivide(qh, rhs, mh0->vg);
 
-    upwind_vort(level, uh, qh);
+    //upwind_vort(level, uh, qh);
 
     VecScatterBegin(topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);

@@ -29,7 +29,8 @@
 #define MAX_IT 100
 #define VERT_TOL 1.0e-8
 #define HORIZ_TOL 1.0e-12
-#define RAYLEIGH 0.2
+//#define RAYLEIGH 0.2
+#define VISC 1
 
 using namespace std;
 
@@ -73,6 +74,8 @@ VertSolve::VertSolve(Topo* _topo, Geom* _geom, double _dt) {
     _PCz = NULL;
     pc_A_rt = NULL;
     _V0_invV0_rt = NULL;
+
+    viscosity();
 }
 
 void VertSolve::initGZ() {
@@ -668,6 +671,17 @@ void VertSolve::assemble_residual_z(int ex, int ey, Vec theta, Vec Pi,
     MatMult(vo->VA, velz1, _tmpA1);
     VecAXPY(fw, 0.5*dt*RAYLEIGH, _tmpA1);
 #endif
+
+    // add the laplacian viscosity
+#ifdef VISC
+    VecZeroEntries(_tmpA1);
+    VecAXPY(_tmpA1, 0.5*dt*VISC, velz1);
+    VecAXPY(_tmpA1, 0.5*dt*VISC, velz2);
+    MatMult(vo->V10, _tmpA1, _tmpB1);
+    MatMult(vo->VB, _tmpB1, _tmpB2);
+    MatMult(vo->V01, _tmpB2, _tmpA1);
+    VecAXPY(fw, -1.0, _tmpA1);
+#endif
 }
 
 void VertSolve::repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner) {
@@ -987,7 +1001,13 @@ void VertSolve::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec
 
     // 3. schur complement solve for exner pressure
     if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk-1)*n2, (geom->nk-1)*n2, 1, NULL, &pc_M_u_inv);
+#ifdef VISC
+    MatMatMult(pc_DTV1, vo->V10, reuse, PETSC_DEFAULT, &pc_VISC);
+    MatAYPX(pc_VISC, -0.5*dt*visc, pc_M_u, DIFFERENT_NONZERO_PATTERN);
+    MatGetDiagonal(pc_VISC, _tmpA1);
+#else
     MatGetDiagonal(pc_M_u, _tmpA1);
+#endif
     VecSet(_tmpA2, 1.0);
     VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
     MatZeroEntries(pc_M_u_inv);
@@ -1123,7 +1143,13 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
 
     // 3. schur complement solve for exner pressure
     if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk-1)*n2, (geom->nk-1)*n2, 1, NULL, &pc_M_u_inv);
+#ifdef VISC
+    MatMatMult(pc_DTV1, vo->V10, reuse, PETSC_DEFAULT, &pc_VISC);
+    MatAYPX(pc_VISC, -0.5*dt*visc, pc_M_u, DIFFERENT_NONZERO_PATTERN);
+    MatGetDiagonal(pc_VISC, _tmpA1);
+#else
     MatGetDiagonal(pc_M_u, _tmpA1);
+#endif
     VecSet(_tmpA2, 1.0);
     VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
     MatZeroEntries(pc_M_u_inv);
@@ -1211,7 +1237,13 @@ void VertSolve::set_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt,
 #endif
 
     // 3. schur complement solve for exner pressure
+#ifdef VISC
+    MatMatMult(pc_DTV1, vo->V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_VISC);
+    MatAYPX(pc_VISC, -0.5*dt*visc, pc_M_u, DIFFERENT_NONZERO_PATTERN);
+    MatGetDiagonal(pc_VISC, _tmpA1);
+#else
     MatGetDiagonal(pc_M_u, _tmpA1);
+#endif
     VecSet(_tmpA2, 1.0);
     VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
     MatZeroEntries(pc_M_u_inv);
@@ -1314,7 +1346,13 @@ void VertSolve::update_residuals(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec
     VecAXPY(F_rt, -1.0, _tmpB1);
 
     // 3. schur complement solve for exner pressure
+#ifdef VISC
+    MatMatMult(pc_DTV1, vo->V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_VISC);
+    MatAYPX(pc_VISC, -0.5*dt*visc, pc_M_u, DIFFERENT_NONZERO_PATTERN);
+    MatGetDiagonal(pc_VISC, _tmpA1);
+#else
     MatGetDiagonal(pc_M_u, _tmpA1);
+#endif
     VecSet(_tmpA2, 1.0);
     VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
     MatZeroEntries(pc_M_u_inv);
@@ -1390,7 +1428,13 @@ void VertSolve::assemble_pc(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec exne
     }
 
     // 3. schur complement solve for exner pressure
+#ifdef VISC
+    MatMatMult(pc_DTV1, vo->V10, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_VISC);
+    MatAYPX(pc_VISC, -0.5*dt*visc, pc_M_u, DIFFERENT_NONZERO_PATTERN);
+    MatGetDiagonal(pc_VISC, _tmpA1);
+#else
     MatGetDiagonal(pc_M_u, _tmpA1);
+#endif
     VecSet(_tmpA2, 1.0);
     VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
     MatZeroEntries(pc_M_u_inv);
@@ -1403,4 +1447,19 @@ void VertSolve::assemble_pc(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec exne
         MatAXPY(_PCz, 1.0, pc_N_exner_2, DIFFERENT_NONZERO_PATTERN);
     }
     MatScale(_PCz, -1.0);
+}
+
+void VertSolve::viscosity() {
+    double dzMaxG, dzMax = 1.0e-6;
+
+    for(int kk = 0; kk < geom->nk; kk++) {
+        for(int ii = 0; ii < topo->n0; ii++) {
+            if(geom->thick[kk][ii] > dzMax) {
+                dzMax = geom->thick[kk][ii];
+            }
+        }
+    }
+    MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+
+    visc = 4.0*dzMax/M_PI;
 }

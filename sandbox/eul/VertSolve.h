@@ -5,6 +5,7 @@ class VertSolve {
         VertSolve(Topo* _topo, Geom* _geom, double _dt);
         ~VertSolve();
         double dt;
+        double visc;
         int step;
         int rank;
         bool firstStep;
@@ -20,6 +21,7 @@ class VertSolve {
         KSP ksp_w;
 
         void initGZ();
+        void viscosity();
 
         void diagTheta2(Vec* rho, Vec* rt, Vec* theta);
 
@@ -88,6 +90,7 @@ class VertSolve {
         Mat pc_D_rt_M_u_inv;
         Mat pc_VB_N_rt_inv;
         Mat pc_A_u_VB_inv;
+        Mat pc_VISC;
         // .....density correction (velocity equation)
         Mat pc_V0_invV0_rt_DT;
 };
