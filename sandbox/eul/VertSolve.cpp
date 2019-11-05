@@ -28,7 +28,7 @@
 #define SCALE 1.0e+8
 #define VERT_TOL 1.0e-8
 #define HORIZ_TOL 1.0e-12
-#define RAYLEIGH 0.2
+//#define RAYLEIGH 0.2
 #define VISC 1
 
 using namespace std;
@@ -579,26 +579,31 @@ void VertSolve::diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi) {
     double alpha = 0.3;
 
     VecZeroEntries(Phi);
+    VecZeroEntries(_tmpB2);
 
     // kinetic energy term
     MatZeroEntries(vo->VBA);
     vo->AssembleConLinWithW(ex, ey, velz1, vo->VBA);
 
     MatMult(vo->VBA, velz1, _tmpB1);
-    VecAXPY(Phi, 1.0/6.0, _tmpB1);
+    //VecAXPY(Phi, 1.0/6.0, _tmpB1);
+    VecAXPY(_tmpB2, 1.0/6.0, _tmpB1);
     
     MatMult(vo->VBA, velz2, _tmpB1);
-    VecAXPY(Phi, 1.0/6.0, _tmpB1);
+    //VecAXPY(Phi, 1.0/6.0, _tmpB1);
+    VecAXPY(_tmpB2, 1.0/6.0, _tmpB1);
 
     MatZeroEntries(vo->VBA);
     vo->AssembleConLinWithW(ex, ey, velz2, vo->VBA);
 
     MatMult(vo->VBA, velz2, _tmpB1);
-    VecAXPY(Phi, 1.0/6.0, _tmpB1);
+    //VecAXPY(Phi, 1.0/6.0, _tmpB1);
+    VecAXPY(_tmpB2, 1.0/6.0, _tmpB1);
+
+    VecAXPY(Phi, alpha, _tmpB2);
 
     // potential energy term
-    //VecAXPY(Phi, 1.0, zv[ei]);
-    VecAXPY(Phi, alpha, zv[ei]);
+    VecAXPY(Phi, 1.0, zv[ei]);
 
     // kinetic energy at vertices
     VecZeroEntries(_tmpA1);
