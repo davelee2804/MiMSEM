@@ -71,4 +71,5 @@ class VertOps {
         void AssembleLinearWithRhoInv(int ex, int ey, Vec rho, Mat A);
         void AssembleConstWithThetaExp(int ex, int ey, Vec theta, double exponent, Mat B);
         void AssembleConstWithRhoExp(int ex, int ey, Vec rho, double exponent, Mat B);
+        void AssembleLinearWithW(int ex, int ey, Vec velz, Mat A);
 };

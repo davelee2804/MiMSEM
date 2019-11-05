@@ -18,6 +18,7 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
+//#define SCALE 1.0e+11
 
 using namespace std;
 
@@ -1566,8 +1567,8 @@ void VertOps::Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_r
             det = geom->det[ei][ii];
             rk *= 1.0/(det*geom->thick[kk][inds0[ii]]);
             ek *= 1.0/(det*geom->thick[kk][inds0[ii]]);
-if(ek<0.0)ek=1.0e-8;//cout<<"ERROR! -ve exner pressure: "<<ek<<endl;
-if(rk<0.0)rk=1.0e-8;//cout<<"ERROR! -ve potential temp: "<<rk<<endl;
+if(ek<0.0){ek=1.0e-8;/*cout<<"ERROR! -ve exner pressure: "<<ek<<endl;*/}
+if(rk<0.0){rk=1.0e-8;/*cout<<"ERROR! -ve potential temp: "<<rk<<endl;*/}
 
             rtq[ii] = log(ek) - (RD/CV)*log(rk) - log(CP) - (RD/CV)*log(RD/P0);
         }
@@ -1959,4 +1960,74 @@ void VertOps::AssembleConstWithRhoExp(int ex, int ey, Vec rho, double exponent, 
     VecRestoreArray(rho, &rArray);
     MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+}
+
+void VertOps::AssembleLinearWithW(int ex, int ey, Vec velz, Mat A) {
+    int ii, jj, kk, ei, mp1, mp12, cols[99], *inds0;
+    double wb, wt, gamma, det;
+    PetscScalar* wArray;
+
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+
+    MatZeroEntries(A);
+
+    Q->assemble(ex, ey);
+
+    VecGetArray(velz, &wArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        if(kk > 0) {
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
+                Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+
+                // interpolate the vertical velocity at the quadrature point
+                wb = 0.0;
+                for(jj = 0; jj < n2; jj++) {
+                    gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                    wb += wArray[(kk-1)*n2+jj]*gamma;
+                }
+                Q0[ii][ii] *= wb/det; // scale by 0.5 outside for the 0.5 w^2
+            }
+
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                cols[ii] = ii + (kk-1)*W->nDofsJ;
+            }
+            MatSetValues(A, W->nDofsJ, cols, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+        }
+
+        if(kk < geom->nk - 1) {
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
+                Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+
+                // interpolate the vertical velocity at the quadrature point
+                wt = 0.0;
+                for(jj = 0; jj < n2; jj++) {
+                    gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                    wt += wArray[(kk+0)*n2+jj]*gamma;
+                }
+                Q0[ii][ii] *= wt/det; // scale by 0.5 outside
+            }
+
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                cols[ii] = ii + (kk+0)*W->nDofsJ;
+            }
+            MatSetValues(A, W->nDofsJ, cols, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(velz, &wArray);
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
 }

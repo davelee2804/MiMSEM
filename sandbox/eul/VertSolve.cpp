@@ -26,10 +26,9 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-#define MAX_IT 100
 #define VERT_TOL 1.0e-8
 #define HORIZ_TOL 1.0e-12
-//#define RAYLEIGH 0.2
+#define RAYLEIGH 0.2
 #define VISC 1
 
 using namespace std;
@@ -577,6 +576,7 @@ void VertSolve::diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec
 
 void VertSolve::diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi) {
     int ei = ey*topo->nElsX + ex;
+    double alpha = 0.3;
 
     VecZeroEntries(Phi);
 
@@ -597,7 +597,24 @@ void VertSolve::diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi) {
     VecAXPY(Phi, 1.0/6.0, _tmpB1);
 
     // potential energy term
-    VecAXPY(Phi, 1.0, zv[ei]);
+    //VecAXPY(Phi, 1.0, zv[ei]);
+    VecAXPY(Phi, alpha, zv[ei]);
+
+    // kinetic energy at vertices
+    VecZeroEntries(_tmpA1);
+    vo->AssembleLinearWithW(ex, ey, velz1, vo->VA);
+    MatMult(vo->VA, velz1, _tmpA2);
+    VecAXPY(_tmpA1, 1.0/6.0, _tmpA2);
+    MatMult(vo->VA, velz2, _tmpA2);
+    VecAXPY(_tmpA1, 1.0/6.0, _tmpA2);
+    vo->AssembleLinearWithW(ex, ey, velz2, vo->VA);
+    MatMult(vo->VA, velz2, _tmpA2);
+    VecAXPY(_tmpA1, 1.0/6.0, _tmpA2);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMult(vo->VA_inv, _tmpA1, _tmpA2);
+    vo->AssembleConLin(ex, ey, vo->VBA);
+    MatMult(vo->VBA, _tmpA2, _tmpB1);
+    VecAXPY(Phi, 1.0-alpha, _tmpB1);
 }
 
 /* All vectors, rho, rt and theta are VERTICAL vectors */
@@ -675,8 +692,8 @@ void VertSolve::assemble_residual_z(int ex, int ey, Vec theta, Vec Pi,
     // add the laplacian viscosity
 #ifdef VISC
     VecZeroEntries(_tmpA1);
-    VecAXPY(_tmpA1, 0.5*dt*VISC, velz1);
-    VecAXPY(_tmpA1, 0.5*dt*VISC, velz2);
+    VecAXPY(_tmpA1, 0.5*dt*visc, velz1);
+    VecAXPY(_tmpA1, 0.5*dt*visc, velz2);
     MatMult(vo->V10, _tmpA1, _tmpB1);
     MatMult(vo->VB, _tmpB1, _tmpB2);
     MatMult(vo->V01, _tmpB2, _tmpA1);
@@ -1461,5 +1478,5 @@ void VertSolve::viscosity() {
     }
     MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-    visc = 4.0*dzMax/M_PI;
+    visc = 8.0*dzMaxG/M_PI;
 }
