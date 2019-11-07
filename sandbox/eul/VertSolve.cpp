@@ -463,7 +463,8 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
             //                        F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner);
             //assemble_operator_schur(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
             //                        F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner);
-            assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], F_w, F_rho, F_rt, F_exner, true, true);
+            //assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], F_w, F_rho, F_rt, F_exner, true, true);
+            assemble_and_update(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], F_w, F_rho, F_rt, F_exner, true, true);
             MatScale(_PCz, -1.0);
             if(!itt) {
                 KSPCreate(MPI_COMM_SELF, &ksp_exner);
@@ -474,7 +475,8 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
                 KSPSetFromOptions(ksp_exner);
             }
             KSPSolve(ksp_exner, F_rt, d_exner);
-            set_deltas(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            //set_deltas(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], 
                        F_w, F_rho, F_exner, d_w, d_rho, d_rt, d_exner, false, true);
 
             VecAXPY(velz_j->vz[ii],  1.0, d_w);

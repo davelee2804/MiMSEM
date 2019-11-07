@@ -84,8 +84,5 @@ class Euler {
         void HorizVort(Vec* velx);
         void AssembleVertMomVort(Vec* velx, L2Vecs* velz);
 
-        L2Vecs* velz_prev;
-        L2Vecs* rho_prev;
-        L2Vecs* rt_prev;
         L2Vecs* exner_prev;
 };

@@ -30,10 +30,8 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-#define MAX_IT 100
-#define VERT_TOL 1.0e-8
-#define RAYLEIGH 0.2
-//#define RAYLEIGH 0.0
+//#define RAYLEIGH 0.2
+#define RAYLEIGH 0.0
 //#define WITH_UDWDX
 
 using namespace std;
@@ -178,9 +176,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
 
     initGZ();
 
-    velz_prev  = new L2Vecs(geom->nk-1, topo, geom);
-    rho_prev   = new L2Vecs(geom->nk, topo, geom);
-    rt_prev    = new L2Vecs(geom->nk, topo, geom);
     exner_prev = new L2Vecs(geom->nk, topo, geom);
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -376,9 +371,6 @@ Euler::~Euler() {
 
     delete vert;
 
-    delete velz_prev;
-    delete rho_prev;
-    delete rt_prev;
     delete exner_prev;
 }
 
@@ -1149,15 +1141,12 @@ void Euler::DiagExner(Vec* rtz, L2Vecs* exner) {
 
 void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n) {
     int ex, ey, ei, n2;
-    Mat V0_rt, V0_inv, V1_Pi, V1_rt_inv, V0_theta, V10_w, AB;
+    Mat V0_rt, V0_inv, V0_theta, V10_w, AB;
     Mat DTV10_w           = NULL;
     Mat DTV1              = NULL;
     Mat V0_invDTV1        = NULL;
     Mat GRAD              = NULL;
     Mat V0_invV0_rt       = NULL;
-    Mat DV0_invV0_rt      = NULL;
-    Mat V1_PiDV0_invV0_rt = NULL;
-    Mat DIV               = NULL;
     Mat VR;
     Vec rhs, tmp;
     Vec wRho, wRhoTheta, Ftemp, frt;
@@ -1184,16 +1173,6 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
     MatSetType(V0_inv, MATSEQAIJ);
     MatSetSizes(V0_inv, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(V0_inv, 2*n2, PETSC_NULL);
-
-    MatCreate(MPI_COMM_SELF, &V1_Pi);
-    MatSetType(V1_Pi, MATSEQAIJ);
-    MatSetSizes(V1_Pi, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2);
-    MatSeqAIJSetPreallocation(V1_Pi, 2*n2, PETSC_NULL);
-
-    MatCreate(MPI_COMM_SELF, &V1_rt_inv);
-    MatSetType(V1_rt_inv, MATSEQAIJ);
-    MatSetSizes(V1_rt_inv, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2, (geom->nk+0)*n2);
-    MatSeqAIJSetPreallocation(V1_rt_inv, 2*n2, PETSC_NULL);
 
     MatCreate(MPI_COMM_SELF, &V0_theta);
     MatSetType(V0_theta, MATSEQAIJ);
@@ -1246,16 +1225,6 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             vo->AssembleLinearWithTheta(ex, ey, l2_theta->vz[ei], V0_theta);
             MatMatMult(V0_theta, V0_invDTV1, reuse, PETSC_DEFAULT, &GRAD);
 
-            vo->AssembleLinearWithRT(ex, ey, rt_n[ei], V0_rt, true);
-            MatMatMult(V0_inv, V0_rt, reuse, PETSC_DEFAULT, &V0_invV0_rt);
-            MatMatMult(vo->V10, V0_invV0_rt, reuse, PETSC_DEFAULT, &DV0_invV0_rt);
-
-            vo->AssembleConstWithRho(ex, ey, exner_n[ei], V1_Pi);
-            MatMatMult(V1_Pi, DV0_invV0_rt, reuse, PETSC_DEFAULT, &V1_PiDV0_invV0_rt);
-
-            vo->AssembleConstWithRhoInv(ex, ey, rt_n[ei], V1_rt_inv);
-            MatMatMult(V1_rt_inv, V1_PiDV0_invV0_rt, reuse, PETSC_DEFAULT, &DIV);
-
             // add the exner pressure at the previous time level to the rhs
             MatMult(GRAD, exner_n[ei], tmp);
             VecAXPY(rhs, -0.5*dt, tmp);
@@ -1269,18 +1238,11 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             vo->AssembleLinear(ex, ey, VA);
             KSPSolve(kspColA, rhs, velz[ei]);
 
-            // update the exner pressure
-            MatMult(DIV, velz_n[ei], exner[ei]);
-            VecAYPX(exner[ei], -0.5*dt*RD/CV, exner_n[ei]);
-
-            // update the density and the density weighted potential temperature
+            // update the density
             vo->AssembleLinearWithRT(ex, ey, rho_n[ei], V0_rt, true);
-
-            MatZeroEntries(V0_invV0_rt);
-            MatMatMult(V0_inv, V0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &V0_invV0_rt);
+            MatMatMult(V0_inv, V0_rt, reuse, PETSC_DEFAULT, &V0_invV0_rt);
             MatMult(V0_invV0_rt, velz_n[ei], wRho);
 
-            // update the density
             MatMult(vo->V10, wRho, Ftemp);
             VecCopy(rho_n[ei], rho[ei]);
             VecAXPY(rho[ei], -0.5*dt, Ftemp);
@@ -1293,6 +1255,11 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
             MatMult(vo->V10, wRhoTheta, Ftemp);
             VecCopy(rt_n[ei], rt[ei]);
             VecAXPY(rt[ei], -0.5*dt, Ftemp);
+
+            // update the exner pressure
+            vert->vo->Assemble_EOS_RHS(ex, ey, rt[ei], Ftemp, CP*pow(RD/P0, RD/CV), RD/CV);
+            vert->vo->AssembleConstInv(ex, ey, vo->VB_inv);
+            MatMult(vo->VB_inv, Ftemp, exner[ei]);
 
             reuse = MAT_REUSE_MATRIX;
         }
@@ -1318,8 +1285,6 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
     VecDestroy(&frt);
     MatDestroy(&V0_rt            );
     MatDestroy(&V0_inv           );
-    MatDestroy(&V1_Pi            );
-    MatDestroy(&V1_rt_inv        );
     MatDestroy(&V0_theta         );
     MatDestroy(&V10_w            );
     MatDestroy(&DTV10_w          );
@@ -1327,9 +1292,6 @@ void Euler::VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* ve
     MatDestroy(&V0_invDTV1       );
     MatDestroy(&GRAD             );
     MatDestroy(&V0_invV0_rt      );
-    MatDestroy(&DV0_invV0_rt     );
-    MatDestroy(&V1_PiDV0_invV0_rt);
-    MatDestroy(&DIV              );
     MatDestroy(&AB               );
     MatDestroy(&VR);
     delete l2_theta;
@@ -1392,19 +1354,17 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     exner_i->HorizToVert();
 
     exner_prev->CopyFromVert(exner_i->vz);
+    exner_prev->VertToHoriz();
+    exner_prev->UpdateGlobal();
+
+    velz_1->CopyFromVert(velz);    velz_1->VertToHoriz();  velz_1->UpdateGlobal();
+    rho_1->CopyFromHoriz(rho);     rho_1->UpdateLocal();   rho_1->HorizToVert();
+    rt_1->CopyFromHoriz(rt);       rt_1->UpdateLocal();    rt_1->HorizToVert();
 
     if(firstStep) {
-        AssembleKEVecs(velx, velz);
-
-        velz_1->CopyFromVert(velz);
-        rho_1->CopyFromVert(rho_0->vz);
-        rt_1->CopyFromVert(rt_0->vz);
-        exner_prev->CopyFromVert(exner_i->vz);
-
-#ifdef WITH_UDWDX
-        AssembleVertMomVort(velx, velz_1);
-#endif
-        vert->solve_schur(velz_1, rho_1, rt_1, exner_i);
+        if(!rank) cout << "first step, coupled vertical solve...\n";
+        //vert->solve_schur(velz_1, rho_1, rt_1, exner_i);
+        vert->solve_coupled(velz_1, rho_1, rt_1, exner_i);
     } else {
         // pass in the current time level as well for q^{1} = q^{n} + F(q^{prev})
         // use the same horizontal kinetic energy as the previous horizontal solve, so don't assemble here
@@ -1422,6 +1382,12 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rt_1->UpdateGlobal();
     exner_i->VertToHoriz();
     exner_i->UpdateGlobal();
+    rho_0->VertToHoriz();
+    rho_0->UpdateGlobal();
+    rt_0->VertToHoriz();
+    rt_0->UpdateGlobal();
+    exner_prev->VertToHoriz();
+    exner_prev->UpdateGlobal();
 
     // 2.1 first horiztonal substep
     if(!rank) cout << "horiztonal step (1).................." << endl;
@@ -1510,9 +1476,6 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rt_4->HorizToVert();
 
     // carry over the vertical fields to the next time level
-    velz_prev->CopyFromVert(velz_1->vz);
-    rho_prev->CopyFromVert(rho_4->vz);
-    rt_prev->CopyFromVert(rt_4->vz);
     DiagExner(rt_4->vz, exner_i);
     exner_prev->CopyFromVert(exner_i->vz);
 
@@ -1525,6 +1488,11 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
 #ifdef WITH_UDWDX
     AssembleVertMomVort(velx, velz_1);
 #endif
+    velz_1->VertToHoriz();  velz_1->UpdateGlobal();
+    rho_5->VertToHoriz();   rho_5->UpdateGlobal();
+    rt_5->VertToHoriz();    rt_5->UpdateGlobal();
+    exner_i->VertToHoriz(); exner_i->UpdateGlobal();
+
     vert->solve_schur(velz_1, rho_5, rt_5, exner_i);
     velz_1->CopyToVert(velz);
 
