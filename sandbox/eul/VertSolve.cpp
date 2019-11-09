@@ -588,26 +588,27 @@ void VertSolve::diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi) {
     vo->AssembleConLinWithW(ex, ey, velz1, vo->VBA);
 
     MatMult(vo->VBA, velz1, _tmpB1);
-    //VecAXPY(Phi, 1.0/6.0, _tmpB1);
-    VecAXPY(_tmpB2, 1.0/6.0, _tmpB1);
+    VecAXPY(Phi, 1.0/6.0, _tmpB1);
+    //VecAXPY(_tmpB2, 1.0/6.0, _tmpB1);
     
     MatMult(vo->VBA, velz2, _tmpB1);
-    //VecAXPY(Phi, 1.0/6.0, _tmpB1);
-    VecAXPY(_tmpB2, 1.0/6.0, _tmpB1);
+    VecAXPY(Phi, 1.0/6.0, _tmpB1);
+    //VecAXPY(_tmpB2, 1.0/6.0, _tmpB1);
 
     MatZeroEntries(vo->VBA);
     vo->AssembleConLinWithW(ex, ey, velz2, vo->VBA);
 
     MatMult(vo->VBA, velz2, _tmpB1);
-    //VecAXPY(Phi, 1.0/6.0, _tmpB1);
-    VecAXPY(_tmpB2, 1.0/6.0, _tmpB1);
+    VecAXPY(Phi, 1.0/6.0, _tmpB1);
+    //VecAXPY(_tmpB2, 1.0/6.0, _tmpB1);
 
-    VecAXPY(Phi, alpha, _tmpB2);
+    //VecAXPY(Phi, alpha, _tmpB2);
 
     // potential energy term
     VecAXPY(Phi, 1.0, zv[ei]);
 
     // kinetic energy at vertices
+/*
     VecZeroEntries(_tmpA1);
     vo->AssembleLinearWithW(ex, ey, velz1, vo->VA);
     MatMult(vo->VA, velz1, _tmpA2);
@@ -622,6 +623,7 @@ void VertSolve::diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi) {
     vo->AssembleConLin(ex, ey, vo->VBA);
     MatMult(vo->VBA, _tmpA2, _tmpB1);
     VecAXPY(Phi, 1.0-alpha, _tmpB1);
+*/
 }
 
 /* All vectors, rho, rt and theta are VERTICAL vectors */
@@ -1471,6 +1473,28 @@ void VertSolve::assemble_pc(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec exne
         MatAXPY(_PCz, 1.0, pc_N_exner_2, DIFFERENT_NONZERO_PATTERN);
     }
     MatScale(_PCz, -1.0);
+}
+
+void VertSolve::eos_residual(int ex, int ey, Vec rt_i, Vec rt_j, Vec exner_i, Vec exner_j, Vec F_exner) {
+    vo->AssembleConst(ex, ey, vo->VB);
+
+    VecCopy(exner_j, _tmpB1);
+    VecAXPY(_tmpB1, -1.0, exner_i);
+    MatMult(vo->VB, _tmpB1, _tmpB2);
+
+    vo->AssembleConstWithRhoInv(ex, ey, exner_i, vo->VB_inv);
+    MatMult(vo->VB_inv, _tmpB2, _tmpB1);
+    MatMult(vo->VB, _tmpB1, F_exner);
+
+    VecCopy(rt_j, _tmpB1);
+    VecAXPY(_tmpB1, -1.0, rt_i);
+    MatMult(vo->VB, _tmpB1, _tmpB2);
+
+    vo->AssembleConstWithRhoInv(ex, ey, rt_i, vo->VB_inv);
+    MatMult(vo->VB_inv, _tmpB2, _tmpB1);
+    MatMult(vo->VB, _tmpB1, _tmpB2);
+
+    VecAXPY(F_exner, -1.0*RD/CV, _tmpB2);
 }
 
 void VertSolve::viscosity() {

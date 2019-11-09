@@ -52,6 +52,8 @@ class VertSolve {
 
         double MaxNorm(Vec dx, Vec x, double max_norm);
 
+        void eos_residual(int ex, int ey, Vec rt_i, Vec rt_j, Vec exner_i, Vec exner_j, Vec F_exner);
+
         Mat _PCz;
         Mat pc_LAP;
 
