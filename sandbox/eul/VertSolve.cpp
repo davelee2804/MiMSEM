@@ -26,9 +26,7 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-#define VERT_TOL 1.0e-8
-#define HORIZ_TOL 1.0e-12
-//#define RAYLEIGH 0.2
+#define RAYLEIGH 0.2
 #define VISC 1
 
 using namespace std;
@@ -295,7 +293,8 @@ void VertSolve::solve_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
             repack_z(F, F_w, F_rho, F_rt, F_exner);
             VecScale(F, -1.0);
 
-            assemble_operator(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_j->vz[ii], &PC_coupled);
+            //assemble_operator(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_j->vz[ii], &PC_coupled);
+            assemble_operator(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], &PC_coupled);
 
             KSPCreate(MPI_COMM_SELF, &ksp_coupled);
             KSPSetOperators(ksp_coupled, PC_coupled, PC_coupled);
@@ -463,8 +462,8 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
             //                        F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner);
             //assemble_operator_schur(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
             //                        F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner);
-            //assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], F_w, F_rho, F_rt, F_exner, true, true);
-            assemble_and_update(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], F_w, F_rho, F_rt, F_exner, true, true);
+            assemble_and_update(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], F_w, F_rho, F_rt, F_exner, true, true);
+            //assemble_and_update(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], F_w, F_rho, F_rt, F_exner, true, true);
             MatScale(_PCz, -1.0);
             if(!itt) {
                 KSPCreate(MPI_COMM_SELF, &ksp_exner);
@@ -475,8 +474,8 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
                 KSPSetFromOptions(ksp_exner);
             }
             KSPSolve(ksp_exner, F_rt, d_exner);
-            //set_deltas(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
-            set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], 
+            set_deltas(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            //set_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], 
                        F_w, F_rho, F_exner, d_w, d_rho, d_rt, d_exner, false, true);
 
             VecAXPY(velz_j->vz[ii],  1.0, d_w);
@@ -797,6 +796,10 @@ void VertSolve::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, 
 
     // [u,u] block
     vo->AssembleLinear(ex, ey, vo->VA);
+#ifdef RAYLEIGH
+    vo->AssembleRayleigh(ex, ey, vo->VA_inv);
+    MatAXPY(vo->VA, 0.5*dt*RAYLEIGH, vo->VA_inv, DIFFERENT_NONZERO_PATTERN);
+#endif
     MatGetOwnershipRange(vo->VA, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(vo->VA, mm, &nCols, &cols, &vals);
@@ -807,6 +810,27 @@ void VertSolve::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, 
         MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(vo->VA, mm, &nCols, &cols, &vals);
     }
+
+    // [u,rho] block
+/*
+    vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    vo->AssembleLinearWithRhoInv(ex, ey, rho, vo->VA_inv);
+    MatMatMult(vo->VA, vo->VA_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(pc_V0_invV0_rt, vo->V01, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
+    vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
+    MatMatMult(pc_V0_invV0_rt_DT, vo->VB, reuse, PETSC_DEFAULT, &pc_A_u);
+    MatScale(pc_A_u, 0.5*dt*RD/CV);
+    MatGetOwnershipRange(pc_A_u, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(pc_A_u, mm, &nCols, &cols, &vals);
+        ri = mm;
+        for(ci = 0; ci < nCols; ci++) {
+            cols2[ci] = cols[ci] + nDofsW;
+        }
+        MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(pc_A_u, mm, &nCols, &cols, &vals);
+    }
+*/
 
     // [u,exner] block
     vo->AssembleConst(ex, ey, vo->VB);
@@ -827,30 +851,12 @@ void VertSolve::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, 
         MatRestoreRow(pc_GRAD, mm, &nCols, &cols, &vals);
     }
 
-    // [u,rho] block
-/*
-    vo->AssembleLinearWithRT(ex, ey, exner, vo->VA, true);
-    vo->AssembleLinearWithRhoInv(ex, ey, rho, vo->VA_inv);
-    MatMatMult(vo->VA, vo->VA_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
-    MatMatMult(pc_V0_invV0_rt, pc_GRAD, reuse, PETSC_DEFAULT, &pc_A_u);
-    MatScale(pc_A_u, RD/CV);
-    MatGetOwnershipRange(pc_A_u, &mi, &mf);
-    for(mm = mi; mm < mf; mm++) {
-        MatGetRow(pc_A_u, mm, &nCols, &cols, &vals);
-        ri = mm;
-        for(ci = 0; ci < nCols; ci++) {
-            cols2[ci] = cols[ci] + nDofsW;
-        }
-        MatSetValues(*_PC, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
-        MatRestoreRow(pc_A_u, mm, &nCols, &cols, &vals);
-    }
-*/
-
     // [rho,u] block
     vo->AssembleLinearInv(ex, ey, vo->VA_inv);
     vo->AssembleLinearWithRT(ex, ey, rho, vo->VA, true);
     MatMatMult(vo->VA_inv, vo->VA, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
     MatMatMult(vo->V10, pc_V0_invV0_rt, reuse, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    vo->AssembleConst(ex, ey, vo->VB);
     MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_V1DV0_invV0_rt);
     MatScale(pc_V1DV0_invV0_rt, 0.5*dt);
     for(mm = mi; mm < mf; mm++) {
