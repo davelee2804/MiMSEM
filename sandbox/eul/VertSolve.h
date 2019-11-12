@@ -36,6 +36,8 @@ class VertSolve {
 
         void assemble_residual_z(int ex, int ey, Vec theta, Vec Pi, 
                                  Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
+        void assemble_residual_2(int ex, int ey, Vec theta_i, Vec theta_j, Vec Pi_i, Vec Pi_j, 
+                                 Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
 
         void repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
