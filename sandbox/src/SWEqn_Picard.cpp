@@ -122,6 +122,8 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     ISDestroy(&is_g);
     VecDestroy(&xl);
     VecDestroy(&xg);
+
+    topog = NULL;
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -229,9 +231,7 @@ void SWEqn::diagnose_F(Vec* F) {
     VecAXPY(hu, 1.0/3.0, b);
 
     // solve the linear system
-    M1->assemble();
     KSPSolve(ksp, hu, *F);
-    M1->assemble();
 
     VecDestroy(&hu);
     VecDestroy(&b);
@@ -277,6 +277,10 @@ void SWEqn::diagnose_Phi(Vec* Phi) {
 
     MatMult(M2->M, hj, b);
     VecAXPY(*Phi, grav/2.0, b);
+
+    if(topog){
+        VecAXPY(*Phi, 1.0, topog);
+    }
 
     VecDestroy(&uil);
     VecDestroy(&ujl);
@@ -477,7 +481,6 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecAXPY(fu, -1.0, utmp);
 
     if(do_visc) {
-cout << "applying viscosity..\n";
         VecZeroEntries(utmp);
         VecAXPY(utmp, 0.5, ui);
         VecAXPY(utmp, 0.5, uj);
@@ -712,6 +715,7 @@ SWEqn::~SWEqn() {
     VecDestroy(&hi);
     VecDestroy(&uj);
     VecDestroy(&hj);
+    if(topog) VecDestroy(&topog);
     if(A) MatDestroy(&A);
 
     delete m0;
@@ -1267,7 +1271,6 @@ void SWEqn::solve_explicit(Vec un, Vec hn, double _dt, bool save) {
     MatMult(EtoF->E12, Phi1, tu);
     VecAXPY(bu, -dt, tu);
     if(do_visc) {
-cout << "applying viscosity..\n";
         laplacian(uj, &d2u);
         laplacian(d2u, &d4u);
         MatMult(M1->M, d4u, d2u);
@@ -1300,7 +1303,6 @@ cout << "applying viscosity..\n";
     MatMult(EtoF->E12, Phi2, tu);
     VecAXPY(bu, -0.5*dt, tu);
     if(do_visc) {
-cout << "applying viscosity..\n";
         laplacian(uj, &d2u);
         laplacian(d2u, &d4u);
         MatMult(M1->M, d4u, d2u);

@@ -25,6 +25,7 @@ class SWEqn {
         Uhmat* M1h;
         WtQUmat* K;
         Vec fg;            // coriolis vector (global)
+        Vec topog;
         Mat E01M1;
         Mat E12M2;
         KSP ksp;           // 1 form mass matrix linear solver

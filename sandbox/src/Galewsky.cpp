@@ -179,9 +179,9 @@ sw->do_visc = false;
         }
     }
 
-    delete topo;
-    delete geom;
     delete sw;
+    delete geom;
+    delete topo;
 
     VecDestroy(&ui);
     VecDestroy(&hi);
