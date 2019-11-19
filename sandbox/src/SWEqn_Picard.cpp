@@ -278,8 +278,9 @@ void SWEqn::diagnose_Phi(Vec* Phi) {
     MatMult(M2->M, hj, b);
     VecAXPY(*Phi, grav/2.0, b);
 
-    if(topog){
-        VecAXPY(*Phi, 1.0, topog);
+    if(topog) {
+        MatMult(M2->M, topog, b);
+        VecAXPY(*Phi, grav, b);
     }
 
     VecDestroy(&uil);
