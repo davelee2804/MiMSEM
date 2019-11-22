@@ -6,11 +6,13 @@ class Boundary {
         Geom* geom;
         LagrangeNode* node;
         LagrangeEdge* edge;
-        double** EQ;
         Vec ul;
         Vec hl;
         Vec ql;
-        void Interp2FormTo0FormBndry(int lev, Vec u, Vec h, bool upwind);
+        Vec bl;
+        void Interp2To0Bndry(int lev, Vec u, Vec h, bool upwind);
+        void Interp1To0Bndry(int lev, Vec u, bool upwind);
         void _assembleGrad(int lev, Vec b);
+        void _assembleConv(int lev, Vec u, Vec b);
         void AssembleGrad(int lev, Vec u, Vec h, Vec b, bool upwind);
 };
