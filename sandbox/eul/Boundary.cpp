@@ -15,6 +15,10 @@
 using namespace std;
 
 Boundary::Boundary(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* _edge) {
+    int ii, jj, ix, iy;
+    int mm = _geom->quad->n;
+    int mp1 = mm+1;
+
     topo = _topo;
     geom = _geom;
     node = _node;
@@ -24,6 +28,47 @@ Boundary::Boundary(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &bl);
+
+    U = new M1x_j_xy_i(node, edge);
+    V = new M1y_j_xy_i(node, edge);
+
+    Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+
+    // zero out the internal dofs
+    for(ii = 0; ii < mm*mp1; ii++) {
+        ix = ii%mp1;
+        if(ix > 0 && ix < mm) {
+            for(jj = 0; jj < mp1*mp1; jj++) {
+                Ut[ii][jj] = 0.0;
+            }
+        } else if (ix == 0) { // left side quad points only
+            for(jj = 0; jj < mp1*mp1; jj++) {
+                if(jj%mp1 !=  0) Ut[ii][jj] = 0.0;
+            }
+        } else {              // right side quad points only
+            for(jj = 0; jj < mp1*mp1; jj++) {
+                if(jj%mp1 != mm) Ut[ii][jj] = 0.0;
+            }
+        }
+
+        iy = ii/mm;
+        if(iy > 0 && iy < mm) {
+            for(jj = 0; jj < mp1*mp1; jj++) {
+                Vt[ii][jj] = 0.0;
+            }
+        } else if(iy == 0) { // bottom side quad points only
+            for(jj = 0; jj < mp1*mp1; jj++) {
+                if(jj/mp1 !=  0) Ut[ii][jj] = 0.0;
+            }
+        } else {             // top side quad points only
+            for(jj = 0; jj < mp1*mp1; jj++) {
+                if(jj/mp1 != mm) Ut[ii][jj] = 0.0;
+            }
+        }
+    }
 }
 
 Boundary::~Boundary() {
@@ -31,6 +76,11 @@ Boundary::~Boundary() {
     VecDestroy(&hl);
     VecDestroy(&ql);
     VecDestroy(&bl);
+
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+    delete U;
+    delete V;
 }
 
 double UdotN(Geom* geom, int ei, int ii, double* ui, bool norm_horiz) {
@@ -149,6 +199,7 @@ void matvec(int n, int m, double** A, double* x, double* b) {
     }
 }
 
+// TODO: include metric term for test function
 void Boundary::_assembleGrad(int lev, Vec b) {
     int ex, ey, ei, ii, kk, mm, mp1;
     int *inds_0, *inds_x, *inds_y;

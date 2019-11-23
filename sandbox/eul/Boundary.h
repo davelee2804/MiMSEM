@@ -10,6 +10,10 @@ class Boundary {
         Vec hl;
         Vec ql;
         Vec bl;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        double** Ut;
+        double** Vt;
         void Interp2To0Bndry(int lev, Vec u, Vec h, bool upwind);
         void Interp1To0Bndry(int lev, Vec u, bool upwind);
         void _assembleGrad(int lev, Vec b);
