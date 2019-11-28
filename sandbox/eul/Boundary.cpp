@@ -28,12 +28,20 @@ Boundary::Boundary(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &qg);
 
     U = new M1x_j_xy_i(node, edge);
     V = new M1y_j_xy_i(node, edge);
 
     Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    Qa = Alloc2D(U->nDofsI, U->nDofsI);
+    Qb = Alloc2D(U->nDofsI, U->nDofsI);
+    UtQa = Alloc2D(U->nDofsJ, U->nDofsI);
+    VtQb = Alloc2D(U->nDofsJ, U->nDofsI);
+
+    UtQflat = new double[U->nDofsJ*U->nDofsI];
+
     Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
     Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
 
@@ -61,14 +69,19 @@ Boundary::Boundary(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* 
             }
         } else if(iy == 0) { // bottom side quad points only
             for(jj = 0; jj < mp1*mp1; jj++) {
-                if(jj/mp1 !=  0) Ut[ii][jj] = 0.0;
+                if(jj/mp1 !=  0) Vt[ii][jj] = 0.0;
             }
         } else {             // top side quad points only
             for(jj = 0; jj < mp1*mp1; jj++) {
-                if(jj/mp1 != mm) Ut[ii][jj] = 0.0;
+                if(jj/mp1 != mm) Vt[ii][jj] = 0.0;
             }
         }
     }
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n1l, topo->n0l, topo->nDofs1G, topo->nDofs0G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
 }
 
 Boundary::~Boundary() {
@@ -76,9 +89,16 @@ Boundary::~Boundary() {
     VecDestroy(&hl);
     VecDestroy(&ql);
     VecDestroy(&bl);
+    VecDestroy(&qg);
+    MatDestroy(&M);
 
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
+    Free2D(U->nDofsI, Qa);
+    Free2D(U->nDofsI, Qb);
+    Free2D(U->nDofsJ, UtQa);
+    Free2D(U->nDofsJ, VtQb);
+    delete[] UtQflat;
     delete U;
     delete V;
 }
@@ -88,11 +108,11 @@ double UdotN(Geom* geom, int ei, int ii, double* ui, bool norm_horiz) {
     double uMagInv, nMagInv, ni[2], uHat[2], nHat[2];
 
     if(norm_horiz) {
-        ni[0] = J[1][0];
+        ni[0] = J[0][1];
         ni[1] = J[1][1];
     } else {
         ni[0] = J[0][0];
-        ni[1] = J[0][1];
+        ni[1] = J[1][0];
     }
 
     uMagInv = 1.0 / sqrt(ui[0]*ui[0] + ui[1]*ui[1]);
@@ -186,33 +206,22 @@ void Boundary::Interp2To0Bndry(int lev, Vec u, Vec h, bool upwind) {
     VecRestoreArray(ul, &uArray);
     VecRestoreArray(hl, &hArray);
     VecRestoreArray(ql, &qArray);
+
+    VecZeroEntries(qg);
+    VecScatterBegin(topo->gtol_0, ql, qg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_0, ql, qg, ADD_VALUES, SCATTER_REVERSE);
 }
 
-void matvec(int n, int m, double** A, double* x, double* b) {
-    int ii, jj;
-
-    for(ii = 0; ii < n; ii++) {
-        b[ii] = 0.0;
-        for(jj = 0; jj < m; jj++) {
-            b[ii] += A[ii][jj]*x[jj];
-        }
-    }
-}
-
-// TODO: include metric term for test function
-void Boundary::_assembleGrad(int lev, Vec b) {
+void Boundary::_assembleGrad(int lev) {
     int ex, ey, ei, ii, kk, mm, mp1;
     int *inds_0, *inds_x, *inds_y;
-    double _S[99], _N[99], _E[99], _W[99], ES[99], EN[99], EE[99], EW[99], **J, tang;
-    PetscScalar *qArray, *bArray;
+    double **J, tang, norm, det;
 
     mm = geom->quad->n;
     mp1 = mm+1;
 
-    VecZeroEntries(bl);
+    MatZeroEntries(M);
 
-    VecGetArray(ql, &qArray);
-    VecGetArray(bl, &bArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -224,146 +233,57 @@ void Boundary::_assembleGrad(int lev, Vec b) {
             for(ii = 0; ii < mp1; ii++) {
                 // bottom
                 kk = ii;
+                det = geom->det[ei][kk];
                 J = geom->J[ei][kk];
                 // dot the jacobian onto the global tangent vector
-                tang = sqrt(J[0][0]*J[0][0] + J[0][1]*J[0][1]);
-                _S[ii] = node->q->w[ii] * tang * qArray[inds_0[kk]] * geom->thick[lev][inds_0[kk]];
+                tang =  sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
+                norm = +sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
+                Qb[ii][ii] = node->q->w[ii] * geom->thick[lev][inds_0[kk]] * tang * norm / det;
 
                 // top
                 kk = ii + mp1*mm;
+                det = geom->det[ei][kk];
                 J = geom->J[ei][kk];
                 // dot the jacobian onto the global tangent vector
-                tang = sqrt(J[0][0]*J[0][0] + J[0][1]*J[0][1]);
-                _N[ii] = node->q->w[ii] * tang * qArray[inds_0[kk]] * geom->thick[lev][inds_0[kk]];
+                tang =  sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
+                norm = -sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
+                Qb[ii][ii] = node->q->w[ii] * geom->thick[lev][inds_0[kk]] * tang * norm / det;
 
                 // left
                 kk = mp1*ii;
+                det = geom->det[ei][kk];
                 J = geom->J[ei][kk];
                 // dot the jacobian onto the global tangent vector
-                tang = sqrt(J[1][0]*J[1][0] + J[1][1]*J[1][1]);
-                _E[ii] = node->q->w[ii] * tang * qArray[inds_0[kk]] * geom->thick[lev][inds_0[kk]];
+                tang =  sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
+                norm = +sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
+                Qa[ii][ii] = node->q->w[ii] * geom->thick[lev][inds_0[kk]] * tang * norm / det;
 
                 // right
                 kk = mp1*ii + mm;
+                det = geom->det[ei][kk];
                 J = geom->J[ei][kk];
                 // dot the jacobian onto the global tangent vector
-                tang = sqrt(J[1][0]*J[1][0] + J[1][1]*J[1][1]);
-                _W[ii] = node->q->w[ii] * tang * qArray[inds_0[kk]] * geom->thick[lev][inds_0[kk]];
+                tang =  sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
+                norm = -sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
+                Qa[ii][ii] = node->q->w[ii] * geom->thick[lev][inds_0[kk]] * tang * norm / det;
             }
+            Mult_FD_IP(U->nDofsJ, U->nDofsI, U->nDofsI, Ut, Qa, UtQa);
+            Mult_FD_IP(U->nDofsJ, U->nDofsI, U->nDofsI, Vt, Qb, VtQb);
 
-            matvec(mm, mp1, edge->ejxi_t, _S, ES);
-            matvec(mm, mp1, edge->ejxi_t, _N, EN);
-            matvec(mm, mp1, edge->ejxi_t, _E, EE);
-            matvec(mm, mp1, edge->ejxi_t, _W, EW);
+            Flat2D_IP(U->nDofsJ, U->nDofsI, UtQa, UtQflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsI, inds_0, UtQflat, ADD_VALUES);
 
-            // jump condition
-            for(ii = 0; ii < mm; ii++) {
-                // bottom
-                kk = ii;
-                bArray[inds_y[kk]] += ES[ii];
-
-                // top
-                kk = mm*mm+ii;
-                bArray[inds_y[kk]] -= EN[ii];
-
-                // left
-                kk = mp1*ii;
-                bArray[inds_x[kk]] += EE[ii];
-
-                // right
-                kk = mp1*ii + mm;
-                bArray[inds_x[kk]] -= EW[ii];
-            }
+            Flat2D_IP(U->nDofsJ, U->nDofsI, VtQb, UtQflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsI, inds_0, UtQflat, ADD_VALUES);
         }
     }
-    VecRestoreArray(ql, &qArray);
-    VecRestoreArray(bl, &bArray);
 
-    VecScatterBegin(topo->gtol_1, bl, b, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_1, bl, b, INSERT_VALUES, SCATTER_REVERSE);
-}
-
-void Boundary::_assembleConv(int lev, Vec u, Vec b) {
-    int ex, ey, ei, ii, kk, mm, mp1;
-    int *inds_0, *inds_x, *inds_y;
-    double _S[99], _N[99], _E[99], _W[99], ES[99], EN[99], EE[99], EW[99], **J, det_n;
-    PetscScalar *qArray, *bArray, *uArray;
-
-    mm = geom->quad->n;
-    mp1 = mm+1;
-
-    VecZeroEntries(bl);
-
-    VecGetArray(ql, &qArray);
-    VecGetArray(ul, &uArray); // assume this has already been scattered when ql was computed
-    VecGetArray(bl, &bArray);
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            ei = ey*topo->nElsX + ex;
-
-            inds_0 = topo->elInds0_l(ex, ey);
-            inds_x = topo->elInds1x_l(ex, ey);
-            inds_y = topo->elInds1y_l(ex, ey);
-
-            for(ii = 0; ii < mp1; ii++) {
-                // bottom
-                kk = ii;
-                J = geom->J[ei][kk];
-                det_n = sqrt(J[0][0] + J[1][0]);
-                _S[ii] = node->q->w[ii] * det_n * qArray[inds_0[kk]] * geom->thick[lev][inds_0[kk]];
-
-                // top
-                kk = ii + mp1*mm;
-                J = geom->J[ei][kk];
-                det_n = sqrt(J[0][0] + J[1][0]);
-                _N[ii] = node->q->w[ii] * det_n * qArray[inds_0[kk]] * geom->thick[lev][inds_0[kk]];
-
-                // left
-                kk = mp1*ii;
-                J = geom->J[ei][kk];
-                det_n = sqrt(J[0][1] + J[1][1]);
-                _E[ii] = node->q->w[ii] * det_n * qArray[inds_0[kk]] * geom->thick[lev][inds_0[kk]];
-
-                // right
-                kk = mp1*ii + mm;
-                J = geom->J[ei][kk];
-                det_n = sqrt(J[0][1] + J[1][1]);
-                _W[ii] = node->q->w[ii] * det_n * qArray[inds_0[kk]] * geom->thick[lev][inds_0[kk]];
-            }
-
-            matvec(mm, mp1, edge->ejxi_t, _S, ES);
-            matvec(mm, mp1, edge->ejxi_t, _N, EN);
-            matvec(mm, mp1, edge->ejxi_t, _E, EE);
-            matvec(mm, mp1, edge->ejxi_t, _W, EW);
-
-            // jump condition
-            for(ii = 0; ii < mm; ii++) {
-                // bottom
-                kk = ii;
-                bArray[inds_y[kk]] += ES[ii];
-
-                // top
-                kk = mm*mm+ii;
-                bArray[inds_y[kk]] -= EN[ii];
-
-                // left
-                kk = mp1*ii;
-                bArray[inds_x[kk]] += EE[ii];
-
-                // right
-                kk = mp1*ii + mm;
-                bArray[inds_x[kk]] -= EW[ii];
-            }
-        }
-    }
-    VecRestoreArray(ql, &qArray);
-    VecRestoreArray(bl, &bArray);
-
-    VecScatterBegin(topo->gtol_1, bl, b, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_1, bl, b, INSERT_VALUES, SCATTER_REVERSE);
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
 
 void Boundary::AssembleGrad(int lev, Vec u, Vec h, Vec b, bool upwind) {
     Interp2To0Bndry(lev, u, h, upwind);
-    _assembleGrad(lev, b);
+    _assembleGrad(lev);
+    MatMult(M, qg, b);
 }
