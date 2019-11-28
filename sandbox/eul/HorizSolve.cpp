@@ -17,6 +17,7 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
+#include "Boundary.h"
 #include "HorizSolve.h"
 
 #define RAD_EARTH 6371220.0
@@ -145,6 +146,8 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     MatSetType(pcx_M0_inv, MATMPIAIJ);
     MatMPIAIJSetPreallocation(pcx_M0_inv, 1, PETSC_NULL, 1, PETSC_NULL);
     MatZeroEntries(pcx_M0_inv);
+
+    bndry = new Boundary(topo, geom, node, edge);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -341,6 +344,7 @@ HorizSolve::~HorizSolve() {
     delete M2_rt_inv;
     delete M2_rho_inv;
     delete APV;
+    delete bndry;
 
     delete edge;
     delete node;
@@ -1077,6 +1081,9 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
         VecDestroy(&d4u);
     }
 
+    bndry->AssembleGrad(level, velx2, Pi, utmp, false);
+    VecAXPY(fu, dt, utmp);
+
     // clean up
     VecDestroy(&utmp);
     VecDestroy(&Phi);
@@ -1173,6 +1180,8 @@ void HorizSolve::assemble_biharmonic(int lev, MatReuse reuse, Mat* BVISC) {
     MatMatMult(M1->M, VISC2, MAT_INITIAL_MATRIX, PETSC_DEFAULT, BVISC);  
     MatScale(*BVISC, 0.5*dt);
 
+    if(lev == geom->nk-1) MatScale(*BVISC, 4.0);
+
     VecDestroy(&m0_inv);
     VecDestroy(&ones_0);
     MatDestroy(&LAP_1);
@@ -1195,6 +1204,8 @@ void HorizSolve::assemble_biharmonic_temp(int lev, Vec rho, MatReuse reuse, Mat*
     MatMatMult(pcx_M2DM1_inv, pcx_DT_LAP_Theta, MAT_INITIAL_MATRIX, PETSC_DEFAULT, BVISC);
 
     MatAYPX(*BVISC, 0.5*dt*del2*del2, M2->M, DIFFERENT_NONZERO_PATTERN);
+
+    if(lev == geom->nk-1) MatScale(*BVISC, 4.0);
 }
 
 void HorizSolve::assemble_rho_correction(int lev, Vec rho, Vec exner, Vec theta_k, MatReuse reuse, Vec diag_g, Vec ones_g, Mat* Au) {

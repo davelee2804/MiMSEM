@@ -35,6 +35,7 @@ class HorizSolve {
         N_rt_Inv* M2_pi_inv;
         N_rt_Inv* M2_rt_inv;
         PtQUt_mat* APV;
+        Boundary* bndry;
         Vec* fg;                 // coriolis vector (global)
         Vec* fl;                 // coriolis vector (local)
         Vec* gv;                 // gravity vector
