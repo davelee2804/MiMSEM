@@ -29,6 +29,7 @@ Boundary::Boundary(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &bl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &qg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bg);
 
     U = new M1x_j_xy_i(node, edge);
     V = new M1y_j_xy_i(node, edge);
@@ -83,6 +84,7 @@ Boundary::~Boundary() {
     VecDestroy(&ql);
     VecDestroy(&bl);
     VecDestroy(&qg);
+    VecDestroy(&bg);
 
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
@@ -218,7 +220,7 @@ void matvec(double** A, double* x, double* b, int ni, int nj) {
     }
 }
 
-void Boundary::_assembleGrad(int lev, Vec b) {
+void Boundary::_assembleGrad(int lev) {
     int ex, ey, ei, ii, kk, mm, mp1;
     int *inds_0, *inds_x, *inds_y;
     double **J, tang, norm, det;
@@ -292,11 +294,11 @@ void Boundary::_assembleGrad(int lev, Vec b) {
     VecRestoreArray(ql, &qArray);
     VecRestoreArray(bl, &bArray);
 
-    VecScatterBegin(topo->gtol_1, bl, b, ADD_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_1, bl, b, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(topo->gtol_1, bl, bg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_1, bl, bg, ADD_VALUES, SCATTER_REVERSE);
 }
 
-void Boundary::AssembleGrad(int lev, Vec u, Vec h, Vec b, bool upwind) {
+void Boundary::AssembleGrad(int lev, Vec u, Vec h, bool upwind) {
     Interp2To0Bndry(lev, u, h, upwind);
-    _assembleGrad(lev, b);
+    _assembleGrad(lev);
 }

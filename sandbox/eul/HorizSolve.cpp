@@ -356,7 +356,7 @@ HorizSolve::~HorizSolve() {
 /*
 Take the weak form gradient of a 2 form scalar field as a 1 form vector field
 */
-void HorizSolve::grad(bool assemble, Vec phi, Vec* u, int lev) {
+void HorizSolve::grad(bool assemble, Vec phi, Vec* u, int lev, Vec bndry_vel) {
     Vec Mphi, dMphi;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, u);
@@ -370,6 +370,10 @@ void HorizSolve::grad(bool assemble, Vec phi, Vec* u, int lev) {
 
     MatMult(M2->M, phi, Mphi);
     MatMult(EtoF->E12, Mphi, dMphi);
+    if(bndry_vel) {
+        bndry->AssembleGrad(lev, bndry_vel, phi, false);
+        VecAXPY(dMphi, 1.0, bndry->bg);
+    }
     KSPSolve(ksp1, dMphi, *u);
 
     VecDestroy(&Mphi);
@@ -413,7 +417,7 @@ void HorizSolve::laplacian(bool assemble, Vec ui, Vec* ddu, int lev) {
     MatMult(EtoF->E21, ui, Du);
 
     // grad (weak form)
-    grad(assemble, Du, ddu, lev);
+    grad(assemble, Du, ddu, lev, NULL);
 
     /*** rotational component ***/
     // curl (weak form)
@@ -541,7 +545,7 @@ void HorizSolve::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs*
                 VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
                 VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
 
-                grad(false, dF, &dtheta, lev);
+                grad(false, dF, &dtheta, lev, NULL);
                 F->assemble(rho_j->vl[lev], lev, true, SCALE);
                 MatMult(F->M, dtheta, u_tmp_1);
                 VecDestroy(&dtheta);
@@ -549,7 +553,7 @@ void HorizSolve::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs*
                 KSPSolve(ksp1, u_tmp_1, u_tmp_2);
                 MatMult(EtoF->E21, u_tmp_2, dG);
 
-                grad(false, dG, &dtheta, lev);
+                grad(false, dG, &dtheta, lev, NULL);
                 MatMult(EtoF->E21, dtheta, dG);
                 VecDestroy(&dtheta);
                 MatMult(M2->M, dG, dF);
@@ -1005,7 +1009,7 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
     // assemble in the skew-symmetric parts of the vector
     diagnose_F_x(level, velx1, velx2, rho1, rho2, _F);
     diagnose_Phi_x(level, velx1, velx2, &Phi);
-    grad(false, Pi, &dPi, level);
+    grad(false, Pi, &dPi, level, velx2/*do boundary!*/);
     diagnose_wxu(level, velx1, velx2, &wxu);
     //diagnose_qxF(level, velx1, velx2, rho1, rho2, _F, &wxu);
 
@@ -1080,9 +1084,6 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
         VecDestroy(&d2u);
         VecDestroy(&d4u);
     }
-
-    bndry->AssembleGrad(level, velx2, Pi, utmp, false);
-    VecAXPY(fu, dt, utmp);
 
     // clean up
     VecDestroy(&utmp);

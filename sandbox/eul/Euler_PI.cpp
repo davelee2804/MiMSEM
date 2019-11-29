@@ -17,6 +17,7 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
+#include "Boundary.h"
 #include "Schur.h"
 #include "VertSolve.h"
 #include "HorizSolve.h"
@@ -371,7 +372,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
                 VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
                 VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
 
-                horiz->grad(false, dF, &dtheta, lev);
+                horiz->grad(false, dF, &dtheta, lev, NULL);
                 horiz->F->assemble(rho_j->vl[lev], lev, true, SCALE);
                 MatMult(horiz->F->M, dtheta, u_tmp_1);
                 VecDestroy(&dtheta);
@@ -379,7 +380,7 @@ void Euler::solve(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
                 KSPSolve(horiz->ksp1, u_tmp_1, u_tmp_2);
                 MatMult(horiz->EtoF->E21, u_tmp_2, dG);
 
-                horiz->grad(false, dG, &dtheta, lev);
+                horiz->grad(false, dG, &dtheta, lev, NULL);
                 MatMult(horiz->EtoF->E21, dtheta, dG);
                 VecDestroy(&dtheta);
                 MatMult(horiz->M2->M, dG, dF);
@@ -899,7 +900,7 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
                 VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
                 VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
 
-                horiz->grad(false, dF, &dtheta, lev);
+                horiz->grad(false, dF, &dtheta, lev, NULL);
                 horiz->F->assemble(rho_j->vl[lev], lev, true, SCALE);
                 MatMult(horiz->F->M, dtheta, u_tmp_1);
                 VecDestroy(&dtheta);
@@ -907,7 +908,7 @@ void Euler::solve_horiz(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
                 KSPSolve(horiz->ksp1, u_tmp_1, u_tmp_2);
                 MatMult(horiz->EtoF->E21, u_tmp_2, dG);
 
-                horiz->grad(false, dG, &dtheta, lev);
+                horiz->grad(false, dG, &dtheta, lev, NULL);
                 MatMult(horiz->EtoF->E21, dtheta, dG);
                 VecDestroy(&dtheta);
                 MatMult(horiz->M2->M, dG, dF);
@@ -1232,7 +1233,7 @@ void Euler::solve_split(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
                 VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
                 VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
 
-                horiz->grad(false, dF, &dtheta, lev);
+                horiz->grad(false, dF, &dtheta, lev, NULL);
                 horiz->F->assemble(rho_j->vl[lev], lev, true, SCALE);
                 MatMult(horiz->F->M, dtheta, u_tmp_1);
                 VecDestroy(&dtheta);
@@ -1240,7 +1241,7 @@ void Euler::solve_split(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
                 KSPSolve(horiz->ksp1, u_tmp_1, u_tmp_2);
                 MatMult(horiz->EtoF->E21, u_tmp_2, dG);
 
-                horiz->grad(false, dG, &dtheta, lev);
+                horiz->grad(false, dG, &dtheta, lev, NULL);
                 MatMult(horiz->EtoF->E21, dtheta, dG);
                 VecDestroy(&dtheta);
                 MatMult(horiz->M2->M, dG, dF);
@@ -1519,12 +1520,6 @@ void Euler::GlobalNorms(int itt, Vec* duh, Vec* uh, L2Vecs* duz, L2Vecs* uz, L2V
                               "\t|d_w|/|w|: "         << *norm_w     << endl;
 }
 
-// TODO (fixing drift over subsequent time steps):
-// *) solve as vertical then horizontal gauss-seidel splitting at each newton iteration
-// *) alternate vertical/horizontal and horizontal/vertical gauss-seidel splitting between time steps
-// *) is the exner pressure residual assembly ok??
-// *) do the viscous terms at the new time level only
-
 // Gauss-Seidel splitting of horiztonal and vertical pressure updates (horiztonal then vertical)
 void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save) {
     bool done = false;
@@ -1655,7 +1650,7 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
                 VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
                 VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
 
-                horiz->grad(false, dF, &dtheta, lev);
+                horiz->grad(false, dF, &dtheta, lev, NULL);
                 horiz->F->assemble(rho_j->vl[lev], lev, true, SCALE);
                 MatMult(horiz->F->M, dtheta, u_tmp_1);
                 VecDestroy(&dtheta);
@@ -1663,7 +1658,7 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
                 KSPSolve(horiz->ksp1, u_tmp_1, u_tmp_2);
                 MatMult(horiz->EtoF->E21, u_tmp_2, dG);
 
-                horiz->grad(false, dG, &dtheta, lev);
+                horiz->grad(false, dG, &dtheta, lev, NULL);
                 MatMult(horiz->EtoF->E21, dtheta, dG);
                 VecDestroy(&dtheta);
                 MatMult(horiz->M2->M, dG, dF);
@@ -1697,7 +1692,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
             //horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
             //horiz->assemble_and_update(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
             horiz->assemble_and_update(lev, theta_h->vl, velx_h[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
-                                       F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], false, false, velz_i, velz_j); // eos update done with vert residual update
+                                       //F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], false, false, velz_i, velz_j); // eos update done with vert residual update
+                                       F_u[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], false, false, NULL, NULL); // eos update done with vert residual update
 
             VecScale(F_rt->vh[lev], -1.0);
             VecCopy(F_rt->vh[lev], h_tmp);
@@ -1731,7 +1727,8 @@ void Euler::solve_gs(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L
             //horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_h->vl[lev], 
             //horiz->set_deltas(lev, theta_h->vl, velx_i[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
             horiz->set_deltas(lev, theta_h->vl, velx_h[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev], 
-                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false, velz_i, velz_j);
+                       //F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false, velz_i, velz_j);
+                       F_u[lev], F_rho->vh[lev], F_exner->vh[lev], d_u[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], false, false, NULL, NULL);
         }
         F_rho->UpdateLocal(); F_rho->HorizToVert();
         
@@ -1987,7 +1984,7 @@ void Euler::solve_gs_vh(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
                 VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
                 VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
 
-                horiz->grad(false, dF, &dtheta, lev);
+                horiz->grad(false, dF, &dtheta, lev, NULL);
                 horiz->F->assemble(rho_j->vl[lev], lev, true, SCALE);
                 MatMult(horiz->F->M, dtheta, u_tmp_1);
                 VecDestroy(&dtheta);
@@ -1995,7 +1992,7 @@ void Euler::solve_gs_vh(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
                 KSPSolve(horiz->ksp1, u_tmp_1, u_tmp_2);
                 MatMult(horiz->EtoF->E21, u_tmp_2, dG);
 
-                horiz->grad(false, dG, &dtheta, lev);
+                horiz->grad(false, dG, &dtheta, lev, NULL);
                 MatMult(horiz->EtoF->E21, dtheta, dG);
                 VecDestroy(&dtheta);
                 MatMult(horiz->M2->M, dG, dF);

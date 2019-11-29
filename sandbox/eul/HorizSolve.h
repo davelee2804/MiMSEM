@@ -48,8 +48,8 @@ class HorizSolve {
         double viscosity();
         void coriolis();
         void initGZ();
-        void grad(bool assemble, Vec phi, Vec* u, int lev);            // weak form grad operator
-        void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
+        void grad(bool assemble, Vec phi, Vec* u, int lev, Vec bndry_vel); // weak form grad operator
+        void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);      // weak form curl operator
         void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
 
         void diagTheta2(Vec* rho, Vec* rt, Vec* theta);
