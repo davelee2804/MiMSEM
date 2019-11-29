@@ -35,12 +35,10 @@ Boundary::Boundary(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* 
 
     Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     Vt = Alloc2D(U->nDofsJ, U->nDofsI);
-    Qa = Alloc2D(U->nDofsI, U->nDofsI);
-    Qb = Alloc2D(U->nDofsI, U->nDofsI);
-    UtQa = Alloc2D(U->nDofsJ, U->nDofsI);
-    VtQb = Alloc2D(U->nDofsJ, U->nDofsI);
-
-    UtQflat = new double[U->nDofsJ*U->nDofsI];
+    Qa = new double[U->nDofsI];
+    Qb = new double[U->nDofsI];
+    UtQa = new double[U->nDofsJ];
+    VtQb = new double[U->nDofsJ];
 
     Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
     Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
@@ -77,11 +75,6 @@ Boundary::Boundary(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* 
             }
         }
     }
-
-    MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n1l, topo->n0l, topo->nDofs1G, topo->nDofs0G);
-    MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
 }
 
 Boundary::~Boundary() {
@@ -90,15 +83,13 @@ Boundary::~Boundary() {
     VecDestroy(&ql);
     VecDestroy(&bl);
     VecDestroy(&qg);
-    MatDestroy(&M);
 
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
-    Free2D(U->nDofsI, Qa);
-    Free2D(U->nDofsI, Qb);
-    Free2D(U->nDofsJ, UtQa);
-    Free2D(U->nDofsJ, VtQb);
-    delete[] UtQflat;
+    delete[] Qa;
+    delete[] Qb;
+    delete[] UtQa;
+    delete[] VtQb;
     delete U;
     delete V;
 }
@@ -210,17 +201,35 @@ void Boundary::Interp2To0Bndry(int lev, Vec u, Vec h, bool upwind) {
     VecZeroEntries(qg);
     VecScatterBegin(topo->gtol_0, ql, qg, ADD_VALUES, SCATTER_REVERSE);
     VecScatterEnd(  topo->gtol_0, ql, qg, ADD_VALUES, SCATTER_REVERSE);
+
+    VecZeroEntries(ql);
+    VecScatterBegin(topo->gtol_0, qg, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qg, ql, INSERT_VALUES, SCATTER_FORWARD);
 }
 
-void Boundary::_assembleGrad(int lev) {
+void matvec(double** A, double* x, double* b, int ni, int nj) {
+    int ii, jj;
+
+    for(ii = 0; ii < ni; ii++) {
+        b[ii] = 0.0;
+        for(jj = 0; jj < nj; jj++) {
+            b[ii] += A[ii][jj] * x[jj];
+        }
+    }
+}
+
+void Boundary::_assembleGrad(int lev, Vec b) {
     int ex, ey, ei, ii, kk, mm, mp1;
     int *inds_0, *inds_x, *inds_y;
     double **J, tang, norm, det;
+    PetscScalar *qArray, *bArray;
 
     mm = geom->quad->n;
     mp1 = mm+1;
 
-    MatZeroEntries(M);
+    VecZeroEntries(bl);
+    VecGetArray(ql, &qArray);
+    VecGetArray(bl, &bArray);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -238,7 +247,8 @@ void Boundary::_assembleGrad(int lev) {
                 // dot the jacobian onto the global tangent vector
                 tang =  sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
                 norm = +sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
-                Qb[ii][ii] = node->q->w[ii] * geom->thick[lev][inds_0[kk]] * tang * norm / det;
+                // layer thickness in jacobian cancels with the thickness inverse in the test function
+                Qb[kk] = qArray[inds_0[kk]] * node->q->w[ii] * tang * norm / det;
 
                 // top
                 kk = ii + mp1*mm;
@@ -247,7 +257,8 @@ void Boundary::_assembleGrad(int lev) {
                 // dot the jacobian onto the global tangent vector
                 tang =  sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
                 norm = -sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
-                Qb[ii][ii] = node->q->w[ii] * geom->thick[lev][inds_0[kk]] * tang * norm / det;
+                // layer thickness in jacobian cancels with the thickness inverse in the test function
+                Qb[kk] = qArray[inds_0[kk]] * node->q->w[ii] * tang * norm / det;
 
                 // left
                 kk = mp1*ii;
@@ -256,7 +267,8 @@ void Boundary::_assembleGrad(int lev) {
                 // dot the jacobian onto the global tangent vector
                 tang =  sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
                 norm = +sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
-                Qa[ii][ii] = node->q->w[ii] * geom->thick[lev][inds_0[kk]] * tang * norm / det;
+                // layer thickness in jacobian cancels with the thickness inverse in the test function
+                Qa[kk] = qArray[inds_0[kk]] * node->q->w[ii] * tang * norm / det;
 
                 // right
                 kk = mp1*ii + mm;
@@ -265,25 +277,26 @@ void Boundary::_assembleGrad(int lev) {
                 // dot the jacobian onto the global tangent vector
                 tang =  sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
                 norm = -sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
-                Qa[ii][ii] = node->q->w[ii] * geom->thick[lev][inds_0[kk]] * tang * norm / det;
+                // layer thickness in jacobian cancels with the thickness inverse in the test function
+                Qa[kk] = qArray[inds_0[kk]] * node->q->w[ii] * tang * norm / det;
             }
-            Mult_FD_IP(U->nDofsJ, U->nDofsI, U->nDofsI, Ut, Qa, UtQa);
-            Mult_FD_IP(U->nDofsJ, U->nDofsI, U->nDofsI, Vt, Qb, VtQb);
+            matvec(Ut, Qa, UtQa, U->nDofsJ, U->nDofsI);
+            matvec(Vt, Qb, VtQb, U->nDofsJ, U->nDofsI);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsI, UtQa, UtQflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsI, inds_0, UtQflat, ADD_VALUES);
-
-            Flat2D_IP(U->nDofsJ, U->nDofsI, VtQb, UtQflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsI, inds_0, UtQflat, ADD_VALUES);
+            for(ii = 0; ii < mp1*mm; ii++) {
+                bArray[inds_x[ii]] += UtQa[ii];
+                bArray[inds_y[ii]] += VtQb[ii];
+            }
         }
     }
+    VecRestoreArray(ql, &qArray);
+    VecRestoreArray(bl, &bArray);
 
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+    VecScatterBegin(topo->gtol_1, bl, b, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_1, bl, b, ADD_VALUES, SCATTER_REVERSE);
 }
 
 void Boundary::AssembleGrad(int lev, Vec u, Vec h, Vec b, bool upwind) {
     Interp2To0Bndry(lev, u, h, upwind);
-    _assembleGrad(lev);
-    MatMult(M, qg, b);
+    _assembleGrad(lev, b);
 }
