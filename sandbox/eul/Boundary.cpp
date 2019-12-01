@@ -12,6 +12,8 @@
 #include "ElMats.h"
 #include "Boundary.h"
 
+#define RAD_EARTH 6371220.0
+
 using namespace std;
 
 Boundary::Boundary(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* _edge) {
@@ -117,6 +119,16 @@ double UdotN(Geom* geom, int ei, int ii, double* ui, bool norm_horiz) {
     nHat[1] = nMagInv * ni[1];
 
     return uHat[0]*nHat[0] + uHat[1]*nHat[1];
+}
+
+double arclen(double* si, double* sj) {
+    double delta_phi = fabs(sj[1] - si[1]);
+    double delta_lambda = fabs(sj[0] - si[0]);
+    double s1 = sin(0.5*delta_phi);
+    double s2 = sin(0.5*delta_lambda);
+    double theta = sqrt(s1*s1 + cos(si[1])*cos(sj[1])*s2*s2);
+
+    return 2.0*RAD_EARTH*asin(theta);
 }
 
 void Boundary::Interp2To0Bndry(int lev, Vec u, Vec h, bool upwind) {
@@ -247,7 +259,8 @@ void Boundary::_assembleGrad(int lev) {
                 det = geom->det[ei][kk];
                 J = geom->J[ei][kk];
                 // dot the jacobian onto the global tangent vector
-                tang =  sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
+                //tang =  sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
+                tang =  arclen(geom->s[inds_0[0]], geom->s[inds_0[mm]]);
                 norm = +sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
                 // layer thickness in jacobian cancels with the thickness inverse in the test function
                 Qb[kk] = qArray[inds_0[kk]] * node->q->w[ii] * tang * norm / det;
@@ -257,7 +270,8 @@ void Boundary::_assembleGrad(int lev) {
                 det = geom->det[ei][kk];
                 J = geom->J[ei][kk];
                 // dot the jacobian onto the global tangent vector
-                tang =  sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
+                //tang =  sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
+                tang =  arclen(geom->s[inds_0[mp1*mp1-1]], geom->s[inds_0[mp1*mm]]);
                 norm = -sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
                 // layer thickness in jacobian cancels with the thickness inverse in the test function
                 Qb[kk] = qArray[inds_0[kk]] * node->q->w[ii] * tang * norm / det;
@@ -267,7 +281,8 @@ void Boundary::_assembleGrad(int lev) {
                 det = geom->det[ei][kk];
                 J = geom->J[ei][kk];
                 // dot the jacobian onto the global tangent vector
-                tang =  sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
+                //tang =  sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
+                tang =  arclen(geom->s[inds_0[mp1*mm]], geom->s[inds_0[0]]);
                 norm = +sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
                 // layer thickness in jacobian cancels with the thickness inverse in the test function
                 Qa[kk] = qArray[inds_0[kk]] * node->q->w[ii] * tang * norm / det;
@@ -277,7 +292,8 @@ void Boundary::_assembleGrad(int lev) {
                 det = geom->det[ei][kk];
                 J = geom->J[ei][kk];
                 // dot the jacobian onto the global tangent vector
-                tang =  sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
+                //tang =  sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
+                tang =  arclen(geom->s[inds_0[mm]], geom->s[inds_0[mp1*mp1-1]]);
                 norm = -sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
                 // layer thickness in jacobian cancels with the thickness inverse in the test function
                 Qa[kk] = qArray[inds_0[kk]] * node->q->w[ii] * tang * norm / det;
