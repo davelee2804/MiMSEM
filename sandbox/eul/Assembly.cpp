@@ -238,6 +238,8 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
     Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
     Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    UA = Alloc2D(U->nDofsI, U->nDofsJ);
+    VA = Alloc2D(U->nDofsI, U->nDofsJ);
     Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     Vt = Alloc2D(U->nDofsJ, U->nDofsI);
     UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
@@ -251,6 +253,11 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+
+    Mt = NULL;
 }
 
 void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
@@ -265,9 +272,6 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
     MatZeroEntries(M);
     VecGetArray(h2, &h2Array);
 
-    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
-    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
-
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // incorporate the jacobian transformation for each element
@@ -281,13 +285,8 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
 
                 // density field is piecewise constant in the vertical
-                if(const_vert) {
-                    hi *= 1.0/geom->thick[lev][inds_0[ii]];
-                }
+                if(const_vert) hi *= 1.0/geom->thick[lev][inds_0[ii]];
 
-                //Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
-                //Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                //Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
                 Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
                 Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
@@ -331,6 +330,112 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
 
+void Uhmat::assemble_up(Vec h2, int lev, bool const_vert, double scale, Vec u1) {
+    int ex, ey, ei, mp1, mp12, ii, jj, kk, m0, m02;
+    int *inds_x, *inds_y, *inds_0;
+    double hi, det, **J, fac;
+    PetscScalar *h2Array, *u1Array;
+    MatReuse reuse = (Mt) ? MAT_REUSE_MATRIX : MAT_INITIAL_MATRIX;
+
+    m0 = l->n;
+    m02 = m0*m0;
+    mp1 = l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    MatZeroEntries(M);
+    VecGetArray(h2, &h2Array);
+    VecGetArray(u1, &u1Array);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            // incorporate the jacobian transformation for each element
+            Q->assemble(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            inds_0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
+
+                // density field is piecewise constant in the vertical
+                if(const_vert) hi *= 1.0/geom->thick[lev][inds_0[ii]];
+
+                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+
+                // horiztonal velocity is piecewise constant in the vertical
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qbb[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+            }
+
+            inds_x = topo->elInds1x_l(ex, ey);
+            inds_y = topo->elInds1y_l(ex, ey);
+
+            for(ii = 0; ii < U->nDofsI; ii++) {
+                for(jj = 0; jj < U->nDofsJ; jj++) {
+                    UA[ii][jj] = U->A[ii][jj];
+                    VA[ii][jj] = V->A[ii][jj];
+                }
+            }
+
+            for(jj = 0; jj < m0; jj++) {
+                // bottom
+                kk = jj;
+                fac = (u1Array[inds_y[kk]] < 0.0) ? 2.0 : 0.0;
+                for(ii = 0; ii < U->nDofsI; ii++) VA[ii][kk] *= fac;
+                // top
+                kk = m02 + jj;
+                fac = (u1Array[inds_y[kk]] > 0.0) ? 2.0 : 0.0;
+                for(ii = 0; ii < U->nDofsI; ii++) VA[ii][kk] *= fac;
+                // left
+                kk = jj;
+                fac = (u1Array[inds_x[kk]] < 0.0) ? 2.0 : 0.0;
+                for(ii = 0; ii < U->nDofsI; ii++) UA[ii][kk] *= fac;
+                // right
+                kk = m02 + jj;
+                fac = (u1Array[inds_x[kk]] > 0.0) ? 2.0 : 0.0;
+                for(ii = 0; ii < U->nDofsI; ii++) UA[ii][kk] *= fac;
+            }
+
+            // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
+            Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
+            Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
+            Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qab, VtQba);
+            Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
+
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQaa, UA, UtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, VA, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, UA, VtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, VA, VtQV);
+
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(h2, &h2Array);
+    VecRestoreArray(u1, &u1Array);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    MatTranspose(M, reuse, &Mt);
+}
+
 Uhmat::~Uhmat() {
     delete[] UtQUflat;
 
@@ -343,6 +448,8 @@ Uhmat::~Uhmat() {
     Free2D(Q->nDofsI, Qbb);
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
+    Free2D(U->nDofsI, UA);
+    Free2D(U->nDofsI, VA);
     Free2D(U->nDofsJ, UtQaa);
     Free2D(U->nDofsJ, UtQab);
     Free2D(U->nDofsJ, VtQba);
@@ -2011,6 +2118,7 @@ PtQUt_mat::PtQUt_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n0l, topo->n1l, topo->nDofs0G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
+    //MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
     MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
 }
 
@@ -2103,6 +2211,7 @@ PtQUmat::PtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatSetSizes(M, topo->n0l, topo->n1l, topo->nDofs0G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
+    //MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
 }
 
 void PtQUmat::assemble(Vec u1, int lev, double scale) {
@@ -2239,4 +2348,3 @@ void WtQPmat::assemble(int lev, double scale) {
 WtQPmat::~WtQPmat() {
     MatDestroy(&M);
 }
-
