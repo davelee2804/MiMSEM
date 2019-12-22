@@ -238,8 +238,6 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
     Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
     Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    UA = Alloc2D(U->nDofsI, U->nDofsJ);
-    VA = Alloc2D(U->nDofsI, U->nDofsJ);
     Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     Vt = Alloc2D(U->nDofsJ, U->nDofsI);
     UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
@@ -256,8 +254,6 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 
     Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
     Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
-
-    Mt = NULL;
 }
 
 void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
@@ -330,15 +326,13 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
 
-void Uhmat::assemble_up(Vec h2, int lev, bool const_vert, double scale, Vec u1) {
-    int ex, ey, ei, mp1, mp12, ii, jj, kk, m0, m02;
+void Uhmat::assemble_up(Vec h2, int lev, double scale, Vec u1) {
+    int ex, ey, ei, mp1, mp12, ii, m0;
     int *inds_x, *inds_y, *inds_0;
-    double hi, det, **J, fac;
+    double hi, det, **J, ux[2];
     PetscScalar *h2Array, *u1Array;
-    MatReuse reuse = (Mt) ? MAT_REUSE_MATRIX : MAT_INITIAL_MATRIX;
 
-    m0 = l->n;
-    m02 = m0*m0;
+    m0 = l->q->n;
     mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
@@ -357,9 +351,12 @@ void Uhmat::assemble_up(Vec h2, int lev, bool const_vert, double scale, Vec u1) 
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
+                geom->interp1_l(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
 
-                // density field is piecewise constant in the vertical
-                if(const_vert) hi *= 1.0/geom->thick[lev][inds_0[ii]];
+                if(ii/mp1 == 0 ) hi = (ux[1] < 0.0) ? 2.0*hi : 0.0; // bottom
+                if(ii/mp1 == m0) hi = (ux[1] > 0.0) ? 2.0*hi : 0.0; // top
+                if(ii%mp1 == 0 ) hi = (ux[0] < 0.0) ? 2.0*hi : 0.0; // left
+                if(ii%mp1 == m0) hi = (ux[0] > 0.0) ? 2.0*hi : 0.0; // right
 
                 Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
                 Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
@@ -371,45 +368,16 @@ void Uhmat::assemble_up(Vec h2, int lev, bool const_vert, double scale, Vec u1) 
                 Qbb[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
             }
 
-            inds_x = topo->elInds1x_l(ex, ey);
-            inds_y = topo->elInds1y_l(ex, ey);
-
-            for(ii = 0; ii < U->nDofsI; ii++) {
-                for(jj = 0; jj < U->nDofsJ; jj++) {
-                    UA[ii][jj] = U->A[ii][jj];
-                    VA[ii][jj] = V->A[ii][jj];
-                }
-            }
-
-            for(jj = 0; jj < m0; jj++) {
-                // bottom
-                kk = jj;
-                fac = (u1Array[inds_y[kk]] < 0.0) ? 2.0 : 0.0;
-                for(ii = 0; ii < U->nDofsI; ii++) VA[ii][kk] *= fac;
-                // top
-                kk = m02 + jj;
-                fac = (u1Array[inds_y[kk]] > 0.0) ? 2.0 : 0.0;
-                for(ii = 0; ii < U->nDofsI; ii++) VA[ii][kk] *= fac;
-                // left
-                kk = jj;
-                fac = (u1Array[inds_x[kk]] < 0.0) ? 2.0 : 0.0;
-                for(ii = 0; ii < U->nDofsI; ii++) UA[ii][kk] *= fac;
-                // right
-                kk = m02 + jj;
-                fac = (u1Array[inds_x[kk]] > 0.0) ? 2.0 : 0.0;
-                for(ii = 0; ii < U->nDofsI; ii++) UA[ii][kk] *= fac;
-            }
-
             // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
             Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
             Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
             Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qab, VtQba);
             Mult_FD_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
 
-            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQaa, UA, UtQU);
-            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, VA, UtQV);
-            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, UA, VtQU);
-            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, VA, VtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQaa, U->A, UtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, V->A, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, U->A, VtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
@@ -432,8 +400,6 @@ void Uhmat::assemble_up(Vec h2, int lev, bool const_vert, double scale, Vec u1) 
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
-
-    MatTranspose(M, reuse, &Mt);
 }
 
 Uhmat::~Uhmat() {
@@ -448,8 +414,6 @@ Uhmat::~Uhmat() {
     Free2D(Q->nDofsI, Qbb);
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
-    Free2D(U->nDofsI, UA);
-    Free2D(U->nDofsI, VA);
     Free2D(U->nDofsJ, UtQaa);
     Free2D(U->nDofsJ, UtQab);
     Free2D(U->nDofsJ, VtQba);
@@ -2210,8 +2174,8 @@ PtQUmat::PtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n0l, topo->n1l, topo->nDofs0G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
-    //MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+    //MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
 }
 
 void PtQUmat::assemble(Vec u1, int lev, double scale) {

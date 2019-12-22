@@ -35,8 +35,6 @@ class Uhmat {
         double** Qbb;
         double** Ut;
         double** Vt;
-        double** UA;
-        double** VA;
         double** UtQaa;
         double** UtQab;
         double** VtQba;
@@ -49,9 +47,8 @@ class Uhmat {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
-        Mat Mt;
         void assemble(Vec h2, int lev, bool const_vert, double scale);
-        void assemble_up(Vec h2, int lev, bool const_vert, double scale, Vec u1);
+        void assemble_up(Vec h2, int lev, double scale, Vec u1);
 };
 
 class Pvec {

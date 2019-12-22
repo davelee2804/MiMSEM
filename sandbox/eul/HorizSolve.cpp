@@ -985,7 +985,7 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
                                 Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec fu, Vec _F, Vec _G) 
 {
     Vec Phi, dPi, wxu, wxz, utmp, d2u, d4u;
-    Vec theta_h, dp, dudz_h, velz_h, dudz_l;
+    Vec theta_h, dp, dudz_h, velz_h, dudz_l, ul, velx_h;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dp);
@@ -994,6 +994,8 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &velz_h);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dudz_l);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_h);
 
     m0->assemble(level, SCALE);
     M1->assemble(level, SCALE, true);
@@ -1009,7 +1011,7 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
     // assemble in the skew-symmetric parts of the vector
     diagnose_F_x(level, velx1, velx2, rho1, rho2, _F);
     diagnose_Phi_x(level, velx1, velx2, &Phi);
-    grad(false, Pi, &dPi, level, velx2/*do boundary!*/);
+    grad(false, Pi, &dPi, level, NULL/*velx2 do boundary!*/);
     diagnose_wxu(level, velx1, velx2, &wxu);
     //diagnose_qxF(level, velx1, velx2, rho1, rho2, _F, &wxu);
 
@@ -1017,7 +1019,13 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
     VecAXPY(fu, 1.0, wxu);
 
     // add the pressure gradient force
-    F->assemble(theta_h, level, false, SCALE);
+    //F->assemble(theta_h, level, false, SCALE);
+    VecZeroEntries(velx_h);
+    VecAXPY(velx_h, 0.5, velx1);
+    VecAXPY(velx_h, 0.5, velx2);
+    VecScatterBegin(topo->gtol_1, velx_h, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, velx_h, ul, INSERT_VALUES, SCATTER_FORWARD);
+    F->assemble_up(theta_h, level, SCALE, ul);
     MatMult(F->M, dPi, dp);
     VecAXPY(fu, 1.0, dp);
 
@@ -1096,6 +1104,8 @@ void HorizSolve::assemble_residual_x(int level, Vec* theta, Vec* dudz1, Vec* dud
     VecDestroy(&dudz_h);
     VecDestroy(&velz_h);
     VecDestroy(&dudz_l);
+    VecDestroy(&ul);
+    VecDestroy(&velx_h);
 }
 
 void HorizSolve::coriolisMatInv(Mat A, Mat* Ainv) {
