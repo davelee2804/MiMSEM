@@ -1842,9 +1842,8 @@ void VertOps::AssembleLinearWithRhoInv(int ex, int ey, Vec rho, Mat A) {
                 rb += rArray[(kk+0)*n2+jj]*gamma;
                 rt += rArray[(kk+1)*n2+jj]*gamma;
             }
-            //Q0[ii][ii] *= 0.5*(rb/(det*geom->thick[kk+0][inds0[ii]]) + rt/(det*geom->thick[kk+1][inds0[ii]]));
-            //Q0[ii][ii] *= 0.5*(geom->thick[kk+0][inds0[ii]] + geom->thick[kk+1][inds0[ii]]);
-            Q0[ii][ii] *= 0.5*(rb + rt)/det/det;
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 0.5*(rb + rt)/det;
         }
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
