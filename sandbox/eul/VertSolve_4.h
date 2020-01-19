@@ -38,8 +38,6 @@ class VertSolve {
         void repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
 
-        void assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, 
-                                 bool eos_update, bool eos_update_mat);
         void set_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner,
                         Vec F_w, Vec F_rho, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner, 
                         bool add_delta, bool neg_scale);
@@ -53,7 +51,9 @@ class VertSolve {
         void eos_residual(int ex, int ey, Vec rt_i, Vec rt_j, Vec exner_i, Vec exner_j, Vec F_exner);
 
         void solve_schur_column(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
-                                   Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
+                                Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
+        void assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
+                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi);
 
         Mat _PCz;
         Mat pc_LAP;
