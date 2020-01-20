@@ -32,8 +32,8 @@ class VertSolve {
         void assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
                                      Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner);
 
-        void assemble_residual_z(int ex, int ey, Vec theta, Vec Pi, 
-                                 Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
+        void assemble_residual(int ex, int ey, Vec theta, Vec Pi, 
+                               Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
 
         void repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
@@ -42,8 +42,6 @@ class VertSolve {
                         Vec F_w, Vec F_rho, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner, 
                         bool add_delta, bool neg_scale);
 
-
-        void update_residuals(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner);
         void assemble_pc(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, bool eos_update);
 
         double MaxNorm(Vec dx, Vec x, double max_norm);
@@ -54,6 +52,8 @@ class VertSolve {
                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
         void assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                                  Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi);
+        void update_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
+                           Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
 
         Mat _PCz;
         Mat pc_LAP;

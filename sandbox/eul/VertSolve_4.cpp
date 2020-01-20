@@ -281,8 +281,8 @@ void VertSolve::solve_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
             ey = ii/topo->nElsX;
 
             // implicit coupled solve
-            assemble_residual_z(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
-                                rt_i->vz[ii], rt_j->vz[ii], F_w, F_z->vz[ii], G_z->vz[ii]);
+            assemble_residual(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
+                              rt_i->vz[ii], rt_j->vz[ii], F_w, F_z->vz[ii], G_z->vz[ii]);
 
             vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
 
@@ -472,8 +472,8 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
             ey = ii/topo->nElsX;
 
             // assemble the residual vectors
-            assemble_residual_z(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
-                                rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z);
+            assemble_residual(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
+                              rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z);
 
             vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
 
@@ -648,8 +648,8 @@ void VertSolve::diagTheta2(Vec* rho, Vec* rt, Vec* theta) {
     KSPDestroy(&kspColA2);
 }
 
-void VertSolve::assemble_residual_z(int ex, int ey, Vec theta, Vec Pi, 
-                                Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G) 
+void VertSolve::assemble_residual(int ex, int ey, Vec theta, Vec Pi, 
+                                  Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G) 
 {
     // diagnose the hamiltonian derivatives
     diagnose_F_z(ex, ey, velz1, velz2, rho1, rho2, _F);
@@ -1237,7 +1237,111 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
     VecAXPY(F_rt,  +1.0, _tmpB1);         // F_{rt}''
 
     MatMult(Q_rt_rho_M_rho_inv, F_rho, _tmpB1);
-    VecAYPX(F_rt, -1.0, _tmpB1);          // F_{rt}'''
+    VecAXPY(F_rt, -1.0, _tmpB1);          // F_{rt}''' (-ve scaling done outside)
+}
+
+void VertSolve::update_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
+                              Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi) 
+{
+    MatReuse reuse = MAT_REUSE_MATRIX;
+
+    // assemble the operators for the coupled system
+#ifdef RAYLEIGH
+    vo->AssembleLinearWithRayleighInv(ex, ey, 0.5*dt*RAYLEIGH, M_u_inv);
+#else
+    vo->AssembleLinearInv(ex, ey, M_u_inv);
+#endif
+    vo->AssembleConstInv(ex, ey, M_rho_inv);
+    vo->Assemble_EOS_BlockInv(ex, ey, rt, NULL, N_rt_inv);
+    MatScale(N_rt_inv, -1.0*CV/RD);
+    vo->Assemble_EOS_BlockInv(ex, ey, pi, NULL, N_pi_inv);
+
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMult(vo->VB, pi, _tmpB1);
+    MatMult(vo->V01, _tmpB1, _tmpA1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
+    vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
+    MatTranspose(vo->VBA, MAT_REUSE_MATRIX, &vo->VAB);
+    vo->AssembleConstWithRhoInv(ex, ey, rho, vo->VB_inv);
+    MatMatMult(vo->VAB, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
+    MatMatMult(pc_V0_invV0_rt_DT, vo->VB, reuse, PETSC_DEFAULT, &G_rt);
+    MatScale(G_rt, 0.5*dt);
+
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pc_DTV1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, pc_DTV1, reuse, PETSC_DEFAULT, &pc_V0_invDTV1);
+    vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    MatMatMult(vo->VA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &G_pi);
+    MatScale(G_pi, 0.5*dt);
+
+    vo->AssembleLinearWithRT(ex, ey, rho, vo->VA, true);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, vo->VA, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, reuse, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &D_rho);
+    MatScale(D_rho, 0.5*dt);
+
+    vo->AssembleConst(ex, ey, vo->VB);
+    vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB_inv);
+    MatMatMult(vo->VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
+    MatMatMult(vo->VB, pc_VB_rt_invVB_pi, reuse, PETSC_DEFAULT, &N_rt);
+    MatScale(N_rt, -1.0*RD/CV);
+
+    vo->AssembleConstWithTheta(ex, ey, theta, vo->VB);
+    MatMatMult(vo->V01, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DTV1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, pc_DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invDTV1);
+    vo->AssembleConLinWithW(ex, ey, velz, vo->VBA);
+    MatMatMult(vo->VBA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &Q_rt_rho);
+    MatScale(Q_rt_rho, 0.5*dt);
+
+    // assemble the secondary operators
+    MatMatMult(D_rho, M_u_inv, reuse, PETSC_DEFAULT, &D_rho_M_u_inv);
+
+    MatMatMult(D_rho_M_u_inv, G_rt, reuse, PETSC_DEFAULT, &L_rho_rt);
+    MatMatMult(D_rho_M_u_inv, G_pi, reuse, PETSC_DEFAULT, &L_rho_pi);
+
+    MatMatMult(L_rho_pi_N_pi_inv, N_rt, reuse, PETSC_DEFAULT, &L_rho_pi_N_pi_inv_N_rt);
+    MatAXPY(L_rho_pi_N_pi_inv_N_rt, -1.0, L_rho_rt, DIFFERENT_NONZERO_PATTERN);
+
+    if(reuse == MAT_INITIAL_MATRIX) {
+        PC pc;
+
+        KSPCreate(MPI_COMM_SELF, &ksp_w);
+        KSPSetOperators(ksp_w, vo->VA, vo->VA);
+        KSPGetPC(ksp_w, &pc);
+        PCSetType(pc, PCLU);
+        KSPSetOptionsPrefix(ksp_w, "ksp_w_");
+        KSPSetFromOptions(ksp_w);
+    }
+
+    // back substitute
+    MatMult(N_rt, d_rt, _tmpB1);
+    VecAXPY(F_pi, 1.0, _tmpB1);
+    MatMult(N_pi_inv, F_pi, d_pi);
+    VecScale(d_pi, -1.0);
+
+    MatMult(L_rho_pi_N_pi_inv_N_rt, d_rt, _tmpB1);
+    VecAXPY(F_rho, 1.0, _tmpB1);
+    MatMult(M_rho_inv, F_rho, d_rho);
+    VecScale(d_rho, -1.0);
+
+    MatMult(G_rt, d_rt, _tmpA1);
+    MatMult(G_pi, d_pi, _tmpA2);
+    VecAXPY(F_u, 1.0, _tmpA1);
+    VecAXPY(F_u, 1.0, _tmpA2);
+    VecScale(F_u, -1.0);
+#ifdef RAYLEIGH
+    vo->AssembleLinear(ex, ey, vo->VA);
+    vo->AssembleRayleigh(ex, ey, vo->VA_inv);
+    MatAXPY(vo->VA, 0.5*dt*RAYLEIGH, vo->VA_inv, DIFFERENT_NONZERO_PATTERN);
+    KSPSolve(ksp_w, F_u, d_u);
+#else
+    MatMult(M_u_inv, F_u, d_u);
+#endif
 }
 
 void VertSolve::set_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
@@ -1248,10 +1352,5 @@ void VertSolve::set_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt,
 }
 
 void VertSolve::assemble_pc(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, bool eos_update) {
-    return;
-}
-
-void VertSolve::update_residuals(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner) 
-{
     return;
 }

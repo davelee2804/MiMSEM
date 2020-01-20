@@ -1182,7 +1182,134 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx_l, Vec velx_g
     MatDestroy(&L_rho_pi_N_pi_inv_N_rt);
     if(do_visc) MatDestroy(&TEMP1);
     else        MatDestroy(&L_rt_rt);
-    MatDestroy(&_PCx);
+    //MatDestroy(&_PCx); // don't destroy the preconditioner here, this gets assembled into the schur matrix outside
+}
+
+void HorizSolve::update_deltas(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec pi, 
+                               Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, Vec dpil)
+{
+    MatReuse reuse = MAT_REUSE_MATRIX;
+    Vec wl, wg, theta_k, ones, diag, tmp_h, tmp_u_1, tmp_u_2;
+    PC pc;
+
+    m0->assemble(lev, SCALE);
+    M1->assemble(lev, SCALE, true);
+    M2->assemble(lev, SCALE, true);
+    M2inv->assemble(lev, SCALE);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
+    VecZeroEntries(theta_k);
+    VecAXPY(theta_k, 0.5, theta[lev+0]);
+    VecAXPY(theta_k, 0.5, theta[lev+1]);
+
+    // assemble operators
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &diag);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ones);
+    VecSet(ones, 1.0);
+    MatGetDiagonal(M1->M, diag);
+    VecPointwiseDivide(diag, ones, diag);
+    MatDiagonalSet(M1_inv, diag, INSERT_VALUES);
+    VecDestroy(&diag);
+    VecDestroy(&ones);
+
+    // M_u
+    curl(false, velx_g, &wg, lev, true);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
+    VecScatterBegin(topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecDestroy(&wg);
+    R->assemble(wl, lev, SCALE);
+    VecDestroy(&wl);
+    MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
+#ifdef RAYLEIGH
+    if(lev == geom->nk-1) MatAXPY(R->M, 0.500*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+    if(lev == geom->nk-2) MatAXPY(R->M, 0.250*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+    if(lev == geom->nk-3) MatAXPY(R->M, 0.125*dt*RAYLEIGH, M1->M, DIFFERENT_NONZERO_PATTERN);
+#endif
+
+    // G_rt
+    K->assemble(dpil, lev, SCALE); // 0.5 factor included here
+    MatTranspose(K->M, reuse, &KT);
+    M2_rho_inv->assemble(rho, lev, SCALE);
+    MatMatMult(KT, M2_rho_inv->M, reuse, PETSC_DEFAULT, &KTM2_inv);
+    MatMatMult(KTM2_inv, M2->M, reuse, PETSC_DEFAULT, &G_rt);
+    MatScale(G_rt, dt);
+
+    // G_pi
+    F->assemble(theta_k, lev, false, SCALE);
+    MatMatMult(M1_inv, EtoF->E12, reuse, PETSC_DEFAULT, &M1invDT);
+    MatMatMult(M1invDT, M2->M, reuse, PETSC_DEFAULT, &M1invDTM2);
+    MatMatMult(F->M, M1invDTM2, reuse, PETSC_DEFAULT, &G_pi);
+    MatScale(G_pi, 0.5*dt);
+
+    // D_rho
+    MatMatMult(M2->M, EtoF->E21, reuse, PETSC_DEFAULT, &M2D);
+    MatMatMult(M2D, M1_inv, reuse, PETSC_DEFAULT, &M2DM1_inv);
+    F->assemble(rho, lev, true, SCALE);
+    MatMatMult(M2DM1_inv, F->M, reuse, PETSC_DEFAULT, &D_rho);
+    MatScale(D_rho, 0.5*dt);
+
+    // N_rt
+    N2_rt->assemble(rt, lev, SCALE, false);
+    MatScale(N2_rt->M, -1.0*RD/CV);
+
+    // N_pi (inverse)
+    N2_pi_inv->assemble(pi, lev, SCALE, true);
+
+    // M_u (inverse)
+    if(do_visc) { 
+        assemble_biharmonic(lev, reuse, &M_u);
+        MatAXPY(M_u, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
+    } else {
+        MatDuplicate(R->M, MAT_COPY_VALUES, &M_u);
+    }
+    coriolisMatInv(M_u, &M_u_inv);
+
+    // assemble the secondary operators
+    MatMatMult(D_rho, M_u_inv, reuse, PETSC_DEFAULT, &D_rho_M_u_inv);
+
+    MatMatMult(D_rho_M_u_inv, G_rt, reuse, PETSC_DEFAULT, &L_rho_rt);
+    MatMatMult(D_rho_M_u_inv, G_pi, reuse, PETSC_DEFAULT, &L_rho_pi);
+
+    MatMatMult(L_rho_pi, N2_pi_inv->M, reuse, PETSC_DEFAULT, &L_rho_pi_N_pi_inv);
+    MatMatMult(L_rho_pi_N_pi_inv, N2_rt->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &L_rho_pi_N_pi_inv_N_rt); // invalid read if reused matrix
+
+    MatAXPY(L_rho_pi_N_pi_inv_N_rt, -1.0, L_rho_rt, DIFFERENT_NONZERO_PATTERN); // seg fault for reused matrix
+
+    KSPCreate(MPI_COMM_WORLD, &ksp_u);
+    KSPSetOperators(ksp_u, M_u, M_u);
+    KSPSetTolerances(ksp_u, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp_u, KSPGMRES);
+    KSPGetPC(ksp_u, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, 6*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp_u, "ksp_u_");
+    KSPSetFromOptions(ksp_u);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmp_u_1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmp_u_2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp_h);
+
+    // back substitute (exner pressure done in the vertical update
+    MatMult(L_rho_pi_N_pi_inv_N_rt, d_rt, tmp_h);
+    VecAXPY(F_rho, 1.0, tmp_h);
+    MatMult(M2inv->M, F_rho, d_rho);
+    VecScale(d_rho, -1.0);
+
+    MatMult(G_rt, d_rt, tmp_u_1);
+    MatMult(G_pi, d_pi, tmp_u_2);
+    VecAXPY(F_u, 1.0, tmp_u_1);
+    VecAXPY(F_u, 1.0, tmp_u_2);
+    VecScale(F_u, -1.0);
+    KSPSolve(ksp_u, F_u, d_u);
+
+    VecDestroy(&theta_k);
+    VecDestroy(&tmp_h);
+    VecDestroy(&tmp_u_1);
+    VecDestroy(&tmp_u_2);
+    MatDestroy(&M_u);
+    MatDestroy(&L_rho_pi_N_pi_inv_N_rt);
+    KSPDestroy(&ksp_u);
 }
 
 double HorizSolve::MaxNorm(Vec dx, Vec x, double max_norm) {
