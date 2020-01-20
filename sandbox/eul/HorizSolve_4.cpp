@@ -1292,9 +1292,10 @@ void HorizSolve::update_deltas(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec 
 
     // back substitute (exner pressure done in the vertical update
     MatMult(L_rho_pi_N_pi_inv_N_rt, d_rt, tmp_h);
-    VecAXPY(F_rho, 1.0, tmp_h);
-    MatMult(M2inv->M, F_rho, d_rho);
-    VecScale(d_rho, -1.0);
+    //VecAXPY(F_rho, 1.0, tmp_h);
+    //MatMult(M2inv->M, F_rho, d_rho);
+    //VecScale(d_rho, -1.0);
+    VecAXPY(d_rho, -1.0, tmp_h); // F_rho term done in vertical update
 
     MatMult(G_rt, d_rt, tmp_u_1);
     MatMult(G_pi, d_pi, tmp_u_2);
