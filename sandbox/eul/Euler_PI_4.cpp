@@ -468,7 +468,7 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
 
             //horiz->assemble_and_update(lev, theta_h->vl, velx_j->vl[lev], velx_j->vh[lev], rho_j->vl[lev], rt_j->vl[lev], exner_h->vl[lev],
             horiz->assemble_and_update(lev, theta_h->vl, velx_h->vl[lev], velx_h->vh[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
-                                       F_u->vh[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], gradPi->vh[lev]);
+                                       F_u->vh[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], gradPi->vl[lev]);
 
             schur->AddFromHorizMat(lev, horiz->_PCx);
             MatDestroy(&horiz->_PCx);
