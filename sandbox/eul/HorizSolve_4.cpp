@@ -1125,17 +1125,11 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx_l, Vec velx_g
 
     MatMatMult(D_rho_M_u_inv, G_rt, reuse, PETSC_DEFAULT, &L_rho_rt);
     MatMatMult(D_rho_M_u_inv, G_pi, reuse, PETSC_DEFAULT, &L_rho_pi);
-#ifdef IMP_VISC
     MatMatMult(D_rt_M_u_inv,  G_rt, reuse, PETSC_DEFAULT, &L_rt_rt );
-#else
-    MatMatMult(D_rt_M_u_inv,  G_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &L_rt_rt );
-#endif
     MatMatMult(D_rt_M_u_inv,  G_pi, reuse, PETSC_DEFAULT, &L_rt_pi );
 
 #ifdef IMP_VISC
     MatAXPY(_PCx, -1.0, L_rt_rt, DIFFERENT_NONZERO_PATTERN);
-#else
-    MatAYPX(L_rt_rt, -1.0, M2->M, DIFFERENT_NONZERO_PATTERN);
 #endif
 
     MatMatMult(L_rho_pi, N2_pi_inv->M, reuse, PETSC_DEFAULT, &L_rho_pi_N_pi_inv);
@@ -1154,7 +1148,7 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx_l, Vec velx_g
 #else
     MatMatMult(Q_rt_rho_M_rho_inv, L_rho_pi_N_pi_inv_N_rt, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
     MatAYPX(_PCx, -1.0, L_rt_pi_N_pi_inv_N_rt, DIFFERENT_NONZERO_PATTERN);
-    MatAXPY(_PCx, +1.0, L_rt_rt, DIFFERENT_NONZERO_PATTERN);
+    MatAXPY(_PCx, -1.0, L_rt_rt, DIFFERENT_NONZERO_PATTERN);
 #endif
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp_h);
@@ -1176,8 +1170,6 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx_l, Vec velx_g
 #ifdef IMP_VISC
     MatDestroy(&M_u);
     MatDestroy(&TEMP1);
-#else
-    MatDestroy(&L_rt_rt);
 #endif
     //MatDestroy(&_PCx); // don't destroy the preconditioner here, this gets assembled into the schur matrix outside
 }
