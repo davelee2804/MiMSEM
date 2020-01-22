@@ -34,7 +34,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     geom = _geom;
 
     step = 0;
-    firstStep = true;
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -42,7 +41,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
 
     vert  = new VertSolve(topo, geom, dt);
     horiz = new HorizSolve(topo, geom, dt);
-    schur = new Schur(topo, geom, false);
+    schur = new Schur(topo, geom);
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 }
@@ -317,6 +316,7 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
     int itt = 0, elOrd2 = topo->elOrd*topo->elOrd, ex, ey;
     double max_norm_u, max_norm_w, max_norm_rho, max_norm_rt, max_norm_exner;
     L2Vecs* velz_j  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* velz_h  = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* rho_j   = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_j    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
@@ -333,7 +333,6 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
     L2Vecs* d_rho   = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* d_rt    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* d_exner = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* lap_d_exner = new L2Vecs(geom->nk, topo, geom);
     L1Vecs* velx_i  = new L1Vecs(geom->nk, topo, geom);
     L1Vecs* velx_j  = new L1Vecs(geom->nk, topo, geom);
     L1Vecs* velx_h  = new L1Vecs(geom->nk, topo, geom);
@@ -376,11 +375,14 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
     exner_h->CopyFromVert(exner_i->vz); exner_h->VertToHoriz(); exner_h->UpdateGlobal();
     rho_h->CopyFromVert(rho_i->vz); rho_h->VertToHoriz(); rho_h->UpdateGlobal();
     rt_h->CopyFromVert(rt_i->vz); rt_h->VertToHoriz(); rt_h->UpdateGlobal();
+    velz_h->CopyFromVert(velz_i->vz);
 
     // diagnose the vorticity terms
     horiz->diagHorizVort(velx_i->vh, dudz_i->vh);
+    dudz_i->UpdateLocal();
     for(int lev = 0; lev < geom->nk; lev++) {
         VecCopy(dudz_i->vh[lev], dudz_j->vh[lev]);
+        VecCopy(dudz_i->vl[lev], dudz_j->vl[lev]);
     }
     horiz->diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz);
     theta_h->CopyFromVert(theta_i->vz);
@@ -389,6 +391,8 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
     theta_h->UpdateGlobal();
 
     do {
+        schur->InitialiseMatrix();
+
         // assemble the vertical residuals
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
@@ -415,6 +419,8 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
 
         // assemble the horizontal residuals
         for(int lev = 0; lev < geom->nk; lev++) {
+            if(!rank) cout << "assembling residuals for level: " << lev << endl;
+
             // velocity residual
             horiz->assemble_residual(lev, theta_h->vl, dudz_i->vl, dudz_j->vl, velz_i->vh, velz_j->vh, exner_h->vh[lev],
                                      velx_i->vh[lev], velx_j->vh[lev], rho_i->vh[lev], rho_j->vh[lev], F_u->vh[lev], 
@@ -452,16 +458,19 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
             MatMult(horiz->M2->M, dG, dF);
             VecAXPY(F_rt->vh[lev], dt*horiz->del2*horiz->del2, dF);
         }
-        F_rho->UpdateLocal(); F_rho->HorizToVert();
-        F_rt->UpdateLocal();  F_rt->HorizToVert();
+        //F_rho->UpdateLocal(); F_rho->HorizToVert();
+        //F_rt->UpdateLocal();  F_rt->HorizToVert();
 
         // build the preconditioner matrix (horiztonal part first)
         MatZeroEntries(schur->M);
         for(int lev = 0; lev < geom->nk; lev++) {
-            horiz->assemble_and_update(lev, theta_h->vl, velx_j->vl[lev], velx_j->vh[lev], rho_j->vl[lev], rt_j->vl[lev], exner_h->vl[lev],
+            if(!rank) cout << "assembling operators for level: " << lev << endl;
+
+            //horiz->assemble_and_update(lev, theta_h->vl, velx_j->vl[lev], velx_j->vh[lev], rho_j->vl[lev], rt_j->vl[lev], exner_h->vl[lev],
+            horiz->assemble_and_update(lev, theta_h->vl, velx_h->vl[lev], velx_h->vh[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
                                        F_u->vh[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], gradPi->vh[lev]);
 
-            schur->AddFromHorizMat(lev, horiz->_PCx, schur->M);
+            schur->AddFromHorizMat(lev, horiz->_PCx);
             MatDestroy(&horiz->_PCx);
         }
         F_rho->UpdateLocal();       F_rho->HorizToVert();
@@ -470,7 +479,8 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
-            vert->assemble_and_update(ex, ey, theta_h->vz[ii], velz_j->vz[ii], rho_j->vz[ii], rt_j->vz[ii], exner_h->vz[ii],
+            //vert->assemble_and_update(ex, ey, theta_h->vz[ii], velz_j->vz[ii], rho_j->vz[ii], rt_j->vz[ii], exner_h->vz[ii],
+            vert->assemble_and_update(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
                                       F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii]);
 
             schur->AddFromVertMat(ii, vert->_PCz);
@@ -484,29 +494,29 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
         schur->Solve(d_rt);
 
         // update the delta vectors
-        d_rt->HorizToVert();
-        d_rt->UpdateGlobal();
+        d_rt->HorizToVert(); d_rt->UpdateGlobal();
 
         // back substitution
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
 
-            vert->update_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii],
+            //vert->update_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii],
+            vert->update_deltas(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
                                 F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii], d_w->vz[ii], d_rho->vz[ii], d_rt->vz[ii], d_exner->vz[ii]);
         }
-        d_exner->VertToHoriz();
-        d_exner->UpdateGlobal();
-        d_rho->VertToHoriz();
-        d_rho->UpdateGlobal();
+        d_exner->VertToHoriz(); d_exner->UpdateGlobal();
+        d_rho->VertToHoriz();   d_rho->UpdateGlobal();
 
         for(int lev = 0; lev < geom->nk; lev++) {
-            horiz->update_deltas(lev, theta_h->vl, velx_j->vl[lev], velx_j->vh[lev], rho_j->vl[lev], rt_j->vl[lev], exner_j->vl[lev],
+            if(!rank) cout << "updating corrections for level: " << lev << endl;
+
+            //horiz->update_deltas(lev, theta_h->vl, velx_j->vl[lev], velx_j->vh[lev], rho_j->vl[lev], rt_j->vl[lev], exner_h->vl[lev],
+            horiz->update_deltas(lev, theta_h->vl, velx_h->vl[lev], velx_h->vh[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
                                  F_u->vh[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], 
                                  d_u->vh[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], gradPi->vl[lev]);
         }
-        d_rho->UpdateLocal();
-        d_rho->HorizToVert();
+        d_rho->UpdateLocal(); d_rho->HorizToVert();
 
         // update solutions
         for(int lev = 0; lev < geom->nk; lev++) {
@@ -544,22 +554,25 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
             VecZeroEntries(rt_h->vz[ii]);
             VecAXPY(rt_h->vz[ii], 0.5, rt_i->vz[ii]);
             VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
+            VecZeroEntries(velz_h->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_i->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_j->vz[ii]);
         }
         theta_h->VertToHoriz(); theta_h->UpdateGlobal();
         exner_h->VertToHoriz(); exner_h->UpdateGlobal();
         rho_h->VertToHoriz(); rho_h->UpdateGlobal();
         rt_h->VertToHoriz(); rt_h->UpdateGlobal();
-        horiz->diagHorizVort(velx_j->vh, dudz_j->vh);
 
-        d_rho->VertToHoriz(); d_rho->UpdateGlobal();
-        d_rt->VertToHoriz(); d_rt->UpdateGlobal();
+        horiz->diagHorizVort(velx_j->vh, dudz_j->vh);
+        dudz_j->UpdateLocal();
+
         GlobalNorms(itt, d_u->vh, velx_j->vh, d_w, velz_j, d_rho, rho_j, d_rt, rt_j, d_exner, exner_j,
                     &max_norm_u, &max_norm_w, &max_norm_rho, &max_norm_rt, &max_norm_exner, h_tmp, u_tmp_1, F_z);
 
-        firstStep = false;
-        if(max_norm_exner < 1.0e-8 && max_norm_u < 1.0e-8 && max_norm_w < 1.0e-8) done = true;
         itt++;
-        if(itt > 20) done = true;
+        if((max_norm_exner < 1.0e-8 && max_norm_u < 1.0e-8 && max_norm_w < 1.0e-8) || itt > 20) done = true;
+
+        schur->DestroyMatrix();
     } while(!done);
 
     // copy the solutions back to the input vectors
@@ -573,6 +586,7 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
     if(save) dump(velx, velz_i, rho_i, rt_i, exner_i, theta_h, step++);
 
     delete velz_j;
+    delete velz_h;
     delete rho_j;
     delete rt_j;
     delete exner_j;
@@ -589,7 +603,6 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
     delete d_rho;
     delete d_rt;
     delete d_exner;
-    delete lap_d_exner;
     delete velx_i;
     delete velx_j;
     delete velx_h;

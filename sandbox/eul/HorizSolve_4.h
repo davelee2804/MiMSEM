@@ -63,7 +63,7 @@ class HorizSolve {
         void assemble_residual(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi,
                                Vec velx1, Vec velx2, Vec rho1, Vec rho2, Vec fu, Vec _F, Vec _G, Vec uil, Vec ujl, Vec grad_pi);
 
-        void coriolisMatInv(Mat A, Mat* Ainv);
+        void coriolisMatInv(Mat A, Mat* Ainv, MatReuse reuse);
         void assemble_biharmonic(int lev, MatReuse reuse, Mat* BVISC);
         void assemble_biharmonic_temp(int lev, Vec rho, MatReuse reuse, Mat* BVISC);
 

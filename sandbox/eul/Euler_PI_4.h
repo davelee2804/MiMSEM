@@ -7,7 +7,6 @@ class Euler {
         double dt;
         int rank;
         int step;
-        bool firstStep;
         Topo* topo;
         Geom* geom;
         GaussLobatto* quad;
