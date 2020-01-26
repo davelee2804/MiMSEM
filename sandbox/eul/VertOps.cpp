@@ -18,12 +18,12 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-//#define SCALE 1.0e+11
+#define NEW_EOS 1
 
 using namespace std;
 
 VertOps::VertOps(Topo* _topo, Geom* _geom) {
-    int N2;
+    int N2, ii;
 
     topo = _topo;
     geom = _geom;
@@ -45,6 +45,8 @@ VertOps::VertOps(Topo* _topo, Geom* _geom) {
     WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
     WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    WtQW_2 = Alloc2D(W->nDofsJ, W->nDofsJ);
+    WtQW_3 = Alloc2D(W->nDofsJ, W->nDofsJ);
 
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
@@ -95,9 +97,20 @@ VertOps::VertOps(Topo* _topo, Geom* _geom) {
     MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+1)*n2, 2*N2, NULL, &VBA2);
 
     vertOps();
+
+    A3 = new double*[3];
+    A3inv = new double*[3];
+    for(ii = 0; ii < 3; ii++) {
+        A3[ii] = new double[3];
+        A3inv[ii] = new double[3];
+    }
+    rho_q = new double[(quad->n+1)*(quad->n+1)*geom->nk];
+    rho_e = new double[(quad->n+1)*(quad->n+1)*(geom->nk-1)];
 }
 
 VertOps::~VertOps() {
+    int ii;
+
     Free2D(Q->nDofsI, Q0);
     Free2D(Q->nDofsI, QT);
     Free2D(Q->nDofsI, QB);
@@ -106,12 +119,15 @@ VertOps::~VertOps() {
     Free2D(W->nDofsJ, WtQW);
     Free2D(W->nDofsJ, WtQWinv);
     delete[] WtQWflat;
-    delete Q;
-    delete W;
+    Free2D(W->nDofsJ, WtQW_2);
+    Free2D(W->nDofsJ, WtQW_3);
 
     delete quad;
     delete node;
     delete edge;
+
+    delete Q;
+    delete W;
 
     MatDestroy(&V10);
     MatDestroy(&V01);
@@ -129,6 +145,15 @@ VertOps::~VertOps() {
     MatDestroy(&VA2);
     MatDestroy(&VAB2);
     MatDestroy(&VBA2);
+
+    for(ii = 0; ii < 3; ii++) {
+        delete[] A3[ii];
+        delete[] A3inv[ii];
+    }
+    delete[] A3;
+    delete[] A3inv;
+    delete[] rho_q;
+    delete[] rho_e;
 }
 
 /*
@@ -983,7 +1008,6 @@ void VertOps::AssembleRayleigh(int ex, int ey, Mat A) {
     }
     MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
 
-/*
     // second from top level
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
@@ -1017,6 +1041,7 @@ void VertOps::AssembleRayleigh(int ex, int ey, Mat A) {
         inds2k[ii] = ii + (geom->nk-4)*W->nDofsJ;
     }
     MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+/*
 */
 
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
@@ -1528,6 +1553,16 @@ void VertOps::AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B) {
     MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
 }
 
+void _matvec(double** A, double* x, double* b, int ni, int nj) {
+    int ii, jj;
+    for(ii = 0; ii < ni; ii++) {
+        b[ii] = 0.0;
+        for(jj = 0; jj < nj; jj++) {
+            b[ii] += A[ii][jj]*x[jj];
+        }
+    }
+}
+
 void VertOps::Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs) {
     int ii, jj, kk, ei, mp1, mp12;
     int *inds0;
@@ -1678,7 +1713,6 @@ void VertOps::Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Vec theta, Mat B) {
         }
 
         Inv(B_BinvB, WtQWinv, n2);
-
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 
         for(ii = 0; ii < W->nDofsJ; ii++) {
@@ -2029,4 +2063,412 @@ void VertOps::AssembleLinearWithW(int ex, int ey, Vec velz, Mat A) {
     VecRestoreArray(velz, &wArray);
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+}
+
+// assumes that zi are vertical distances relative to the edge at which 
+// the flux is to be computed
+double interpRhoAtEdge(double** A, double** Ainv, double* ri, double* zi) {
+    int ii;
+    double re = 0.0;
+
+    for(ii = 0; ii < 3; ii++) {
+        A[ii][0] = 1.0;
+        A[ii][1] = zi[ii];
+        A[ii][2] = zi[ii]*zi[ii];
+    }
+    Inv(A, Ainv, 3);
+    for(ii = 0; ii < 3; ii++) {
+        re += Ainv[0][ii]*ri[ii];
+    }
+    return re;
+}
+
+void VertOps::AssembleLinearWithRho_up(int ex, int ey, Vec rho, Vec vel, Mat A) {
+    int ii, kk, ei, mp1, mp12;
+    double det, zi[3], ri[3];
+    int inds2k[99];
+    int* inds0 = topo->elInds0_l(ex, ey);
+    PetscScalar *rArray, *vArray;
+
+    ei    = ey*topo->nElsX + ex;
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    Q->assemble(ex, ey);
+
+    MatZeroEntries(A);
+
+    // assemble the matrices
+    VecGetArray(rho, &rArray);
+    VecGetArray(vel, &vArray);
+
+    // interpolate rho at quadrature points
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &rho_q[kk*mp12+ii]);
+            rho_q[kk*mp12+ii] *= 1.0/geom->thick[kk][inds0[ii]];
+        }
+    }
+
+    // interpolate upwinded rho at the edges
+    // first & last edge (piecewise constant upwinding)
+    for(ii = 0; ii < mp12; ii++) {
+        rho_e[ii]                   = (vArray[ii] > 0.0) ? rho_q[ii]                   : rho_q[mp12+ii];
+        rho_e[(geom->nk-2)*mp12+ii] = (vArray[ii] > 0.0) ? rho_q[(geom->nk-2)*mp12+ii] : rho_q[(geom->nk-1)*mp12+ii];
+    }
+    // quadratic upwinding for the internal levels
+    for(kk = 1; kk < geom->nk-2; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            if(vArray[kk*mp12+ii] > 0.0) {
+                ri[0] = rho_q[(kk-1)*mp12+ii];
+                ri[1] = rho_q[(kk+0)*mp12+ii];
+                ri[2] = rho_q[(kk+1)*mp12+ii];
+                zi[0] = -0.5*geom->thick[kk-1][inds0[ii]] - geom->thick[kk+0][inds0[ii]];
+                zi[1] = -0.5*geom->thick[kk+0][inds0[ii]];
+                zi[2] = +0.5*geom->thick[kk+1][inds0[ii]];
+            } else {
+                ri[0] = rho_q[(kk+0)*mp12+ii];
+                ri[1] = rho_q[(kk+1)*mp12+ii];
+                ri[2] = rho_q[(kk+2)*mp12+ii];
+                zi[0] = -0.5*geom->thick[kk+0][inds0[ii]];
+                zi[1] = +0.5*geom->thick[kk+1][inds0[ii]];
+                zi[2] = +0.5*geom->thick[kk+2][inds0[ii]] + geom->thick[kk+1][inds0[ii]];
+            }
+            rho_e[kk*mp12+ii] = interpRhoAtEdge(A3, A3inv, ri, zi);
+        }
+    }
+    VecRestoreArray(rho, &rArray);
+    VecRestoreArray(vel, &vArray);
+
+    // assemble the right hand side
+    Q->assemble(ex, ey);
+    MatZeroEntries(A);
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            QB[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+            QB[ii][ii] *= 0.5*geom->thick[kk][inds0[ii]];
+            QT[ii][ii]  = QB[ii][ii];
+
+            QB[ii][ii]  = (kk < geom->nk-1) ? rho_e[(kk+0)*mp12+ii]*QB[ii][ii] : 0.0;
+            QT[ii][ii]  = (kk > 0         ) ? rho_e[(kk-1)*mp12+ii]*QT[ii][ii] : 0.0;
+        }
+
+        // assemble the first basis function
+        if(kk > 0) {
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QB, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                inds2k[ii] = ii + (kk-1)*W->nDofsJ;
+            }
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        }
+
+        // assemble the second basis function
+        if(kk < geom->nk - 1) {
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QT, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                inds2k[ii] = ii + (kk+0)*W->nDofsJ;
+            }
+            MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  A, MAT_FINAL_ASSEMBLY);
+}
+
+void VertOps::AssembleLinearWithRayleighInv(int ex, int ey, double dt_fric, Mat A) {
+    int kk, ii, rows[99], ei, *inds0, mp1, mp12;
+    double det;
+
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+    mp1   = quad->n+1;
+    mp12  = mp1*mp1;
+
+    Q->assemble(ex, ey);
+
+    MatZeroEntries(A);
+
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 0.5*(geom->thick[kk+0][inds0[ii]] + geom->thick[kk+1][inds0[ii]]);
+            if(kk == geom->nk-1)      Q0[ii][ii] *= (1.0 + 1.00*dt_fric);
+            else if(kk == geom->nk-2) Q0[ii][ii] *= (1.0 + 0.50*dt_fric);
+            else if(kk == geom->nk-3) Q0[ii][ii] *= (1.0 + 0.25*dt_fric);
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+        // take the inverse
+        Inv(WtQW, WtQWinv, n2);
+        // add to matrix
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(A, W->nDofsJ, rows, W->nDofsJ, rows, WtQWflat, ADD_VALUES);
+    }
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+}
+
+void VertOps::AssembleLinearWithThetaInv(int ex, int ey, Vec theta, Mat A) {
+    int kk, ii, jj, rows[99], ei, *inds0, mp1, mp12;
+    double det, rb, rt, gamma;
+    PetscScalar* tArray;
+
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+    mp1   = quad->n+1;
+    mp12  = mp1*mp1;
+
+    Q->assemble(ex, ey);
+
+    MatZeroEntries(A);
+
+    VecGetArray(theta, &tArray);
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            rb = rt = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                rb += tArray[(kk+0)*n2+jj]*gamma;
+                rt += tArray[(kk+1)*n2+jj]*gamma;
+            }
+            rb *= geom->thick[kk+0][inds0[ii]];
+            rt *= geom->thick[kk+1][inds0[ii]];
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 0.5*(rb + rt)/det;
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Inv(WtQW, WtQWinv, n2);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(A, W->nDofsJ, rows, W->nDofsJ, rows, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(theta, &tArray);
+
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+}
+
+void VertOps::Assemble_EOS_Residual_new(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs) {
+    int ii, jj, kk, ei, mp1, mp12;
+    int *inds0;
+    double det, rk, ek;
+    double exq[99], tmp1[99], tmp2[99], tmp3[99];
+    PetscScalar *rArray, *eArray, *fArray;
+
+    inds0 = topo->elInds0_l(ex, ey);
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+    ei    = ey*topo->nElsX + ex;
+
+    Q->assemble(ex, ey);
+
+    VecZeroEntries(eos_rhs);
+
+    // assemble the eos rhs vector
+    VecGetArray(rt, &rArray);
+    VecGetArray(exner, &eArray);
+    VecGetArray(eos_rhs, &fArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        // interpolate the exner pressure and the density weighted potential temperature
+        // to the quadrature points
+        for(ii = 0; ii < mp12; ii++) {
+            rk = ek = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                rk += W->A[ii][jj]*rArray[kk*n2+jj];
+                ek += W->A[ii][jj]*eArray[kk*n2+jj];
+            }
+            // scale by matric term and vertical basis function at quadrature point ii
+            det = geom->det[ei][ii];
+            rk *= 1.0/(det*geom->thick[kk][inds0[ii]]);
+            ek *= 1.0/(det*geom->thick[kk][inds0[ii]]);
+
+            Q0[ii][ii]  = rk*Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+            exq[ii] = pow(ek/CP, CV/RD);
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsI, WtQ, W->A, WtQW);
+        Inv(WtQW, WtQWinv, n2);
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsI, WtQ, W->A, WtQW);
+
+        for(ii = 0; ii < mp12; ii++) {
+            Q0[ii][ii]  = Q->A[ii][ii]*SCALE;
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+
+        _matvec(WtQ, exq, tmp1, n2, mp12);
+        _matvec(WtQWinv, tmp1, tmp2, n2, n2);
+        _matvec(WtQW, tmp2, tmp3, n2, n2);
+
+        for(ii = 0; ii < mp12; ii++) tmp1[ii] = 1.0;
+        _matvec(WtQ, tmp1, tmp2, n2, mp12);
+        for(ii = 0; ii < n2; ii++) {
+            fArray[kk*n2+ii] = tmp2[ii] - (P0/RD)*tmp3[ii];
+        }
+    }
+    VecRestoreArray(rt, &rArray);
+    VecRestoreArray(exner, &eArray);
+    VecRestoreArray(eos_rhs, &fArray);
+}
+
+void VertOps::AssembleN_PiInv(int ex, int ey, Vec rt, Vec pi, Mat A, bool do_inverse) {
+    int ii, jj, kk, ei, mp1, mp12, rows[99];
+    int* inds0 = topo->elInds0_l(ex, ey);
+    double det, rq, eq, rtq[99];
+    double fac = -1.0*(RD/P0)*(RD/CV)*pow(CP, CV/RD);
+    PetscScalar *rtArray, *piArray;
+
+    ei    = ey*topo->nElsX + ex;
+    mp1   = quad->n+1;
+    mp12  = mp1*mp1;
+
+    Q->assemble(ex, ey);
+    MatZeroEntries(A);
+
+    VecGetArray(rt, &rtArray);
+    VecGetArray(pi, &piArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            rq = eq = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                rq += W->A[ii][jj]*rtArray[kk*n2+jj];
+                eq += W->A[ii][jj]*piArray[kk*n2+jj];
+            }
+            // scale by matric term and vertical basis function at quadrature point ii
+            det = geom->det[ei][ii];
+            rq *= 1.0/(det*geom->thick[kk][inds0[ii]]);
+            eq *= 1.0/(det*geom->thick[kk][inds0[ii]]);
+
+            rtq[ii] = rq;
+
+            Q0[ii][ii]  = pow(eq, (CV-RD)/RD) * Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW_2); // pi^{(c_v-R)/R}
+
+        for(ii = 0; ii < mp12; ii++) {
+            Q0[ii][ii]  = rtq[ii] * Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Inv(WtQW, WtQWinv, n2);                                      // rt^{-1}
+
+        for(ii = 0; ii < mp12; ii++) {
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);   // M_2
+
+        Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW, WtQWinv, WtQW_3);
+        Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW_3, WtQW_2, WtQW);
+        if(do_inverse) {
+            Inv(WtQW, WtQWinv, n2);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+            for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] *= fac;
+        } else {
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+            for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] /= fac;
+        }
+        for(ii = 0; ii < n2; ii++) rows[ii] = kk*n2 + ii;;
+
+        MatSetValues(A, W->nDofsJ, rows, W->nDofsJ, rows, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(rt, &rtArray);
+    VecRestoreArray(pi, &piArray);
+
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  A, MAT_FINAL_ASSEMBLY);
+}
+
+void VertOps::AssembleN_RT(int ex, int ey, Vec rt, Vec pi, Mat A) {
+    int ii, jj, kk, ei, mp1, mp12, rows[99];
+    int* inds0 = topo->elInds0_l(ex, ey);
+    double det, rq, eq, rtq[99];
+    double fac = (P0/RD);
+    PetscScalar *rtArray, *piArray;
+
+    ei    = ey*topo->nElsX + ex;
+    mp1   = quad->n+1;
+    mp12  = mp1*mp1;
+
+    Q->assemble(ex, ey);
+    MatZeroEntries(A);
+
+    VecGetArray(rt, &rtArray);
+    VecGetArray(pi, &piArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            rq = eq = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                rq += W->A[ii][jj]*rtArray[kk*n2+jj];
+                eq += W->A[ii][jj]*piArray[kk*n2+jj];
+            }
+            // scale by matric term and vertical basis function at quadrature point ii
+            det = geom->det[ei][ii];
+            rq *= 1.0/(det*geom->thick[kk][inds0[ii]]);
+            eq *= 1.0/(det*geom->thick[kk][inds0[ii]]);
+
+            rtq[ii] = rq*rq;
+
+            Q0[ii][ii]  = pow(eq/CP, CV/RD) * Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW_2); // (pi/cp)^{c_v/R}
+
+        for(ii = 0; ii < mp12; ii++) {
+            Q0[ii][ii]  = rtq[ii] * Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Inv(WtQW, WtQWinv, n2);                                      // rt^{-2}
+
+        for(ii = 0; ii < mp12; ii++) {
+            Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+        }
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);   // M_2
+
+        Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW, WtQWinv, WtQW_3);
+        Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW_3, WtQW_2, WtQW);
+
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+        for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] *= fac;
+        for(ii = 0; ii < n2; ii++) rows[ii] = kk*n2 + ii;;
+
+        MatSetValues(A, W->nDofsJ, rows, W->nDofsJ, rows, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(rt, &rtArray);
+    VecRestoreArray(pi, &piArray);
+
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  A, MAT_FINAL_ASSEMBLY);
 }

@@ -22,6 +22,14 @@ class VertOps {
         double** WtQWinv;
         double* WtQWflat;
 
+        double** WtQW_2;
+        double** WtQW_3;
+
+        double** A3;
+        double** A3inv;
+        double* rho_q;
+        double* rho_e;
+
         Mat V01;      // vertical gradient operator
         Mat V10;      // vertical divergence operator
         Mat V10_full; // vertical divergence operator with non-homogeneous bcs
@@ -72,4 +80,12 @@ class VertOps {
         void AssembleConstWithThetaExp(int ex, int ey, Vec theta, double exponent, Mat B);
         void AssembleConstWithRhoExp(int ex, int ey, Vec rho, double exponent, Mat B);
         void AssembleLinearWithW(int ex, int ey, Vec velz, Mat A);
+        void AssembleLinearWithRho_up(int ex, int ey, Vec rho, Vec vel, Mat A);
+        void AssembleLinearWithRayleighInv(int ex, int ey, double dt_fric, Mat A);
+        void AssembleLinearWithThetaInv(int ex, int ey, Vec theta, Mat A);
+
+        // new eos
+        void Assemble_EOS_Residual_new(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs);
+        void AssembleN_PiInv(int ex, int ey, Vec rt, Vec pi, Mat A, bool do_invese);
+        void AssembleN_RT(int ex, int ey, Vec rt, Vec pi, Mat A);
 };
