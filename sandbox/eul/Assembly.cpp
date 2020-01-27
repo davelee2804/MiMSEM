@@ -2312,3 +2312,238 @@ void WtQPmat::assemble(int lev, double scale) {
 WtQPmat::~WtQPmat() {
     MatDestroy(&M);
 }
+
+N_RTmat::N_RTmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    e = _e;
+
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+
+    delete W;
+}
+
+void N_RTmat::assemble(int lev, double scale, Vec rt, Vec pi) {
+    int ex, ey, ei, n2, mp1, mp12, ii, jj, *inds2_l, *inds2_g, *inds0;
+    double det, rt_i, pi_i, rt_q[99];
+    double fac = (P0/RD);
+    Wii* Q = new Wii(e->l->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQW_2 = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQW_3 = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar *rtArray, *piArray;
+
+    MatZeroEntries(M);
+
+    n2   = W->nDofsJ;
+    mp1  = e->l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    VecGetArray(rt, &rtArray);
+    VecGetArray(pi, &piArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0   = topo->elInds0_l(ex, ey);
+            inds2_l = topo->elInds2_l(ex, ey);
+            inds2_g = topo->elInds2_g(ex, ey);
+
+            Q->assemble(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                rt_i = pi_i = 0.0;
+                for(jj = 0; jj < n2; jj++) {
+                    rt_i += W->A[ii][jj]*rtArray[inds2_l[jj]];
+                    pi_i += W->A[ii][jj]*piArray[inds2_l[jj]];
+                }
+                det = geom->det[ei][ii];
+                rt_i *= 1.0/(det*geom->thick[lev][inds0[ii]]);
+                pi_i *= 1.0/(det*geom->thick[lev][inds0[ii]]);
+
+                rt_q[ii] = rt_i*rt_i;
+
+                Qaa[ii][ii]  = pow(pi_i/CP, CV/CP) * Q->A[ii][ii] * (scale/det);
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+            }
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW_2); // (pi/cp)^{c_v/R}
+
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Qaa[ii][ii]  = rt_q[ii] * Q->A[ii][ii]*(scale/det);
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+            }
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Inv(WtQW, WtQWinv, n2);                                      // rt^{-2}
+
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det);
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+            }
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);   // M_2
+
+            Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW, WtQWinv, WtQW_3);
+            Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW_3, WtQW_2, WtQW);
+
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+            for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] *= fac;
+
+            MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQWflat, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
+    VecRestoreArray(rt, &rtArray);
+    VecRestoreArray(pi, &piArray);
+
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQW_2);
+    Free2D(W->nDofsJ, WtQW_3);
+    Free2D(W->nDofsJ, WtQWinv);
+    delete W;
+    delete Q;
+    delete[] WtQWflat;
+}
+
+N_RTmat::~N_RTmat() {
+    MatDestroy(&M);
+}
+
+N_PiInv_mat::N_PiInv_mat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    e = _e;
+
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+
+    delete W;
+}
+
+void N_PiInv_mat::assemble(int lev, double scale, Vec rt, Vec pi) {
+    int ex, ey, ei, n2, mp1, mp12, ii, jj, *inds2_l, *inds2_g, *inds0;
+    double det, rt_i, pi_i, rt_q[99];
+    double fac = -1.0*(RD/P0)*(RD/CV)*pow(CP, CV/RD);
+    Wii* Q = new Wii(e->l->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQW_2 = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQW_3 = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar *rtArray, *piArray;
+
+    MatZeroEntries(M);
+
+    n2   = W->nDofsJ;
+    mp1  = e->l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    VecGetArray(rt, &rtArray);
+    VecGetArray(pi, &piArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0   = topo->elInds0_l(ex, ey);
+            inds2_l = topo->elInds2_l(ex, ey);
+            inds2_g = topo->elInds2_g(ex, ey);
+
+            Q->assemble(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                rt_i = pi_i = 0.0;
+                for(jj = 0; jj < n2; jj++) {
+                    rt_i += W->A[ii][jj]*rtArray[inds2_l[jj]];
+                    pi_i += W->A[ii][jj]*piArray[inds2_l[jj]];
+                }
+                det = geom->det[ei][ii];
+                rt_i *= 1.0/(det*geom->thick[lev][inds0[ii]]);
+                pi_i *= 1.0/(det*geom->thick[lev][inds0[ii]]);
+
+                rt_q[ii] = rt_i;
+
+                Qaa[ii][ii]  = pow(pi_i, (CV-RD)/RD) * Q->A[ii][ii] * (scale/det);
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+            }
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW_2); // pi^{(c_v-R)/R}
+
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Qaa[ii][ii]  = rt_q[ii] * Q->A[ii][ii]*(scale/det);
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+            }
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Inv(WtQW, WtQWinv, n2);                                      // rt^{-1}
+
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det);
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+            }
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);   // M_2
+
+            Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW, WtQWinv, WtQW_3);
+            Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW_3, WtQW_2, WtQW);
+            Inv(WtQW, WtQWinv, n2);
+
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+            for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] *= fac;
+
+            MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQWflat, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
+    VecRestoreArray(rt, &rtArray);
+    VecRestoreArray(pi, &piArray);
+
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQW_2);
+    Free2D(W->nDofsJ, WtQW_3);
+    Free2D(W->nDofsJ, WtQWinv);
+    delete W;
+    delete Q;
+    delete[] WtQWflat;
+}
+
+N_PiInv_mat::~N_PiInv_mat() {
+    MatDestroy(&M);
+}

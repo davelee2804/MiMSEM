@@ -374,3 +374,25 @@ class WtQPmat {
         Mat M;
         void assemble(int lev, double scale);
 };
+
+class N_RTmat {
+    public:
+        N_RTmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~N_RTmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(int lev, double scale, Vec rt, Vec pi);
+};
+
+class N_PiInv_mat {
+    public:
+        N_PiInv_mat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~N_PiInv_mat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(int lev, double scale, Vec rt, Vec pi);
+};
