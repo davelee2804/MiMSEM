@@ -2371,6 +2371,7 @@ void VertOps::AssembleN_PiInv(int ex, int ey, Vec rt, Vec pi, Mat A, bool do_inv
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW_2); // pi^{(c_v-R)/R}
 
         for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
             Q0[ii][ii]  = rtq[ii] * Q->A[ii][ii]*(SCALE/det);
             Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
         }
@@ -2379,6 +2380,7 @@ void VertOps::AssembleN_PiInv(int ex, int ey, Vec rt, Vec pi, Mat A, bool do_inv
         Inv(WtQW, WtQWinv, n2);                                      // rt^{-1}
 
         for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
             Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
             Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
         }
@@ -2443,6 +2445,7 @@ void VertOps::AssembleN_RT(int ex, int ey, Vec rt, Vec pi, Mat A) {
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW_2); // (pi/cp)^{c_v/R}
 
         for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
             Q0[ii][ii]  = rtq[ii] * Q->A[ii][ii]*(SCALE/det);
             Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
         }
@@ -2451,6 +2454,7 @@ void VertOps::AssembleN_RT(int ex, int ey, Vec rt, Vec pi, Mat A) {
         Inv(WtQW, WtQWinv, n2);                                      // rt^{-2}
 
         for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
             Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
             Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
         }
