@@ -1,3 +1,5 @@
+#define NEW_EOS 1
+
 typedef double (ICfunc3D) (double* xi, int ki);
 
 class HorizSolve {
@@ -32,8 +34,13 @@ class HorizSolve {
         UtQWmat* Rh;
         WmatInv* M2inv;
         WhmatInv* M2_rho_inv;
+#ifdef NEW_EOS
+        N_PiInv_mat* N2_pi_inv;
+        N_RTmat* N2_rt;
+#else
         N_rt_Inv* N2_pi_inv;
         N_rt_Inv* N2_rt;
+#endif
         Vec* fg;                 // coriolis vector (global)
         Vec* fl;                 // coriolis vector (local)
         Vec* gv;                 // gravity vector

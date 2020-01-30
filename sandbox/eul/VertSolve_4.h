@@ -74,7 +74,7 @@ class VertSolve {
 
         KSP ksp_pi, ksp_rho, ksp_w;
 
-    private:
+    //private:
         // vertical vectors and matrices
         Vec _Phi_z;
         Vec _theta_h;

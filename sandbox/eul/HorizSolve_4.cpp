@@ -27,8 +27,9 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-//#define RAYLEIGH 0.4
+#define RAYLEIGH 0.4
 //#define IMP_VISC 1
+#define NEW_EOS 1
 
 using namespace std;
 
@@ -89,8 +90,13 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     // additional operators for the preconditioner
     M2inv = new WmatInv(topo, geom, edge);
     M2_rho_inv = new WhmatInv(topo, geom, edge);
+#ifdef NEW_EOS
+    N2_pi_inv = new N_PiInv_mat(topo, geom, edge);
+    N2_rt = new N_RTmat(topo, geom, edge);
+#else
     N2_pi_inv = new N_rt_Inv(topo, geom, edge);
     N2_rt = new N_rt_Inv(topo, geom, edge);
+#endif
 
     // coriolis vector (projected onto 0 forms)
     coriolis();
@@ -891,11 +897,18 @@ void HorizSolve::solve_schur_level(int lev, Vec* theta, Vec velx_l, Vec velx_g, 
     MatScale(Q_rt_rho, dt);
 
     // N_rt
+#ifdef NEW_EOS
+    N2_rt->assemble(lev, SCALE, rt, pi);
+#else
     N2_rt->assemble(rt, lev, SCALE, false);
     MatScale(N2_rt->M, -1.0*RD/CV);
-
+#endif
     // N_pi (inverse)
+#ifdef NEW_EOS
+    N2_pi_inv->assemble(lev, SCALE, rt, pi);
+#else
     N2_pi_inv->assemble(pi, lev, SCALE, true);
+#endif
 
     // M_u (inverse)
 #ifdef IMP_VISC
@@ -1103,11 +1116,19 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx_l, Vec velx_g
     MatScale(Q_rt_rho, dt);
 
     // N_rt
+#ifdef NEW_EOS
+    N2_rt->assemble(lev, SCALE, rt, pi);
+#else
     N2_rt->assemble(rt, lev, SCALE, false);
     MatScale(N2_rt->M, -1.0*RD/CV);
+#endif
 
     // N_pi (inverse)
+#ifdef NEW_EOS
+    N2_pi_inv->assemble(lev, SCALE, rt, pi);
+#else
     N2_pi_inv->assemble(pi, lev, SCALE, true);
+#endif
 
     // M_u (inverse)
 #ifdef IMP_VISC
@@ -1239,11 +1260,19 @@ void HorizSolve::update_deltas(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec 
     MatScale(D_rho, 0.5*dt);
 
     // N_rt
+#ifdef NEW_EOS
+    N2_rt->assemble(lev, SCALE, rt, pi);
+#else
     N2_rt->assemble(rt, lev, SCALE, false);
     MatScale(N2_rt->M, -1.0*RD/CV);
+#endif
 
     // N_pi (inverse)
+#ifdef NEW_EOS
+    N2_pi_inv->assemble(lev, SCALE, rt, pi);
+#else
     N2_pi_inv->assemble(pi, lev, SCALE, true);
+#endif
 
     // M_u (inverse)
 #ifdef IMP_VISC
@@ -1390,7 +1419,11 @@ void HorizSolve::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
         exner_j->UpdateLocal();
         exner_j->HorizToVert();
         for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+#ifdef NEW_EOS
+            vo->Assemble_EOS_Residual_new(ii%topo->nElsX, ii/topo->nElsX, rt_j->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
+#else
             vo->Assemble_EOS_Residual(ii%topo->nElsX, ii/topo->nElsX, rt_j->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
+#endif
         }
         F_exner->VertToHoriz();
         F_exner->UpdateGlobal();

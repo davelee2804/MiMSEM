@@ -27,9 +27,9 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-//#define RAYLEIGH 0.4
+#define RAYLEIGH 0.4
 //#define VISC 0
-//#define NEW_EOS 1
+#define NEW_EOS 1
 
 using namespace std;
 
@@ -790,12 +790,8 @@ void VertSolve::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, 
     const double* vals;
     int cols2[999];
     MatReuse reuse = (!*_PC) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
-    bool firstPass = false;
 
-    if(!*_PC) {
-        MatCreateSeqAIJ(MPI_COMM_SELF, nDofsTotal, nDofsTotal, 12*n2, NULL, _PC);
-        firstPass = true;
-    }
+    if(!*_PC) MatCreateSeqAIJ(MPI_COMM_SELF, nDofsTotal, nDofsTotal, 12*n2, NULL, _PC);
     MatZeroEntries(*_PC);
 
     // [u,u] block
@@ -1179,6 +1175,9 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
         MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+0)*n2, n2, NULL, &M_rho_inv);
         MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+0)*n2, n2, NULL, &M_rt);
         MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+0)*n2, n2, NULL, &N_pi_inv);
+#ifdef NEW_EOS
+        MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+0)*n2, n2, NULL, &N_rt);
+#endif
     }
 
     // assemble the operators for the coupled system
@@ -1189,8 +1188,11 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
 #endif
     vo->AssembleConst(ex, ey, M_rt);
     vo->AssembleConstInv(ex, ey, M_rho_inv);
+#ifdef NEW_EOS
+    vo->AssembleN_PiInv(ex, ey, rt, pi, N_pi_inv, true);
+#else
     vo->Assemble_EOS_BlockInv(ex, ey, pi, NULL, N_pi_inv);
-
+#endif
     vo->AssembleConst(ex, ey, vo->VB);
     MatMult(vo->VB, pi, _tmpB1);
     MatMult(vo->V01, _tmpB1, _tmpA1);
@@ -1222,13 +1224,15 @@ void VertSolve::assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho
     vo->AssembleConstWithRho(ex, ey, rt, vo->VB);
     MatMatMult(vo->VB, vo->V10, reuse, PETSC_DEFAULT, &D_rt);
     MatScale(D_rt, 0.5*dt);
-
+#ifdef NEW_EOS
+    vo->AssembleN_RT(ex, ey, rt, pi, N_rt);
+#else
     vo->AssembleConst(ex, ey, vo->VB);
     vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB_inv);
     MatMatMult(vo->VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
     MatMatMult(vo->VB, pc_VB_rt_invVB_pi, reuse, PETSC_DEFAULT, &N_rt);
     MatScale(N_rt, -1.0*RD/CV);
-
+#endif
     vo->AssembleConstWithTheta(ex, ey, theta, vo->VB);
     MatMatMult(vo->V01, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DTV1);
     vo->AssembleLinearInv(ex, ey, vo->VA_inv);
@@ -1287,8 +1291,11 @@ void VertSolve::update_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
     vo->AssembleLinearInv(ex, ey, M_u_inv);
 #endif
     vo->AssembleConstInv(ex, ey, M_rho_inv);
+#ifdef NEW_EOS
+    vo->AssembleN_PiInv(ex, ey, rt, pi, N_pi_inv, true);
+#else
     vo->Assemble_EOS_BlockInv(ex, ey, pi, NULL, N_pi_inv);
-
+#endif
     vo->AssembleConst(ex, ey, vo->VB);
     MatMult(vo->VB, pi, _tmpB1);
     MatMult(vo->V01, _tmpB1, _tmpA1);
@@ -1316,13 +1323,15 @@ void VertSolve::update_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
     vo->AssembleConst(ex, ey, vo->VB);
     MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &D_rho);
     MatScale(D_rho, 0.5*dt);
-
+#ifdef NEW_EOS
+    vo->AssembleN_RT(ex, ey, rt, pi, N_rt);
+#else
     vo->AssembleConst(ex, ey, vo->VB);
     vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB_inv);
     MatMatMult(vo->VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
     MatMatMult(vo->VB, pc_VB_rt_invVB_pi, reuse, PETSC_DEFAULT, &N_rt);
     MatScale(N_rt, -1.0*RD/CV);
-
+#endif
     vo->AssembleConstWithTheta(ex, ey, theta, vo->VB);
     MatMatMult(vo->V01, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DTV1);
     vo->AssembleLinearInv(ex, ey, vo->VA_inv);
