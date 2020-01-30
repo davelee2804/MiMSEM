@@ -22,9 +22,10 @@
 #include "Schur.h"
 #include "Euler_PI_4.h"
 
-#define RD 287.0
-#define CV 717.5
+#define GRAVITY 9.80616
 #define SCALE 1.0e+8
+#define RAYLEIGH 0.4
+#define NEW_EOS 1
 
 using namespace std;
 
@@ -238,7 +239,7 @@ void Euler::initTheta(Vec theta, ICfunc3D* func) {
 }
 
 void Euler::GlobalNorms(int itt, Vec* duh, Vec* uh, L2Vecs* duz, L2Vecs* uz, L2Vecs* drho, L2Vecs* rho, L2Vecs* drt, L2Vecs* rt, L2Vecs* dexner, L2Vecs* exner,
-                        double* norm_u, double* norm_w, double* norm_rho, double* norm_rt, double* norm_exner, Vec h_tmp, Vec u_tmp, Vec u_tmp_z) {
+                        double* norm_u, double* norm_w, double* norm_rho, double* norm_rt, double* norm_exner, Vec h_tmp, Vec u_tmp, Vec u_tmp_z, bool prnt) {
     double norm_x_rho, norm_dx_rho, norm_x_rt, norm_dx_rt, norm_x_exner, norm_dx_exner, norm_dx_u, norm_x_u, dot_x, dot_dx;
 
     norm_x_rho = norm_dx_rho = 0.0;
@@ -303,7 +304,7 @@ void Euler::GlobalNorms(int itt, Vec* duh, Vec* uh, L2Vecs* duz, L2Vecs* uz, L2V
     }
     *norm_u = sqrt(norm_dx_u/norm_x_u);
 
-    if(!rank) cout << itt << ":\t|d_exner|/|exner|: " << *norm_exner << 
+    if(!rank && prnt) cout << itt << ":\t|d_exner|/|exner|: " << *norm_exner << 
                               "\t|d_rho|/|rho|: "     << *norm_rho   <<
                               "\t|d_rt|/|rt|: "       << *norm_rt    <<
                               "\t|d_u|/|u|: "         << *norm_u     <<
@@ -314,7 +315,8 @@ void Euler::GlobalNorms(int itt, Vec* duh, Vec* uh, L2Vecs* duz, L2Vecs* uz, L2V
 void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save) {
     bool done = false;
     int itt = 0, elOrd2 = topo->elOrd*topo->elOrd, ex, ey;
-    double max_norm_u, max_norm_w, max_norm_rho, max_norm_rt, max_norm_exner;
+    double max_norm_u, max_norm_w, max_norm_rho, max_norm_rt, max_norm_exner, alpha;
+    //double max_norm_u_prev, max_norm_w_prev, max_norm_rho_prev, max_norm_rt_prev, max_norm_exner_prev;
     L2Vecs* velz_j  = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* velz_h  = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* rho_j   = new L2Vecs(geom->nk, topo, geom);
@@ -400,8 +402,11 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
 
             vert->assemble_residual(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii],
                               rt_i->vz[ii], rt_j->vz[ii], F_w->vz[ii], F_z, G_z);
-
+#ifdef NEW_EOS
+            vo->Assemble_EOS_Residual_new(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
+#else
             vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
+#endif
 
             vert->vo->AssembleConst(ex, ey, vo->VB);
             MatMult(vo->V10, F_z, dF_z);
@@ -466,8 +471,8 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
         for(int lev = 0; lev < geom->nk; lev++) {
             if(!rank) cout << "assembling operators for level: " << lev << endl;
 
-            //horiz->assemble_and_update(lev, theta_h->vl, velx_j->vl[lev], velx_j->vh[lev], rho_j->vl[lev], rt_j->vl[lev], exner_h->vl[lev],
-            horiz->assemble_and_update(lev, theta_h->vl, velx_h->vl[lev], velx_h->vh[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
+            horiz->assemble_and_update(lev, theta_h->vl, velx_i->vl[lev], velx_i->vh[lev], rho_i->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
+            //horiz->assemble_and_update(lev, theta_h->vl, velx_h->vl[lev], velx_h->vh[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
                                        F_u->vh[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], gradPi->vl[lev]);
 
             schur->AddFromHorizMat(lev, horiz->_PCx);
@@ -479,13 +484,14 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
-            //vert->assemble_and_update(ex, ey, theta_h->vz[ii], velz_j->vz[ii], rho_j->vz[ii], rt_j->vz[ii], exner_h->vz[ii],
-            vert->assemble_and_update(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
+            vert->assemble_and_update(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
+            //vert->assemble_and_update(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
                                       F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii]);
 
             schur->AddFromVertMat(ii, vert->_PCz);
         }
         F_rt->VertToHoriz();
+F_rt->UpdateGlobal(); F_rho->VertToHoriz(); F_rho->UpdateGlobal();
 
         // solve for the exner pressure update
         VecZeroEntries(schur->b);
@@ -501,8 +507,8 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
             ex = ii%topo->nElsX;
             ey = ii/topo->nElsX;
 
-            //vert->update_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii],
-            vert->update_deltas(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
+            vert->update_deltas(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
+            //vert->update_deltas(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
                                 F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii], d_w->vz[ii], d_rho->vz[ii], d_rt->vz[ii], d_exner->vz[ii]);
         }
         d_exner->VertToHoriz(); d_exner->UpdateGlobal();
@@ -511,16 +517,24 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
         for(int lev = 0; lev < geom->nk; lev++) {
             if(!rank) cout << "updating corrections for level: " << lev << endl;
 
-            //horiz->update_deltas(lev, theta_h->vl, velx_j->vl[lev], velx_j->vh[lev], rho_j->vl[lev], rt_j->vl[lev], exner_h->vl[lev],
-            horiz->update_deltas(lev, theta_h->vl, velx_h->vl[lev], velx_h->vh[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
+            horiz->update_deltas(lev, theta_h->vl, velx_i->vl[lev], velx_i->vh[lev], rho_i->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
+            //horiz->update_deltas(lev, theta_h->vl, velx_h->vl[lev], velx_h->vh[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
                                  F_u->vh[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], 
                                  d_u->vh[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], gradPi->vl[lev]);
         }
         d_rho->UpdateLocal(); d_rho->HorizToVert();
 
+        //alpha = ComputeAlpha(rho_j->vz, d_rho->vz, velz_j->vz, d_w->vz);
+        alpha = ComputeAlpha_2(velz_i->vz, velz_j->vz, d_w->vz, 
+                             rho_i->vz, rho_j->vz, d_rho->vz, 
+                             rt_i->vz, rt_j->vz, d_rt->vz, 
+                             exner_i->vz, exner_j->vz, d_exner->vz, exner_h->vz,
+                             theta_i->vz, theta_h->vz);
+        if(!rank)cout<<"alpha: "<<alpha<<endl;
+
         // update solutions
         for(int lev = 0; lev < geom->nk; lev++) {
-            VecAXPY(velx_j->vh[lev], 1.0, d_u->vh[lev]);
+            VecAXPY(velx_j->vh[lev], alpha, d_u->vh[lev]);
             VecZeroEntries(velx_h->vh[lev]);
             VecAXPY(velx_h->vh[lev], 0.5, velx_i->vh[lev]);
             VecAXPY(velx_h->vh[lev], 0.5, velx_j->vh[lev]);
@@ -528,10 +542,10 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
         velx_j->UpdateLocal();
         velx_h->UpdateLocal();
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-            VecAXPY(velz_j->vz[ii],  1.0, d_w->vz[ii]    );
-            VecAXPY(rho_j->vz[ii],   1.0, d_rho->vz[ii]  );
-            VecAXPY(rt_j->vz[ii],    1.0, d_rt->vz[ii]   );
-            VecAXPY(exner_j->vz[ii], 1.0, d_exner->vz[ii]);
+            VecAXPY(velz_j->vz[ii],  alpha, d_w->vz[ii]    );
+            VecAXPY(rho_j->vz[ii],   alpha, d_rho->vz[ii]  );
+            VecAXPY(rt_j->vz[ii],    alpha, d_rt->vz[ii]   );
+            VecAXPY(exner_j->vz[ii], alpha, d_exner->vz[ii]);
         }
         rho_j->VertToHoriz();   rho_j->UpdateGlobal();
         rt_j->VertToHoriz();    rt_j->UpdateGlobal();
@@ -567,7 +581,7 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
         dudz_j->UpdateLocal();
 
         GlobalNorms(itt, d_u->vh, velx_j->vh, d_w, velz_j, d_rho, rho_j, d_rt, rt_j, d_exner, exner_j,
-                    &max_norm_u, &max_norm_w, &max_norm_rho, &max_norm_rt, &max_norm_exner, h_tmp, u_tmp_1, F_z);
+                    &max_norm_u, &max_norm_w, &max_norm_rho, &max_norm_rt, &max_norm_exner, h_tmp, u_tmp_1, F_z, true);
 
         itt++;
         if((max_norm_exner < 1.0e-8 && max_norm_u < 1.0e-8 && max_norm_w < 1.0e-8) || itt > 20) done = true;
@@ -623,3 +637,283 @@ void Euler::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, 
     VecDestroy(&u_tmp_1);
     VecDestroy(&u_tmp_2);
 }
+
+double Euler::ComputeAlpha(Vec* rho, Vec* d_rho, Vec* velz, Vec* d_velz) {
+    bool   done  = false;
+    int    ex, ey;
+    int    n2    = topo->elOrd*topo->elOrd;
+    double alpha = 1.0;
+    double c1    = 1.0e-4;
+    double lhs, rhs, lhs_g, rhs_g, dot;
+    Vec    u_tmp, h_tmp, f_tmp;
+    VertOps* vo = vert->vo;
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &u_tmp);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &f_tmp);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &h_tmp);
+
+    do {
+        lhs = rhs = 0.0;
+
+        for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+            ex = ei%topo->nElsX;
+            ey = ei/topo->nElsX;
+
+            VecCopy(velz[ei], u_tmp);
+            VecAXPY(u_tmp, alpha, d_velz[ei]);
+            VecCopy(rho[ei], h_tmp);
+            VecAXPY(h_tmp, alpha, d_rho[ei]);
+
+            vo->AssembleLinearWithRT(ex, ey, h_tmp, vo->VA, true);
+            MatMult(vo->VA, u_tmp, f_tmp);
+            VecDot(f_tmp, u_tmp, &dot);
+            lhs += dot;
+
+            vo->AssembleLinearWithRT(ex, ey, rho[ei], vo->VA, true);
+            MatMult(vo->VA, velz[ei], f_tmp);
+            VecDot(f_tmp, velz[ei], &dot);
+            rhs += dot;
+
+            VecDot(f_tmp, d_velz[ei], &dot);
+            rhs += c1*alpha*dot;
+        }
+        MPI_Allreduce(&lhs, &lhs_g, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(&rhs, &rhs_g, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+        if(!rank) cout << lhs_g << "\t" << rhs_g << "\t" << alpha << endl;
+
+        if(lhs_g > rhs_g) alpha = 0.9*alpha;
+        else              done  = true;
+    } while(!done);
+
+    VecDestroy(&u_tmp);
+    VecDestroy(&h_tmp);
+    VecDestroy(&f_tmp);
+
+    return alpha;
+}
+
+double Euler::ComputeAlpha_2(Vec* velz_i, Vec* velz_j, Vec* d_velz, 
+                             Vec* rho_i, Vec* rho_j, Vec* d_rho, 
+                             Vec* rt_i, Vec* rt_j, Vec* d_rt, 
+                             Vec* pi_i, Vec* pi_j, Vec* d_pi, Vec* pi_h,
+                             Vec* theta_i, Vec* theta_h) {
+    bool   done  = false;
+    int    ex, ey;
+    int    n2    = topo->elOrd*topo->elOrd;
+    double alpha = 1.0;
+    double c1    = 1.0e-4;
+    double dot, f_2_sum, f_2_sum_g = 0.0, dfd, g_2_sum, g_2_sum_g = 0.0, fak, fakp1;
+    Vec    u_tmp, h_tmp, f_tmp, F_z, G_z, velz_k, rho_k, rt_k, pi_k, frt, theta_k, _tmpB1, _tmpA1, _tmpA2;
+    PC     pc;
+    KSP    kspCol;
+    VertOps* vo = vert->vo;
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &u_tmp);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &f_tmp);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &h_tmp);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &F_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &G_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &velz_k);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rho_k);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &rt_k);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &pi_k);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &frt);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &theta_k);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*n2, &_tmpB1);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &_tmpA1);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*n2, &_tmpA2);
+
+    f_2_sum = g_2_sum = 0.0;
+    for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+        ex = ei%topo->nElsX;
+        ey = ei/topo->nElsX;
+
+        vo->AssembleLinear(ex, ey, vo->VA);
+#ifdef RAYLEIGH
+        vo->AssembleRayleigh(ex, ey, vo->VA_inv);
+        MatAXPY(vo->VA, 0.5*dt*RAYLEIGH, vo->VA_inv, DIFFERENT_NONZERO_PATTERN);
+#endif
+        MatMult(vo->VA, d_velz[ei], f_tmp);
+
+        vo->AssembleConst(ex, ey, vo->VB);
+        MatMult(vo->VB, pi_h[ei], _tmpB1);
+        MatMult(vo->V01, _tmpB1, _tmpA1);
+        vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+        MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
+        vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
+        MatTranspose(vo->VBA, MAT_REUSE_MATRIX, &vo->VAB);
+        vo->AssembleConstWithRhoInv(ex, ey, rho_j[ei], vo->VB_inv);
+        MatMatMult(vo->VAB, vo->VB_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &vert->pc_V0_invV0_rt_DT);
+        MatMatMult(vert->pc_V0_invV0_rt_DT, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &vert->G_rt);
+
+        MatMult(vert->G_rt, d_rt[ei], u_tmp);
+        VecAXPY(f_tmp, 0.5*dt, u_tmp);
+
+        vo->AssembleConst(ex, ey, vo->VB);
+        MatMatMult(vo->V01, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &vert->pc_DTV1);
+        vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+        MatMatMult(vo->VA_inv, vert->pc_DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &vert->pc_V0_invDTV1);
+        vo->AssembleLinearWithTheta(ex, ey, theta_h[ei], vo->VA);
+        MatMatMult(vo->VA, vert->pc_V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &vert->G_pi);
+
+        MatMult(vert->G_pi, d_pi[ei], u_tmp);
+        VecAXPY(f_tmp, 0.5*dt, u_tmp);
+
+        VecDot(f_tmp, f_tmp, &dot);
+        f_2_sum += dot;
+
+        vert->assemble_residual(ex, ey, theta_h[ei], pi_h[ei], velz_i[ei], velz_j[ei], rho_i[ei], rho_j[ei],
+                                rt_i[ei], rt_j[ei], f_tmp, F_z, G_z);
+
+        VecDot(f_tmp, f_tmp, &dot);
+        g_2_sum += dot;
+    }
+    MPI_Allreduce(&f_2_sum, &f_2_sum_g, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&g_2_sum, &g_2_sum_g, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    dfd = sqrt(f_2_sum_g);
+    fak = sqrt(g_2_sum_g);
+    MPI_Bcast(&dfd, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&fak, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    KSPCreate(MPI_COMM_SELF, &kspCol);
+    KSPSetOperators(kspCol, vo->VA2, vo->VA2);
+    KSPGetPC(kspCol, &pc);
+    PCSetType(pc, PCLU);
+    KSPSetOptionsPrefix(kspCol, "kspCol_");
+    KSPSetFromOptions(kspCol);
+
+    do {
+        f_2_sum = 0.0;
+        for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+            ex = ei%topo->nElsX;
+            ey = ei/topo->nElsX;
+
+            VecWAXPY(velz_k, alpha, d_velz[ei], velz_j[ei]);
+            VecWAXPY(rho_k,  alpha, d_rho[ei],  rho_j[ei] );
+            VecWAXPY(rt_k,   alpha, d_rt[ei],   rt_j[ei]  );
+            VecWAXPY(pi_k,   alpha, d_pi[ei],   pi_j[ei]  );
+            VecAXPY(pi_k, 1.0, pi_i[ei]);
+            VecScale(pi_k, 0.5);
+
+            vo->AssembleLinCon2(ex, ey, vo->VAB2);
+            MatMult(vo->VAB2, rt_k, frt);
+            vo->AssembleLinearWithRho2(ex, ey, rho_k, vo->VA2);
+            KSPSolve(kspCol, frt, theta_k);
+            VecScale(theta_k, 0.5);
+            VecAXPY(theta_k, 0.5, theta_i[ei]);
+
+            vert->assemble_residual(ex, ey, theta_k, pi_k, velz_i[ei], velz_k, rho_i[ei], rho_k,
+                              rt_i[ei], rt_k, f_tmp, F_z, G_z);
+
+            VecDot(f_tmp, f_tmp, &dot);
+            f_2_sum += dot;
+        }
+        MPI_Allreduce(&f_2_sum, &f_2_sum_g, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        fakp1 = sqrt(f_2_sum_g);
+        MPI_Bcast(&fakp1, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+        if(!rank) cout << fakp1 << "\t" << fak + c1*alpha*dfd << "\t" << alpha << endl;
+
+        if(fakp1 > fak + c1*alpha*dfd) alpha = 0.9*alpha;
+        else                           done  = true;
+    } while(!done);
+
+    VecDestroy(&u_tmp);
+    VecDestroy(&h_tmp);
+    VecDestroy(&f_tmp);
+    VecDestroy(&F_z);
+    VecDestroy(&G_z);
+    VecDestroy(&velz_k);
+    VecDestroy(&rho_k);
+    VecDestroy(&rt_k);
+    VecDestroy(&pi_k);
+    VecDestroy(&frt);
+    VecDestroy(&theta_k);
+    VecDestroy(&_tmpB1);
+    VecDestroy(&_tmpA1);
+    VecDestroy(&_tmpA2);
+    KSPDestroy(&kspCol);
+
+    return alpha;
+}
+/*
+void Euler::ColumnMeans(int ei, Vec rt, Vec pi, Vec rhoBar, Vec rtBar, Vec piBar) {
+    int ex = ii%topo->nElsX;
+    int ey = ii/topo->nElsX;
+    int n2 = topo->elOrd*topo->elOrd;
+    int mp12 = (quad->n + 1)*(quad->n + 1);
+    double** Eij = vert->vo->W->A;
+    double _rt, _pi, vol, _rt_q, _pi_q, vol_q;
+    PetscScalar *rtArray, *piArray, *rtBarArray, *piBarArray
+
+    VecGetArray(rt, &rtArray);
+    VecGetArray(pi, &piArray);
+    VecGetArray(rtBar, &rtBarArray);
+    VecGetArray(piBar, &piBarArray);
+
+    // compute the mean values of density weighted potential temperature and exner pressure at each level
+    for(int kk = 0; ii < geom->nk; kk++) {
+        _rt = _pi = vol = 0.0;
+        for(int ii = 0; ii < mp12; ii++) {
+            _rt_q = _pi_q = vol_q = 0.0;
+            for(int jj = 0; jj < n2; jj++) {
+                _rt_q += Eij[ii][jj]*rtArray[kk*n2+jj];
+                _pi_q += Eij[ii][jj]*piArray[kk*n2+jj];
+                vol_q += Eij[ii][jj]*1.0;
+            }
+            _rt += _rt_q;
+            _pi += _pi_q;
+            vol += vol_q;
+        }
+        _rt /= vol;
+        _pi /= vol;
+
+        for(int jj = 0; jj < n2; jj++) {
+            rtBarArray[kk*n2+jj] = _rt;
+            piBarArray[kk*n2+jj] = _pi;
+        }
+    }
+    VecRestoreArray(rt, &rtArray);
+    VecRestoreArray(pi, &piArray);
+    VecRestoreArray(rtBar, &rtBarArray);
+    VecRestoreArray(piBar, &piBarArray);
+
+    // compute the mean denisty via hydrostatic balance
+    vert->vo->AssembleConst(ex, ey, vert->vo->VB);
+    vert->vo->AssembleLinearInv(ex, ey, vert->vo->VA_inv);
+    MatMult(vert->vo->VB, piBar, _tmpB1);
+    MatMult(vert->vo->V01, _tmpB1, _tmpA1);
+    MatMult(vert->vo->VA_inv, _tmpA1, _tmpA2); // d(pi)/dz
+    vert->vo->AssembleConstWithTheta(ex, ey, _tmpA2, vert->vo->VB);
+    MatMult(vert->vo->VB, rtBar, rhoBar);
+    VecScale(rhoBar, -1.0*GRAVITY);
+}
+
+double Euler::Hprime(Vec* velz, Vec* rho, Vec* rt, Vec* pi, Vec* d_velz, Vec* d_rho, Vec* d_rt, Vec* d_pi) {
+    int elOrd2 = topo->elOrd*topo->elOrd;
+    double H_prime_l = 0.0, H_prime_g;
+    Vec rhoBar, rtBar, piBar;
+
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*elOrd2, &rhoBar);
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*elOrd2, &rtBar);
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*elOrd2, &piBar);
+
+    for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+        ColumnMeans(ei, rt[ei], pi[ei], rhoBar[ei], rtBar[ei], piBar[ei]);
+
+        // kinetic energy
+
+        // potential energy
+
+        // internal energy
+    }
+
+    VecDestroy(&rhoBar);
+    VecDestroy(&rtBar);
+    VecDestroy(&piBar);
+
+    MPI_Allreduce(&H_prime_l, &H_prime_g, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    return H_prime_g;
+}
+*/

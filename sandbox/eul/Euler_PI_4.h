@@ -25,5 +25,12 @@ class Euler {
         void initTheta(Vec theta, ICfunc3D* func);
 
         void GlobalNorms(int itt, Vec* duh, Vec* uh, L2Vecs* duz, L2Vecs* uz, L2Vecs* drho, L2Vecs* rho, L2Vecs* drt, L2Vecs* rt, L2Vecs* dexner, L2Vecs* exner,
-                         double* norm_u, double* norm_w, double* norm_rho, double* norm_rt, double* norm_exner, Vec h_tmp, Vec u_tmp, Vec u_tmp_z);
+                         double* norm_u, double* norm_w, double* norm_rho, double* norm_rt, double* norm_exner, Vec h_tmp, Vec u_tmp, Vec u_tmp_z, bool prnt);
+
+        double ComputeAlpha(Vec* rho, Vec* d_rho, Vec* velz, Vec* d_velz);
+        double ComputeAlpha_2(Vec* velz_i, Vec* velz_j, Vec* d_velz, 
+                             Vec* rho_i, Vec* rho_j, Vec* d_rho, 
+                             Vec* rt_i, Vec* rt_j, Vec* d_rt, 
+                             Vec* pi_i, Vec* pi_j, Vec* d_pi, Vec* pi_h,
+                             Vec* theta_i, Vec* theta_h);
 };
