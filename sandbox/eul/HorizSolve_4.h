@@ -1,4 +1,4 @@
-#define NEW_EOS 1
+//#define NEW_EOS 1
 
 typedef double (ICfunc3D) (double* xi, int ki);
 
@@ -77,9 +77,11 @@ class HorizSolve {
         void solve_schur_level(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec exner, 
                                Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, Vec grad_pi);
         void assemble_and_update(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec exner, 
-                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec grad_pi);
+                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec grad_pi, Mat* OP);
         void update_deltas(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec exner, 
                            Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, Vec grad_pi);
+        void update_delta_u(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec pi, 
+                            Vec F_u, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, Vec dpil);
 
         void solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i);
 

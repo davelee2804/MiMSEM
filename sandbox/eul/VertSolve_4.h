@@ -54,6 +54,14 @@ class VertSolve {
                                  Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi);
         void update_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                            Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
+        void update_delta_u(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
+                            Vec F_u, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
+
+        double LineSearch(Vec velz_i,  Vec velz_j, Vec d_velz, 
+                          Vec rho_i,   Vec rho_j,  Vec d_rho, 
+                          Vec rt_i,    Vec rt_j,   Vec d_rt, 
+                          Vec pi_i,    Vec pi_j,   Vec d_pi, Vec pi_h,
+                          Vec theta_i, Vec theta_h, int ei);
 
         Mat _PCz;
         Mat pc_LAP;

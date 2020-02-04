@@ -25,7 +25,7 @@
 #define GRAVITY 9.80616
 #define SCALE 1.0e+8
 //#define RAYLEIGH 0.4
-#define NEW_EOS 1
+//#define NEW_EOS 1
 
 using namespace std;
 
@@ -573,6 +573,336 @@ for(int lev = 0; lev < geom->nk; lev++) {
     VecCopy(rho_j->vh[lev], d_rho->vh[lev]);
     VecAXPY(d_rho->vh[lev], -1.0, rho_i->vh[lev]);
 }
+
+        // update additional fields
+        horiz->diagTheta2(rho_j->vz, rt_j->vz, theta_h->vz);
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            VecZeroEntries(exner_h->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_j->vz[ii]);
+
+            VecScale(theta_h->vz[ii], 0.5);
+            VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
+
+            VecZeroEntries(rho_h->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_i->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_j->vz[ii]);
+            VecZeroEntries(rt_h->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_i->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
+            VecZeroEntries(velz_h->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_i->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_j->vz[ii]);
+        }
+        theta_h->VertToHoriz(); theta_h->UpdateGlobal();
+        exner_h->VertToHoriz(); exner_h->UpdateGlobal();
+        rho_h->VertToHoriz(); rho_h->UpdateGlobal();
+        rt_h->VertToHoriz(); rt_h->UpdateGlobal();
+
+        horiz->diagHorizVort(velx_j->vh, dudz_j->vh);
+        dudz_j->UpdateLocal();
+
+        GlobalNorms(itt, d_u->vh, velx_j->vh, d_w, velz_j, d_rho, rho_j, d_rt, rt_j, d_exner, exner_j,
+                    &max_norm_u, &max_norm_w, &max_norm_rho, &max_norm_rt, &max_norm_exner, h_tmp, u_tmp_1, F_z, true);
+
+        itt++;
+        if((max_norm_exner < 1.0e-8 && max_norm_u < 1.0e-8 && max_norm_w < 1.0e-8) || itt > 20) done = true;
+
+        schur->DestroyMatrix();
+    } while(!done);
+
+    // copy the solutions back to the input vectors
+    velz_i->CopyFromHoriz(velz_j->vh);
+    rho_i->CopyFromHoriz(rho_j->vh);
+    rt_i->CopyFromHoriz(rt_j->vh);
+    exner_i->CopyFromHoriz(exner_j->vh);
+    velx_j->CopyTo(velx);
+
+    // write output
+    if(save) dump(velx, velz_i, rho_i, rt_i, exner_i, theta_h, step++);
+
+    delete velz_j;
+    delete velz_h;
+    delete rho_j;
+    delete rt_j;
+    delete exner_j;
+    delete exner_h;
+    delete rho_h;
+    delete rt_h;
+    delete theta_i;
+    delete theta_h;
+    delete F_w;
+    delete F_rho;
+    delete F_rt;
+    delete F_exner;
+    delete d_w;
+    delete d_rho;
+    delete d_rt;
+    delete d_exner;
+    delete velx_i;
+    delete velx_j;
+    delete velx_h;
+    delete dudz_i;
+    delete dudz_j;
+    delete F_u;
+    delete d_u;
+    delete gradPi;
+    VecDestroy(&_F);
+    VecDestroy(&_G);
+    VecDestroy(&dF);
+    VecDestroy(&dG);
+    VecDestroy(&F_z);
+    VecDestroy(&G_z);
+    VecDestroy(&dF_z);
+    VecDestroy(&dG_z);
+    VecDestroy(&h_tmp);
+    VecDestroy(&u_tmp_1);
+    VecDestroy(&u_tmp_2);
+}
+
+void Euler::solve_schur_2(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save) {
+    bool done = false;
+    int itt = 0, elOrd2 = topo->elOrd*topo->elOrd, ex, ey;
+    double max_norm_u, max_norm_w, max_norm_rho, max_norm_rt, max_norm_exner;
+    L2Vecs* velz_j  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* velz_h  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_j   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_j    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rho_h   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_h    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* F_w     = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* F_rho   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* F_rt    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* F_exner = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* d_w     = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* d_rho   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* d_rt    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* d_exner = new L2Vecs(geom->nk, topo, geom);
+    L1Vecs* velx_i  = new L1Vecs(geom->nk, topo, geom);
+    L1Vecs* velx_j  = new L1Vecs(geom->nk, topo, geom);
+    L1Vecs* velx_h  = new L1Vecs(geom->nk, topo, geom);
+    L1Vecs* dudz_i  = new L1Vecs(geom->nk, topo, geom);
+    L1Vecs* dudz_j  = new L1Vecs(geom->nk, topo, geom);
+    L1Vecs* F_u     = new L1Vecs(geom->nk, topo, geom);
+    L1Vecs* d_u     = new L1Vecs(geom->nk, topo, geom);
+    L1Vecs* gradPi  = new L1Vecs(geom->nk, topo, geom);
+    Vec _F, _G, dF, dG, F_z, G_z, dF_z, dG_z, h_tmp, u_tmp_1, u_tmp_2, dtheta;
+    VertOps* vo = vert->vo;
+
+    velx_i->CopyFrom(velx);
+    velx_j->CopyFrom(velx);
+    velx_h->CopyFrom(velx);
+    velx_i->UpdateLocal();
+    velx_j->UpdateLocal();
+    velx_h->UpdateLocal();
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_G);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dF);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dG);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp_1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp_2);
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
+
+    velz_i->UpdateLocal();  velz_i->HorizToVert();
+    rho_i->UpdateLocal();   rho_i->HorizToVert();
+    rt_i->UpdateLocal();    rt_i->HorizToVert();
+    exner_i->UpdateLocal(); exner_i->HorizToVert();
+    velz_j->CopyFromVert(velz_i->vz);   velz_j->VertToHoriz();  velz_j->UpdateGlobal();
+    rho_j->CopyFromVert(rho_i->vz);     rho_j->VertToHoriz();   rho_j->UpdateGlobal();
+    rt_j->CopyFromVert(rt_i->vz);       rt_j->VertToHoriz();    rt_j->UpdateGlobal();
+    exner_j->CopyFromVert(exner_i->vz); exner_j->VertToHoriz(); exner_j->UpdateGlobal();
+    exner_h->CopyFromVert(exner_i->vz); exner_h->VertToHoriz(); exner_h->UpdateGlobal();
+    rho_h->CopyFromVert(rho_i->vz); rho_h->VertToHoriz(); rho_h->UpdateGlobal();
+    rt_h->CopyFromVert(rt_i->vz); rt_h->VertToHoriz(); rt_h->UpdateGlobal();
+    velz_h->CopyFromVert(velz_i->vz);
+
+    // diagnose the vorticity terms
+    horiz->diagHorizVort(velx_i->vh, dudz_i->vh);
+    dudz_i->UpdateLocal();
+    for(int lev = 0; lev < geom->nk; lev++) {
+        VecCopy(dudz_i->vh[lev], dudz_j->vh[lev]);
+        VecCopy(dudz_i->vl[lev], dudz_j->vl[lev]);
+    }
+    horiz->diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz);
+    theta_h->CopyFromVert(theta_i->vz);
+    theta_i->VertToHoriz();
+    theta_h->VertToHoriz();
+    theta_h->UpdateGlobal();
+
+    do {
+        schur->InitialiseMatrix();
+
+        // assemble the vertical residuals
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            ex = ii%topo->nElsX;
+            ey = ii/topo->nElsX;
+
+            vert->assemble_residual(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii],
+                              rt_i->vz[ii], rt_j->vz[ii], F_w->vz[ii], F_z, G_z);
+#ifdef NEW_EOS
+            vo->Assemble_EOS_Residual_new(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
+#else
+            vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
+#endif
+
+            vert->vo->AssembleConst(ex, ey, vo->VB);
+            MatMult(vo->V10, F_z, dF_z);
+            MatMult(vo->V10, G_z, dG_z);
+            VecAYPX(dF_z, dt, rho_j->vz[ii]);
+            VecAYPX(dG_z, dt, rt_j->vz[ii]);
+            VecAXPY(dF_z, -1.0, rho_i->vz[ii]);
+            VecAXPY(dG_z, -1.0, rt_i->vz[ii]);
+            MatMult(vo->VB, dF_z, F_rho->vz[ii]);
+            MatMult(vo->VB, dG_z, F_rt->vz[ii]);
+        }
+        F_exner->VertToHoriz(); F_exner->UpdateGlobal();
+        F_rho->VertToHoriz();   F_rho->UpdateGlobal();
+        F_rt->VertToHoriz();    F_rt->UpdateGlobal();
+
+        // assemble the horizontal residuals
+        for(int lev = 0; lev < geom->nk; lev++) {
+            if(!rank) cout << "assembling residuals for level: " << lev << endl;
+
+            // velocity residual
+            horiz->assemble_residual(lev, theta_h->vl, dudz_i->vl, dudz_j->vl, velz_i->vh, velz_j->vh, exner_h->vh[lev],
+                                     velx_i->vh[lev], velx_j->vh[lev], rho_i->vh[lev], rho_j->vh[lev], F_u->vh[lev], 
+                                     _F, _G, velx_i->vl[lev], velx_j->vl[lev], gradPi->vl[lev]);
+
+            horiz->M2->assemble(lev, SCALE, true);
+
+            // density residual
+            MatMult(horiz->EtoF->E21, _F, dF);
+            MatMult(horiz->M2->M, dF, h_tmp);
+            VecAXPY(F_rho->vh[lev], dt, h_tmp);
+
+            // density weighted potential temperature residual
+            MatMult(horiz->EtoF->E21, _G, dG);
+            MatMult(horiz->M2->M, dG, h_tmp);
+            VecAXPY(F_rt->vh[lev], dt, h_tmp);
+
+            // add in the viscous term for the temperature equation
+            horiz->M1->assemble(lev, SCALE, true);
+            VecZeroEntries(dF);
+            VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
+            VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
+
+            horiz->grad(false, dF, &dtheta, lev);
+            horiz->F->assemble(rho_j->vl[lev], lev, true, SCALE);
+            MatMult(horiz->F->M, dtheta, u_tmp_1);
+            VecDestroy(&dtheta);
+
+            KSPSolve(horiz->ksp1, u_tmp_1, u_tmp_2);
+            MatMult(horiz->EtoF->E21, u_tmp_2, dG);
+
+            horiz->grad(false, dG, &dtheta, lev);
+            MatMult(horiz->EtoF->E21, dtheta, dG);
+            VecDestroy(&dtheta);
+            MatMult(horiz->M2->M, dG, dF);
+            VecAXPY(F_rt->vh[lev], dt*horiz->del2*horiz->del2, dF);
+        }
+
+        // build the preconditioner matrix (horiztonal part first)
+        MatZeroEntries(schur->M);
+        for(int lev = 0; lev < geom->nk; lev++) {
+            if(!rank) cout << "assembling operators for level: " << lev << endl;
+
+            horiz->assemble_and_update(lev, theta_h->vl, velx_i->vl[lev], velx_i->vh[lev], rho_i->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
+            //horiz->assemble_and_update(lev, theta_h->vl, velx_h->vl[lev], velx_h->vh[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
+                                       F_u->vh[lev], F_rho->vh[lev], F_rt->vh[lev], F_exner->vh[lev], gradPi->vl[lev], &horiz->_PCx);
+
+            schur->AddFromHorizMat(lev, horiz->_PCx);
+            MatDestroy(&horiz->_PCx);
+        }
+        F_rho->UpdateLocal();       F_rho->HorizToVert();
+        F_rt->UpdateLocal();        F_rt->HorizToVert();
+
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            ex = ii%topo->nElsX;
+            ey = ii/topo->nElsX;
+            vert->assemble_and_update(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
+            //vert->assemble_and_update(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
+                                      F_w->vz[ii], F_rho->vz[ii], F_rt->vz[ii], F_exner->vz[ii]);
+
+            schur->AddFromVertMat(ii, vert->_PCz);
+        }
+        F_rt->VertToHoriz(); F_rt->UpdateGlobal();
+
+        // solve for the exner pressure update
+        VecZeroEntries(schur->b);
+        schur->RepackFromHoriz(F_rt->vl, schur->b);
+        VecScale(schur->b, -1.0);
+        schur->Solve(d_rt);
+
+        // update the delta vectors
+        d_rt->HorizToVert(); d_rt->UpdateGlobal();
+
+        // back substitution
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            ex = ii%topo->nElsX;
+            ey = ii/topo->nElsX;
+
+            vert->update_delta_u(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
+            //vert->update_delta_u(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii],
+                                F_w->vz[ii], F_exner->vz[ii], d_w->vz[ii], d_rho->vz[ii], d_rt->vz[ii], d_exner->vz[ii]);
+        }
+        d_exner->VertToHoriz(); d_exner->UpdateGlobal();
+
+        for(int lev = 0; lev < geom->nk; lev++) {
+            if(!rank) cout << "updating corrections for level: " << lev << endl;
+
+            horiz->update_delta_u(lev, theta_h->vl, velx_i->vl[lev], velx_i->vh[lev], rho_i->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
+            //horiz->update_delta_u(lev, theta_h->vl, velx_h->vl[lev], velx_h->vh[lev], rho_h->vl[lev], rt_h->vl[lev], exner_h->vl[lev],
+                                 F_u->vh[lev], d_u->vh[lev], d_rho->vh[lev], d_rt->vh[lev], d_exner->vh[lev], gradPi->vl[lev]);
+        }
+
+        // update solutions
+        for(int lev = 0; lev < geom->nk; lev++) {
+            VecAXPY(velx_j->vh[lev], 1.0, d_u->vh[lev]);
+            VecZeroEntries(velx_h->vh[lev]);
+            VecAXPY(velx_h->vh[lev], 0.5, velx_i->vh[lev]);
+            VecAXPY(velx_h->vh[lev], 0.5, velx_j->vh[lev]);
+        }
+        velx_j->UpdateLocal();
+        velx_h->UpdateLocal();
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            VecAXPY(velz_j->vz[ii],  1.0, d_w->vz[ii]    );
+            VecAXPY(rt_j->vz[ii],    1.0, d_rt->vz[ii]   );
+            VecAXPY(exner_j->vz[ii], 1.0, d_exner->vz[ii]);
+        }
+        rt_j->VertToHoriz();    rt_j->UpdateGlobal();
+        exner_j->VertToHoriz(); exner_j->UpdateGlobal();
+        velz_j->VertToHoriz();  velz_j->UpdateGlobal();
+
+        // explicit density update
+        for(int lev = 0; lev < geom->nk; lev++) {
+            VecCopy(rho_j->vh[lev], d_rho->vh[lev]);
+            horiz->diagnose_F(lev, velx_i->vh[lev], velx_j->vh[lev], rho_i->vh[lev], rho_j->vh[lev], _F);
+            MatMult(horiz->EtoF->E21, _F, rho_j->vh[lev]);
+            VecAYPX(rho_j->vh[lev], -dt, rho_i->vh[lev]);
+        }
+        rho_j->UpdateLocal(); rho_j->HorizToVert();
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            ex = ii%topo->nElsX;
+            ey = ii/topo->nElsX;
+
+            vert->diagnose_F_z(ex, ey, velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], F_z);
+            MatMult(vo->V10, F_z, dF_z);
+            VecAXPY(rho_j->vz[ii], -dt, dF_z);
+        }
+        rho_j->VertToHoriz(); rho_j->UpdateGlobal();
+        for(int lev = 0; lev < geom->nk; lev++) {
+            VecAYPX(d_rho->vh[lev], -1.0, rho_j->vh[lev]);
+        }
 
         // update additional fields
         horiz->diagTheta2(rho_j->vz, rt_j->vz, theta_h->vz);
