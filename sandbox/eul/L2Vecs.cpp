@@ -156,3 +156,66 @@ void L2Vecs::CopyToHoriz(Vec* vf) {
         VecCopy(vh[ii], vf[ii]);
     }
 }
+
+L1Vecs::L1Vecs(int _nk, Topo* _topo, Geom* _geom) {
+    int ii;
+
+    nk = _nk;
+    topo = _topo;
+    geom = _geom;
+
+    vh = new Vec[nk];
+    vl = new Vec[nk];
+
+    for(ii = 0; ii < nk; ii++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &vh[ii]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &vl[ii]);
+        VecZeroEntries(vh[ii]);
+        VecZeroEntries(vl[ii]);
+    }
+}
+
+L1Vecs::~L1Vecs() {
+    int ii;
+
+    for(ii = 0; ii < nk; ii++) {
+        VecDestroy(&vh[ii]);
+        VecDestroy(&vl[ii]);
+    }
+    delete[] vh;
+    delete[] vl;
+}
+
+void L1Vecs::UpdateLocal() {
+    int ii;
+
+    for(ii = 0; ii < nk; ii++) {
+        VecScatterBegin(topo->gtol_1, vh[ii], vl[ii], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(topo->gtol_1,   vh[ii], vl[ii], INSERT_VALUES, SCATTER_FORWARD);
+    }
+}
+
+void L1Vecs::UpdateGlobal() {
+    int ii;
+
+    for(ii = 0; ii < nk; ii++) {
+        VecScatterBegin(topo->gtol_1, vl[ii], vh[ii], INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(topo->gtol_1,   vl[ii], vh[ii], INSERT_VALUES, SCATTER_REVERSE);
+    }
+}
+
+void L1Vecs::CopyFrom(Vec* vf) {
+    int ii;
+
+    for(ii = 0; ii < nk; ii++) {
+        VecCopy(vf[ii], vh[ii]);
+    }
+}
+
+void L1Vecs::CopyTo(Vec* vf) {
+    int ii;
+
+    for(ii = 0; ii < nk; ii++) {
+        VecCopy(vh[ii], vf[ii]);
+    }
+}

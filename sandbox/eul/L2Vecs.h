@@ -17,3 +17,18 @@ class L2Vecs {
         void CopyToVert(Vec* vf);
         void CopyToHoriz(Vec* vf);
 };
+
+class L1Vecs {
+    public:
+        L1Vecs(int _nk, Topo* _topo, Geom* _geom);
+        ~L1Vecs();
+        int nk;
+        Topo* topo;
+        Geom* geom;
+        Vec* vh;
+        Vec* vl;
+        void UpdateLocal();
+        void UpdateGlobal();
+        void CopyFrom(Vec* vf);
+        void CopyTo(Vec* vf);
+};
