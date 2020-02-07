@@ -888,7 +888,7 @@ void HorizSolve::solve_schur_level(int lev, Vec* theta, Vec velx_l, Vec velx_g, 
     MatScale(D_rho, 0.5*dt);
 
     // D_rt
-    T->assemble(rho, lev, SCALE, true);
+    T->assemble(rt, lev, SCALE, true);
     MatMatMult(T->M, EtoF->E21, reuse, PETSC_DEFAULT, &D_rt);
     MatScale(D_rt, 0.5*dt);
 
@@ -1107,7 +1107,7 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx_l, Vec velx_g
     MatScale(D_rho, 0.5*dt);
 
     // D_rt
-    T->assemble(rho, lev, SCALE, true);
+    T->assemble(rt, lev, SCALE, true);
     MatMatMult(T->M, EtoF->E21, reuse, PETSC_DEFAULT, &D_rt);
     MatScale(D_rt, 0.5*dt);
 
@@ -1126,7 +1126,6 @@ void HorizSolve::assemble_and_update(int lev, Vec* theta, Vec velx_l, Vec velx_g
     N2_rt->assemble(rt, lev, SCALE, false);
     MatScale(N2_rt->M, -1.0*RD/CV);
 #endif
-
     // N_pi (inverse)
 #ifdef NEW_EOS
     N2_pi_inv->assemble(lev, SCALE, rt, pi);
@@ -1276,7 +1275,6 @@ void HorizSolve::update_deltas(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec 
 #else
     N2_pi_inv->assemble(pi, lev, SCALE, true);
 #endif
-
     // M_u (inverse)
 #ifdef IMP_VISC
     assemble_biharmonic(lev, reuse, &M_u);
@@ -1407,17 +1405,17 @@ void HorizSolve::update_delta_u(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec
     MatScale(G_pi, 0.5*dt);
 
     // M_u (inverse)
-#ifdef IMP_VISC
+//#ifdef IMP_VISC
     assemble_biharmonic(lev, reuse, &M_u);
     MatAXPY(M_u, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
-#endif
+//#endif
 
     KSPCreate(MPI_COMM_WORLD, &ksp_u);
-#ifdef IMP_VISC
+//#ifdef IMP_VISC
     KSPSetOperators(ksp_u, M_u, M_u);
-#else
-    KSPSetOperators(ksp_u, R->M, R->M);
-#endif
+//#else
+//    KSPSetOperators(ksp_u, R->M, R->M);
+//#endif
     KSPSetTolerances(ksp_u, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp_u, KSPGMRES);
     KSPGetPC(ksp_u, &pc);
@@ -1439,9 +1437,9 @@ void HorizSolve::update_delta_u(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec
     VecDestroy(&theta_k);
     VecDestroy(&tmp_u_1);
     VecDestroy(&tmp_u_2);
-#ifdef IMP_VISC
+//#ifdef IMP_VISC
     MatDestroy(&M_u);
-#endif
+//#endif
     KSPDestroy(&ksp_u);
 }
 
