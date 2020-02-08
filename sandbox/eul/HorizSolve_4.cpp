@@ -114,6 +114,7 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     initGZ();
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     // initialize the 1 form linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp1);
@@ -122,7 +123,7 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetType(ksp1, KSPGMRES);
     KSPGetPC(ksp1, &pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp1, "ksp1_");
     KSPSetFromOptions(ksp1);
 
@@ -133,7 +134,7 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetType(ksp2, KSPGMRES);
     KSPGetPC(ksp2, &pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, elOrd2, NULL);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp2, "ksp2_");
     KSPSetFromOptions(ksp2);
 
@@ -570,7 +571,7 @@ void HorizSolve::diagHorizVort(Vec* velx, Vec* dudz) {
     KSPSetType(ksp1_t, KSPGMRES);
     KSPGetPC(ksp1_t, &pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp1_t, "ksp1_t_");
     KSPSetFromOptions(ksp1_t);
 
@@ -971,7 +972,7 @@ void HorizSolve::solve_schur_level(int lev, Vec* theta, Vec velx_l, Vec velx_g, 
     KSPSetType(ksp_rt, KSPGMRES);
     KSPGetPC(ksp_rt, &pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 6*topo->nElsX*topo->nElsX, NULL);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp_rt, "ksp_rt_");
     KSPSetFromOptions(ksp_rt);
 
@@ -985,7 +986,7 @@ void HorizSolve::solve_schur_level(int lev, Vec* theta, Vec velx_l, Vec velx_g, 
     KSPSetType(ksp_u, KSPGMRES);
     KSPGetPC(ksp_u, &pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 6*topo->nElsX*topo->nElsX, NULL);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp_u, "ksp_u_");
     KSPSetFromOptions(ksp_u);
 
@@ -1305,7 +1306,7 @@ void HorizSolve::update_deltas(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec 
     KSPSetType(ksp_u, KSPGMRES);
     KSPGetPC(ksp_u, &pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 6*topo->nElsX*topo->nElsX, NULL);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp_u, "ksp_u_");
     KSPSetFromOptions(ksp_u);
 
@@ -1420,7 +1421,7 @@ void HorizSolve::update_delta_u(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec
     KSPSetType(ksp_u, KSPGMRES);
     KSPGetPC(ksp_u, &pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 6*topo->nElsX*topo->nElsX, NULL);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp_u, "ksp_u_");
     KSPSetFromOptions(ksp_u);
 
