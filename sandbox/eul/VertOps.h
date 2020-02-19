@@ -83,6 +83,7 @@ class VertOps {
         void AssembleLinearWithRho_up(int ex, int ey, Vec rho, Vec vel, Mat A);
         void AssembleLinearWithRayleighInv(int ex, int ey, double dt_fric, Mat A);
         void AssembleLinearWithThetaInv(int ex, int ey, Vec theta, Mat A);
+        void AssembleConstWithRhoInv2(int ex, int ey, Vec theta, Mat B);
 
         // new eos
         void Assemble_EOS_Residual_new(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs);

@@ -2547,3 +2547,89 @@ void N_PiInv_mat::assemble(int lev, double scale, Vec rt, Vec pi) {
 N_PiInv_mat::~N_PiInv_mat() {
     MatDestroy(&M);
 }
+
+N_RT2_mat::N_RT2_mat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    e = _e;
+
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+
+    delete W;
+}
+
+void N_RT2_mat::assemble(int lev, double scale, Vec rt) {
+    int ex, ey, ei, n2, mp1, mp12, ii, jj, *inds2_l, *inds2_g, *inds0;
+    double det, rt_i;
+    Wii* Q = new Wii(e->l->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    PetscScalar *rtArray;
+
+    MatZeroEntries(M);
+
+    n2   = W->nDofsJ;
+    mp1  = e->l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    VecGetArray(rt, &rtArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0   = topo->elInds0_l(ex, ey);
+            inds2_l = topo->elInds2_l(ex, ey);
+            inds2_g = topo->elInds2_g(ex, ey);
+
+            Q->assemble(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                rt_i = 0.0;
+                for(jj = 0; jj < n2; jj++) {
+                    rt_i += W->A[ii][jj]*rtArray[inds2_l[jj]];
+                }
+                det = geom->det[ei][ii];
+                rt_i *= 1.0/(det*geom->thick[lev][inds0[ii]]);
+
+                Qaa[ii][ii]  = rt_i * rt_i * Q->A[ii][ii] * (scale/det);
+                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+            }
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+            Inv(WtQW, WtQWinv, n2);
+            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+
+            MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQWflat, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
+    VecRestoreArray(rt, &rtArray);
+
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQWinv);
+    delete W;
+    delete Q;
+    delete[] WtQWflat;
+}
+
+N_RT2_mat::~N_RT2_mat() {
+    MatDestroy(&M);
+}

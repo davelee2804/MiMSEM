@@ -41,6 +41,7 @@ class HorizSolve {
         N_rt_Inv* N2_pi_inv;
         N_rt_Inv* N2_rt;
 #endif
+        N_RT2_mat* N2_rt2_inv;
         Vec* fg;                 // coriolis vector (global)
         Vec* fl;                 // coriolis vector (local)
         Vec* gv;                 // gravity vector
@@ -77,7 +78,7 @@ class HorizSolve {
         void solve_schur_level(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec exner, 
                                Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, Vec grad_pi);
         void assemble_and_update(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec exner, 
-                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec grad_pi, Mat* OP);
+                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec grad_pi, Mat* OP, Schur* schur);
         void update_deltas(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec exner, 
                            Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, Vec grad_pi);
         void update_delta_u(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec pi, 
@@ -85,7 +86,12 @@ class HorizSolve {
 
         void solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i);
 
-        Mat _PCx;
+        void assemble_and_update_2(int lev, Vec velx_l, Vec velx_g, Vec rho, Vec rt, 
+                                       Vec F_u, Vec F_rho, Vec dpil);
+        void update_delta_u_2(int lev, Vec velx_l, Vec velx_g, Vec rho, Vec rt, 
+                                       Vec F_u, Vec F_rho, Vec dpil, Vec d_u, Vec d_rho);
+
+        Mat _PCx, L_rho_rho;
 
     private:
         Mat M_u, M_u_inv, M0_inv, M1_inv, G_rt, G_pi, D_rho, D_rt, Q_rt_rho;
@@ -94,4 +100,5 @@ class HorizSolve {
         Mat L_rho_pi_N_pi_inv, L_rt_pi_N_pi_inv, L_rho_pi_N_pi_inv_N_rt, L_rt_pi_N_pi_inv_N_rt, Q_rt_rho_M_rho_inv;
         Mat M2_invM2, CTM1, M0_invCTM1, M1_invDT_M2M2_invM2, M1_rhoM1_invDT_M2M2_invM2, M2_LAP_Theta, DT_LAP_Theta;
         Mat TEMP1;
+        Mat G_pi_rt2_inv, G_rho;
 };

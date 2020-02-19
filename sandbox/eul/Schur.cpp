@@ -10,6 +10,9 @@
 #include "Topo.h"
 #include "Geom.h"
 #include "L2Vecs.h"
+#include "ElMats.h"
+#include "VertOps.h"
+#include "Assembly.h"
 #include "Schur.h"
 
 using namespace std;
@@ -21,7 +24,7 @@ Schur::Schur(Topo* _topo, Geom* _geom) {
     int lSize = _geom->nk * _topo->n2l;
     int gSize = _geom->nk * _topo->nDofs2G;
     int index;
-    int *inds, *inds_g;
+    int *inds_g;
     Vec v_l, v_g;
     IS is_l, is_g;
 
@@ -72,6 +75,8 @@ Schur::Schur(Topo* _topo, Geom* _geom) {
     VecDestroy(&v_g);
     ISDestroy(&is_l);
     ISDestroy(&is_g);
+
+    M = NULL;
 }
 
 void Schur::InitialiseMatrix() {
@@ -85,16 +90,37 @@ void Schur::InitialiseMatrix() {
     MatMPIAIJSetPreallocation(M, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
     MatZeroEntries(M);
 
+    MatCreate(MPI_COMM_WORLD, &L);
+    MatSetSizes(L, lSize, lSize, gSize, gSize);
+    MatSetType(L, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(L, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
+    MatZeroEntries(L);
+
+    MatCreate(MPI_COMM_WORLD, &Q);
+    MatSetSizes(Q, lSize, lSize, gSize, gSize);
+    MatSetType(Q, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(Q, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
+    MatZeroEntries(Q);
+
+    MatCreate(MPI_COMM_WORLD, &L_rt);
+    MatSetSizes(L_rt, lSize, lSize, gSize, gSize);
+    MatSetType(L_rt, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(L_rt, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
+    MatZeroEntries(L_rt);
+
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M, M);
 }
 
 void Schur::DestroyMatrix() {
     MatDestroy(&M);
+    MatDestroy(&L);
+    MatDestroy(&Q);
+    MatDestroy(&L_rt);
     KSPDestroy(&ksp);
 }
 
-void Schur::AddFromVertMat(int ei, Mat Az) {
+void Schur::AddFromVertMat(int ei, Mat Az, Mat _M) {
     int elOrd2 = topo->elOrd * topo->elOrd;
     int nCols, row_g, cols_g[999];
 #ifdef VERTICALLY_CONTIGUOUS
@@ -121,13 +147,13 @@ void Schur::AddFromVertMat(int ei, Mat Az) {
                 cols_g[cc] = rank*(geom->nk*topo->n2l) + (cols[cc]/elOrd2)*topo->n2l + inds[cols[cc]%elOrd2];
 #endif
             }
-            MatSetValues(M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
+            MatSetValues(_M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
             MatRestoreRow(Az, kk*elOrd2+ii, &nCols, &cols, &vals);
         }
     }
 }
 
-void Schur::AddFromHorizMat(int kk, Mat Ax) {
+void Schur::AddFromHorizMat(int kk, Mat Ax, Mat _M) {
     int elOrd2 = topo->elOrd * topo->elOrd;
     int mi, mf, nCols, row_g, cols_g[999], rank_i;
     const int* cols;
@@ -155,7 +181,7 @@ void Schur::AddFromHorizMat(int kk, Mat Ax) {
             cols_g[cc] = rank_i*geom->nk*topo->n2l + kk*topo->n2l + cols[cc]%topo->n2l;
 #endif
         }
-        MatSetValues(M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
+        MatSetValues(_M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
         MatRestoreRow(Ax, mm, &nCols, &cols, &vals);
     }
 }
@@ -163,13 +189,12 @@ void Schur::AddFromHorizMat(int kk, Mat Ax) {
 void Schur::RepackFromVert(Vec* vz, Vec v) {
     int elOrd2 = topo->elOrd * topo->elOrd;
     int ind_g;
-    int* inds;
     PetscScalar *vzArray, *vArray;
 
     VecZeroEntries(vl);
     VecGetArray(vl, &vArray);
     for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-        inds = topo->elInds2_l(ei%topo->nElsX, ei/topo->nElsX);
+        //inds = topo->elInds2_l(ei%topo->nElsX, ei/topo->nElsX);
         VecGetArray(vz[ei], &vzArray);
         
         for(int kk = 0; kk < geom->nk; kk++) {
@@ -197,6 +222,8 @@ void Schur::RepackFromHoriz(Vec* vx, Vec v) {
     int ind_g;
     int* inds;
     PetscScalar *vxArray, *vArray;
+
+VecZeroEntries(v);
 
     VecZeroEntries(vl);
     VecGetArray(vl, &vArray);
@@ -296,6 +323,134 @@ void Schur::Solve(L2Vecs* d_exner) {
     UnpackToHoriz(x, d_exner->vl);
 }
 
+/*
+bool AddEntry(int n, int* array, int* buffer, int entry) {
+    int start, i;
+
+    for(i = 0; i < n; i++) {
+        if(array[i] == entry) return false;
+    }
+
+    for(start = 0; start < n; start++) {
+        if(array[start] < entry) buffer[start] = array[start];
+        else break;
+    }
+    buffer[start++] = entry;
+
+    for(i = start; i < n+1; i++) buffer[i] = array[i-1];
+    for(i = 0; i < n+1; i++) array[i] = buffer[i];
+
+    return true;
+}
+
+int FindIndex(int n, int* array, int entry) {
+    for(int i = 0; i < n; i++) if(array[i] == entry) return i;
+    return -1;
+}
+
+void Schur::Preallocate(HorizSolve* hs, VertSolve* vs, L1Vecs* velx, L2Vecs* velz, L2Vecs* rho, L2Vecs* rt, L2Vecs* pi, 
+                        L2Vecs* theta, L1Vecs* F_u, L2Vecs* F_w, L2Vecs* F_rho, L2Vecs* F_rt, L2Vecs* F_pi, L1Vecs* gradPi) {
+    int ProcMap[9], nProcs = 0;
+    int** ProcRow;
+    int*** ProcRowCol;
+    int buffer[9999];
+    int elOrd2 = topo->elOrd * topo->elOrd;
+    int mi, mf, nCols, row_l, cols_g[999], rank_i, rank_j, lShift, ex, ey;
+    const int* cols;
+    const double *vals;
+    int lSize = geom->nk * topo->n2l;
+
+    for(int proc_i = 0; proc_i < 9; proc_i++) ProcMap[proc_i] = -1;
+
+    ProcRow = new int*[9];
+    ProcRowCol = new int**[9];
+    for(int proc_i = 0; proc_i < 9; proc_i++) {
+        ProcRow[proc_i] = new int[lSize];
+        ProcRowCol[proc_i] = new int*[lSize];
+        for(int row_i = 0; row_i < lSize; row_i++) {
+            ProcRow[proc_i][row_i] = 0;
+            ProcRowCol[proc_i][row_i] = new int[3*9*geom->nk*elOrd2];
+        }
+    }
+
+    for(int lev = 0; lev < geom->nk; lev++) {
+        if(!rank) cout << "doing preallocation from horiztonal matrix at level: " << lev << endl;
+        hs->assemble_and_update(lev, theta->vl, velx->vl[lev], velx->vh[lev], rho->vl[lev], rt->vl[lev], pi->vl[lev],
+                                F_u->vh[lev], F_rho->vh[lev], F_rt->vh[lev], F_pi->vh[lev], gradPi->vl[lev], &hs->_PCx);
+
+        MatAssemblyBegin(hs->_PCx, MAT_FINAL_ASSEMBLY);
+        MatAssemblyEnd(  hs->_PCx, MAT_FINAL_ASSEMBLY);
+
+        MatGetOwnershipRange(hs->_PCx, &mi, &mf);
+
+        // first pass to build the processor to index map
+        if(!lev) {
+            for(int mm = mi; mm < mf; mm++) {
+                MatGetRow(hs->_PCx, mm, &nCols, &cols, &vals);
+                for(int cc = 0; cc < nCols; cc++) {
+                    rank_i = cols[cc]/topo->n2l;
+                    if(AddEntry(nProcs, ProcMap, buffer, rank_i)) {
+                        nProcs++;
+                    }
+                }
+                MatRestoreRow(hs->_PCx, mm, &nCols, &cols, &vals);
+            }
+        }
+
+        for(int mm = mi; mm < mf; mm++) {
+            MatGetRow(hs->_PCx, mm, &nCols, &cols, &vals);
+            for(int cc = 0; cc < nCols; cc++) {
+                rank_i = cols[cc]/topo->n2l;
+                rank_j = FindIndex(nProcs, ProcMap, rank_i);
+
+                cols_g[cc] = (cols[cc]/elOrd2)*geom->nk*elOrd2 + lev*elOrd2 + cols[cc]%elOrd2;
+
+                if(AddEntry(ProcRow[rank_j][mm-mi], ProcRowCol[rank_j][mm-mi], buffer, cols_g[cc])) {
+                    ProcRow[rank_j][mm-mi]++;
+                }
+            }
+            MatRestoreRow(hs->_PCx, mm, &nCols, &cols, &vals);
+        }
+
+        MatDestroy(&hs->_PCx);
+    }
+
+    rank_j = FindIndex(nProcs, ProcMap, rank);
+    for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+        if(!rank) cout << "doing preallocation from vertical matrix at column: " << ei << endl;
+        ex = ei%topo->nElsX;
+        ey = ei/topo->nElsX;
+        vs->assemble_and_update(ex, ey, theta->vz[ei], velz->vz[ei], rho->vz[ei], rt->vz[ei], pi->vz[ei],
+                                F_w->vz[ei], F_rho->vz[ei], F_rt->vz[ei], F_pi->vz[ei]);
+
+        lShift = rank*(geom->nk*topo->n2l) + ei*geom->nk*elOrd2;
+        for(int kk = 0; kk < geom->nk; kk++) {
+            for(int ii = 0; ii < elOrd2; ii++) {
+                row_l = ei*geom->nk*elOrd2 + kk*elOrd2 + ii;
+
+                MatGetRow(vs->_PCz, kk*elOrd2+ii, &nCols, &cols, &vals);
+                for(int cc = 0; cc < nCols; cc++) {
+                    cols_g[cc] = lShift + cols[cc];
+                    if(AddEntry(ProcRow[rank_j][row_l], ProcRowCol[rank_j][row_l], buffer, cols_g[cc])) ProcRow[rank_j][row_l]++;
+                }
+                MatRestoreRow(vs->_PCz, kk*elOrd2+ii, &nCols, &cols, &vals);
+            }
+        }
+    }
+
+    //MatPreallocateLocations(Mat A,PetscInt row,PetscInt ncols,PetscInt *cols,PetscInt *dnz,PetscInt *onz)
+
+    for(int proc_i = 0; proc_i < 9; proc_i++) {
+        delete[] ProcRow[proc_i];
+        for(int row_i = 0; row_i < lSize; row_i++) {
+            delete[] ProcRowCol[proc_i][row_i];
+        }
+        delete[] ProcRowCol[proc_i];
+    }
+    delete[] ProcRow;
+    delete[] ProcRowCol;
+}
+
 Schur::~Schur() {
     delete[] inds2;
     VecDestroy(&vl);
@@ -303,3 +458,4 @@ Schur::~Schur() {
     VecDestroy(&b);
     VecScatterDestroy(&scat);
 }
+*/

@@ -22,6 +22,7 @@ class VertSolve {
         void viscosity();
 
         void diagTheta2(Vec* rho, Vec* rt, Vec* theta);
+        void diagExner(int ex, int ey, Vec rt, Vec pi);
 
         void diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec _F);
         void diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi);
@@ -46,16 +47,19 @@ class VertSolve {
 
         double MaxNorm(Vec dx, Vec x, double max_norm);
 
-        void eos_residual(int ex, int ey, Vec rt_i, Vec rt_j, Vec exner_i, Vec exner_j, Vec F_exner);
-
         void solve_schur_column(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
         void assemble_and_update(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
-                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi);
+                                 Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Schur* schur);
         void update_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                            Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
         void update_delta_u(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                             Vec F_u, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
+        void update_delta_u_2(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec pi, 
+                                    Vec F_u, Vec F_rho, Vec d_u, Vec d_rho);
+        void update_delta_pi_2(int ex, int ey, Vec rt, Vec pi, Vec F_pi, Vec d_rt, Vec d_pi);
+        void assemble_and_update_2(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec pi, 
+                                    Vec F_u, Vec F_rho);
 
         double LineSearch(Vec velz_i,  Vec velz_j, Vec d_velz, 
                           Vec rho_i,   Vec rho_j,  Vec d_rho, 

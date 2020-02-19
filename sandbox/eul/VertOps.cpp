@@ -18,7 +18,6 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-#define NEW_EOS 1
 
 using namespace std;
 
@@ -1853,12 +1852,11 @@ void VertOps::AssembleLinearWithRhoExp(int ex, int ey, Vec rho, double exponent,
 }
 
 void VertOps::AssembleLinearWithRhoInv(int ex, int ey, Vec rho, Mat A) {
-    int kk, ii, jj, rows[99], ei, *inds0, mp1, mp12;
+    int kk, ii, jj, rows[99], ei, mp1, mp12;
     double det, rb, rt, gamma;
     PetscScalar* rArray;
 
     ei    = ey*topo->nElsX + ex;
-    inds0 = topo->elInds0_l(ex, ey);
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
 
@@ -2397,7 +2395,7 @@ void VertOps::AssembleN_PiInv(int ex, int ey, Vec rt, Vec pi, Mat A, bool do_inv
             Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
             for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] /= fac;
         }
-        for(ii = 0; ii < n2; ii++) rows[ii] = kk*n2 + ii;;
+        for(ii = 0; ii < n2; ii++) rows[ii] = kk*n2 + ii;
 
         MatSetValues(A, W->nDofsJ, rows, W->nDofsJ, rows, WtQWflat, ADD_VALUES);
     }
@@ -2466,7 +2464,7 @@ void VertOps::AssembleN_RT(int ex, int ey, Vec rt, Vec pi, Mat A) {
 
         Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
         for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] *= fac;
-        for(ii = 0; ii < n2; ii++) rows[ii] = kk*n2 + ii;;
+        for(ii = 0; ii < n2; ii++) rows[ii] = kk*n2 + ii;
 
         MatSetValues(A, W->nDofsJ, rows, W->nDofsJ, rows, WtQWflat, ADD_VALUES);
     }
@@ -2476,3 +2474,53 @@ void VertOps::AssembleN_RT(int ex, int ey, Vec rt, Vec pi, Mat A) {
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  A, MAT_FINAL_ASSEMBLY);
 }
+
+void VertOps::AssembleConstWithRhoInv2(int ex, int ey, Vec rho, Mat B) {
+    int ii, jj, kk, ei, mp1, mp12;
+    int *inds0;
+    double det, rk, gamma;
+    int inds2k[99];
+    PetscScalar* rArray;
+
+    ei    = ey*topo->nElsX + ex;
+    inds0 = topo->elInds0_l(ex, ey);
+    mp1   = quad->n + 1;
+    mp12  = mp1*mp1;
+
+    Q->assemble(ex, ey);
+
+    MatZeroEntries(B);
+
+    // assemble the matrices
+    VecGetArray(rho, &rArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+
+            rk = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                rk += rArray[kk*n2+jj]*gamma;
+            }
+            rk /= (geom->thick[kk][inds0[ii]]*det);
+            Q0[ii][ii] *= rk*rk;
+        }
+
+        // assemble the piecewise constant mass matrix for level k
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Inv(WtQW, WtQWinv, n2);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + kk*W->nDofsJ;
+        }
+        MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(rho, &rArray);
+    MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+}
+
