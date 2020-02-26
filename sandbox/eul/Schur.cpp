@@ -17,10 +17,7 @@
 
 using namespace std;
 
-#define VERTICALLY_CONTIGUOUS 1
-
 Schur::Schur(Topo* _topo, Geom* _geom) {
-    int elOrd2 = _topo->elOrd * _topo->elOrd;
     int lSize = _geom->nk * _topo->n2l;
     int gSize = _geom->nk * _topo->nDofs2G;
     int index;
@@ -33,18 +30,18 @@ Schur::Schur(Topo* _topo, Geom* _geom) {
 
     elOrd = _topo->elOrd;
     nElsX = _topo->nElsX;
-    inds2 = new int[elOrd2];
+    elOrd2 = elOrd*elOrd;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     VecCreateSeq(MPI_COMM_SELF, lSize, &vl);
     VecCreateMPI(MPI_COMM_WORLD, lSize, gSize, &x);
     VecCreateMPI(MPI_COMM_WORLD, lSize, gSize, &b);
+    VecCreateMPI(MPI_COMM_WORLD, lSize, gSize, &t);
 
     // create the scatter
     index = 0;
     inds_g = new int[lSize];
-#ifdef VERTICALLY_CONTIGUOUS
     for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
         for(int kk = 0; kk < geom->nk; kk++) {
             for(int ii = 0; ii < elOrd2; ii++) {
@@ -52,16 +49,6 @@ Schur::Schur(Topo* _topo, Geom* _geom) {
             }
         }
     }
-#else
-    for(int kk = 0; kk < geom->nk; kk++) {
-        for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-            inds = topo->elInds2_l(ei%topo->nElsX, ei/topo->nElsX);
-            for(int ii = 0; ii < elOrd2; ii++) {
-                inds_g[index++] = rank * (geom->nk*topo->n2l) + kk*topo->n2l + inds[ii];
-            }
-        }
-    }
-#endif
     
     VecCreateSeq(MPI_COMM_SELF, lSize, &v_l);
     VecCreateMPI(MPI_COMM_WORLD, lSize, gSize, &v_g);
@@ -69,38 +56,25 @@ Schur::Schur(Topo* _topo, Geom* _geom) {
     ISCreateGeneral(MPI_COMM_WORLD, lSize, inds_g, PETSC_COPY_VALUES, &is_g);
 
     VecScatterCreate(v_g, is_g, v_l, is_l, &scat);
-
     delete[] inds_g;
+
     VecDestroy(&v_l);
     VecDestroy(&v_g);
     ISDestroy(&is_l);
     ISDestroy(&is_g);
 
-    M = NULL;
+    T = P = NULL;
 }
 
 void Schur::InitialiseMatrix() {
-    int elOrd2 = topo->elOrd * topo->elOrd;
     int lSize = geom->nk * topo->n2l;
     int gSize = geom->nk * topo->nDofs2G;
 
-    MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, lSize, lSize, gSize, gSize);
-    MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
-    MatZeroEntries(M);
-
-    MatCreate(MPI_COMM_WORLD, &L);
-    MatSetSizes(L, lSize, lSize, gSize, gSize);
-    MatSetType(L, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(L, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
-    MatZeroEntries(L);
-
-    MatCreate(MPI_COMM_WORLD, &Q);
-    MatSetSizes(Q, lSize, lSize, gSize, gSize);
-    MatSetType(Q, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(Q, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
-    MatZeroEntries(Q);
+    MatCreate(MPI_COMM_WORLD, &L_rho);
+    MatSetSizes(L_rho, lSize, lSize, gSize, gSize);
+    MatSetType(L_rho, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(L_rho, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
+    MatZeroEntries(L_rho);
 
     MatCreate(MPI_COMM_WORLD, &L_rt);
     MatSetSizes(L_rt, lSize, lSize, gSize, gSize);
@@ -108,44 +82,44 @@ void Schur::InitialiseMatrix() {
     MatMPIAIJSetPreallocation(L_rt, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
     MatZeroEntries(L_rt);
 
-    KSPCreate(MPI_COMM_WORLD, &ksp);
-    KSPSetOperators(ksp, M, M);
+    MatCreate(MPI_COMM_WORLD, &Q);
+    MatSetSizes(Q, lSize, lSize, gSize, gSize);
+    MatSetType(Q, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(Q, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
+    MatZeroEntries(Q);
+
+    MatCreate(MPI_COMM_WORLD, &VISC);
+    MatSetSizes(VISC, lSize, lSize, gSize, gSize);
+    MatSetType(VISC, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(VISC, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
+    MatZeroEntries(VISC);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp_rt);
+    KSPCreate(MPI_COMM_WORLD, &ksp_rho);
 }
 
 void Schur::DestroyMatrix() {
-    MatDestroy(&M);
-    MatDestroy(&L);
-    MatDestroy(&Q);
+    MatDestroy(&L_rho);
     MatDestroy(&L_rt);
-    KSPDestroy(&ksp);
+    MatDestroy(&Q);
+
+    KSPDestroy(&ksp_rt);
+    KSPDestroy(&ksp_rho);
 }
 
 void Schur::AddFromVertMat(int ei, Mat Az, Mat _M) {
-    int elOrd2 = topo->elOrd * topo->elOrd;
     int nCols, row_g, cols_g[999];
-#ifdef VERTICALLY_CONTIGUOUS
     int lShift = rank*(geom->nk*topo->n2l) + ei*geom->nk*elOrd2;
-#else
-    int* inds = topo->elInds2_l(ei%topo->nElsX, ei/topo->nElsX);
-#endif
     const int* cols;
     const double *vals;
 
     for(int kk = 0; kk < geom->nk; kk++) {
         for(int ii = 0; ii < elOrd2; ii++) {
-#ifdef VERTICALLY_CONTIGUOUS
             row_g = lShift + kk*elOrd2 + ii;
-#else
-            row_g = rank*(geom->nk*topo->n2l) + kk*topo->n2l + inds[ii];
-#endif
 
             MatGetRow(Az, kk*elOrd2+ii, &nCols, &cols, &vals);
             for(int cc = 0; cc < nCols; cc++) {
-#ifdef VERTICALLY_CONTIGUOUS
                 cols_g[cc] = lShift + cols[cc];
-#else
-                cols_g[cc] = rank*(geom->nk*topo->n2l) + (cols[cc]/elOrd2)*topo->n2l + inds[cols[cc]%elOrd2];
-#endif
             }
             MatSetValues(_M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
             MatRestoreRow(Az, kk*elOrd2+ii, &nCols, &cols, &vals);
@@ -154,7 +128,6 @@ void Schur::AddFromVertMat(int ei, Mat Az, Mat _M) {
 }
 
 void Schur::AddFromHorizMat(int kk, Mat Ax, Mat _M) {
-    int elOrd2 = topo->elOrd * topo->elOrd;
     int mi, mf, nCols, row_g, cols_g[999], rank_i;
     const int* cols;
     const double *vals;
@@ -165,21 +138,13 @@ void Schur::AddFromHorizMat(int kk, Mat Ax, Mat _M) {
         MatGetRow(Ax, mm, &nCols, &cols, &vals);
 
         rank_i = mm/topo->n2l;
-#ifdef VERTICALLY_CONTIGUOUS
         row_g = rank_i*geom->nk*topo->n2l + ((mm-mi)/elOrd2)*geom->nk*elOrd2 + kk*elOrd2 + (mm-mi)%elOrd2;
-#else
-        row_g = rank_i*geom->nk*topo->n2l + kk*topo->n2l + mm%topo->n2l;
-#endif
         if(mm<rank*topo->n2l || mm>=(rank+1)*topo->n2l) cout << "SCHUR: matrix assebly error [1]! " << rank << ", " << mm << endl;
 	if(rank != rank_i                             ) cout << "SCHUR: matrix assebly error [2]! " << rank << ", " << mm << endl;
 
         for(int cc = 0; cc < nCols; cc++) {
             rank_i = cols[cc]/topo->n2l;
-#ifdef VERTICALLY_CONTIGUOUS
             cols_g[cc] = /*rank_i*geom->nk*topo->n2l +*/ (cols[cc]/elOrd2)*geom->nk*elOrd2 + kk*elOrd2 + cols[cc]%elOrd2;
-#else
-            cols_g[cc] = rank_i*geom->nk*topo->n2l + kk*topo->n2l + cols[cc]%topo->n2l;
-#endif
         }
         MatSetValues(_M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
         MatRestoreRow(Ax, mm, &nCols, &cols, &vals);
@@ -187,23 +152,17 @@ void Schur::AddFromHorizMat(int kk, Mat Ax, Mat _M) {
 }
 
 void Schur::RepackFromVert(Vec* vz, Vec v) {
-    int elOrd2 = topo->elOrd * topo->elOrd;
     int ind_g;
     PetscScalar *vzArray, *vArray;
 
     VecZeroEntries(vl);
     VecGetArray(vl, &vArray);
     for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-        //inds = topo->elInds2_l(ei%topo->nElsX, ei/topo->nElsX);
         VecGetArray(vz[ei], &vzArray);
         
         for(int kk = 0; kk < geom->nk; kk++) {
             for(int ii = 0; ii < elOrd2; ii++) {
-#ifdef VERTICALLY_CONTIGUOUS
                 ind_g = ei*geom->nk*elOrd2 + kk*elOrd2 + ii;
-#else
-                ind_g = kk*topo->n2l + inds[ii];
-#endif
                 vArray[ind_g] = vzArray[kk*elOrd2+ii];
             }
         }
@@ -218,12 +177,11 @@ void Schur::RepackFromVert(Vec* vz, Vec v) {
 
 // note: vx are assumed to be local vectors
 void Schur::RepackFromHoriz(Vec* vx, Vec v) {
-    int elOrd2 = topo->elOrd * topo->elOrd;
     int ind_g;
     int* inds;
     PetscScalar *vxArray, *vArray;
 
-VecZeroEntries(v);
+    VecZeroEntries(v);
 
     VecZeroEntries(vl);
     VecGetArray(vl, &vArray);
@@ -232,11 +190,7 @@ VecZeroEntries(v);
         for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
             inds = topo->elInds2_l(ei%topo->nElsX, ei/topo->nElsX);
             for(int ii = 0; ii < elOrd2; ii++) {
-#ifdef VERTICALLY_CONTIGUOUS
                 ind_g = ei*geom->nk*elOrd2 + kk*elOrd2 + ii;
-#else
-                ind_g = kk*topo->n2l + inds[ii];
-#endif
                 vArray[ind_g] = vxArray[inds[ii]];
             }
         }
@@ -251,7 +205,6 @@ VecZeroEntries(v);
 
 // note: vx are assumed to be local vectors
 void Schur::UnpackToHoriz(Vec v, Vec* vx) {
-    int elOrd2 = topo->elOrd * topo->elOrd;
     int ind_g;
     int* inds;
     PetscScalar *vxArray, *vArray;
@@ -265,11 +218,7 @@ void Schur::UnpackToHoriz(Vec v, Vec* vx) {
         for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
             inds = topo->elInds2_l(ei%topo->nElsX, ei/topo->nElsX);
             for(int ii = 0; ii < elOrd2; ii++) {
-#ifdef VERTICALLY_CONTIGUOUS
                 ind_g = ei*geom->nk*elOrd2 + kk*elOrd2 + ii;
-#else
-                ind_g = kk*topo->n2l + inds[ii];
-#endif
                 vxArray[inds[ii]] = vArray[ind_g];
             }
         }
@@ -278,15 +227,16 @@ void Schur::UnpackToHoriz(Vec v, Vec* vx) {
     VecRestoreArray(vl, &vArray);
 }
 
-void Schur::Solve(L2Vecs* d_exner) {
+void Schur::Solve(KSP ksp, Mat _M, L2Vecs* d_exner) {
     int nlocal, first_local, size;
     PC pc, subpc;
     KSP* subksp;
 
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  _M, MAT_FINAL_ASSEMBLY);
 
-#ifdef VERTICALLY_CONTIGUOUS
+    KSPSetOperators(ksp, _M, _M);
+
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     KSPGetPC(ksp, &pc);
@@ -300,21 +250,6 @@ void Schur::Solve(L2Vecs* d_exner) {
         KSPGetPC(subksp[ii], &subpc);
         PCSetType(subpc, PCLU);
     }
-#else
-    KSPGetPC(ksp, &pc);
-    KSPSetType(ksp, KSPGMRES);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, geom->nk, NULL);
-    KSPSetUp(ksp);
-    PCBJacobiGetSubKSP(pc, &nlocal, &first_local, &subksp);
-
-    for(int ii = 0; ii < nlocal; ii++) {
-        KSPGetPC(subksp[ii], &subpc);
-        PCSetType(subpc, PCJACOBI);
-        KSPSetType(subksp[ii], KSPGMRES);
-        KSPSetTolerances(subksp[ii], 1.e-16, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
-    }
-#endif
     KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetOptionsPrefix(ksp, "ksp_schur_");
     KSPSetFromOptions(ksp);
@@ -354,7 +289,6 @@ void Schur::Preallocate(HorizSolve* hs, VertSolve* vs, L1Vecs* velx, L2Vecs* vel
     int** ProcRow;
     int*** ProcRowCol;
     int buffer[9999];
-    int elOrd2 = topo->elOrd * topo->elOrd;
     int mi, mf, nCols, row_l, cols_g[999], rank_i, rank_j, lShift, ex, ey;
     const int* cols;
     const double *vals;
@@ -450,12 +384,174 @@ void Schur::Preallocate(HorizSolve* hs, VertSolve* vs, L1Vecs* velx, L2Vecs* vel
     delete[] ProcRow;
     delete[] ProcRowCol;
 }
+*/
 
 Schur::~Schur() {
-    delete[] inds2;
     VecDestroy(&vl);
     VecDestroy(&x);
     VecDestroy(&b);
+    VecDestroy(&t);
     VecScatterDestroy(&scat);
 }
-*/
+
+// Row is in L2 and column is in H(div)
+void Schur::AddFromVertMat_D(int ei, Mat Az, Mat _M) {
+    int nCols, row_g, cols_g[999];
+    int lShift_r = rank*(geom->nk*topo->n2l) + ei*geom->nk*elOrd2;
+    int lShift_c = rank*(geom->nk*topo->n1l + (geom->nk-1)*topo->n2l);
+    const int* cols;
+    const double *vals;
+
+    for(int kk = 0; kk < geom->nk; kk++) {
+        for(int ii = 0; ii < elOrd2; ii++) {
+            row_g = lShift_r + kk*elOrd2 + ii;
+
+            MatGetRow(Az, kk*elOrd2+ii, &nCols, &cols, &vals);
+            for(int cc = 0; cc < nCols; cc++) {
+                cols_g[cc] = lShift_c + (cols[cc]/elOrd2)*(topo->n1l + topo->n2l) + topo->n1l + ei*elOrd2 + (cols[cc]%elOrd2);
+            }
+            MatSetValues(_M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
+            MatRestoreRow(Az, kk*elOrd2+ii, &nCols, &cols, &vals);
+        }
+    }
+}
+
+void Schur::AddFromHorizMat_D(int kk, Mat Ax, Mat _M) {
+    int mi, mf, nCols, row_g, cols_g[999], rank_i;
+    const int* cols;
+    const double *vals;
+
+    MatGetOwnershipRange(Ax, &mi, &mf);
+
+    for(int mm = mi; mm < mf; mm++) {
+        row_g = rank*geom->nk*topo->n2l + ((mm-mi)/elOrd2)*geom->nk*elOrd2 + kk*elOrd2 + (mm-mi)%elOrd2;
+
+        MatGetRow(Ax, mm, &nCols, &cols, &vals);
+        for(int cc = 0; cc < nCols; cc++) {
+            rank_i = cols[cc]/topo->n1l;
+            cols_g[cc] = rank_i*(geom->nk*topo->n1l + (geom->nk-1)*topo->n2l) + kk*(topo->n1l + topo->n2l) + cols[cc]%topo->n1l;
+        }
+        MatSetValues(_M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
+        MatRestoreRow(Ax, mm, &nCols, &cols, &vals);
+    }
+}
+
+// Row is in H(div) and column is in L2
+void Schur::AddFromVertMat_G(int ei, Mat Az, Mat _M) {
+    int nCols, row_g, cols_g[999];
+    int lShift_r = rank*(geom->nk*topo->n1l + (geom->nk-1)*topo->n2l);
+    int lShift_c = rank*(geom->nk*topo->n2l) + ei*geom->nk*elOrd2;
+    const int* cols;
+    const double *vals;
+
+    for(int kk = 0; kk < geom->nk-1; kk++) {
+        for(int ii = 0; ii < elOrd2; ii++) {
+            row_g = lShift_r + kk*(topo->n1l + topo->n2l) + topo->n1l + ei*elOrd2 + ii;
+
+            MatGetRow(Az, kk*elOrd2+ii, &nCols, &cols, &vals);
+            for(int cc = 0; cc < nCols; cc++) {
+                cols_g[cc] = lShift_c + cols[cc];
+            }
+            MatSetValues(_M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
+            MatRestoreRow(Az, kk*elOrd2+ii, &nCols, &cols, &vals);
+        }
+    }
+}
+
+void Schur::AddFromHorizMat_G(int kk, Mat Ax, Mat _M) {
+    int mi, mf, nCols, row_g, cols_g[999];
+    const int* cols;
+    const double *vals;
+
+    MatGetOwnershipRange(Ax, &mi, &mf);
+
+    for(int mm = mi; mm < mf; mm++) {
+        row_g = rank*(geom->nk*topo->n1l + (geom->nk-1)*topo->n2l) + kk*(topo->n1l + topo->n2l) + (mm-mi);
+
+        MatGetRow(Ax, mm, &nCols, &cols, &vals);
+        for(int cc = 0; cc < nCols; cc++) {
+            cols_g[cc] = (cols[cc]/elOrd2)*geom->nk*elOrd2 + kk*elOrd2 + cols[cc]%elOrd2;
+        }
+        MatSetValues(_M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
+        MatRestoreRow(Ax, mm, &nCols, &cols, &vals);
+    }
+}
+
+// Row is in H(div) and column is in H(div)
+void Schur::AddFromVertMat_U(int ei, Mat Az, Mat _M) {
+    int nCols, row_g, cols_g[999];
+    int lShift = rank*(geom->nk*topo->n1l + (geom->nk-1)*topo->n2l);
+    const int* cols;
+    const double *vals;
+
+    for(int kk = 0; kk < geom->nk-1; kk++) {
+        for(int ii = 0; ii < elOrd2; ii++) {
+            row_g = lShift + kk*(topo->n1l + topo->n2l) + topo->n1l + ei*elOrd2 + ii;
+
+            MatGetRow(Az, kk*elOrd2+ii, &nCols, &cols, &vals);
+            for(int cc = 0; cc < nCols; cc++) {
+                cols_g[cc] = lShift + (cols[cc]/elOrd2)*(topo->n1l + topo->n2l) + topo->n1l + ei*elOrd2 + (cols[cc]%elOrd2);
+            }
+            MatSetValues(_M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
+            MatRestoreRow(Az, kk*elOrd2+ii, &nCols, &cols, &vals);
+        }
+    }
+}
+
+void Schur::AddFromHorizMat_U(int kk, Mat Ax, Mat _M) {
+    int mi, mf, nCols, row_g, cols_g[999], rank_i;
+    const int* cols;
+    const double *vals;
+
+    MatGetOwnershipRange(Ax, &mi, &mf);
+
+    for(int mm = mi; mm < mf; mm++) {
+        row_g = rank*(geom->nk*topo->n1l + (geom->nk-1)*topo->n2l) + kk*(topo->n1l + topo->n2l) + (mm-mi);
+
+        MatGetRow(Ax, mm, &nCols, &cols, &vals);
+        for(int cc = 0; cc < nCols; cc++) {
+            rank_i = cols[cc]/topo->n1l;
+            cols_g[cc] = rank_i*(geom->nk*topo->n1l + (geom->nk-1)*topo->n2l) + kk*(topo->n1l + topo->n2l) + cols[cc]%topo->n1l;
+        }
+        MatSetValues(_M, 1, &row_g, nCols, cols_g, vals, ADD_VALUES);
+        MatRestoreRow(Ax, mm, &nCols, &cols, &vals);
+    }
+}
+
+void Schur::RepackFromVert_U(Vec* uz, Vec _u) {
+    int ind_g;
+    int lShift = rank*(geom->nk*topo->n1l + (geom->nk-1)*topo->n2l);
+    PetscScalar *uzArray, *uArray;
+
+    VecGetArray(_u, &uArray);
+    for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+        VecGetArray(uz[ei], &uzArray);
+        
+        for(int kk = 0; kk < geom->nk-1; kk++) {
+            for(int ii = 0; ii < elOrd2; ii++) {
+                ind_g = lShift + kk*(topo->n1l + topo->n2l) + topo->n1l + ei*elOrd2 + ii;
+                uArray[ind_g] = uzArray[kk*elOrd2+ii];
+            }
+        }
+        VecRestoreArray(uz[ei], &uzArray);
+    }
+    VecRestoreArray(_u, &uArray);
+}
+
+// note: ux are assumed to be local vectors
+void Schur::RepackFromHoriz_U(Vec* ux, Vec _u) {
+    int ind_g;
+    int lShift = rank*(geom->nk*topo->n1l + (geom->nk-1)*topo->n2l);
+    PetscScalar *uxArray, *uArray;
+
+    VecGetArray(_u, &uArray);
+    for(int kk = 0; kk < geom->nk; kk++) {
+        VecGetArray(ux[kk], &uxArray);
+        for(int ii = 0; ii < topo->n1l; ii++) {
+            ind_g = lShift + kk*(topo->n1l + topo->n2l) + ii;
+            uArray[ind_g] = uxArray[ii];
+        }
+        VecRestoreArray(ux[kk], &uxArray);
+    }
+    VecRestoreArray(_u, &uArray);
+}

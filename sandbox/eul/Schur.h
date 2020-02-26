@@ -5,30 +5,49 @@ class Schur {
         int rank;
         Topo* topo;
         Geom* geom;
-        Vec vl;
+        Vec vl; // local vector in L2
         Vec x;
         Vec b;
-        Mat M;
+        Vec t;
+        Mat P; // [rho,rho] block
+        Mat G; // [rho, rt] block
+        Mat D; // [rt ,rho] block
+        Mat T; // [rt , rt] block
+        Mat Pinv;
+        Mat DPinv;
+        Mat S; // [T - DP^{-1}G]
+        Mat Uinv;
         Mat Q;
-        Mat L;
+        Mat D_rho;
+        Mat D_rt;
+        Mat DUinv;
+        Mat L_rho;
         Mat L_rt;
-        KSP ksp;
+        Mat VISC;
+        KSP ksp_rt;
+        KSP ksp_rho;
         VecScatter scat;
         void AddFromVertMat(int ei, Mat Az, Mat _M);
         void AddFromHorizMat(int kk, Mat Ax, Mat _M);
         void RepackFromVert(Vec* vz, Vec v);
         void RepackFromHoriz(Vec* vx, Vec v);
         void UnpackToHoriz(Vec v, Vec* vx);
-        void Solve(L2Vecs* d_exner);
+        void Solve(KSP ksp, Mat _M, L2Vecs* d_exner);
         void InitialiseMatrix();
         void DestroyMatrix();
-        //void Preallocate(HorizSolve* hs, VertSolve* vs, L1Vecs* velx, L2Vecs* velz, L2Vecs* rho, L2Vecs* rt, L2Vecs* pi, 
-        //                 L2Vecs* theta, L1Vecs* F_u, L2Vecs* F_w, L2Vecs* F_rho, L2Vecs* F_rt, L2Vecs* F_pi, L1Vecs* gradPi);
+        void AddFromVertMat_D(int ei, Mat Az, Mat _M);
+        void AddFromHorizMat_D(int ei, Mat Az, Mat _M);
+        void AddFromVertMat_G(int ei, Mat Az, Mat _M);
+        void AddFromHorizMat_G(int ei, Mat Az, Mat _M);
+        void AddFromVertMat_U(int ei, Mat Az, Mat _M);
+        void AddFromHorizMat_U(int ei, Mat Az, Mat _M);
+        void RepackFromVert_U(Vec* uz, Vec _u);
+        void RepackFromHoriz_U(Vec* uz, Vec _u);
 
     private:
         int elOrd;
         int nElsX;
-        int* inds2;
+        int elOrd2;
         int* elInds2_l(int ex, int ey);
         int* elInds2_g(int ex, int ey);
 };

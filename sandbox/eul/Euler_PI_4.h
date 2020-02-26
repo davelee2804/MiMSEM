@@ -22,6 +22,7 @@ class Euler {
         void solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save);
         void solve_gauss_seidel(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save);
         void solve_schur_2(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save);
+        void solve_schur_3(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save);
 
         void init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* h, ICfunc3D* func);

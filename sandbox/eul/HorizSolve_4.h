@@ -91,6 +91,13 @@ class HorizSolve {
         void update_delta_u_2(int lev, Vec velx_l, Vec velx_g, Vec rho, Vec rt, 
                                        Vec F_u, Vec F_rho, Vec dpil, Vec d_u, Vec d_rho);
 
+        void assemble_M_rho(int lev, Vec velx_l, Schur* schur);
+
+        void assemble_and_update_3(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec pi, 
+                                       Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec dpil, Vec Du, Schur* schur, int itt);
+        void update_delta_u_3(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec pi, 
+                                  Vec F_u, Vec F_rho, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, Vec dpil);
+
         Mat _PCx, L_rho_rho;
 
     private:
@@ -101,4 +108,9 @@ class HorizSolve {
         Mat M2_invM2, CTM1, M0_invCTM1, M1_invDT_M2M2_invM2, M1_rhoM1_invDT_M2M2_invM2, M2_LAP_Theta, DT_LAP_Theta;
         Mat TEMP1;
         Mat G_pi_rt2_inv, G_rho;
+        Mat M2theta_M2inv, M2theta_M2inv_M2du;
+        Mat UdotGRAD;
+        Mat L_rt_pi_N_pi_inv_N_rho, L_rt_pi_N_pi_inv_N_rho_M_inv;
+        Mat L_rho_pi_N_pi_inv_N_rho;
+        Mat G_pi_N_pi_inv, G_pi_N_pi_inv_N_rt;
 };

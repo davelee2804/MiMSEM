@@ -57,15 +57,25 @@ class VertSolve {
                             Vec F_u, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
         void update_delta_u_2(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec pi, 
                                     Vec F_u, Vec F_rho, Vec d_u, Vec d_rho);
+
+        void update_delta_pi(int ex, int ey, Vec rho, Vec rt, Vec pi, Vec F_pi, Vec d_rho, Vec d_rt, Vec d_pi);
+
         void update_delta_pi_2(int ex, int ey, Vec rt, Vec pi, Vec F_pi, Vec d_rt, Vec d_pi);
         void assemble_and_update_2(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec pi, 
                                     Vec F_u, Vec F_rho);
+
+        void assemble_M_rho(int ex, int ey, Vec velz, Schur* schur);
 
         double LineSearch(Vec velz_i,  Vec velz_j, Vec d_velz, 
                           Vec rho_i,   Vec rho_j,  Vec d_rho, 
                           Vec rt_i,    Vec rt_j,   Vec d_rt, 
                           Vec pi_i,    Vec pi_j,   Vec d_pi, Vec pi_h,
                           Vec theta_i, Vec theta_h, int ei);
+
+        void assemble_and_update_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
+                                    Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec Du, Schur* schur, int itt);
+        void update_delta_u_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
+                                 Vec F_u, Vec F_rho, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
 
         Mat _PCz;
         Mat pc_LAP;
@@ -83,6 +93,11 @@ class VertSolve {
         Mat pc_V1D_2, pc_V1_invV1_2, pc_V01V1_invV1_2, pc_V1DV0_invV01V1_invV1_2;
         Mat pc_V1_invV1_3, pc_V1V1_invV1, pc_V1_invV1V1_invV1, pc_V1V1_invV1V1_invV1;
         Mat Q_rt_rho, Q_rt_rho_M_rho_inv, L_rho_pi_N_pi_inv, L_rho_pi_N_pi_inv_N_rt, L_rt_pi_N_pi_inv_N_rt;
+        Mat pc_VBtheta_VBinv, pc_VBtheta_VBinv_VBdu;
+        Mat UdotGRAD;
+        Mat L_rt_pi_N_pi_inv_N_rho, L_rt_pi_N_pi_inv_N_rho_M_inv;
+        Mat L_rho_pi_N_pi_inv_N_rho;
+        Mat G_pi_N_pi_inv, G_pi_N_pi_inv_N_rt;
 
         KSP ksp_pi, ksp_rho, ksp_w;
 
