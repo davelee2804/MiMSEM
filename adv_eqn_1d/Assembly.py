@@ -362,7 +362,8 @@ class U_u_TP_up:
 					xq = gl.x[quad_i]
 					el_j = el_i
 					if np.abs(step) > 1.0e-6:
-						xq,el_j = self.advect_q(gl.x[quad_i],dX,vel_q[0]*step,dt,el_i,lx)
+						xq,el_j = self.advect_q(gl.x[quad_i],dX,vel_q[quad_g]*step,dt,el_i,lx)
+
 					for edge_i in np.arange(edge.n):
 						eq = edge.eval(xq,edge_i)
 						val = nq * gl.w[quad_i] * eq
@@ -370,8 +371,7 @@ class U_u_TP_up:
 						if row_i == nr:
 							row_i = 0
 						col_i = el_j*edge.n+edge_i
-						#A[row_i,col_i] = A[row_i,col_i] + 0.5*dt*vel_q[0]*val
-						A[row_i,col_i] = A[row_i,col_i] + vel_q[0]*val
+						A[row_i,col_i] = A[row_i,col_i] + vel_q[quad_g]*val
 						B[row_i,col_i] = 1
 
 		nnz = 0
@@ -418,14 +418,17 @@ class U_u_TP_up_2:
 		for el_i in np.arange(ne):
 			for node_i in np.arange(node.n+1):
 				for quad_i in np.arange(gl.n+1):
-					nq = node.eval(gl.x[quad_i]+step*(2.0/dX[0])*dt*vel_q[0],gl.x,node_i)
+					quad_g = el_i*gl.n+quad_i
+					if quad_g == ne*gl.n:
+						quad_g = 0
+
+					nq = node.eval(gl.x[quad_i]+step*(2.0/dX[0])*dt*vel_q[quad_g],gl.x,node_i)
 					xq = gl.x[quad_i]
 					el_j = el_i
 
 					for edge_i in np.arange(edge.n):
 						eq = edge.eval(xq,edge_i)
-						#val = nq * gl.w[quad_i] * 0.5*dt*vel_q[0] * eq
-						val = nq * gl.w[quad_i] * vel_q[0] * eq
+						val = nq * gl.w[quad_i] * vel_q[quad_g] * eq
 						row_i = el_i*node.n+node_i
 						if row_i == nr:
 							row_i = 0
@@ -562,3 +565,62 @@ class P_interp:
 
 		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
 
+class Umat_up_2:
+	def __init__(self,topo,quad,dX,vel_q,node,dt):
+		ne = len(dX)
+		lx = np.sum(dX)
+		nr = ne*node.n
+		nc = ne*node.n
+		A = np.zeros((nr,nc),dtype=np.float64)
+		B = np.zeros((nr,nc),dtype=np.int32)
+
+		gl = GaussLobatto(node.n)
+		for el_i in np.arange(ne):
+			for node_i in np.arange(node.n+1):
+				for quad_i in np.arange(gl.n+1):
+					quad_g = el_i*gl.n+quad_i
+					if quad_g == ne*gl.n:
+						quad_g = 0
+
+					nq = node.eval(gl.x[quad_i]+(2.0/dX[0])*dt*vel_q[quad_g],gl.x,node_i)
+					xq = gl.x[quad_i]
+
+					for node_j in np.arange(node.n+1):
+						nq2 = node.eval(gl.x[quad_i],gl.x,node_j)
+
+						val = nq * (dX[0]/2.0) * gl.w[quad_i] * nq2
+						row_i = el_i*node.n+node_i
+						if row_i == nr:
+							row_i = 0
+						col_i = el_i*node.n+node_j
+						if col_i == nr:
+							col_i = 0
+						A[row_i,col_i] = A[row_i,col_i] + val
+						B[row_i,col_i] = 1
+
+		nnz = 0
+		rows = np.zeros(nr*nc,dtype=np.int32)
+		cols = np.zeros(nr*nc,dtype=np.int32)
+		vals = np.zeros(nr*nc,dtype=np.float64)
+		for row_i in np.arange(nr):
+			for col_i in np.arange(nc):
+				if B[row_i][col_i] == 1:
+					rows[nnz] = row_i
+					cols[nnz] = col_i
+					vals[nnz] = A[row_i][col_i]
+					nnz = nnz + 1
+
+		rows = rows[:nnz]
+		cols = cols[:nnz]
+		vals = vals[:nnz]
+
+		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+class U_u_TP_up_3:
+	def __init__(self,topo,quad,dX,vel_q,node,edge,dt,step):
+		ne = len(dX)
+		lx = np.sum(dX)
+		nr = ne*node.n
+		nc = ne*edge.n
+		A = np.zeros((nr,nc),dtype=np.float64)
+		B = np.zeros((nr,nc),dtype=np.int32)

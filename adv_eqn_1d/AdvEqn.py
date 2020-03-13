@@ -73,6 +73,7 @@ class AdvEqn:
 			for j in np.arange(node.n+1):
 				node.M_ij_u[i,j] = node.eval(node.quad.x[i]+dt*vel[0]*(2.0/dX[0]),node.quad.x,j)
 				node.M_ij_d[i,j] = node.eval(node.quad.x[i]-dt*vel[0]*(2.0/dX[0]),node.quad.x,j)
+
 		edge = LagrangeEdge(topo.n,quad.n)
 		edge.M_ij_u = np.zeros((edge.m+1,edge.n),dtype=np.float64)
 		for i in np.arange(edge.m+1):
@@ -84,7 +85,8 @@ class AdvEqn:
 		M1_c_c = Pmat_up(topo,quad,dX,edge.M_ij_c,edge.M_ij_c).M
 		M1_c_u = Pmat_up(topo,quad,dX,edge.M_ij_c,edge.M_ij_u).M
 		M0_c_c = Umat_up(topo,quad,dX,node.M_ij_c,node.M_ij_c).M
-		M0_u_c = Umat_up(topo,quad,dX,node.M_ij_u,node.M_ij_c).M
+		#M0_u_c = Umat_up(topo,quad,dX,node.M_ij_u,node.M_ij_c).M
+		M0_u_c = Umat_up_2(topo,quad,dX,vel,node,dt).M
 		M0_c_u = Umat_up(topo,quad,dX,node.M_ij_c,node.M_ij_u).M
 		M0_u_u = Umat_up(topo,quad,dX,node.M_ij_u,node.M_ij_u).M
 		M0_c_c_inv = la.inv(M0_c_c)
@@ -99,6 +101,10 @@ class AdvEqn:
 		M10_dep = M01_arr.transpose()
 		M01_up2 = U_u_TP_up_2(topo,quad,dX,vel,node,edge,dt,+1.0).M
 		M10_up2 = M01_arr.transpose()
+
+		self.B     = M0_c_c_inv * M01_arr
+		self.B_dep = M0_c_c_inv * M01_dep
+		self.B_up2 = M0_u_c_inv * M01_up2
 
 		A_arr = M1_c_c * self.E10 * M0_c_c_inv * M01_arr
 		A_dep = M1_c_c * self.E10 * M0_c_c_inv * M01_dep # mass conserving

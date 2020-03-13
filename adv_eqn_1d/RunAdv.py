@@ -13,7 +13,7 @@ from Proj import *
 from AdvEqn import *
 from Plotting import *
 
-ne = 40
+ne = 20
 #ne = 6
 dXe = 1.0#1.25
 
@@ -126,6 +126,17 @@ for step in np.arange(nsteps) + 1:
 	a=ad.M1*h2
 	mass_2[step]=np.dot(_one,a)
 	energy2[step]=np.dot(a,h2)
+
+hf = hf - ho
+ht = ht - ho
+h2 = h2 - ho
+a=ad.M1*hf
+err_1 = np.sqrt(np.dot(a,hf))
+a=ad.M1*ht
+err_2 = np.sqrt(np.dot(a,ht))
+a=ad.M1*h2
+err_3 = np.sqrt(np.dot(a,h2))
+print str(err_1) + '\t' + str(err_2) + '\t' + str(err_3)
 
 plt.plot((mass_a-mass_a[0])/mass_a[0],c='g')
 plt.plot((mass_t-mass_t[0])/mass_t[0],c='r')
