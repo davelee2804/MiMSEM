@@ -14,13 +14,14 @@
 #include "L2Vecs.h"
 #include "ElMats.h"
 #include "VertOps.h"
+#include "VertSolve.h"
 #include "Assembly.h"
-#include "Euler.h"
+#include "Euler_2.h"
 
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define NK 30
+#define NK 8
 #define P0 100000.0
 #define RD 287.0
 #define GAMMA 0.005
@@ -273,7 +274,7 @@ int main(int argc, char** argv) {
     int startStep = atoi(argv[1]);
     double dt = 120.0;
     int nSteps = 12*24*30;
-    int dumpEvery = 360; //dump evert 12 hours
+    int dumpEvery = 1;//360; //dump evert 12 hours
     ofstream file;
     Topo* topo;
     Geom* geom;

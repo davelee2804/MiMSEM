@@ -238,7 +238,6 @@ void Euler::initGZ() {
     int ex, ey, ei, ii, kk, n2, mp12;
     int* inds0;
     int inds2k[99], inds0k[99];
-    double det;
     double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
     Vec gz;
     Mat GRAD, BQ;
@@ -266,7 +265,6 @@ void Euler::initGZ() {
             MatZeroEntries(BQ);
             for(kk = 0; kk < geom->nk; kk++) {
                 for(ii = 0; ii < mp12; ii++) {
-                    det = geom->det[ei][ii];
                     Q0[ii][ii]  = Q->A[ii][ii]*SCALE;
                     // for linear field we multiply by the vertical jacobian determinant when
                     // integrating, and do no other trasformations for the basis functions
@@ -1361,19 +1359,19 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rho_1->CopyFromHoriz(rho);     rho_1->UpdateLocal();   rho_1->HorizToVert();
     rt_1->CopyFromHoriz(rt);       rt_1->UpdateLocal();    rt_1->HorizToVert();
 
-    if(firstStep) {
-        if(!rank) cout << "first step, coupled vertical solve...\n";
-        //vert->solve_schur(velz_1, rho_1, rt_1, exner_i);
-        vert->solve_coupled(velz_1, rho_1, rt_1, exner_i);
-    } else {
+//    if(firstStep) {
+//        if(!rank) cout << "first step, coupled vertical solve...\n";
+        vert->solve_schur(velz_1, rho_1, rt_1, exner_i);
+        //vert->solve_coupled(velz_1, rho_1, rt_1, exner_i);
+//    } else {
         // pass in the current time level as well for q^{1} = q^{n} + F(q^{prev})
         // use the same horizontal kinetic energy as the previous horizontal solve, so don't assemble here
 #ifdef WITH_UDWDX
-        velz_1->CopyFromVert(velz);
-        AssembleVertMomVort(velx, velz_1);
+//        velz_1->CopyFromVert(velz);
+//        AssembleVertMomVort(velx, velz_1);
 #endif
-        VertSolve_Explicit(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz, velz, rho_0->vz, rt_0->vz, exner_prev->vz);
-    }
+//        VertSolve_Explicit(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz, velz, rho_0->vz, rt_0->vz, exner_prev->vz);
+//    }
     velz_1->VertToHoriz();
     velz_1->UpdateGlobal();
     rho_1->VertToHoriz();
@@ -1382,10 +1380,6 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rt_1->UpdateGlobal();
     exner_i->VertToHoriz();
     exner_i->UpdateGlobal();
-    rho_0->VertToHoriz();
-    rho_0->UpdateGlobal();
-    rt_0->VertToHoriz();
-    rt_0->UpdateGlobal();
     exner_prev->VertToHoriz();
     exner_prev->UpdateGlobal();
 
@@ -1491,9 +1485,11 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     velz_1->VertToHoriz();  velz_1->UpdateGlobal();
     rho_5->VertToHoriz();   rho_5->UpdateGlobal();
     rt_5->VertToHoriz();    rt_5->UpdateGlobal();
+    DiagExner(rt_5->vz, exner_i);
     exner_i->VertToHoriz(); exner_i->UpdateGlobal();
 
     vert->solve_schur(velz_1, rho_5, rt_5, exner_i);
+    //vert->solve_coupled(velz_1, rho_5, rt_5, exner_i);
     velz_1->CopyToVert(velz);
 
     // update input vectors
@@ -1610,7 +1606,6 @@ void Euler::HorizVort(Vec* velx) {
 }
 
 // compute the contribution of the vorticity vector to the vertical momentum equation
-// TODO: check the vertical metric terms!!!
 void Euler::AssembleVertMomVort(Vec* velx, L2Vecs* velz) {
     int kk;
     Vec ul, ug, tmp, tmp1, dwdx;
@@ -1629,7 +1624,7 @@ void Euler::AssembleVertMomVort(Vec* velx, L2Vecs* velz) {
     velz->UpdateGlobal();
     for(kk = 0; kk < geom->nk-1; kk++) {
         // take the horizontal gradient of the vertical velocity
-        // TODO both matrices are piecewise linear in the vertical. as such they
+        // both matrices are piecewise linear in the vertical. as such they
         // should both be scaled by J_z = dz/2, however since the layer thicknesses
         // are constant for now we just omit these. These will need to be updated
         // for variable thickness layers.
