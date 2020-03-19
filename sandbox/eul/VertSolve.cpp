@@ -88,11 +88,6 @@ VertSolve::VertSolve(Topo* _topo, Geom* _geom, double _dt) {
     PCSetType(pc, PCLU);
     KSPSetOptionsPrefix(ksp_w, "ksp_w_");
     KSPSetFromOptions(ksp_w);
-
-    delta_w   = new L2Vecs(geom->nk-1, topo, geom);
-    delta_rho = new L2Vecs(geom->nk,   topo, geom);
-    delta_rt  = new L2Vecs(geom->nk,   topo, geom);
-    delta_pi  = new L2Vecs(geom->nk,   topo, geom);
 }
 
 void VertSolve::initGZ() {
@@ -213,11 +208,6 @@ VertSolve::~VertSolve() {
     if(ksp_w)   KSPDestroy(&ksp_w);
     if(ksp_pi)  KSPDestroy(&ksp_pi);
     if(ksp_rho) KSPDestroy(&ksp_rho);
-
-    delete delta_w;
-    delete delta_rho;
-    delete delta_rt;
-    delete delta_pi;
 }
 
 double VertSolve::MaxNorm(Vec dx, Vec x, double max_norm) {
@@ -679,6 +669,8 @@ void VertSolve::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, 
     MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
     vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
     MatTranspose(vo->VBA, MAT_REUSE_MATRIX, &vo->VAB);
+    MatAssemblyBegin(vo->VAB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (vo->VAB, MAT_FINAL_ASSEMBLY);
     vo->AssembleConstWithRhoInv(ex, ey, rho, vo->VB_inv);
     MatMatMult(vo->VAB, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
     MatMatMult(pc_V0_invV0_rt_DT, vo->VB, reuse, PETSC_DEFAULT, &pc_A_u);
@@ -904,6 +896,8 @@ void VertSolve::solve_schur_column(int ex, int ey, Vec theta, Vec velz, Vec rho,
     MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
     vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
     MatTranspose(vo->VBA, MAT_REUSE_MATRIX, &vo->VAB);
+    MatAssemblyBegin(vo->VAB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (vo->VAB, MAT_FINAL_ASSEMBLY);
     vo->AssembleConstWithRhoInv(ex, ey, rho, vo->VB_inv);
     MatMatMult(vo->VAB, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
     MatMatMult(pc_V0_invV0_rt_DT, vo->VB, reuse, PETSC_DEFAULT, &G_rt);
@@ -1045,6 +1039,8 @@ void VertSolve::update_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
     MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
     vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
     MatTranspose(vo->VBA, MAT_REUSE_MATRIX, &vo->VAB);
+    MatAssemblyBegin(vo->VAB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (vo->VAB, MAT_FINAL_ASSEMBLY);
     vo->AssembleConstWithRhoInv(ex, ey, rho, vo->VB_inv);
     MatMatMult(vo->VAB, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
     MatMatMult(pc_V0_invV0_rt_DT, vo->VB, reuse, PETSC_DEFAULT, &G_rt);
@@ -1141,6 +1137,8 @@ void VertSolve::update_delta_u(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec
     MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
     vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
     MatTranspose(vo->VBA, MAT_REUSE_MATRIX, &vo->VAB);
+    MatAssemblyBegin(vo->VAB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (vo->VAB, MAT_FINAL_ASSEMBLY);
     vo->AssembleConstWithRhoInv(ex, ey, rho, vo->VB_inv);
     MatMatMult(vo->VAB, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
     MatMatMult(pc_V0_invV0_rt_DT, vo->VB, reuse, PETSC_DEFAULT, &G_rt);
@@ -1227,6 +1225,8 @@ void VertSolve::assemble_and_update_2(int ex, int ey, Vec velz, Vec rho, Vec rt,
     MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
     vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
     MatTranspose(vo->VBA, MAT_REUSE_MATRIX, &vo->VAB);
+    MatAssemblyBegin(vo->VAB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (vo->VAB, MAT_FINAL_ASSEMBLY);
     vo->AssembleConstWithRhoInv2(ex, ey, rho, vo->VB_inv);
     MatMatMult(vo->VAB, vo->VB_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
     vo->AssembleConstWithRho(ex, ey, rt, vo->VB);
@@ -1270,6 +1270,8 @@ void VertSolve::update_delta_u_2(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec 
     MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
     vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
     MatTranspose(vo->VBA, MAT_REUSE_MATRIX, &vo->VAB);
+    MatAssemblyBegin(vo->VAB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (vo->VAB, MAT_FINAL_ASSEMBLY);
     vo->AssembleConstWithRhoInv2(ex, ey, rho, vo->VB_inv);
     MatMatMult(vo->VAB, vo->VB_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
     vo->AssembleConstWithRho(ex, ey, rt, vo->VB);
@@ -1370,6 +1372,8 @@ void VertSolve::update_delta_u_3(int ex, int ey, Vec theta, Vec velz, Vec rho, V
     MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
     vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
     MatTranspose(vo->VBA, MAT_REUSE_MATRIX, &vo->VAB);
+    MatAssemblyBegin(vo->VAB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (vo->VAB, MAT_FINAL_ASSEMBLY);
     vo->AssembleConstWithRhoInv(ex, ey, rho, vo->VB_inv);
     MatMatMult(vo->VAB, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
     MatMatMult(pc_V0_invV0_rt_DT, vo->VB, reuse, PETSC_DEFAULT, &G_rt);
@@ -1459,6 +1463,8 @@ void VertSolve::solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rh
     MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
     vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
     MatTranspose(vo->VBA, MAT_REUSE_MATRIX, &vo->VAB);
+    MatAssemblyBegin(vo->VAB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (vo->VAB, MAT_FINAL_ASSEMBLY);
     vo->AssembleConstWithRhoInv(ex, ey, rho, vo->VB_inv);
     MatMatMult(vo->VAB, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
     MatMatMult(pc_V0_invV0_rt_DT, vo->VB, reuse, PETSC_DEFAULT, &G_rt);
@@ -1635,8 +1641,8 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
             MatMult(vo->VB, dG_z, F_rt);
 
             //solve_schur_column(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], 
-            solve_schur_column(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
-            //solve_schur_column_3(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            //solve_schur_column(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            solve_schur_column_3(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
                                F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, itt);
 
             VecAXPY(velz_j->vz[ii],  1.0, d_w);
@@ -1676,23 +1682,6 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
                                  "\t|d_rho|/|rho|: "      << max_norm_rho   <<
                                  "\t|d_rt|/|rt|: "        << max_norm_rt    << endl;
     } while(!done);
-
-    for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-/*
-        VecCopy(velz_j->vz[ii],  delta_w->vz[ii]  );
-        VecCopy(rho_j->vz[ii],   delta_rho->vz[ii]);
-        VecCopy(rt_j->vz[ii],    delta_rt->vz[ii] );
-        VecCopy(exner_j->vz[ii], delta_pi->vz[ii] );
-        VecAXPY(delta_w->vz[ii],   -1.0, velz_i->vz[ii] );
-        VecAXPY(delta_rho->vz[ii], -1.0, rho_i->vz[ii]  );
-        VecAXPY(delta_rt->vz[ii],  -1.0, rt_i->vz[ii]   );
-        VecAXPY(delta_pi->vz[ii],  -1.0, exner_i->vz[ii]);
-*/
-        VecCopy(velz_i->vz[ii],  delta_w->vz[ii]  );
-        VecCopy(rho_i->vz[ii],   delta_rho->vz[ii]);
-        VecCopy(rt_i->vz[ii],    delta_rt->vz[ii] );
-        VecCopy(exner_i->vz[ii], delta_pi->vz[ii] );
-    }
 
     velz_i->CopyFromVert(velz_j->vz);
     rho_i->CopyFromVert(rho_j->vz);

@@ -17,10 +17,6 @@ class VertSolve {
         Vec* gv;                 // gravity vector
         Vec* zv;                 // level height vector
         VertOps* vo;
-        L2Vecs* delta_w;
-        L2Vecs* delta_rho;
-        L2Vecs* delta_rt;
-        L2Vecs* delta_pi;
 
         void initGZ();
         void viscosity();
