@@ -17,6 +17,10 @@ class VertSolve {
         Vec* gv;                 // gravity vector
         Vec* zv;                 // level height vector
         VertOps* vo;
+        L2Vecs* delta_w;
+        L2Vecs* delta_rho;
+        L2Vecs* delta_rt;
+        L2Vecs* delta_pi;
 
         void initGZ();
         void viscosity();
@@ -67,6 +71,8 @@ class VertSolve {
 
         void solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                                    Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, int ii);
+
+        void update_explicit(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i);
 
         Mat _PCz;
         Mat pc_LAP;

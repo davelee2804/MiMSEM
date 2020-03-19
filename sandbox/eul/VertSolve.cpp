@@ -88,6 +88,11 @@ VertSolve::VertSolve(Topo* _topo, Geom* _geom, double _dt) {
     PCSetType(pc, PCLU);
     KSPSetOptionsPrefix(ksp_w, "ksp_w_");
     KSPSetFromOptions(ksp_w);
+
+    delta_w   = new L2Vecs(geom->nk-1, topo, geom);
+    delta_rho = new L2Vecs(geom->nk,   topo, geom);
+    delta_rt  = new L2Vecs(geom->nk,   topo, geom);
+    delta_pi  = new L2Vecs(geom->nk,   topo, geom);
 }
 
 void VertSolve::initGZ() {
@@ -208,6 +213,11 @@ VertSolve::~VertSolve() {
     if(ksp_w)   KSPDestroy(&ksp_w);
     if(ksp_pi)  KSPDestroy(&ksp_pi);
     if(ksp_rho) KSPDestroy(&ksp_rho);
+
+    delete delta_w;
+    delete delta_rho;
+    delete delta_rt;
+    delete delta_pi;
 }
 
 double VertSolve::MaxNorm(Vec dx, Vec x, double max_norm) {
@@ -1667,6 +1677,23 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
                                  "\t|d_rt|/|rt|: "        << max_norm_rt    << endl;
     } while(!done);
 
+    for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+/*
+        VecCopy(velz_j->vz[ii],  delta_w->vz[ii]  );
+        VecCopy(rho_j->vz[ii],   delta_rho->vz[ii]);
+        VecCopy(rt_j->vz[ii],    delta_rt->vz[ii] );
+        VecCopy(exner_j->vz[ii], delta_pi->vz[ii] );
+        VecAXPY(delta_w->vz[ii],   -1.0, velz_i->vz[ii] );
+        VecAXPY(delta_rho->vz[ii], -1.0, rho_i->vz[ii]  );
+        VecAXPY(delta_rt->vz[ii],  -1.0, rt_i->vz[ii]   );
+        VecAXPY(delta_pi->vz[ii],  -1.0, exner_i->vz[ii]);
+*/
+        VecCopy(velz_i->vz[ii],  delta_w->vz[ii]  );
+        VecCopy(rho_i->vz[ii],   delta_rho->vz[ii]);
+        VecCopy(rt_i->vz[ii],    delta_rt->vz[ii] );
+        VecCopy(exner_i->vz[ii], delta_pi->vz[ii] );
+    }
+
     velz_i->CopyFromVert(velz_j->vz);
     rho_i->CopyFromVert(rho_j->vz);
     rt_i->CopyFromVert(rt_j->vz);
@@ -1701,4 +1728,110 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
     VecDestroy(&G_z);
     VecDestroy(&dF_z);
     VecDestroy(&dG_z);
+}
+
+void VertSolve::update_explicit(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i) {
+    int ex, ey, elOrd2;
+    L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
+    Vec F_z, Phi_z, G_z, dF_z, dG_z;
+
+    elOrd2 = topo->elOrd*topo->elOrd;
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &Phi_z);
+
+    velz_i->UpdateLocal();
+    velz_i->HorizToVert();
+    rho_i->UpdateLocal();
+    rho_i->HorizToVert();
+    rt_i->UpdateLocal();
+    rt_i->HorizToVert();
+    exner_i->UpdateLocal();
+    exner_i->HorizToVert();
+
+    // diagnose the potential temperature
+    diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz);
+    diagTheta2(delta_rho->vz, delta_rt->vz, theta_h->vz);
+    for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecScale(theta_h->vz[ii], 0.5);
+        VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
+        VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
+        VecAXPY(exner_h->vz[ii], 0.5, delta_pi->vz[ii]);
+    }
+
+    for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        ex = ii%topo->nElsX;
+        ey = ii/topo->nElsX;
+
+        // diagnose the hamiltonian derivatives
+        //diagnose_F_z(ex, ey, delta_w->vz[ii], velz_i->vz[ii], delta_rho->vz[ii], rho_i->vz[ii], F_z);
+        //diagnose_Phi_z(ex, ey, delta_w->vz[ii], velz_i->vz[ii], Phi_z);
+        diagnose_F_z(ex, ey, velz_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rho_i->vz[ii], F_z);
+        diagnose_Phi_z(ex, ey, velz_i->vz[ii], velz_i->vz[ii], Phi_z);
+
+        // assemble the momentum equation residual
+        vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+
+        // bernoulli function term
+        MatMult(vo->V01, Phi_z, _tmpA1);
+        MatMult(vo->VA_inv, _tmpA1, _tmpA2);
+        VecAXPY(velz_i->vz[ii], -dt, _tmpA2);
+
+        // pressure gradient term
+        vo->AssembleConst(ex, ey, vo->VB);
+        //MatMult(vo->VB, exner_h->vz[ii], _tmpB1);
+        MatMult(vo->VB, exner_i->vz[ii], _tmpB1);
+        MatMult(vo->V01, _tmpB1, _tmpA1);
+        vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+        MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
+        //vo->AssembleLinearWithTheta(ex, ey, theta_h->vz[ii], vo->VA);
+        vo->AssembleLinearWithTheta(ex, ey, theta_i->vz[ii], vo->VA);
+        MatMult(vo->VA, _tmpA2, _tmpA1);
+        MatMult(vo->VA_inv, _tmpA1, _tmpA2);
+        VecAXPY(velz_i->vz[ii], -dt, _tmpA2);
+
+        // update the temperature equation flux
+        MatMult(vo->VA, F_z, _tmpA1); // includes theta
+        MatMult(vo->VA_inv, _tmpA1, G_z);
+
+        // add the rayleigh friction
+#ifdef RAYLEIGH
+        vo->AssembleRayleigh(ex, ey, vo->VA);
+
+        MatMult(vo->VA, velz_i->vz[ii], _tmpA1);
+        MatMult(vo->VA_inv, _tmpA1, _tmpA2);
+        //VecAXPY(velz_i->vz[ii], -0.5*dt*RAYLEIGH, _tmpA2);
+        VecAXPY(velz_i->vz[ii], -dt*RAYLEIGH, _tmpA2);
+
+        MatMult(vo->VA, delta_w->vz[ii], _tmpA1);
+        MatMult(vo->VA_inv, _tmpA1, _tmpA2);
+        //VecAXPY(velz_i->vz[ii], -0.5*dt*RAYLEIGH, _tmpA2);
+#endif
+
+        MatMult(vo->V10, F_z, dF_z);
+        MatMult(vo->V10, G_z, dG_z);
+        VecAXPY(rho_i->vz[ii], -dt, dF_z);
+        VecAXPY(rt_i->vz[ii],  -dt, dG_z);
+    }
+    velz_i->VertToHoriz();
+    velz_i->UpdateGlobal();
+    rho_i->VertToHoriz();
+    rho_i->UpdateGlobal();
+    rt_i->VertToHoriz();
+    rt_i->UpdateGlobal();
+    exner_i->VertToHoriz();
+    exner_i->UpdateGlobal();
+
+    delete exner_h;
+    delete theta_i;
+    delete theta_h;
+    VecDestroy(&F_z);
+    VecDestroy(&G_z);
+    VecDestroy(&dF_z);
+    VecDestroy(&dG_z);
+    VecDestroy(&Phi_z);
 }

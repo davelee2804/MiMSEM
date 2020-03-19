@@ -75,7 +75,6 @@ class Euler {
         void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
         void StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
-        void VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
         double int2(Vec ug);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
 
