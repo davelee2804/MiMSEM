@@ -68,8 +68,6 @@ class VertSolve {
         void solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                                    Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, int ii);
 
-        void update_explicit(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i);
-
         Mat _PCz;
         Mat pc_LAP;
 
@@ -92,6 +90,7 @@ class VertSolve {
         Mat L_rho_pi_N_pi_inv_N_rho;
         Mat G_pi_N_pi_inv, G_pi_N_pi_inv_N_rt;
         Mat Q_rt_rho_M_rho_inv_D_rho;
+        Mat VAB;
 
         KSP ksp_pi, ksp_rho, ksp_w;
 
