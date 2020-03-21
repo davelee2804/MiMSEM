@@ -27,8 +27,8 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-//#define RAYLEIGH 0.4
-//#define VISC 0
+#define RAYLEIGH (1.0e-3)
+#define VISC 1
 //#define NEW_EOS 1
 
 using namespace std;
@@ -1608,7 +1608,7 @@ MatDestroy(&L_rt_rt);
 KSPDestroy(&ksp_pi);
 }
 
-void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i) {
+void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, L2Vecs* udwdx) {
     bool done = false;
     int ex, ey, elOrd2, itt = 0;
     double norm_x, max_norm_w, max_norm_exner, max_norm_rho, max_norm_rt;
@@ -1672,6 +1672,9 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
             // assemble the residual vectors
             assemble_residual(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
                               rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z);
+
+            if(udwdx) VecAXPY(F_w, dt, udwdx->vz[ii]);
+
 #ifdef NEW_EOS
             vo->Assemble_EOS_Residual_new(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
 #else

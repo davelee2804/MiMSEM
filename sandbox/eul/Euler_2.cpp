@@ -30,9 +30,8 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-//#define RAYLEIGH 0.2
-#define RAYLEIGH 0.0
-//#define WITH_UDWDX
+#define RAYLEIGH (1.0e-3)
+#define WITH_UDWDX
 
 using namespace std;
 
@@ -121,10 +120,14 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
         VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &zv[ii]);
     }
     uz = new Vec[geom->nk-1];
-    uuz = new L2Vecs(geom->nk-1, topo, geom);
     for(ii = 0; ii < geom->nk - 1; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uz[ii]);
     }
+#ifdef WITH_UDWDX
+    uuz = new L2Vecs(geom->nk-1, topo, geom);
+#else
+    uuz = NULL;
+#endif
 
     // initialise the single column mass matrices and solvers
     n2 = topo->elOrd*topo->elOrd;
@@ -341,7 +344,9 @@ Euler::~Euler() {
         VecDestroy(&uz[ii]);
     }
     delete[] uz;
+#ifdef WITH_UDWDX
     delete uuz;
+#endif
 
     MatDestroy(&VA);
     MatDestroy(&VB);
@@ -732,42 +737,6 @@ void Euler::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt)
     }
     VecDestroy(&rt_sum);
     VecDestroy(&rhs);
-}
-
-void Euler::VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph) {
-    int ii, kk, n2;
-    int* inds2 = topo->elInds2_l(ex, ey);
-    PetscScalar *hArray, *vArray;
-
-    n2 = topo->elOrd*topo->elOrd;
-
-    VecGetArray(pv, &vArray);
-    for(kk = ki; kk < kf; kk++) {
-        VecGetArray(ph[kk], &hArray);
-        for(ii = 0; ii < n2; ii++) {
-            hArray[inds2[ii]] += vArray[(kk-ki)*n2+ii];
-        }
-        VecRestoreArray(ph[kk], &hArray);
-    }
-    VecRestoreArray(pv, &vArray);
-}
-
-void Euler::HorizToVert2(int ex, int ey, Vec* ph, Vec pv) {
-    int ii, kk, n2;
-    int* inds2 = topo->elInds2_l(ex, ey);
-    PetscScalar *hArray, *vArray;
-
-    n2 = topo->elOrd*topo->elOrd;
-
-    VecGetArray(pv, &vArray);
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecGetArray(ph[kk], &hArray);
-        for(ii = 0; ii < n2; ii++) {
-            vArray[kk*n2+ii] += hArray[inds2[ii]];
-        }
-        VecRestoreArray(ph[kk], &hArray);
-    }
-    VecRestoreArray(pv, &vArray);
 }
 
 void Euler::init0(Vec* q, ICfunc3D* func) {
@@ -1195,7 +1164,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
 
     if(firstStep) {
         if(!rank) cout << "first step, coupled vertical solve...\n";
-        vert->solve_schur(velz_1, rho_1, rt_1, exner_i);
+        vert->solve_schur(velz_1, rho_1, rt_1, exner_i, NULL);
         //vert->solve_coupled(velz_1, rho_1, rt_1, exner_i);
     } else {
         // pass in the current time level as well for q^{1} = q^{n} + F(q^{prev})
@@ -1204,7 +1173,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         velz_1->CopyFromVert(velz);
         AssembleVertMomVort(velx, velz_1);
 #endif
-        vert->solve_schur(velz_1, rho_1, rt_1, exner_i);
+        vert->solve_schur(velz_1, rho_1, rt_1, exner_i, uuz);
     }
     velz_1->VertToHoriz();
     velz_1->UpdateGlobal();
@@ -1222,6 +1191,11 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         M1->assemble(ii, SCALE, true);
+#ifdef RAYLEIGH
+        if(ii == geom->nk-1) MatScale(M1->M, 1.0 + 1.00*RAYLEIGH*dt);
+        if(ii == geom->nk-2) MatScale(M1->M, 1.0 + 0.50*RAYLEIGH*dt);
+        if(ii == geom->nk-3) MatScale(M1->M, 1.0 + 0.25*RAYLEIGH*dt);
+#endif
         MatMult(M1->M, velx[ii], bu);
         VecAXPY(bu, -dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx_2[ii]);
@@ -1249,6 +1223,11 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         VecAXPY(xu, 0.75, velx[ii]);
         VecAXPY(xu, 0.25, velx_2[ii]);
         M1->assemble(ii, SCALE, true);
+#ifdef RAYLEIGH
+        if(ii == geom->nk-1) MatScale(M1->M, 1.0 + 1.00*RAYLEIGH*dt);
+        if(ii == geom->nk-2) MatScale(M1->M, 1.0 + 0.50*RAYLEIGH*dt);
+        if(ii == geom->nk-3) MatScale(M1->M, 1.0 + 0.25*RAYLEIGH*dt);
+#endif
         MatMult(M1->M, xu, bu);
         VecAXPY(bu, -0.25*dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx_3[ii]);
@@ -1280,6 +1259,11 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         VecAXPY(xu, 1.0/3.0, velx[ii]);
         VecAXPY(xu, 2.0/3.0, velx_3[ii]);
         M1->assemble(ii, SCALE, true);
+#ifdef RAYLEIGH
+        if(ii == geom->nk-1) MatScale(M1->M, 1.0 + 1.00*RAYLEIGH*dt);
+        if(ii == geom->nk-2) MatScale(M1->M, 1.0 + 0.50*RAYLEIGH*dt);
+        if(ii == geom->nk-3) MatScale(M1->M, 1.0 + 0.25*RAYLEIGH*dt);
+#endif
         MatMult(M1->M, xu, bu);
         VecAXPY(bu, (-2.0/3.0)*dt, Fu[ii]);
         KSPSolve(ksp1, bu, velx[ii]);
@@ -1319,7 +1303,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     DiagExner(rt_5->vz, exner_i);
     exner_i->VertToHoriz(); exner_i->UpdateGlobal();
 
-    vert->solve_schur(velz_1, rho_5, rt_5, exner_i);
+    vert->solve_schur(velz_1, rho_5, rt_5, exner_i, uuz);
     //vert->solve_coupled(velz_1, rho_5, rt_5, exner_i);
     velz_1->CopyToVert(velz);
 
