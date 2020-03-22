@@ -6,9 +6,7 @@ class VertSolve {
         ~VertSolve();
         double dt;
         double visc;
-        int step;
         int rank;
-        bool firstStep;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
@@ -28,7 +26,9 @@ class VertSolve {
         void diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi);
 
         void solve_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i);
-        void solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, L2Vecs* udwdx);
+        void solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, L2Vecs* udwdx
+, double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x
+);
         void assemble_operator(int ex, int ey, Vec velz, Vec theta, Vec rho, Vec rt, Vec exner, Mat* _PC);
         void assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
                                      Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner);
@@ -67,6 +67,9 @@ class VertSolve {
 
         void solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                                    Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, int ii);
+
+        void horiz_visc(L2Vecs* velz, L2Vecs* d4w, double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x, 
+                           Vec h_tmp_1, Vec h_tmp_2, Vec u_tmp_1, Vec u_tmp_2);
 
         Mat _PCz;
         Mat pc_LAP;

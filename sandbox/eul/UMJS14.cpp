@@ -14,8 +14,8 @@
 #include "L2Vecs.h"
 #include "ElMats.h"
 #include "VertOps.h"
-#include "VertSolve.h"
 #include "Assembly.h"
+#include "VertSolve.h"
 #include "Euler_2.h"
 
 using namespace std;

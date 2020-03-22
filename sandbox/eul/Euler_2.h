@@ -42,7 +42,6 @@ class Euler {
         KSP ksp1;
         KSP ksp2;
         KSP kspE;
-        KSP kspColA;
         KSP kspColA2; // for the diagnosis of theta without boundary conditions
 
         VertSolve* vert;
@@ -80,6 +79,5 @@ class Euler {
 
         void HorizVort(Vec* velx);
         void AssembleVertMomVort(Vec* velx, L2Vecs* velz);
-
-        L2Vecs* exner_prev;
+        void d2udz2(Vec* velx, Vec* V1u, Vec* d1uz, Vec* d2uz, Vec temp);
 };

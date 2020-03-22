@@ -41,9 +41,6 @@ VertSolve::VertSolve(Topo* _topo, Geom* _geom, double _dt) {
     topo = _topo;
     geom = _geom;
 
-    step = 0;
-    firstStep = true;
-
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
@@ -1608,19 +1605,27 @@ MatDestroy(&L_rt_rt);
 KSPDestroy(&ksp_pi);
 }
 
-void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, L2Vecs* udwdx) {
+void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, L2Vecs* udwdx, 
+double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x) 
+{
     bool done = false;
     int ex, ey, elOrd2, itt = 0;
     double norm_x, max_norm_w, max_norm_exner, max_norm_rho, max_norm_rt;
     L2Vecs* velz_j = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* rho_j = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* velz_h = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_h = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* d4w_i = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* d4w_j = new L2Vecs(geom->nk-1, topo, geom);
     Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F_z, G_z, dF_z, dG_z;
+    Vec h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2;
 
     elOrd2 = topo->elOrd*topo->elOrd;
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_w);
@@ -1635,6 +1640,11 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp_1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp_2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp_1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp_2);
 
     velz_i->UpdateLocal();
     velz_i->HorizToVert();
@@ -1662,6 +1672,12 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
     exner_h->UpdateLocal();
     exner_h->HorizToVert();
 
+    velz_h->CopyFromVert(velz_i->vz);
+    rho_h->CopyFromVert(rho_i->vz);
+    rt_h->CopyFromVert(rt_i->vz);
+
+    horiz_visc(velz_i, d4w_i, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
+
     do {
         max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
 
@@ -1674,6 +1690,10 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
                               rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z);
 
             if(udwdx) VecAXPY(F_w, dt, udwdx->vz[ii]);
+            if(ksp_x) {
+                VecAXPY(F_w, 0.5*dt, d4w_i->vz[ii]);
+                VecAXPY(F_w, 0.5*dt, d4w_j->vz[ii]);
+            }
 
 #ifdef NEW_EOS
             vo->Assemble_EOS_Residual_new(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
@@ -1692,8 +1712,7 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
             MatMult(vo->VB, dG_z, F_rt);
 
             //solve_schur_column(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], 
-            //solve_schur_column(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
-            solve_schur_column_3(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_i->vz[ii], 
+            solve_schur_column_3(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii], 
                                F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, itt);
 
             VecAXPY(velz_j->vz[ii],  1.0, d_w);
@@ -1709,6 +1728,16 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
             max_norm_w     = MaxNorm(d_w,     velz_j->vz[ii],  max_norm_w    );
             max_norm_rho   = MaxNorm(d_rho,   rho_j->vz[ii],   max_norm_rho  );
             max_norm_rt    = MaxNorm(d_rt,    rt_j->vz[ii],    max_norm_rt   );
+
+            VecZeroEntries(velz_h->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_i->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_j->vz[ii]);
+            VecZeroEntries(rho_h->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_i->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_j->vz[ii]);
+            VecZeroEntries(rt_h->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_i->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
         }
 
         diagTheta2(rho_j->vz, rt_j->vz, theta_j->vz);
@@ -1719,6 +1748,7 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
         }
         theta_h->VertToHoriz();
         theta_j->VertToHoriz();
+        horiz_visc(velz_j, d4w_j, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
 
         MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_exner = norm_x;
         MPI_Allreduce(&max_norm_w,     &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w     = norm_x;
@@ -1756,6 +1786,11 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
     delete theta_i;
     delete theta_j;
     delete theta_h;
+    delete velz_h;
+    delete rho_h;
+    delete rt_h;
+    delete d4w_i;
+    delete d4w_j;
     VecDestroy(&F_w);
     VecDestroy(&F_rho);
     VecDestroy(&F_rt);
@@ -1768,4 +1803,37 @@ void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs*
     VecDestroy(&G_z);
     VecDestroy(&dF_z);
     VecDestroy(&dG_z);
+
+    VecDestroy(&u_tmp_1);
+    VecDestroy(&u_tmp_2);
+    VecDestroy(&h_tmp_1);
+    VecDestroy(&h_tmp_2);
+}
+
+void VertSolve::horiz_visc(L2Vecs* velz, L2Vecs* d4w, double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x, 
+                           Vec h_tmp_1, Vec h_tmp_2, Vec u_tmp_1, Vec u_tmp_2) 
+{
+    M1->assemble(0, SCALE, false);
+    M2->assemble(0, SCALE, false);
+
+    velz->VertToHoriz();
+    velz->UpdateGlobal();
+    for(int kk = 0; kk < geom->nk-1; kk++) {
+        // first laplacian
+        MatMult(M2->M, velz->vh[kk], h_tmp_1);
+        MatMult(EtoF->E12, h_tmp_1, u_tmp_1);
+        KSPSolve(ksp_x, u_tmp_1, u_tmp_2);
+        MatMult(EtoF->E21, u_tmp_2, h_tmp_2);
+        VecScale(h_tmp_2, del2_x);
+        // second laplacian
+        MatMult(M2->M, h_tmp_2, h_tmp_1);
+        MatMult(EtoF->E12, h_tmp_1, u_tmp_1);
+        KSPSolve(ksp_x, u_tmp_1, u_tmp_2);
+        MatMult(EtoF->E21, u_tmp_2, h_tmp_2);
+        VecScale(h_tmp_2, del2_x);
+
+        MatMult(M2->M, h_tmp_2, d4w->vh[kk]);
+    }
+    d4w->UpdateLocal();
+    d4w->HorizToVert();
 }
