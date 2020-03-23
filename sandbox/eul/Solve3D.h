@@ -5,6 +5,7 @@ class Solve3D {
         int rank;
         Topo* topo;
         Geom* geom;
+        Vec ul;
         Vec vl;
         Vec x;
         Vec b;

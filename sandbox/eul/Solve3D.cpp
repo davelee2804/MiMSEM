@@ -49,6 +49,7 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    VecCreateSeq(MPI_COMM_SELF, topo->n1l, &ul);
     VecCreateSeq(MPI_COMM_SELF, lSize, &vl);
     VecCreateMPI(MPI_COMM_WORLD, lSize, gSize, &x);
     VecCreateMPI(MPI_COMM_WORLD, lSize, gSize, &b);
@@ -185,6 +186,7 @@ void Solve3D::Solve(Vec* bg, Vec* xg) {
 }
 
 Solve3D::~Solve3D() {
+    VecDestroy(&ul);
     VecDestroy(&vl);
     VecDestroy(&x);
     VecDestroy(&b);
@@ -193,22 +195,48 @@ Solve3D::~Solve3D() {
     KSPDestroy(&ksp);
 }
 
-void Solve3D::RepackVector(Vec* ux, Vec _u) {
-    int ind_g;
-    int lShift = rank*(geom->nk*topo->n1l + (geom->nk-1)*topo->n2l);
-    PetscScalar *uxArray, *uArray;
+void Solve3D::RepackVector(Vec* ux, Vec _v) {
+    int shift;
+    PetscScalar *uArray, *vArray;
 
-    VecGetArray(_u, &uArray);
+    VecGetArray(vl, &vArray);
     for(int kk = 0; kk < geom->nk; kk++) {
-        VecGetArray(ux[kk], &uxArray);
+        VecScatterBegin(topo->gtol_1, ux[kk], ul, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, ux[kk], ul, INSERT_VALUES, SCATTER_FORWARD);
+
+        shift = kk * topo->n1l;
+        VecGetArray(ul, &uArray);
         for(int ii = 0; ii < topo->n1l; ii++) {
-            ind_g = lShift + kk*(topo->n1l + topo->n2l) + ii;
-            uArray[ind_g] = uxArray[ii];
+            vArray[shift+ii] = uArray[ii];
         }
-        VecRestoreArray(ux[kk], &uxArray);
+        VecRestoreArray(ul, &uArray);
     }
-    VecRestoreArray(_u, &uArray);
+    VecRestoreArray(vl, &vArray);
+
+    VecZeroEntries(_v);
+    VecScatterBegin(scat, vl, _v, INSERT_VALUES, SCATTER_REVERSE); // insert NOT add
+    VecScatterEnd(  scat, vl, _v, INSERT_VALUES, SCATTER_REVERSE);
 }
 
-void Solve3D::UnpackVector(Vec _u, Vec* ux) {
+void Solve3D::UnpackVector(Vec _v, Vec* ux) {
+    int shift;
+    PetscScalar *uArray, *vArray;
+
+    VecScatterBegin(scat, _v, vl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  scat, _v, vl, INSERT_VALUES, SCATTER_FORWARD);
+
+    VecGetArray(vl, &vArray);
+    for(int kk = 0; kk < geom->nk; kk++) {
+        shift = kk * topo->n1l;
+        VecGetArray(ul, &uArray);
+        for(int ii = 0; ii < topo->n1l; ii++) {
+            uArray[ii] = vArray[shift+ii];
+        }
+        VecRestoreArray(ul, &uArray);
+
+        VecZeroEntries(ux[kk]);
+        VecScatterBegin(topo->gtol_1, ul, ux[kk], INSERT_VALUES, SCATTER_REVERSE); // insert NOT add
+        VecScatterEnd(  topo->gtol_1, ul, ux[kk], INSERT_VALUES, SCATTER_REVERSE);
+    }
+    VecRestoreArray(vl, &vArray);
 }
