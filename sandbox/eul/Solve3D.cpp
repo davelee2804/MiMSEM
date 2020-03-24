@@ -49,25 +49,23 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n1l, &ul);
-    VecCreateSeq(MPI_COMM_SELF, lSize, &vl);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n1, &vl);
     VecCreateMPI(MPI_COMM_WORLD, lSize, gSize, &x);
     VecCreateMPI(MPI_COMM_WORLD, lSize, gSize, &b);
 
     // create the scatter
     index = 0;
-    inds_g = new int[lSize];
-    for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-        for(int kk = 0; kk < geom->nk; kk++) {
-            for(int ii = 0; ii < elOrd2; ii++) {
-                inds_g[index++] = rank*(geom->nk*topo->n2l) + ei*geom->nk*elOrd2 + kk*elOrd2 + ii;
-            }
+    inds_g = new int[geom->nk*topo->n1];
+    for(int kk = 0; kk < geom->nk; kk++) {
+        for(int ii = 0; ii < topo->n1; ii++) {
+            inds_g[index++] = kk*topo->nDofs1G + topo->loc1[ii];
         }
     }
     
-    VecCreateSeq(MPI_COMM_SELF, lSize, &v_l);
+    VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n1, &v_l);
     VecCreateMPI(MPI_COMM_WORLD, lSize, gSize, &v_g);
-    ISCreateStride(MPI_COMM_SELF, lSize, 0, 1, &is_l);
+    ISCreateStride(MPI_COMM_SELF, geom->nk*topo->n1, 0, 1, &is_l);
     ISCreateGeneral(MPI_COMM_WORLD, lSize, inds_g, PETSC_COPY_VALUES, &is_g);
 
     VecScatterCreate(v_g, is_g, v_l, is_l, &scat);
@@ -88,7 +86,7 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     M1->assemble(0, SCALE, false);
     MatGetOwnershipRange(M1->M, &mi, &mf);
     for(int kk = 0; kk < geom->nk; kk++) {
-        if(kk > 0) {
+        if(kk > 0 && kk < geom->nk-1) {
             dzInv = (1.0/geom->thick[kk-1][0]/geom->thick[kk-1][0])/(0.5*(geom->thick[kk-1][0] + geom->thick[kk+0][0]));
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
@@ -126,7 +124,7 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
             MatRestoreRow(M1->M, mm, &nCols, &cols, &vals);
         }
 
-        if(kk < geom->nk-1) {
+        if(kk > 0 && kk < geom->nk-1) {
             dzInv  = (1.0/geom->thick[kk][0]/geom->thick[kk][0])/(0.5*(geom->thick[kk+1][0] + geom->thick[kk+0][0]));
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
