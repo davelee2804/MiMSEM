@@ -34,10 +34,10 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     KSP* subksp;
     Vec v_l, v_g;
     IS is_l, is_g;
-    GaussLobatto* quad = new GaussLobatto(_topo->elOrd);
-    LagrangeNode* node = new LagrangeNode(_topo->elOrd, quad);
-    LagrangeEdge* edge = new LagrangeEdge(_topo->elOrd, node);
-    Umat* M1 = new Umat(topo, geom, node, edge);
+    quad = new GaussLobatto(_topo->elOrd);
+    node = new LagrangeNode(_topo->elOrd, quad);
+    edge = new LagrangeEdge(_topo->elOrd, node);
+    M1 = new Umat(_topo, _geom, node, edge);
 
     topo = _topo;
     geom = _geom;
@@ -66,7 +66,7 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     VecCreateSeq(MPI_COMM_SELF, geom->nk*topo->n1, &v_l);
     VecCreateMPI(MPI_COMM_WORLD, lSize, gSize, &v_g);
     ISCreateStride(MPI_COMM_SELF, geom->nk*topo->n1, 0, 1, &is_l);
-    ISCreateGeneral(MPI_COMM_WORLD, lSize, inds_g, PETSC_COPY_VALUES, &is_g);
+    ISCreateGeneral(MPI_COMM_WORLD, geom->nk*topo->n1, inds_g, PETSC_COPY_VALUES, &is_g);
 
     VecScatterCreate(v_g, is_g, v_l, is_l, &scat);
     delete[] inds_g;
@@ -79,7 +79,7 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, lSize, lSize, gSize, gSize);
     MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 3*2*2*(elOrd)*(elOrd+1), PETSC_NULL, 3*2*2*(elOrd)*(elOrd+1), PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, 2*3*2*2*(elOrd)*(elOrd+1), PETSC_NULL, 2*3*2*2*(elOrd)*(elOrd+1), PETSC_NULL);
     MatZeroEntries(M);
 
     // assemble the matrix
@@ -159,7 +159,7 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     KSPGetPC(ksp, &pc);
     KSPSetType(ksp, KSPGMRES);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    PCBJacobiSetTotalBlocks(pc, geom->nk*size*topo->nElsX*topo->nElsX, NULL);
     KSPSetUp(ksp);
     PCBJacobiGetSubKSP(pc, &nlocal, &first_local, &subksp);
 
@@ -168,13 +168,8 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
         PCSetType(subpc, PCLU);
     }
     KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetOptionsPrefix(ksp, "ksp_schur_");
+    KSPSetOptionsPrefix(ksp, "ksp_imp_visc_vert_");
     KSPSetFromOptions(ksp);
-
-    delete M1;
-    delete quad;
-    delete node;
-    delete edge;
 }
 
 void Solve3D::Solve(Vec* bg, Vec* xg) {
@@ -191,6 +186,11 @@ Solve3D::~Solve3D() {
     VecScatterDestroy(&scat);
     MatDestroy(&M);
     KSPDestroy(&ksp);
+
+    delete quad;
+    delete node;
+    delete edge;
+    delete M1;
 }
 
 void Solve3D::RepackVector(Vec* ux, Vec _v) {

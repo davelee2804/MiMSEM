@@ -45,6 +45,7 @@ class Euler {
         KSP kspColA2; // for the diagnosis of theta without boundary conditions
 
         VertSolve* vert;
+        Solve3D* imp_visc_solve;
 
         Wii* Q;
         M2_j_xy_i* W;

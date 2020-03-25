@@ -18,6 +18,7 @@
 #include "VertOps.h"
 #include "Assembly.h"
 #include "VertSolve.h"
+#include "Solve3D.h"
 #include "Euler_2.h"
 
 #define RAD_EARTH 6371220.0
@@ -176,6 +177,8 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
     initGZ();
+
+    imp_visc_solve = new Solve3D(topo, geom, dt, del2);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -366,6 +369,7 @@ Euler::~Euler() {
     delete quad;
 
     delete vert;
+    delete imp_visc_solve;
 }
 
 /*
@@ -1324,6 +1328,9 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rt_4->UpdateLocal();
     rt_4->HorizToVert();
 
+    // implicit vertical visiscosity solve
+    imp_visc_solve->Solve(velx, velx);
+
     // carry over the vertical fields to the next time level
     DiagExner(rt_4->vz, exner_i);
 
@@ -1532,7 +1539,7 @@ void Euler::d2udz2(Vec* velx, Vec* V1u, Vec* d1uz, Vec* d2uz, Vec temp) {
 
     for(int kk = 0; kk < geom->nk; kk++) {
         VecZeroEntries(d2uz[kk]);
-        if(kk > 0         ) VecAXPY(d2uz[kk], -del2, d1uz[kk-1]);
-        if(kk < geom->nk-1) VecAXPY(d2uz[kk], +del2, d1uz[kk+0]);
+        if(kk > 0 && kk < geom->nk-1) VecAXPY(d2uz[kk], -del2, d1uz[kk-1]);
+        if(kk > 0 && kk < geom->nk-1) VecAXPY(d2uz[kk], +del2, d1uz[kk+0]);
     }
 }

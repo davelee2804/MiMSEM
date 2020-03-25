@@ -5,6 +5,10 @@ class Solve3D {
         int rank;
         Topo* topo;
         Geom* geom;
+        GaussLobatto* quad;
+        LagrangeNode* node;
+        LagrangeEdge* edge;
+        Umat* M1;
         Vec ul;
         Vec vl;
         Vec x;
