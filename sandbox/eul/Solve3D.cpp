@@ -82,12 +82,17 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     MatMPIAIJSetPreallocation(M, 2*3*2*2*(elOrd)*(elOrd+1), PETSC_NULL, 2*3*2*2*(elOrd)*(elOrd+1), PETSC_NULL);
     MatZeroEntries(M);
 
+    cout.precision(12);
+    if(!rank) cout << "Solve3D() - dt: " << dt << ", del2: " << del2 << endl;
+
     // assemble the matrix
     M1->assemble(0, SCALE, false);
     MatGetOwnershipRange(M1->M, &mi, &mf);
     for(int kk = 0; kk < geom->nk; kk++) {
         if(kk > 0 && kk < geom->nk-1) {
-            dzInv = (1.0/geom->thick[kk-1][0]/geom->thick[kk-1][0])/(0.5*(geom->thick[kk-1][0] + geom->thick[kk+0][0]));
+            dzInv = -0.25*(geom->thick[kk-1][0] + geom->thick[kk][0]);
+
+            //dzInv = (1.0/geom->thick[kk-1][0]/geom->thick[kk-1][0])/(0.5*(geom->thick[kk-1][0] + geom->thick[kk+0][0]));
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
@@ -99,7 +104,7 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
                 MatRestoreRow(M1->M, mm, &nCols, &cols, &vals);
             }
 
-            dzInv  = (1.0/geom->thick[kk][0]/geom->thick[kk][0])/(0.5*(geom->thick[kk-1][0] + geom->thick[kk+0][0]));
+            //dzInv  = (1.0/geom->thick[kk][0]/geom->thick[kk][0])/(0.5*(geom->thick[kk-1][0] + geom->thick[kk+0][0]));
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
@@ -125,7 +130,9 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
         }
 
         if(kk > 0 && kk < geom->nk-1) {
-            dzInv  = (1.0/geom->thick[kk][0]/geom->thick[kk][0])/(0.5*(geom->thick[kk+1][0] + geom->thick[kk+0][0]));
+            dzInv = -0.25*(geom->thick[kk][0] + geom->thick[kk+1][0]);
+
+            //dzInv  = (1.0/geom->thick[kk][0]/geom->thick[kk][0])/(0.5*(geom->thick[kk+1][0] + geom->thick[kk+0][0]));
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
@@ -137,7 +144,7 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
                 MatRestoreRow(M1->M, mm, &nCols, &cols, &vals);
             }
 
-            dzInv = (1.0/geom->thick[kk+1][0]/geom->thick[kk+1][0])/(0.5*(geom->thick[kk+1][0] + geom->thick[kk+0][0]));
+            //dzInv = (1.0/geom->thick[kk+1][0]/geom->thick[kk+1][0])/(0.5*(geom->thick[kk+1][0] + geom->thick[kk+0][0]));
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
@@ -152,6 +159,11 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
+    VecSet(x, 1.0);
+    MatMult(M, x, b);
+    VecDot(x, b, &dzInv);
+    if(!rank) cout << "Solve3D() - |M|: " << dzInv << endl;
 
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M, M);
@@ -170,11 +182,27 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetOptionsPrefix(ksp, "ksp_imp_visc_vert_");
     KSPSetFromOptions(ksp);
+
+    ug = new Vec[geom->nk];
+    for(int kk = 0; kk < geom->nk; kk++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ug[kk]);
+    }
 }
 
 void Solve3D::Solve(Vec* bg, Vec* xg) {
-    RepackVector(bg, b);
+    double norm;
+
+    for(int kk = 0; kk < geom->nk; kk++) {
+        MatMult(M1->M, bg[kk], ug[kk]);
+        VecScale(ug[kk], 1.0/geom->thick[kk][0]);
+    }
+
+    RepackVector(ug, b);
+    VecNorm(b, NORM_2, &norm);
+    if(!rank) cout << "Solve3D() - |b|: " << norm << endl;
     KSPSolve(ksp, b, x);
+    VecNorm(x, NORM_2, &norm);
+    if(!rank) cout << "Solve3D() - |x|: " << norm << endl;
     UnpackVector(x, xg);
 }
 
@@ -186,6 +214,10 @@ Solve3D::~Solve3D() {
     VecScatterDestroy(&scat);
     MatDestroy(&M);
     KSPDestroy(&ksp);
+    for(int kk = 0; kk < geom->nk; kk++) {
+        VecDestroy(&ug[kk]);
+    }
+    delete[] ug;
 
     delete quad;
     delete node;

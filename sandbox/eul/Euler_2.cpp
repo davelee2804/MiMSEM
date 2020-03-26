@@ -178,7 +178,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
 
     initGZ();
 
-    imp_visc_solve = new Solve3D(topo, geom, dt, del2);
+    imp_visc_solve = new Solve3D(topo, geom, dt, vert->visc);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -1329,7 +1329,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rt_4->HorizToVert();
 
     // implicit vertical visiscosity solve
-    imp_visc_solve->Solve(velx, velx);
+    //imp_visc_solve->Solve(velx, velx);
 
     // carry over the vertical fields to the next time level
     DiagExner(rt_4->vz, exner_i);

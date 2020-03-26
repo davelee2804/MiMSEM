@@ -9,6 +9,7 @@ class Solve3D {
         LagrangeNode* node;
         LagrangeEdge* edge;
         Umat* M1;
+        Vec* ug;
         Vec ul;
         Vec vl;
         Vec x;
