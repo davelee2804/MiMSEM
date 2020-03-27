@@ -82,7 +82,6 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     MatMPIAIJSetPreallocation(M, 2*3*2*2*(elOrd)*(elOrd+1), PETSC_NULL, 2*3*2*2*(elOrd)*(elOrd+1), PETSC_NULL);
     MatZeroEntries(M);
 
-    cout.precision(12);
     if(!rank) cout << "Solve3D() - dt: " << dt << ", del2: " << del2 << endl;
 
     // assemble the matrix
@@ -90,9 +89,10 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     MatGetOwnershipRange(M1->M, &mi, &mf);
     for(int kk = 0; kk < geom->nk; kk++) {
         if(kk > 0 && kk < geom->nk-1) {
-            dzInv = -0.25*(geom->thick[kk-1][0] + geom->thick[kk][0]);
+            //dzInv = -0.25*(geom->thick[kk-1][0] + geom->thick[kk][0]);
 
             //dzInv = (1.0/geom->thick[kk-1][0]/geom->thick[kk-1][0])/(0.5*(geom->thick[kk-1][0] + geom->thick[kk+0][0]));
+            dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk-1][0])/(geom->thick[kk-1][0] + geom->thick[kk+0][0]);
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
@@ -105,6 +105,7 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
             }
 
             //dzInv  = (1.0/geom->thick[kk][0]/geom->thick[kk][0])/(0.5*(geom->thick[kk-1][0] + geom->thick[kk+0][0]));
+            dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk+0][0])/(geom->thick[kk-1][0] + geom->thick[kk+0][0]);
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
@@ -117,7 +118,7 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
             }
         }
 
-        dzInv  = (1.0/geom->thick[kk][0]);
+        dzInv  = (2.0/geom->thick[kk][0]);
         for(int mm = mi; mm < mf; mm++) {
             MatGetRow(M1->M, mm, &nCols, &cols, &vals);
             row_g = kk * topo->nDofs1G + mm;
@@ -130,9 +131,10 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
         }
 
         if(kk > 0 && kk < geom->nk-1) {
-            dzInv = -0.25*(geom->thick[kk][0] + geom->thick[kk+1][0]);
+            //dzInv = -0.25*(geom->thick[kk][0] + geom->thick[kk+1][0]);
 
             //dzInv  = (1.0/geom->thick[kk][0]/geom->thick[kk][0])/(0.5*(geom->thick[kk+1][0] + geom->thick[kk+0][0]));
+            dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk+0][0])/(geom->thick[kk+1][0] + geom->thick[kk+0][0]);
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
@@ -145,6 +147,7 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
             }
 
             //dzInv = (1.0/geom->thick[kk+1][0]/geom->thick[kk+1][0])/(0.5*(geom->thick[kk+1][0] + geom->thick[kk+0][0]));
+            dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk+1][0])/(geom->thick[kk+1][0] + geom->thick[kk+0][0]);
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
