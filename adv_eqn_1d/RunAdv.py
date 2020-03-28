@@ -13,7 +13,7 @@ from Proj import *
 from AdvEqn import *
 from Plotting import *
 
-ne = 20
+ne = 40
 #ne = 6
 dXe = 1.0#1.25
 
@@ -27,8 +27,8 @@ X,dX=GenMesh(ne,dXe)
 
 # test that the edge functions are a partition of unity (so that boundary terms
 # conserve mass)
-N = 5 # polynomial order
-M = 5 # quadrature order
+N = 6 # polynomial order
+M = 6 # quadrature order
 topo = Topo(ne,N)
 topo_q = Topo(ne,M)
 quad = GaussLobatto(M)
@@ -138,18 +138,20 @@ a=ad.M1*h2
 err_3 = np.sqrt(np.dot(a,h2))
 print str(err_1) + '\t' + str(err_2) + '\t' + str(err_3)
 
-plt.plot((mass_a-mass_a[0])/mass_a[0],c='g')
-plt.plot((mass_t-mass_t[0])/mass_t[0],c='r')
-plt.plot((mass_2-mass_2[0])/mass_2[0],c='b')
+plt.plot(dt*np.arange(nsteps+1),(mass_a-mass_a[0])/mass_a[0],c='g')
+plt.plot(dt*np.arange(nsteps+1),(mass_2-mass_2[0])/mass_2[0],c='b')
+plt.plot(dt*np.arange(nsteps+1),(mass_t-mass_t[0])/mass_t[0],c='r')
 plt.title('mass conservation')
-plt.legend(['A','A_extrusion','A_upwind_basis'])
+plt.legend([r'$A$',r'$A_{PG;\Delta t}$',r'$-A_{PG;-\Delta t}^{\top}$'])
+plt.xlabel('time, $t$')
 plt.savefig('mass_conservation.png')
 plt.show()
-plt.plot((energy-energy[0])/energy[0],c='g')
-plt.plot((energyt-energyt[0])/energyt[0],c='r')
-plt.plot((energy2-energy2[0])/energy2[0],c='b')
+plt.plot(dt*np.arange(nsteps+1),(energy-energy[0])/energy[0],c='g')
+plt.plot(dt*np.arange(nsteps+1),(energy2-energy2[0])/energy2[0],c='b')
+plt.plot(dt*np.arange(nsteps+1),(energyt-energyt[0])/energyt[0],c='r')
 plt.title('energy conservation')
-plt.legend(['A','A_extrusion','A_upwind_basis'])
+plt.legend([r'$A$',r'$A_{PG;\Delta t}$',r'$-A_{PG;-\Delta t}^{\top}$'])
+plt.xlabel('time, $t$')
 plt.savefig('energy_conservation.png')
 plt.show()
 
@@ -163,61 +165,57 @@ plt.savefig('adv_mim_hc.png')
 plt.clf()
 
 # eigenvalues for the implicit operator
-w,v = scipy.sparse.linalg.eigs(ad.Sa,k=len(hi)-2)
+w,v = scipy.sparse.linalg.eigs(ad.St,k=len(hi)-2)
 wi = w.imag
 inds = np.argsort(wi)[::-1]
 wii = wi[inds]
 plt.plot(w[inds].real,wii,'g.')
 
+w,v = scipy.sparse.linalg.eigs(ad.Q_up_2,k=len(hi)-2)
+wi = w.imag
+inds = np.argsort(wi)[::-1]
+wii = wi[inds]
+vii = v[:,inds]
+plt.plot(w[inds].real,wii,'b.')
+
 w,v = scipy.sparse.linalg.eigs(ad.Q_up,k=len(hi)-2)
 wi = w.imag
 inds = np.argsort(wi)[::-1]
 wii = wi[inds]
-plt.plot(w[inds].real,wii,'r.')
-
-w,v = scipy.sparse.linalg.eigs(ad.Q_up_2,k=len(hi)-2)
-#print w
-#print v.shape
-wi = w.imag
-inds = np.argsort(wi)[::-1]
-wii = wi[inds]
-#print wii
-vii = v[:,inds]
-#plt.plot(vii[:,0])
-#plt.plot(vii[:,1])
-#plt.plot(vii[:,2])
-#plt.plot(vii[:,3])
-#plt.plot(vii[:,4])
-#plt.plot(vii[:,5])
-#plt.show()
-plt.plot(w[inds].real,wii,'b.')
+plt.plot(w[inds].real,wii,'r+')
 
 xx=np.linspace(0.4,1.0,8193)
 plt.plot(xx,np.sqrt(1.0-xx*xx),c='k')
 plt.plot(xx,-np.sqrt(1.0-xx*xx),c='k')
-plt.title('advection operator stability regions')
-plt.legend(['A','A_extrusion','A_upwind_basis'])
+plt.title('trapazoidal advection operator eigenvalues')
+plt.legend([r'$A$',r'$A_{PG;\Delta t}$',r'$-A_{PG;-\Delta t}^{\top}$'])
+plt.xlabel('real component, $\omega^r$')
+plt.ylabel('imaginary component, $\omega^i$')
 plt.savefig('stab_regions.png')
 plt.show()
 
 kc,wc = ad.disp_rel(ad.A_cen,False)
 ku,wu = ad.disp_rel(ad.A_upw,False)
 kd,wd = ad.disp_rel(ad.A_up2,False)
-plt.plot((1.0*kc)/(0.5*ne*N),ui[0]*np.abs(wc)/(0.5*ne*N),'g.')
-plt.plot((1.0*ku)/(0.5*ne*N),ui[0]*np.abs(wu)/(0.5*ne*N),'r.')
-plt.plot((1.0*kd)/(0.5*ne*N),ui[0]*np.abs(wd)/(0.5*ne*N),'b.')
+plt.plot((1.0*kc)/(0.5*ne*N),ui[0]*np.abs(wc)/(0.5*ne*N),'go')
+plt.plot((1.0*kd)/(0.5*ne*N),ui[0]*np.abs(wd)/(0.5*ne*N),'bo')
+plt.plot((1.0*ku)/(0.5*ne*N),ui[0]*np.abs(wu)/(0.5*ne*N),'r+')
 plt.plot((1.0*kc)/(0.5*ne*N),(1.0*kc)/(0.5*ne*N),c='k')
-plt.title('advection operator eigenvalues (real)')
-plt.legend(['A','A_extrusion','A_upwind_basis'])
-plt.savefig('eig_vals_real.png')
+plt.title('advection operator eigenvalues (imaginary component)')
+plt.legend([r'$A$',r'$A_{PG;\Delta t}$',r'$-A_{PG;-\Delta t}^{\top}$'])
+plt.ylabel('angular frequency, $\omega$')
+plt.xlabel('wavenumber, $k$')
+plt.savefig('eig_vals_imag.png')
 plt.show()
 kc,wc = ad.disp_rel(ad.A_cen,True)
 ku,wu = ad.disp_rel(ad.A_upw,True)
 kd,wd = ad.disp_rel(ad.A_up2,True)
-plt.plot((1.0*kc)/(0.5*ne*N),np.abs(wc)/(0.5*ne*N*2.0*np.pi),'g.')
-plt.plot((1.0*ku)/(0.5*ne*N),np.abs(wu)/(0.5*ne*N*2.0*np.pi),'r.')
-plt.plot((1.0*kd)/(0.5*ne*N),np.abs(wd)/(0.5*ne*N*2.0*np.pi),'b.')
-plt.title('advection operator eigenvalues (imag)')
-plt.legend(['A','A_extrusion','A_upwind_basis'])
-plt.savefig('eig_vals_imag.png')
+plt.plot((1.0*kc)/(0.5*ne*N),np.abs(wc)/(0.5*ne*N*2.0*np.pi),'go')
+plt.plot((1.0*kd)/(0.5*ne*N),np.abs(wd)/(0.5*ne*N*2.0*np.pi),'bo')
+plt.plot((1.0*ku)/(0.5*ne*N),np.abs(wu)/(0.5*ne*N*2.0*np.pi),'r+')
+plt.title('advection operator eigenvalues (real component)')
+plt.legend([r'$A$',r'$A_{PG;\Delta t}$',r'$-A_{PG;-\Delta t}^{\top}$'])
+plt.ylabel('angular frequency, $\omega$')
+plt.xlabel('wavenumber, $k$')
+plt.savefig('eig_vals_real.png')
 plt.show()

@@ -37,7 +37,8 @@ for ii in np.arange(QE.shape[0]):
 		num[jj] = num[jj] + one[ii]*QE[ii][jj]
 
 time = 2.5
-nsteps = 400*scale
+#nsteps = 20*scale
+nsteps = 40*scale
 dt = time/nsteps
 
 x = np.zeros(ne*M)

@@ -53,6 +53,10 @@ class AdvEqn:
 
 		self.Lt = self.M1 + 0.5*dt*self.At
 		self.Rt = self.M1 - 0.5*dt*self.At
+
+		#self.Lt = self.Lt - dt * self.A * self.M1inv * self.Lt
+		#self.Rt = self.Rt - dt * self.A * self.M1inv * self.Rt
+
 		self.Lt_inv = la.inv(self.Lt)
 		self.St = self.Lt_inv*self.Rt
 
@@ -94,7 +98,6 @@ class AdvEqn:
 		M0_c_u_inv = la.inv(M0_c_u)
 		M0_u_u_inv = la.inv(M0_u_u)
 
-
 		M01_arr = U_u_TP_up(topo,quad,dX,vel,node,edge,dt,+0.0).M
 		M10_arr = M01_arr.transpose()
 		M01_dep = U_u_TP_up(topo,quad,dX,vel,node,edge,dt,+1.0).M
@@ -102,41 +105,45 @@ class AdvEqn:
 		M01_up2 = U_u_TP_up_2(topo,quad,dX,vel,node,edge,dt,+1.0).M
 		M10_up2 = M01_arr.transpose()
 
-		self.B     = M0_c_c_inv * M01_arr
-		self.B_dep = M0_c_c_inv * M01_dep
-		self.B_up2 = M0_u_c_inv * M01_up2
-
 		A_arr = M1_c_c * self.E10 * M0_c_c_inv * M01_arr
 		A_dep = M1_c_c * self.E10 * M0_c_c_inv * M01_dep # mass conserving
 		A_up2 = M1_c_c * self.E10 * M0_u_c_inv * M01_up2 # mass conserving
 
-		L = M1_c_c + 0.25*dt*(A_arr + A_dep) # smoother solution
-		#L = M1_c_c + 0.125*dt*(A_arr + A_dep - A_arr.transpose() - A_dep.transpose()) # energy conserving
-		L_inv = la.inv(L);
-		R = M1_c_c - 0.25*dt*(A_arr + A_dep) # smoother solution
-		#R = M1_c_c - 0.125*dt*(A_arr + A_dep - A_arr.transpose() - A_dep.transpose()) # energy conserving
-		self.Q_up = L_inv * R
+		M0_d_c = Umat_up(topo,quad,dX,node.M_ij_d,node.M_ij_c).M
+		M0_d_c_inv = la.inv(M0_d_c)
+		M01_up2 = U_u_TP_up_2(topo,quad,dX,vel,node,edge,dt,-1.0).M
+		M10_up2 = M01_arr.transpose()
+		A_up2_T = M1_c_c * self.E10 * M0_d_c_inv * M01_up2 # mass conserving
+		A_dep = - 1.0*A_up2_T.transpose()
 
-		self.A_upw = self.M1inv * 0.5*(A_arr + A_dep)
+		self.B     = M0_c_c_inv * M01_arr
+		self.B_dep = M0_c_c_inv * M01_dep
+		self.B_up2 = M0_u_c_inv * M01_up2
+
+		self.A_upw = self.M1inv * A_dep
 		self.A_cen = self.M1inv * self.A
-		self.A_up2 = self.M1inv * 0.5*(A_arr + A_up2)
+		self.A_up2 = self.M1inv * A_up2
 
 		self.A_upw_ss = self.M1inv * 0.5*(1.0/dt)*(A_arr + A_dep - A_arr.transpose() - A_dep.transpose())
 		self.A_cen_ss = self.M1inv * 0.5*(self.A - self.A.transpose())
 		self.A_up2_ss = self.M1inv * 0.5*(1.0/dt)*(A_arr + A_up2 - A_arr.transpose() - A_up2.transpose())
 
-		L = M1_c_c + 0.25*dt*(A_arr + A_dep) # smoother solution
-		#L = M1_c_c + 0.25*(A_arr + A_dep - A_arr.transpose() - A_dep.transpose()) # energy conserving
+		L = M1_c_c + 0.5*dt*(A_dep) # smoother solution
+		#L = M1_c_c + 0.25*dt*(A_arr + A_dep) # smoother solution
+		#L = M1_c_c + 0.25*(A_dep - A_dep.transpose()) # energy conserving
 		L_inv = la.inv(L);
-		R = M1_c_c - 0.25*dt*(A_arr + A_dep) # smoother solution
-		#R = M1_c_c - 0.25*(A_arr + A_dep - A_arr.transpose() - A_dep.transpose()) # energy conserving
+		R = M1_c_c - 0.5*dt*(A_dep) # smoother solution
+		#R = M1_c_c - 0.25*dt*(A_arr + A_dep) # smoother solution
+		#R = M1_c_c - 0.25*(A_dep - A_dep.transpose()) # energy conserving
 		self.Q_up = L_inv * R
 
-		L = M1_c_c + 0.25*dt*(A_arr + A_up2) # smoother solution
-		#L = M1_c_c + 0.25*(A_arr + A_up2 - A_arr.transpose() - A_up2.transpose()) # energy conserving
+		L = M1_c_c + 0.5*dt*(A_up2) # smoother solution
+		#L = M1_c_c + 0.25*dt*(A_arr + A_up2) # smoother solution
+		#L = M1_c_c + 0.25*(A_up2 - A_up2.transpose()) # energy conserving
 		L_inv = la.inv(L);
-		R = M1_c_c - 0.25*dt*(A_arr + A_up2) # smoother solution
-		#R = M1_c_c - 0.25*(A_arr + A_up2 - A_arr.transpose() - A_up2.transpose()) # energy conserving
+		R = M1_c_c - 0.5*dt*(A_up2) # smoother solution
+		#R = M1_c_c - 0.25*dt*(A_arr + A_up2) # smoother solution
+		#R = M1_c_c - 0.25*(A_up2 - A_up2.transpose()) # energy conserving
 		self.Q_up_2 = L_inv * R
 
 		M1_c_d = Pmat_up(topo,quad,dX,edge.M_ij_c,edge.M_ij_d).M
@@ -149,7 +156,8 @@ class AdvEqn:
 		self.Q_up_3 = L_inv * R
 
 	def solve_a(self,hi):
-		return self.Sa*hi
+		#return self.Sa*hi
+		return self.St*hi
 
 	def solve_a_up(self,hi):
 		return self.Q_up*hi
