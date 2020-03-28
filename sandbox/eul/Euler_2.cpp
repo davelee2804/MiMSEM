@@ -1329,7 +1329,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rt_4->HorizToVert();
 
     // implicit vertical visiscosity solve
-    //imp_visc_solve->Solve(velx, velx);
+    imp_visc_solve->Solve(velx, velx);
 
     // carry over the vertical fields to the next time level
     DiagExner(rt_4->vz, exner_i);

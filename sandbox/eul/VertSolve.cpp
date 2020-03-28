@@ -28,7 +28,7 @@
 #define P0 100000.0
 #define SCALE 1.0e+8
 #define RAYLEIGH (1.0e-3)
-#define VISC 1
+//#define VISC 1
 //#define NEW_EOS 1
 
 using namespace std;
@@ -854,7 +854,9 @@ void VertSolve::viscosity() {
     }
     MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-    visc = 8.0*dzMaxG/M_PI;
+    //visc = 8.0*dzMaxG/M_PI;
+    //visc = 0.1*dzMaxG;
+    visc = 0.001*dzMaxG;
 }
 
 void VertSolve::solve_schur_column(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 

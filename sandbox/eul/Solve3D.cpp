@@ -197,7 +197,7 @@ void Solve3D::Solve(Vec* bg, Vec* xg) {
 
     for(int kk = 0; kk < geom->nk; kk++) {
         MatMult(M1->M, bg[kk], ug[kk]);
-        VecScale(ug[kk], 1.0/geom->thick[kk][0]);
+        VecScale(ug[kk], 2.0/geom->thick[kk][0]);
     }
 
     RepackVector(ug, b);
@@ -237,9 +237,9 @@ void Solve3D::RepackVector(Vec* ux, Vec _v) {
         VecScatterBegin(topo->gtol_1, ux[kk], ul, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(  topo->gtol_1, ux[kk], ul, INSERT_VALUES, SCATTER_FORWARD);
 
-        shift = kk * topo->n1l;
+        shift = kk * topo->n1;
         VecGetArray(ul, &uArray);
-        for(int ii = 0; ii < topo->n1l; ii++) {
+        for(int ii = 0; ii < topo->n1; ii++) {
             vArray[shift+ii] = uArray[ii];
         }
         VecRestoreArray(ul, &uArray);
@@ -260,9 +260,9 @@ void Solve3D::UnpackVector(Vec _v, Vec* ux) {
 
     VecGetArray(vl, &vArray);
     for(int kk = 0; kk < geom->nk; kk++) {
-        shift = kk * topo->n1l;
+        shift = kk * topo->n1;
         VecGetArray(ul, &uArray);
-        for(int ii = 0; ii < topo->n1l; ii++) {
+        for(int ii = 0; ii < topo->n1; ii++) {
             uArray[ii] = vArray[shift+ii];
         }
         VecRestoreArray(ul, &uArray);
