@@ -855,8 +855,7 @@ void VertSolve::viscosity() {
     MPI_Allreduce(&dzMax, &dzMaxG, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
     //visc = 8.0*dzMaxG/M_PI;
-    //visc = 0.1*dzMaxG;
-    visc = 0.01*dzMaxG;
+    visc = 0.005*dzMaxG;
 }
 
 void VertSolve::solve_schur_column(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 

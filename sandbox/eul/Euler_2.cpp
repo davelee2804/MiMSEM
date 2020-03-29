@@ -32,7 +32,7 @@
 #define P0 100000.0
 #define SCALE 1.0e+8
 //#define RAYLEIGH (1.0e-3)
-//#define WITH_UDWDX
+#define WITH_UDWDX
 
 using namespace std;
 
@@ -1274,7 +1274,6 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
 
     //d2udz2(velx, V1u, d1uz, d2uz, bu);
     //d2udz2(d2uz, V1u, d1uz, d4uz, bu);
-
 /*
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
@@ -1312,7 +1311,6 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rt_4->UpdateLocal();
     rt_4->HorizToVert();
 */
-
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         VecZeroEntries(xu);
