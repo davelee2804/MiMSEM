@@ -19,7 +19,7 @@ class Solve3D {
         VecScatter scat;
         void RepackVector(Vec* vx, Vec v);
         void UnpackVector(Vec v, Vec* vx);
-        void Solve(Vec* xg, Vec* bg);
+        void Solve(Vec* xg, Vec* bg, bool mult_rhs);
 
     private:
         int elOrd;

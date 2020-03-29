@@ -31,8 +31,8 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-#define RAYLEIGH (1.0e-3)
-#define WITH_UDWDX
+//#define RAYLEIGH (1.0e-3)
+//#define WITH_UDWDX
 
 using namespace std;
 
@@ -453,7 +453,6 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
 
     // add in the biharmonic viscosity
     if(do_visc) {
-        //if(lev < geom->nk-3) {
         laplacian(false, uh, &d2u, lev);
         laplacian(false, d2u, &d4u, lev);
         VecZeroEntries(d2u);
@@ -461,15 +460,6 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
         VecAXPY(Fu, 1.0, d2u);
         VecDestroy(&d2u);
         VecDestroy(&d4u);
-        //} else {
-        //laplacian(false, uh, &d2u, lev);
-        //MatMult(M1->M, d2u, dp);
-        //if(lev == geom->nk-1) dot = 4.0;
-        //if(lev == geom->nk-2) dot = 2.0;
-        //if(lev == geom->nk-3) dot = 1.0;
-        //VecAXPY(Fu, dot, d2u);
-        //VecDestroy(&d2u);
-        //}
     }
 
     VecDestroy(&wl);
@@ -553,18 +543,11 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
             KSPSolve(ksp1, rho_dTheta_1, rho_dTheta_2);
             MatMult(EtoF->E21, rho_dTheta_2, d2Theta);
 
-            //if(kk < geom->nk-3) {
             M2->assemble(kk, SCALE, true);
             grad(false, d2Theta, &d3Theta, kk);
             MatMult(EtoF->E21, d3Theta, d2Theta);
             VecAXPY(Fp[kk], del2*del2, d2Theta);
             VecDestroy(&d3Theta);
-            //} else {
-            //if(kk == geom->nk-1) dot = 4.0;
-            //if(kk == geom->nk-2) dot = 2.0;
-            //if(kk == geom->nk-3) dot = 1.0;
-            //VecAXPY(Fp[kk], dot*del2, d2Theta);
-            //}
             VecDestroy(&dTheta);
         }
     }
@@ -1292,6 +1275,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     //d2udz2(velx, V1u, d1uz, d2uz, bu);
     //d2udz2(d2uz, V1u, d1uz, d4uz, bu);
 
+/*
     for(ii = 0; ii < geom->nk; ii++) {
         // momentum
         VecZeroEntries(xu);
@@ -1327,9 +1311,42 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     rho_4->HorizToVert();
     rt_4->UpdateLocal();
     rt_4->HorizToVert();
+*/
 
+    for(ii = 0; ii < geom->nk; ii++) {
+        // momentum
+        VecZeroEntries(xu);
+        VecAXPY(xu, 1.0/3.0, velx[ii]);
+        VecAXPY(xu, 2.0/3.0, velx_3[ii]);
+        M1->assemble(ii, SCALE, true);
+#ifdef RAYLEIGH
+        if(ii == geom->nk-1) MatScale(M1->M, 1.0 + 1.00*RAYLEIGH*dt);
+        if(ii == geom->nk-2) MatScale(M1->M, 1.0 + 0.50*RAYLEIGH*dt);
+        if(ii == geom->nk-3) MatScale(M1->M, 1.0 + 0.25*RAYLEIGH*dt);
+#endif
+        MatMult(M1->M, xu, velx[ii]);
+        VecAXPY(velx[ii], (-2.0/3.0)*dt, Fu[ii]);
+    }
     // implicit vertical visiscosity solve
-    imp_visc_solve->Solve(velx, velx);
+    imp_visc_solve->Solve(velx, velx, false);
+
+    for(ii = 0; ii < geom->nk; ii++) {
+        // continuity
+        VecZeroEntries(rho_4->vh[ii]);
+        VecAXPY(rho_4->vh[ii], 1.0/3.0, rho_1->vh[ii]);
+        VecAXPY(rho_4->vh[ii], 2.0/3.0, rho_3->vh[ii]);
+        VecAXPY(rho_4->vh[ii], (-2.0/3.0)*dt, Fp->vh[ii]);
+
+        // internal energy
+        VecZeroEntries(rt_4->vh[ii]);
+        VecAXPY(rt_4->vh[ii], 1.0/3.0, rt_1->vh[ii]);
+        VecAXPY(rt_4->vh[ii], 2.0/3.0, rt_3->vh[ii]);
+        VecAXPY(rt_4->vh[ii], (-2.0/3.0)*dt, Ft->vh[ii]);
+    }
+    rho_4->UpdateLocal();
+    rho_4->HorizToVert();
+    rt_4->UpdateLocal();
+    rt_4->HorizToVert();
 
     // carry over the vertical fields to the next time level
     DiagExner(rt_4->vz, exner_i);

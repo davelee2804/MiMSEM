@@ -192,15 +192,18 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     }
 }
 
-void Solve3D::Solve(Vec* bg, Vec* xg) {
+void Solve3D::Solve(Vec* bg, Vec* xg, bool mult_rhs) {
     double norm;
 
-    for(int kk = 0; kk < geom->nk; kk++) {
-        MatMult(M1->M, bg[kk], ug[kk]);
-        VecScale(ug[kk], 2.0/geom->thick[kk][0]);
+    if(mult_rhs) {
+        for(int kk = 0; kk < geom->nk; kk++) {
+            MatMult(M1->M, bg[kk], ug[kk]);
+            VecScale(ug[kk], 2.0/geom->thick[kk][0]);
+        }
+        RepackVector(ug, b);
+    } else {
+        RepackVector(bg, b);
     }
-
-    RepackVector(ug, b);
     VecNorm(b, NORM_2, &norm);
     if(!rank) cout << "Solve3D() - |b|: " << norm << endl;
     KSPSolve(ksp, b, x);

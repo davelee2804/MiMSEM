@@ -27,7 +27,7 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-#define RAYLEIGH (1.0e-3)
+//#define RAYLEIGH (1.0e-3)
 //#define VISC 1
 //#define NEW_EOS 1
 
@@ -856,7 +856,7 @@ void VertSolve::viscosity() {
 
     //visc = 8.0*dzMaxG/M_PI;
     //visc = 0.1*dzMaxG;
-    visc = 0.001*dzMaxG;
+    visc = 0.01*dzMaxG;
 }
 
 void VertSolve::solve_schur_column(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
@@ -1713,7 +1713,6 @@ double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x)
             MatMult(vo->VB, dF_z, F_rho);
             MatMult(vo->VB, dG_z, F_rt);
 
-            //solve_schur_column(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_h->vz[ii], 
             solve_schur_column_3(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii], 
                                F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, itt);
 
@@ -1826,13 +1825,13 @@ void VertSolve::horiz_visc(L2Vecs* velz, L2Vecs* d4w, double del2_x, Umat* M1, W
         MatMult(EtoF->E12, h_tmp_1, u_tmp_1);
         KSPSolve(ksp_x, u_tmp_1, u_tmp_2);
         MatMult(EtoF->E21, u_tmp_2, h_tmp_2);
-        VecScale(h_tmp_2, del2_x);
+        VecScale(h_tmp_2, del2_x*2.0);
         // second laplacian
         MatMult(M2->M, h_tmp_2, h_tmp_1);
         MatMult(EtoF->E12, h_tmp_1, u_tmp_1);
         KSPSolve(ksp_x, u_tmp_1, u_tmp_2);
         MatMult(EtoF->E21, u_tmp_2, h_tmp_2);
-        VecScale(h_tmp_2, del2_x);
+        VecScale(h_tmp_2, del2_x*2.0);
 
         MatMult(M2->M, h_tmp_2, d4w->vh[kk]);
     }
