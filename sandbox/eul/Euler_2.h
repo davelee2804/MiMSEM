@@ -36,12 +36,13 @@ class Euler {
         Vec* gv;
         Vec* zv;
         Vec* uz;                 // dudz and dvdz vorticity components
+        Vec* uzl;
+        Vec* ul;
         L2Vecs* uuz;             // u.dudz + v.dvdz vorticity velocity product
         Mat VA;
         Mat VB;
         KSP ksp1;
         KSP ksp2;
-        KSP kspE;
         KSP kspColA2; // for the diagnosis of theta without boundary conditions
 
         VertSolve* vert;
@@ -80,5 +81,4 @@ class Euler {
 
         void HorizVort(Vec* velx);
         void AssembleVertMomVort(Vec* velx, L2Vecs* velz);
-        void d2udz2(Vec* velx, Vec* V1u, Vec* d1uz, Vec* d2uz, Vec temp);
 };
