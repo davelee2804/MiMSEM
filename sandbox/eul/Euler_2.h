@@ -26,6 +26,8 @@ class Euler {
         UtQWmat* Rh;
         WtQdUdz_mat* Rz;
         Whmat* T;
+        WmatInv* M2inv;
+        Mat KT;
         Vec* fg;                 // coriolis vector (global)
         bool firstStep;
         double k2i;              // kinetic to internal energy exchange
@@ -64,7 +66,8 @@ class Euler {
         void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu, Vec Flux, Vec uzb, Vec uzt, Vec velz_b, Vec velz_t);
         void thetaBCVec(int ex, int ey, Mat A, Vec* bTheta);
-        void diagTheta2(Vec* rho, Vec* rt, Vec* theta);
+        void diagTheta(Vec* rho, Vec* rt, Vec* theta);
+        void diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs);
         void AssembleKEVecs(Vec* velx, Vec* velz);
         void init0(Vec* q, ICfunc3D* func);
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);

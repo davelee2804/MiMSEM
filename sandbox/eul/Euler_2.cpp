@@ -173,6 +173,9 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     initGZ();
 
     imp_visc_solve = new Solve3D(topo, geom, dt, vert->visc);
+
+    KT = NULL;
+    M2inv = new WmatInv(topo, geom, edge);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -360,6 +363,9 @@ Euler::~Euler() {
     delete M1t;
     delete Rh;
     delete Rz;
+
+    delete M2inv;
+    if(KT) MatDestroy(&KT);
 
     delete edge;
     delete node;
@@ -558,7 +564,7 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
 }
 
 /* All vectors, rho, rt and theta are VERTICAL vectors */
-void Euler::diagTheta2(Vec* rho, Vec* rt, Vec* theta) {
+void Euler::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
     int ex, ey, n2, ei;
     Vec frt;
 
@@ -578,6 +584,55 @@ void Euler::diagTheta2(Vec* rho, Vec* rt, Vec* theta) {
         }
     }
     VecDestroy(&frt);
+}
+
+/* 
+diagnose the potential temperature subject to an artificial viscosity 
+rho and theta are VERTICAL vectors
+*/
+void Euler::diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs) {
+    double ae = 4.0*M_PI*RAD_EARTH*RAD_EARTH;
+    double dx = sqrt(ae/topo->nDofs0G);
+    double tau = dx/2.0/20.0; // u_{max} ~= 20m/s
+    Vec drt, u_drt, h_tmp, u_tmp_1, u_tmp_2;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &u_drt);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp_1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp_2);
+
+    for(int kk = 0; kk < geom->nk; kk++) {
+        M1->assemble(kk, SCALE, true);
+        M2->assemble(kk, SCALE, true);
+        K->assemble(ul[kk], kk, SCALE);
+        M2inv->assemble(kk, SCALE);
+        if(KT) {
+            MatTranspose(K->M, MAT_REUSE_MATRIX, &KT);
+        } else {
+            MatTranspose(K->M, MAT_INITIAL_MATRIX, &KT);
+        }
+
+        grad(false, rt->vh[kk], &drt, kk);
+        MatMult(K->M, drt, u_drt);
+        VecDestroy(&drt);
+        MatMult(M2inv->M, u_drt, h_tmp);
+        MatMult(KT, h_tmp, u_tmp_1);
+        KSPSolve(ksp1, u_tmp_1, u_tmp_2);
+        MatMult(EtoF->E21, u_tmp_2, h_tmp);
+        MatMult(M2->M, h_tmp, rhs->vh[kk]);
+
+        MatMult(M2->M, rt->vh[kk], h_tmp);
+        VecAYPX(rhs->vh[kk], -tau*dt, h_tmp);
+    }
+    rhs->UpdateLocal();
+    rhs->HorizToVert();
+    
+    diagTheta(rho, rhs->vz, theta);
+
+    VecDestroy(&u_drt);
+    VecDestroy(&h_tmp);
+    VecDestroy(&u_tmp_1);
+    VecDestroy(&u_tmp_2);
 }
 
 /*
@@ -677,7 +732,7 @@ void Euler::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Ve
     // set the top and bottom potential temperature bcs
     rho->HorizToVert();
     rt->HorizToVert();
-    diagTheta2(rho->vz, rt->vz, theta->vz);
+    diagTheta(rho->vz, rt->vz, theta->vz);
     theta->VertToHoriz();
 
     massRHS(velx, rho->vl, Fp, Flux);
@@ -1345,7 +1400,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         step++;
 
         L2Vecs* l2Theta = new L2Vecs(geom->nk+1, topo, geom);
-        diagTheta2(rho_5->vz, rt_5->vz, l2Theta->vz);
+        diagTheta(rho_5->vz, rt_5->vz, l2Theta->vz);
         l2Theta->VertToHoriz();
         l2Theta->UpdateGlobal();
         for(ii = 0; ii < geom->nk+1; ii++) {
