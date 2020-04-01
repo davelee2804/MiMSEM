@@ -292,7 +292,7 @@ void VertSolve::solve_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
 
             // implicit coupled solve
             assemble_residual(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
-                              rt_i->vz[ii], rt_j->vz[ii], F_w, F_z->vz[ii], G_z->vz[ii]);
+                              rt_i->vz[ii], rt_j->vz[ii], F_w, F_z->vz[ii], G_z->vz[ii], velz_i->vz[ii]);
 #ifdef NEW_EOS
             vo->Assemble_EOS_Residual_new(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
 #else
@@ -507,7 +507,7 @@ void VertSolve::diagTheta2(Vec* rho, Vec* rt, Vec* theta) {
 }
 
 void VertSolve::assemble_residual(int ex, int ey, Vec theta, Vec Pi, 
-                                  Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G) 
+                                  Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G, Vec velz0) 
 {
     // diagnose the hamiltonian derivatives
     diagnose_F_z(ex, ey, velz1, velz2, rho1, rho2, _F);
@@ -517,7 +517,8 @@ void VertSolve::assemble_residual(int ex, int ey, Vec theta, Vec Pi,
     vo->AssembleLinear(ex, ey, vo->VA);
     MatMult(vo->VA, velz2, fw);
 
-    MatMult(vo->VA, velz1, _tmpA1);
+    //MatMult(vo->VA, velz1, _tmpA1);
+    MatMult(vo->VA, velz0, _tmpA1);
     VecAXPY(fw, -1.0, _tmpA1);
 
     MatMult(vo->V01, _Phi_z, _tmpA1);
@@ -1607,8 +1608,10 @@ MatDestroy(&L_rt_rt);
 KSPDestroy(&ksp_pi);
 }
 
-void VertSolve::solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, L2Vecs* udwdx, 
-double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x) 
+void VertSolve::solve_schur(
+L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
+L2Vecs* udwdx, double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x,
+L2Vecs* velz_o, L2Vecs* rho_o, L2Vecs* rt_o) 
 {
     bool done = false;
     int ex, ey, elOrd2, itt = 0;
@@ -1657,6 +1660,13 @@ double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x)
     exner_i->UpdateLocal();
     exner_i->HorizToVert();
 
+    velz_o->UpdateLocal();
+    velz_o->HorizToVert();
+    rho_o->UpdateLocal();
+    rho_o->HorizToVert();
+    rt_o->UpdateLocal();
+    rt_o->HorizToVert();
+
     velz_j->CopyFromVert(velz_i->vz);
     rho_j->CopyFromVert(rho_i->vz);
     rt_j->CopyFromVert(rt_i->vz);
@@ -1689,7 +1699,7 @@ double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x)
 
             // assemble the residual vectors
             assemble_residual(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
-                              rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z);
+                              rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z, velz_o->vz[ii]);
 
             if(udwdx) VecAXPY(F_w, dt, udwdx->vz[ii]);
             if(ksp_x) {
@@ -1708,8 +1718,10 @@ double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x)
             MatMult(vo->V10, G_z, dG_z);
             VecAYPX(dF_z, dt, rho_j->vz[ii]);
             VecAYPX(dG_z, dt, rt_j->vz[ii]);
-            VecAXPY(dF_z, -1.0, rho_i->vz[ii]);
-            VecAXPY(dG_z, -1.0, rt_i->vz[ii]);
+            //VecAXPY(dF_z, -1.0, rho_i->vz[ii]);
+            //VecAXPY(dG_z, -1.0, rt_i->vz[ii]);
+            VecAXPY(dF_z, -1.0, rho_o->vz[ii]);
+            VecAXPY(dG_z, -1.0, rt_o->vz[ii]);
             MatMult(vo->VB, dF_z, F_rho);
             MatMult(vo->VB, dG_z, F_rt);
 
@@ -1825,13 +1837,13 @@ void VertSolve::horiz_visc(L2Vecs* velz, L2Vecs* d4w, double del2_x, Umat* M1, W
         MatMult(EtoF->E12, h_tmp_1, u_tmp_1);
         KSPSolve(ksp_x, u_tmp_1, u_tmp_2);
         MatMult(EtoF->E21, u_tmp_2, h_tmp_2);
-        VecScale(h_tmp_2, del2_x*2.0);
+        VecScale(h_tmp_2, del2_x*1.25);
         // second laplacian
         MatMult(M2->M, h_tmp_2, h_tmp_1);
         MatMult(EtoF->E12, h_tmp_1, u_tmp_1);
         KSPSolve(ksp_x, u_tmp_1, u_tmp_2);
         MatMult(EtoF->E21, u_tmp_2, h_tmp_2);
-        VecScale(h_tmp_2, del2_x*2.0);
+        VecScale(h_tmp_2, del2_x*1.25);
 
         MatMult(M2->M, h_tmp_2, d4w->vh[kk]);
     }

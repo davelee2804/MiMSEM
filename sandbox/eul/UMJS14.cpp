@@ -16,6 +16,7 @@
 #include "VertOps.h"
 #include "Assembly.h"
 #include "VertSolve.h"
+#include "Solve3D.h"
 #include "Euler_2.h"
 
 using namespace std;
@@ -274,7 +275,7 @@ int main(int argc, char** argv) {
     int startStep = atoi(argv[1]);
     double dt = 120.0;
     int nSteps = 12*24*30;
-    int dumpEvery = 1;//360; //dump evert 12 hours
+    int dumpEvery = 360; //dump evert 12 hours
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -292,6 +293,7 @@ int main(int argc, char** argv) {
     geom = new Geom(rank, topo, NK);
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
+
     pe   = new Euler(topo, geom, dt);
     pe->step = startStep;
 
@@ -351,7 +353,7 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->StrangCarryover(velx, velz, rho, rt, exner, dump);
+        pe->Trapazoidal(velx, velz, rho, rt, exner, dump);
     }
 
     delete pe;

@@ -22,19 +22,23 @@ OBJS = LinAlg.o \
        VertOps.o \
        Assembly.o \
        VertSolve.o \
+       Solve3D.o \
        Euler_2.o \
        UMJS14.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-UMJS14.o: UMJS14.cpp Euler_2.o VertSolve.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+UMJS14.o: UMJS14.cpp Euler_2.o Solve3D.o VertSolve.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c UMJS14.cpp ${CXXFLAGS}
 
-Euler_2.o: Euler_2.cpp Euler_2.h VertSolve.o Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+Euler_2.o: Euler_2.cpp Euler_2.h Solve3D.o VertSolve.o Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Euler_2.cpp ${CXXFLAGS}
 
-VertSolve.o: VertSolve.cpp VertSolve.h VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+Solve3D.o: Solve3D.cpp Solve3D.h VertSolve.o Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Solve3D.cpp ${CXXFLAGS}
+
+VertSolve.o: VertSolve.cpp VertSolve.h Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c VertSolve.cpp ${CXXFLAGS}
 
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
