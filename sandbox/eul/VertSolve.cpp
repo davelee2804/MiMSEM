@@ -1688,7 +1688,7 @@ L2Vecs* velz_o, L2Vecs* rho_o, L2Vecs* rt_o)
     rho_h->CopyFromVert(rho_i->vz);
     rt_h->CopyFromVert(rt_i->vz);
 
-    horiz_visc(velz_i, d4w_i, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
+    if(ksp_x) horiz_visc(velz_i, d4w_i, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
 
     do {
         max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
@@ -1718,8 +1718,6 @@ L2Vecs* velz_o, L2Vecs* rho_o, L2Vecs* rt_o)
             MatMult(vo->V10, G_z, dG_z);
             VecAYPX(dF_z, dt, rho_j->vz[ii]);
             VecAYPX(dG_z, dt, rt_j->vz[ii]);
-            //VecAXPY(dF_z, -1.0, rho_i->vz[ii]);
-            //VecAXPY(dG_z, -1.0, rt_i->vz[ii]);
             VecAXPY(dF_z, -1.0, rho_o->vz[ii]);
             VecAXPY(dG_z, -1.0, rt_o->vz[ii]);
             MatMult(vo->VB, dF_z, F_rho);
@@ -1761,7 +1759,7 @@ L2Vecs* velz_o, L2Vecs* rho_o, L2Vecs* rt_o)
         }
         theta_h->VertToHoriz();
         theta_j->VertToHoriz();
-        horiz_visc(velz_j, d4w_j, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
+        if(ksp_x) horiz_visc(velz_j, d4w_j, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
 
         MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_exner = norm_x;
         MPI_Allreduce(&max_norm_w,     &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w     = norm_x;

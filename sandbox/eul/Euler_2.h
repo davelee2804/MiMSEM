@@ -48,7 +48,6 @@ class Euler {
         KSP kspColA2; // for the diagnosis of theta without boundary conditions
 
         VertSolve* vert;
-        Solve3D* imp_visc_solve;
 
         Wii* Q;
         M2_j_xy_i* W;
@@ -75,7 +74,6 @@ class Euler {
         void initTheta(Vec theta, ICfunc3D* func);
         void HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft, Vec* velz);
         void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
-        void StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
         void Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
         double int2(Vec ug);

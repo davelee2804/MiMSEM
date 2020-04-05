@@ -173,8 +173,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
 
     initGZ();
 
-    //imp_visc_solve = new Solve3D(topo, geom, dt, vert->visc);
-
     KT = NULL;
     M2inv = new WmatInv(topo, geom, edge);
 }
@@ -373,7 +371,6 @@ Euler::~Euler() {
     delete quad;
 
     delete vert;
-    //delete imp_visc_solve;
 }
 
 /*
@@ -737,7 +734,8 @@ void Euler::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Ve
     theta->VertToHoriz();
 
     massRHS(velx, rho->vl, Fp, Flux);
-    tempRHS(Flux, theta->vl, Ft, rho->vl, exner);
+    //tempRHS(Flux, theta->vl, Ft, rho->vl, exner);
+    tempRHS(Flux, theta->vl, Ft, NULL, exner);
 
     HorizVort(velx);
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1145,319 +1143,6 @@ void DestroyHorizVecs(Vec* vecs, Geom* geom) {
     delete[] vecs;
 }
 
-void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
-    int     ii;
-    char    fieldname[100];
-    Vec     wi, bu, xu;
-    L2Vecs* velz_1  = new L2Vecs(geom->nk-1, topo, geom);
-    L2Vecs* rho_0   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rho_1   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rho_2   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rho_3   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rho_4   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rho_5   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_0    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_1    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_2    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_3    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_4    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_5    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* exner_i = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* Fp      = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* Ft      = new L2Vecs(geom->nk, topo, geom);
-    Vec*    Fu      = CreateHorizVecs(topo, geom);
-    Vec*    velx_2  = CreateHorizVecs(topo, geom);
-    Vec*    velx_3  = CreateHorizVecs(topo, geom);
-    Vec*    V1u     = CreateHorizVecs(topo, geom);
-    Vec*    d1uz    = CreateHorizVecs(topo, geom);
-    Vec*    d2uz    = CreateHorizVecs(topo, geom);
-    Vec*    d4uz    = CreateHorizVecs(topo, geom);
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &xu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
-
-    // 1.  explicit vertical solve using data from the end of the previous horizontal step
-    if(!rank) cout << "vertical half step (1)..............." << endl;
-
-    rho_0->CopyFromHoriz(rho);
-    rho_0->UpdateLocal();
-    rho_0->HorizToVert();
-    rt_0->CopyFromHoriz(rt);
-    rt_0->UpdateLocal();
-    rt_0->HorizToVert();
-    exner_i->CopyFromHoriz(exner);
-    exner_i->UpdateLocal();
-    exner_i->HorizToVert();
-
-    velz_1->CopyFromVert(velz);    velz_1->VertToHoriz();  velz_1->UpdateGlobal();
-    rho_1->CopyFromHoriz(rho);     rho_1->UpdateLocal();   rho_1->HorizToVert();
-    rt_1->CopyFromHoriz(rt);       rt_1->UpdateLocal();    rt_1->HorizToVert();
-
-    if(firstStep) {
-        vert->solve_schur(velz_1, rho_1, rt_1, exner_i, NULL, del2, M1, M2, EtoF, ksp1, velz_1, rho_1, rt_1);
-    } else {
-#ifdef WITH_UDWDX
-        velz_1->CopyFromVert(velz);
-        AssembleVertMomVort(velx, velz_1);
-#endif
-        vert->solve_schur(velz_1, rho_1, rt_1, exner_i, uuz, del2, M1, M2, EtoF, ksp1, velz_1, rho_1, rt_1);
-    }
-    velz_1->VertToHoriz();
-    velz_1->UpdateGlobal();
-    rho_1->VertToHoriz();
-    rho_1->UpdateGlobal();
-    rt_1->VertToHoriz();
-    rt_1->UpdateGlobal();
-    exner_i->VertToHoriz();
-    exner_i->UpdateGlobal();
-
-    // 2.1 first horiztonal substep
-    if(!rank) cout << "horiztonal step (1).................." << endl;
-    AssembleKEVecs(velx, velz_1->vz);
-    HorizRHS(velx, rho_1, rt_1, exner_i->vh, Fu, Fp->vh, Ft->vh, velz_1->vh);
-
-    for(ii = 0; ii < geom->nk; ii++) {
-        // momentum
-        M1->assemble(ii, SCALE, true);
-#ifdef RAYLEIGH
-        if(ii == geom->nk-1) MatScale(M1->M, 1.0 + 1.00*RAYLEIGH*dt);
-        if(ii == geom->nk-2) MatScale(M1->M, 1.0 + 0.50*RAYLEIGH*dt);
-        if(ii == geom->nk-3) MatScale(M1->M, 1.0 + 0.25*RAYLEIGH*dt);
-#endif
-        MatMult(M1->M, velx[ii], bu);
-        VecAXPY(bu, -dt, Fu[ii]);
-
-        KSPSolve(ksp1, bu, velx_2[ii]);
-        VecScatterBegin(topo->gtol_1, velx_2[ii], ul[ii], INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  topo->gtol_1, velx_2[ii], ul[ii], INSERT_VALUES, SCATTER_FORWARD);
-
-        // continuity
-        VecCopy(rho_1->vh[ii], rho_2->vh[ii]);
-        VecAXPY(rho_2->vh[ii], -dt, Fp->vh[ii]);
-
-        // internal energy
-        VecCopy(rt_1->vh[ii], rt_2->vh[ii]);
-        VecAXPY(rt_2->vh[ii], -dt, Ft->vh[ii]);
-    }
-    rho_2->UpdateLocal();
-    rt_2->UpdateLocal();
-    rt_2->HorizToVert();
-
-    // 2.2 second horiztonal step
-    if(!rank) cout << "horiztonal step (2).................." << endl;
-    AssembleKEVecs(velx_2, velz_1->vz);
-    DiagExner(rt_2->vz, exner_i);
-    HorizRHS(velx_2, rho_2, rt_2, exner_i->vh, Fu, Fp->vh, Ft->vh, velz_1->vh);
-
-    for(ii = 0; ii < geom->nk; ii++) {
-        // momentum
-        VecZeroEntries(xu);
-        VecAXPY(xu, 0.75, velx[ii]);
-        VecAXPY(xu, 0.25, velx_2[ii]);
-        M1->assemble(ii, SCALE, true);
-#ifdef RAYLEIGH
-        if(ii == geom->nk-1) MatScale(M1->M, 1.0 + 1.00*RAYLEIGH*dt);
-        if(ii == geom->nk-2) MatScale(M1->M, 1.0 + 0.50*RAYLEIGH*dt);
-        if(ii == geom->nk-3) MatScale(M1->M, 1.0 + 0.25*RAYLEIGH*dt);
-#endif
-        MatMult(M1->M, xu, bu);
-        VecAXPY(bu, -0.25*dt, Fu[ii]);
-
-        KSPSolve(ksp1, bu, velx_3[ii]);
-        VecScatterBegin(topo->gtol_1, velx_3[ii], ul[ii], INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  topo->gtol_1, velx_3[ii], ul[ii], INSERT_VALUES, SCATTER_FORWARD);
-
-        // continuity
-        VecZeroEntries(rho_3->vh[ii]);
-        VecAXPY(rho_3->vh[ii], 0.75, rho_1->vh[ii]);
-        VecAXPY(rho_3->vh[ii], 0.25, rho_2->vh[ii]);
-        VecAXPY(rho_3->vh[ii], -0.25*dt, Fp->vh[ii]);
-
-        // internal energy
-        VecZeroEntries(rt_3->vh[ii]);
-        VecAXPY(rt_3->vh[ii], 0.75, rt_1->vh[ii]);
-        VecAXPY(rt_3->vh[ii], 0.25, rt_2->vh[ii]);
-        VecAXPY(rt_3->vh[ii], -0.25*dt, Ft->vh[ii]);
-    }
-    rho_3->UpdateLocal();
-    rt_3->UpdateLocal();
-    rt_3->HorizToVert();
-
-    // 2.3 third horiztonal step
-    if(!rank) cout << "horiztonal step (3).................." << endl;
-    AssembleKEVecs(velx_3, velz_1->vz);
-    DiagExner(rt_3->vz, exner_i);
-    HorizRHS(velx_3, rho_3, rt_3, exner_i->vh, Fu, Fp->vh, Ft->vh, velz_1->vh);
-
-    for(ii = 0; ii < geom->nk; ii++) {
-        // momentum
-        VecZeroEntries(xu);
-        VecAXPY(xu, 1.0/3.0, velx[ii]);
-        VecAXPY(xu, 2.0/3.0, velx_3[ii]);
-        M1->assemble(ii, SCALE, true);
-#ifdef RAYLEIGH
-        if(ii == geom->nk-1) MatScale(M1->M, 1.0 + 1.00*RAYLEIGH*dt);
-        if(ii == geom->nk-2) MatScale(M1->M, 1.0 + 0.50*RAYLEIGH*dt);
-        if(ii == geom->nk-3) MatScale(M1->M, 1.0 + 0.25*RAYLEIGH*dt);
-#endif
-        MatMult(M1->M, xu, bu);
-        VecAXPY(bu, (-2.0/3.0)*dt, Fu[ii]);
-
-        KSPSolve(ksp1, bu, velx[ii]);
-
-        // continuity
-        VecZeroEntries(rho_4->vh[ii]);
-        VecAXPY(rho_4->vh[ii], 1.0/3.0, rho_1->vh[ii]);
-        VecAXPY(rho_4->vh[ii], 2.0/3.0, rho_3->vh[ii]);
-        VecAXPY(rho_4->vh[ii], (-2.0/3.0)*dt, Fp->vh[ii]);
-
-        // internal energy
-        VecZeroEntries(rt_4->vh[ii]);
-        VecAXPY(rt_4->vh[ii], 1.0/3.0, rt_1->vh[ii]);
-        VecAXPY(rt_4->vh[ii], 2.0/3.0, rt_3->vh[ii]);
-        VecAXPY(rt_4->vh[ii], (-2.0/3.0)*dt, Ft->vh[ii]);
-    }
-    rho_4->UpdateLocal();
-    rho_4->HorizToVert();
-    rt_4->UpdateLocal();
-    rt_4->HorizToVert();
-/*
-    for(ii = 0; ii < geom->nk; ii++) {
-        // momentum
-        VecZeroEntries(xu);
-        VecAXPY(xu, 1.0/3.0, velx[ii]);
-        VecAXPY(xu, 2.0/3.0, velx_3[ii]);
-        M1->assemble(ii, SCALE, true);
-#ifdef RAYLEIGH
-        if(ii == geom->nk-1) MatScale(M1->M, 1.0 + 1.00*RAYLEIGH*dt);
-        if(ii == geom->nk-2) MatScale(M1->M, 1.0 + 0.50*RAYLEIGH*dt);
-        if(ii == geom->nk-3) MatScale(M1->M, 1.0 + 0.25*RAYLEIGH*dt);
-#endif
-        MatMult(M1->M, xu, velx[ii]);
-        VecAXPY(velx[ii], (-2.0/3.0)*dt, Fu[ii]);
-    }
-    // implicit vertical visiscosity solve
-    imp_visc_solve->Solve(velx, velx, false);
-
-    for(ii = 0; ii < geom->nk; ii++) {
-        VecScatterBegin(topo->gtol_1, velx[ii], ul[ii], INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  topo->gtol_1, velx[ii], ul[ii], INSERT_VALUES, SCATTER_FORWARD);
-
-        // continuity
-        VecZeroEntries(rho_4->vh[ii]);
-        VecAXPY(rho_4->vh[ii], 1.0/3.0, rho_1->vh[ii]);
-        VecAXPY(rho_4->vh[ii], 2.0/3.0, rho_3->vh[ii]);
-        VecAXPY(rho_4->vh[ii], (-2.0/3.0)*dt, Fp->vh[ii]);
-
-        // internal energy
-        VecZeroEntries(rt_4->vh[ii]);
-        VecAXPY(rt_4->vh[ii], 1.0/3.0, rt_1->vh[ii]);
-        VecAXPY(rt_4->vh[ii], 2.0/3.0, rt_3->vh[ii]);
-        VecAXPY(rt_4->vh[ii], (-2.0/3.0)*dt, Ft->vh[ii]);
-    }
-    rho_4->UpdateLocal();
-    rho_4->HorizToVert();
-    rt_4->UpdateLocal();
-    rt_4->HorizToVert();
-*/
-
-    // carry over the vertical fields to the next time level
-    DiagExner(rt_4->vz, exner_i);
-
-    // 3.  second vertical half step
-    if(!rank) cout << "vertical half step (2)..............." << endl;
-    //AssembleKEVecs(velx, velz_1->vz);
-    velz_1->CopyToVert(velz);
-    rho_5->CopyFromVert(rho_4->vz);
-    rt_5->CopyFromVert(rt_4->vz);
-#ifdef WITH_UDWDX
-    AssembleVertMomVort(velx, velz_1);
-#endif
-    velz_1->VertToHoriz();  velz_1->UpdateGlobal();
-    rho_5->VertToHoriz();   rho_5->UpdateGlobal();
-    rt_5->VertToHoriz();    rt_5->UpdateGlobal();
-    DiagExner(rt_5->vz, exner_i);
-    exner_i->VertToHoriz(); exner_i->UpdateGlobal();
-
-    vert->solve_schur(velz_1, rho_5, rt_5, exner_i, uuz, del2, M1, M2, EtoF, ksp1, velz_1, rho_5, rt_5);
-    velz_1->CopyToVert(velz);
-
-    // update input vectors
-    rho_5->VertToHoriz();
-    rho_5->UpdateGlobal();
-    rho_5->CopyToHoriz(rho);
-    rt_5->VertToHoriz();
-    rt_5->UpdateGlobal();
-    rt_5->CopyToHoriz(rt);
-    exner_i->VertToHoriz();
-    exner_i->UpdateGlobal();
-    exner_i->CopyToHoriz(exner);
-
-    firstStep = false;
-
-    diagnostics(velx, velz, rho, rt, exner);
-
-    // write output
-    if(save) {
-        step++;
-
-        L2Vecs* l2Theta = new L2Vecs(geom->nk+1, topo, geom);
-        diagTheta(rho_5->vz, rt_5->vz, l2Theta->vz);
-        l2Theta->VertToHoriz();
-        l2Theta->UpdateGlobal();
-        for(ii = 0; ii < geom->nk+1; ii++) {
-            sprintf(fieldname, "theta");
-            geom->write2(l2Theta->vh[ii], fieldname, step, ii, false);
-        }
-        delete l2Theta;
-
-        for(ii = 0; ii < geom->nk; ii++) {
-            curl(true, velx[ii], &wi, ii, false);
-
-            sprintf(fieldname, "vorticity");
-            geom->write0(wi, fieldname, step, ii);
-            sprintf(fieldname, "velocity_h");
-            geom->write1(velx[ii], fieldname, step, ii);
-            sprintf(fieldname, "density");
-            geom->write2(rho[ii], fieldname, step, ii, true);
-            sprintf(fieldname, "rhoTheta");
-            geom->write2(rt[ii], fieldname, step, ii, true);
-            sprintf(fieldname, "exner");
-            geom->write2(exner[ii], fieldname, step, ii, true);
-
-            VecDestroy(&wi);
-        }
-        sprintf(fieldname, "velocity_z");
-        geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
-    }
-
-    VecDestroy(&xu);
-    VecDestroy(&bu);
-    delete velz_1;
-    delete rho_0;
-    delete rho_1;
-    delete rho_2;
-    delete rho_3;
-    delete rho_4;
-    delete rho_5;
-    delete rt_0;
-    delete rt_1;
-    delete rt_2;
-    delete rt_3;
-    delete rt_4;
-    delete rt_5;
-    delete exner_i;
-    delete Fp;
-    delete Ft;
-    DestroyHorizVecs(Fu, geom);
-    DestroyHorizVecs(velx_2, geom);
-    DestroyHorizVecs(velx_3, geom);
-    DestroyHorizVecs(V1u, geom);
-    DestroyHorizVecs(d1uz, geom);
-    DestroyHorizVecs(d2uz, geom);
-    DestroyHorizVecs(d4uz, geom);
-}
-
 void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     char    fieldname[100];
     Vec     wi, bu, xu;
@@ -1569,7 +1254,8 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rt_h->CopyFromHoriz(rt_0->vh);
     exner_h->CopyFromHoriz(exner_0->vh);
     if(!rank) cout << "  vertical step (2).................." << endl;
-    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, ksp1, velz_2, rho_2, rt_2);
+    //vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, ksp1, velz_2, rho_2, rt_2);
+    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, NULL, velz_2, rho_2, rt_2);
     velz_2->CopyFromHoriz(velz_h->vh);   velz_2->UpdateLocal();  velz_2->HorizToVert();
     rho_2->CopyFromHoriz(rho_h->vh);     rho_2->UpdateLocal();   rho_2->HorizToVert();
     rt_2->CopyFromHoriz(rt_h->vh);       rt_2->UpdateLocal();    rt_2->HorizToVert();
@@ -1610,8 +1296,9 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rt_h->CopyFromHoriz(rt_0->vh);
     exner_h->CopyFromHoriz(exner_0->vh);
     if(!rank) cout << "  vertical step (3).................." << endl;
-    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, ksp1, velz_3, rho_3, rt_3);
-
+    //vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, ksp1, velz_3, rho_3, rt_3);
+    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, NULL, velz_3, rho_3, rt_3);
+    
     // update input vectors
     velz_h->CopyToVert(velz);
     rho_h->CopyToHoriz(rho);

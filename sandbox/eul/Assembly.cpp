@@ -555,7 +555,7 @@ WtQmat::WtQmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 }
 
 void WtQmat::assemble() {
-    int ex, ey, ei, mp1, mp12, ii, *inds_2, *inds_0;
+    int ex, ey, mp1, mp12, ii, *inds_2, *inds_0;
     M2_j_xy_i* W = new M2_j_xy_i(e);
     Wii* Q = new Wii(e->l->q, geom);
     double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
@@ -578,10 +578,7 @@ void WtQmat::assemble() {
             Q->assemble(ex, ey);
 
             // piecewise constant field in the vertical, so vertical transformation is det/det = 1
-            ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
-                //det = geom->det[ei][ii];
-                //Qaa[ii][ii] = Q->A[ii][ii]/det;
                 Qaa[ii][ii] = Q->A[ii][ii];
             }
 
@@ -687,7 +684,7 @@ UtQmat::UtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 void UtQmat::assemble() {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_0, *inds_0x, *inds_0y;
-    double det, **J;
+    double **J;
     Wii* Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
@@ -719,13 +716,7 @@ void UtQmat::assemble() {
             // piecewise constant field in the vertical, so vertical transformation is det/det = 1
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
-                det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
-
-                //Qaa[ii][ii] = J[0][0]*Q->A[ii][ii]/det;
-                //Qab[ii][ii] = J[1][0]*Q->A[ii][ii]/det;
-                //Qba[ii][ii] = J[0][1]*Q->A[ii][ii]/det;
-                //Qbb[ii][ii] = J[1][1]*Q->A[ii][ii]/det;
                 Qaa[ii][ii] = J[0][0]*Q->A[ii][ii];
                 Qab[ii][ii] = J[1][0]*Q->A[ii][ii];
                 Qba[ii][ii] = J[0][1]*Q->A[ii][ii];
@@ -1369,7 +1360,7 @@ UtQWmat::UtQWmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 
 void UtQWmat::assemble(Vec u1, double scale) {
     int ex, ey, ei, ii, mp1, mp12;
-    int *inds_x, *inds_y, *inds_2, *inds_0;
+    int *inds_x, *inds_y, *inds_2;
     double det, **J, ux[2];
     PetscScalar *u1Array;
 
@@ -1385,7 +1376,6 @@ void UtQWmat::assemble(Vec u1, double scale) {
             Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -1473,7 +1463,7 @@ WtQdUdz_mat::WtQdUdz_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdg
 
 void WtQdUdz_mat::assemble(Vec u1, double scale) {
     int ex, ey, ei, ii, mp1, mp12;
-    int *inds_x, *inds_y, *inds_2, *inds_0;
+    int *inds_x, *inds_y, *inds_2;
     double det, **J, ux[2];
     PetscScalar *u1Array;
 
@@ -1491,7 +1481,6 @@ void WtQdUdz_mat::assemble(Vec u1, double scale) {
             Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -1654,7 +1643,7 @@ void EoSvec::assemble(Vec rt, int lev, double scale) {
 }
 
 void EoSvec::assemble_quad(Vec rt1, Vec rt2, int lev, double scale) {
-    int ex, ey, ei, ii, jj;
+    int ex, ey, ii, jj;
     int nQuad  = e->l->q->n + 1;
     int nQuad2 = nQuad * nQuad;
     int *inds0, *inds2;
@@ -1671,7 +1660,6 @@ void EoSvec::assemble_quad(Vec rt1, Vec rt2, int lev, double scale) {
     VecGetArray(vl, &vArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            ei = ey * topo->nElsX + ex;
             Q->assemble(ex, ey);
 
             inds0 = topo->elInds0_l(ex, ey);
@@ -2089,7 +2077,7 @@ PtQUt_mat::PtQUt_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _
 void PtQUt_mat::assemble(Vec u1, int lev, double scale) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_0;
-    double det, **J, ux[2];
+    double **J, ux[2];
     PetscScalar *u1Array;
 
     mp1 = l->n + 1;
@@ -2105,7 +2093,6 @@ void PtQUt_mat::assemble(Vec u1, int lev, double scale) {
             ei = ey*topo->nElsX + ex;
             inds_0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
-                det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
                 // horiztontal velocity is piecewise constant in the vertical
@@ -2262,7 +2249,7 @@ WtQPmat::WtQPmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 }
 
 void WtQPmat::assemble(int lev, double scale) {
-    int ex, ey, ei, mp1, mp12, ii, *inds, *inds0;
+    int ex, ey, mp1, mp12, ii, *inds, *inds0;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
     double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
@@ -2282,7 +2269,6 @@ void WtQPmat::assemble(int lev, double scale) {
             inds = topo->elInds2_g(ex, ey);
             Q->assemble(ex, ey);
 
-            ei = ey*topo->nElsX + ex;
             inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 Qaa[ii][ii]  = Q->A[ii][ii]*scale;
