@@ -89,10 +89,8 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
     MatGetOwnershipRange(M1->M, &mi, &mf);
     for(int kk = 0; kk < geom->nk; kk++) {
         if(kk > 0 && kk < geom->nk-1) {
-            //dzInv = -0.25*(geom->thick[kk-1][0] + geom->thick[kk][0]);
-
-            //dzInv = (1.0/geom->thick[kk-1][0]/geom->thick[kk-1][0])/(0.5*(geom->thick[kk-1][0] + geom->thick[kk+0][0]));
-            dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk-1][0])/(geom->thick[kk-1][0] + geom->thick[kk+0][0]);
+            //dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk-1][0])/(geom->thick[kk-1][0] + geom->thick[kk+0][0]);
+            dzInv = (-2.0/geom->thick[kk][0]/geom->thick[kk-1][0])/(geom->thick[kk-1][0] + geom->thick[kk+0][0]);
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
@@ -104,8 +102,8 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
                 MatRestoreRow(M1->M, mm, &nCols, &cols, &vals);
             }
 
-            //dzInv  = (1.0/geom->thick[kk][0]/geom->thick[kk][0])/(0.5*(geom->thick[kk-1][0] + geom->thick[kk+0][0]));
-            dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk+0][0])/(geom->thick[kk-1][0] + geom->thick[kk+0][0]);
+            //dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk+0][0])/(geom->thick[kk-1][0] + geom->thick[kk+0][0]);
+            dzInv = (-2.0/geom->thick[kk][0]/geom->thick[kk+0][0])/(geom->thick[kk-1][0] + geom->thick[kk+0][0]);
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
@@ -118,7 +116,8 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
             }
         }
 
-        dzInv  = (2.0/geom->thick[kk][0]);
+        //dzInv = (2.0/geom->thick[kk][0]);
+        dzInv = (1.0/geom->thick[kk][0]);
         for(int mm = mi; mm < mf; mm++) {
             MatGetRow(M1->M, mm, &nCols, &cols, &vals);
             row_g = kk * topo->nDofs1G + mm;
@@ -131,10 +130,8 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
         }
 
         if(kk > 0 && kk < geom->nk-1) {
-            //dzInv = -0.25*(geom->thick[kk][0] + geom->thick[kk+1][0]);
-
-            //dzInv  = (1.0/geom->thick[kk][0]/geom->thick[kk][0])/(0.5*(geom->thick[kk+1][0] + geom->thick[kk+0][0]));
-            dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk+0][0])/(geom->thick[kk+1][0] + geom->thick[kk+0][0]);
+            //dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk+0][0])/(geom->thick[kk+1][0] + geom->thick[kk+0][0]);
+            dzInv = (-2.0/geom->thick[kk][0]/geom->thick[kk+0][0])/(geom->thick[kk+1][0] + geom->thick[kk+0][0]);
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
@@ -146,8 +143,8 @@ Solve3D::Solve3D(Topo* _topo, Geom* _geom, double dt, double del2) {
                 MatRestoreRow(M1->M, mm, &nCols, &cols, &vals);
             }
 
-            //dzInv = (1.0/geom->thick[kk+1][0]/geom->thick[kk+1][0])/(0.5*(geom->thick[kk+1][0] + geom->thick[kk+0][0]));
-            dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk+1][0])/(geom->thick[kk+1][0] + geom->thick[kk+0][0]);
+            //dzInv = (-16.0/geom->thick[kk][0]/geom->thick[kk+1][0])/(geom->thick[kk+1][0] + geom->thick[kk+0][0]);
+            dzInv = (-2.0/geom->thick[kk][0]/geom->thick[kk+1][0])/(geom->thick[kk+1][0] + geom->thick[kk+0][0]);
             for(int mm = mi; mm < mf; mm++) {
                 MatGetRow(M1->M, mm, &nCols, &cols, &vals);
                 row_g = kk * topo->nDofs1G + mm;
@@ -198,7 +195,8 @@ void Solve3D::Solve(Vec* bg, Vec* xg, bool mult_rhs) {
     if(mult_rhs) {
         for(int kk = 0; kk < geom->nk; kk++) {
             MatMult(M1->M, bg[kk], ug[kk]);
-            VecScale(ug[kk], 2.0/geom->thick[kk][0]);
+            //VecScale(ug[kk], 2.0/geom->thick[kk][0]);
+            VecScale(ug[kk], 1.0/geom->thick[kk][0]);
         }
         RepackVector(ug, b);
     } else {
