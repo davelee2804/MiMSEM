@@ -734,8 +734,8 @@ void Euler::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Ve
     theta->VertToHoriz();
 
     massRHS(velx, rho->vl, Fp, Flux);
-    //tempRHS(Flux, theta->vl, Ft, rho->vl, exner);
-    tempRHS(Flux, theta->vl, Ft, NULL, exner);
+    tempRHS(Flux, theta->vl, Ft, rho->vl, exner);
+    //tempRHS(Flux, theta->vl, Ft, NULL, exner);
 
     HorizVort(velx);
     for(kk = 0; kk < geom->nk; kk++) {
@@ -1075,6 +1075,9 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     for(kk = 0; kk < geom->nk; kk++) {
         mass += int2(rho[kk]);
     }
+
+    // vertical kinetic to internal energy power
+    k2i_z = vert->k2i_z;
 
     if(!rank) {
         sprintf(filename, "output/energetics.dat");

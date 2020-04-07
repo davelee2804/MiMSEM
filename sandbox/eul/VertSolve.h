@@ -7,6 +7,7 @@ class VertSolve {
         double dt;
         double visc;
         int rank;
+        double k2i_z;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;

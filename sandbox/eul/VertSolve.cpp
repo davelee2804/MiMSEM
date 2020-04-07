@@ -509,6 +509,8 @@ void VertSolve::diagTheta2(Vec* rho, Vec* rt, Vec* theta) {
 void VertSolve::assemble_residual(int ex, int ey, Vec theta, Vec Pi, 
                                   Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G, Vec velz0) 
 {
+    double dot = 0.0;
+
     // diagnose the hamiltonian derivatives
     diagnose_F_z(ex, ey, velz1, velz2, rho1, rho2, _F);
     diagnose_Phi_z(ex, ey, velz1, velz2, _Phi_z);
@@ -532,6 +534,10 @@ void VertSolve::assemble_residual(int ex, int ey, Vec theta, Vec Pi,
     vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
     MatMult(vo->VA, _tmpA2, _tmpA1);
     VecAXPY(fw, +dt, _tmpA1); // pressure gradient term
+
+    // compute the kinetic to internal energy power
+    VecDot(_F, _tmpA1, &dot);
+    k2i_z += dot;
 
     // update the temperature equation flux
     MatMult(vo->VA, _F, _tmpA1); // includes theta
@@ -1691,6 +1697,7 @@ L2Vecs* velz_o, L2Vecs* rho_o, L2Vecs* rt_o)
     if(ksp_x) horiz_visc(velz_i, d4w_i, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
 
     do {
+        k2i_z = 0.0;
         max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
