@@ -67,7 +67,7 @@ class Euler {
         void thetaBCVec(int ex, int ey, Mat A, Vec* bTheta);
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
         void diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs);
-        void AssembleKEVecs(Vec* velx, Vec* velz);
+        void AssembleKEVecs(Vec* velx);
         void init0(Vec* q, ICfunc3D* func);
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* p, ICfunc3D* func);

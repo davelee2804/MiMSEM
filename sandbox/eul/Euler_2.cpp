@@ -142,9 +142,8 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     // initialise the single column mass matrices and solvers
     n2 = topo->elOrd*topo->elOrd;
 
-    // implicit vertical solver run over a half time step
-    //vert = new VertSolve(topo, geom, 0.5*dt); Strang Carryover
-    vert = new VertSolve(topo, geom, dt); // Trapazoidal
+    // implicit vertical solver
+    vert = new VertSolve(topo, geom, dt);
 
     MatCreate(MPI_COMM_SELF, &VA);
     MatSetType(VA, MATSEQAIJ);
@@ -375,13 +374,8 @@ Euler::~Euler() {
 
 /*
 */
-void Euler::AssembleKEVecs(Vec* velx, Vec* velz) {
-    // assemble the horiztonal operators
+void Euler::AssembleKEVecs(Vec* velx) {
     for(int kk = 0; kk < geom->nk; kk++) {
-        //VecZeroEntries(velx_l);
-        //VecScatterBegin(topo->gtol_1, velx[kk], velx_l, INSERT_VALUES, SCATTER_FORWARD);
-        //VecScatterEnd(  topo->gtol_1, velx[kk], velx_l, INSERT_VALUES, SCATTER_FORWARD);
-        //K->assemble(velx_l, kk, SCALE);
         K->assemble(ul[kk], kk, SCALE);
         VecZeroEntries(Kh[kk]);
         MatMult(K->M, velx[kk], Kh[kk]);
@@ -724,8 +718,6 @@ void Euler::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Ve
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Flux[kk]);
     }
-    //VecCreateSeq(MPI_COMM_SELF, topo->n1, &uzt);
-    //VecCreateSeq(MPI_COMM_SELF, topo->n1, &uzb);
 
     // set the top and bottom potential temperature bcs
     rho->HorizToVert();
@@ -735,20 +727,16 @@ void Euler::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Ve
 
     massRHS(velx, rho->vl, Fp, Flux);
     tempRHS(Flux, theta->vl, Ft, rho->vl, exner);
-    //tempRHS(Flux, theta->vl, Ft, NULL, exner);
 
     HorizVort(velx);
     for(kk = 0; kk < geom->nk; kk++) {
         velz_t = velz_b = NULL;
+        uzb = uzt = NULL;
         if(kk > 0) {
-            //VecScatterBegin(topo->gtol_1, uz[kk-1], uzb, INSERT_VALUES, SCATTER_FORWARD);
-            //VecScatterEnd(  topo->gtol_1, uz[kk-1], uzb, INSERT_VALUES, SCATTER_FORWARD);
             uzb = uzl[kk-1];
             velz_b = velz[kk-1];
         }
         if(kk < geom->nk - 1) {
-            //VecScatterBegin(topo->gtol_1, uz[kk+0], uzt, INSERT_VALUES, SCATTER_FORWARD);
-            //VecScatterEnd(  topo->gtol_1, uz[kk+0], uzt, INSERT_VALUES, SCATTER_FORWARD);
             uzt = uzl[kk+0];
             velz_t = velz[kk+0];
         }
@@ -760,8 +748,6 @@ void Euler::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Ve
         VecDestroy(&Flux[kk]);
     }
     delete[] Flux;
-    //VecDestroy(&uzt);
-    //VecDestroy(&uzb);
 }
 
 void Euler::init0(Vec* q, ICfunc3D* func) {
@@ -1168,11 +1154,9 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     L2Vecs* rt_1    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_1 = new L2Vecs(geom->nk, topo, geom);
     Vec*    velx_2  = CreateHorizVecs(topo, geom);
-    L2Vecs* velz_2  = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* rho_2   = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_2    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_2 = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* velz_3  = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* rho_3   = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_3    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_3 = new L2Vecs(geom->nk, topo, geom);
@@ -1191,11 +1175,11 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rt_0->CopyFromHoriz(rt);       rt_0->UpdateLocal();    rt_0->HorizToVert();
     exner_0->CopyFromHoriz(exner); exner_0->UpdateLocal(); exner_0->HorizToVert();
 
-    AssembleVertMomVort(velx_0, velz_0);
+    //AssembleVertMomVort(velx_0, velz_0);
 
     // 1.  Explicit horizontal solve
     if(!rank) cout << "horiztonal step (1).................." << endl;
-    AssembleKEVecs(velx_0, velz_0->vz);
+    AssembleKEVecs(velx_0);
     HorizRHS(velx_0, rho_0, rt_0, exner_0->vh, Fu_0, Fp_0->vh, Ft_0->vh, velz_0->vh);
     for(int kk = 0; kk < geom->nk; kk++) {
         // momentum
@@ -1224,7 +1208,7 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
 
     // 2.1 Explicit horiztonal solve
     if(!rank) cout << "horiztonal step (2).................." << endl;
-    AssembleKEVecs(velx_1, velz_0->vz);
+    AssembleKEVecs(velx_1);
     HorizRHS(velx_1, rho_1, rt_1, exner_1->vh, Fu_1, Fp_1->vh, Ft_1->vh, velz_0->vh);
     for(int kk = 0; kk < geom->nk; kk++) {
         // momentum
@@ -1251,23 +1235,24 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecAXPY(rt_2->vh[kk],  -0.5*dt, Ft_1->vh[kk]);
     }
 
+    AssembleVertMomVort(velx_0, velz_0);
+
     // 2.2 Implicit vertical solve
     velz_h->CopyFromHoriz(velz_0->vh);
     rho_h->CopyFromHoriz(rho_0->vh);
     rt_h->CopyFromHoriz(rt_0->vh);
     exner_h->CopyFromHoriz(exner_0->vh);
+
     if(!rank) cout << "  vertical step (2).................." << endl;
-    //vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, ksp1, velz_2, rho_2, rt_2);
-    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, NULL, velz_2, rho_2, rt_2);
-    velz_2->CopyFromHoriz(velz_h->vh);   velz_2->UpdateLocal();  velz_2->HorizToVert();
+    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, NULL, velz_0, rho_2, rt_2);
     rho_2->CopyFromHoriz(rho_h->vh);     rho_2->UpdateLocal();   rho_2->HorizToVert();
     rt_2->CopyFromHoriz(rt_h->vh);       rt_2->UpdateLocal();    rt_2->HorizToVert();
     exner_2->CopyFromHoriz(exner_h->vh); exner_2->UpdateLocal(); exner_2->HorizToVert();
 
     // 3.2 Explicit horiztonal solve
     if(!rank) cout << "horiztonal step (3).................." << endl;
-    AssembleKEVecs(velx_2, velz_0->vz);
-    HorizRHS(velx_2, rho_2, rt_2, exner_2->vh, Fu_2, Fp_2->vh, Ft_2->vh, velz_2->vh);
+    AssembleKEVecs(velx_2);
+    HorizRHS(velx_2, rho_2, rt_2, exner_2->vh, Fu_2, Fp_2->vh, Ft_2->vh, velz_h->vh);
     for(int kk = 0; kk < geom->nk; kk++) {
         // momentum
         M1->assemble(kk, SCALE, true);
@@ -1293,14 +1278,16 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecAXPY(rt_3->vh[kk],  -0.5*dt, Ft_2->vh[kk]);
     }
 
+    AssembleVertMomVort(velx_0, velz_0);
+
     // 3.1 Implicit vertical solve
     velz_h->CopyFromHoriz(velz_0->vh);
     rho_h->CopyFromHoriz(rho_0->vh);
     rt_h->CopyFromHoriz(rt_0->vh);
     exner_h->CopyFromHoriz(exner_0->vh);
+
     if(!rank) cout << "  vertical step (3).................." << endl;
-    //vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, ksp1, velz_3, rho_3, rt_3);
-    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, NULL, velz_3, rho_3, rt_3);
+    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, NULL, velz_0, rho_3, rt_3);
     
     // update input vectors
     velz_h->CopyToVert(velz);
@@ -1315,7 +1302,7 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         step++;
 
         L2Vecs* l2Theta = new L2Vecs(geom->nk+1, topo, geom);
-        diagTheta(rho_3->vz, rt_3->vz, l2Theta->vz);
+        diagTheta(rho_h->vz, rt_h->vz, l2Theta->vz);
         l2Theta->VertToHoriz();
         l2Theta->UpdateGlobal();
         for(int kk = 0; kk < geom->nk+1; kk++) {
@@ -1365,11 +1352,9 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete rt_1;
     delete exner_1;
     DestroyHorizVecs(velx_2, geom);
-    delete velz_2;
     delete rho_2;
     delete rt_2;
     delete exner_2;
-    delete velz_3;
     delete rho_3;
     delete rt_3;
     delete exner_3;

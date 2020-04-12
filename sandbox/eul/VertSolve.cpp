@@ -537,7 +537,7 @@ void VertSolve::assemble_residual(int ex, int ey, Vec theta, Vec Pi,
 
     // compute the kinetic to internal energy power
     VecDot(_F, _tmpA1, &dot);
-    k2i_z += dot;
+    k2i_z += dot/SCALE;
 
     // update the temperature equation flux
     MatMult(vo->VA, _F, _tmpA1); // includes theta
@@ -1694,7 +1694,7 @@ L2Vecs* velz_o, L2Vecs* rho_o, L2Vecs* rt_o)
     rho_h->CopyFromVert(rho_i->vz);
     rt_h->CopyFromVert(rt_i->vz);
 
-    if(ksp_x) horiz_visc(velz_i, d4w_i, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
+    //horiz_visc(velz_i, d4w_i, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
 
     do {
         k2i_z = 0.0;
@@ -1709,10 +1709,8 @@ L2Vecs* velz_o, L2Vecs* rho_o, L2Vecs* rt_o)
                               rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z, velz_o->vz[ii]);
 
             if(udwdx) VecAXPY(F_w, dt, udwdx->vz[ii]);
-            if(ksp_x) {
-                VecAXPY(F_w, 0.5*dt, d4w_i->vz[ii]);
-                VecAXPY(F_w, 0.5*dt, d4w_j->vz[ii]);
-            }
+            //VecAXPY(F_w, 0.5*dt, d4w_i->vz[ii]);
+            //VecAXPY(F_w, 0.5*dt, d4w_j->vz[ii]);
 
 #ifdef NEW_EOS
             vo->Assemble_EOS_Residual_new(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
@@ -1766,7 +1764,7 @@ L2Vecs* velz_o, L2Vecs* rho_o, L2Vecs* rt_o)
         }
         theta_h->VertToHoriz();
         theta_j->VertToHoriz();
-        if(ksp_x) horiz_visc(velz_j, d4w_j, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
+        //horiz_visc(velz_j, d4w_j, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
 
         MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_exner = norm_x;
         MPI_Allreduce(&max_norm_w,     &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w     = norm_x;
