@@ -1066,15 +1066,13 @@ void P_up_mat::assemble(Vec ul, double dt) {
                 det = geom->det[ei][ii];
                 geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uArray, ux);
                 for(int jj = 0; jj < mp1; jj++) {
-                    lx[jj] = node->eval_q(quad->x[ii] - dt*ux[0], jj);
-                    ly[jj] = node->eval_q(quad->x[ii] - dt*ux[1], jj);
+                    lx[jj] = node->eval_q(quad->x[ii%mp1] - dt*ux[0], jj);
+                    ly[jj] = node->eval_q(quad->x[ii/mp1] - dt*ux[1], jj);
                 }
                 for(int jj = 0; jj < mp12; jj++) {
                     QP[ii][jj]  = det * Q->A[ii][ii] * lx[jj%mp1] * ly[jj/mp1];
                     QPI[ii][jj] = lx[jj%mp1] * ly[jj/mp1];
                 }
-                //QP[ii][ii]  = det * Q->A[ii][ii];
-                //QPI[ii][ii] = 1.0;
             }
 
             inds = topo->elInds0_g(ex, ey);

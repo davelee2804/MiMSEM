@@ -163,7 +163,7 @@ double LagrangeNode::eval(double x, int i) {
 
 // evaluate at arbitrary location (not necessarily gll node)
 double LagrangeNode::eval_q(double x, int i) {
-    double y = 0.0;
+    double y = 1.0;
     for(int jj = 0; jj <= n; jj++) {
         if(jj == i) continue;
         y *= (x - q->x[jj])/(q->x[i] - q->x[jj]);
