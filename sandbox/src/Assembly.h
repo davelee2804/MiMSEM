@@ -177,3 +177,19 @@ class Whmat {
         Mat M;
         void assemble(Vec h2);
 };
+
+class P_up_mat {
+    public:
+        P_up_mat(Topo* _topo, Geom* _geom, LagrangeNode* _node);
+        ~P_up_mat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* node;
+        Wii* Q;
+        double** QP;
+        double** QPI;
+        double* QPflat;
+        Mat M;
+        Mat I;
+        void assemble(Vec ul, double dt);
+};

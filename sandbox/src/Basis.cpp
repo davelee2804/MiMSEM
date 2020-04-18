@@ -28,7 +28,11 @@ GaussLobatto::GaussLobatto(int _n) {
     x = new double[n+1];
     w = new double[n+1];
 
-    if(n == 2) {
+    if(n == 1) {
+        x[0] = -1.0; x[1] = +1.0;
+        w[0] = 1.0; w[1] = 1.0;
+    }
+    else if(n == 2) {
         x[0] = -1.0; x[1] = 0.0; x[2] = +1.0;
         w[0] = 1.0/3.0; w[1] = 4.0/3.0; w[2] = 1.0/3.0;
     }
@@ -155,6 +159,16 @@ double LagrangeNode::eval(double x, int i) {
     }
 
     return a[i]*p;
+}
+
+// evaluate at arbitrary location (not necessarily gll node)
+double LagrangeNode::eval_q(double x, int i) {
+    double y = 0.0;
+    for(int jj = 0; jj <= n; jj++) {
+        if(jj == i) continue;
+        y *= (x - q->x[jj])/(q->x[i] - q->x[jj]);
+    }
+    return y;
 }
 
 double LagrangeNode::evalDeriv(double x, int ii) {

@@ -17,6 +17,7 @@ class LagrangeNode {
         double** ljxi_t;
         GaussLobatto* q;
         double eval(double x, int i);
+        double eval_q(double x, int i);
         double evalDeriv(double x, int i);
         void test();
 };
