@@ -1047,7 +1047,7 @@ P_up_mat::P_up_mat(Topo* _topo, Geom* _geom, LagrangeNode* _node) {
 
 void P_up_mat::assemble(Vec ul, double dt) {
     int ex, ey, ei, mp1, mp12, ii, *inds;
-    double ux[2], lx[99], ly[99], det;
+    double ux[2], lx[99], ly[99], det, **J, ux2[2];
     PetscScalar* uArray;
     GaussLobatto* quad = node->q;
 
@@ -1064,10 +1064,18 @@ void P_up_mat::assemble(Vec ul, double dt) {
             Q->assemble(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uArray, ux);
+                J = geom->J[ei][ii];
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, ux);
+
+//cout << dt*ux[0] << "\t" << dt*ux[1] << "\t";
+ux2[0] = +J[1][1]*ux[0]/det - J[1][0]*ux[1]/det;
+ux2[1] = -J[0][1]*ux[0]/det + J[0][0]*ux[1]/det;
+//cout << dt*ux2[0] << "\t" << dt*ux2[1] << endl;
                 for(int jj = 0; jj < mp1; jj++) {
-                    lx[jj] = node->eval_q(quad->x[ii%mp1] - dt*ux[0], jj);
-                    ly[jj] = node->eval_q(quad->x[ii/mp1] - dt*ux[1], jj);
+                    //lx[jj] = node->eval_q(quad->x[ii%mp1] - dt*ux[0], jj);
+                    //ly[jj] = node->eval_q(quad->x[ii/mp1] - dt*ux[1], jj);
+                    lx[jj] = node->eval_q(quad->x[ii%mp1] - dt*ux2[0], jj);
+                    ly[jj] = node->eval_q(quad->x[ii/mp1] - dt*ux2[1], jj);
                 }
                 for(int jj = 0; jj < mp12; jj++) {
                     QP[ii][jj]  = det * Q->A[ii][ii] * lx[jj%mp1] * ly[jj/mp1];
@@ -1081,7 +1089,8 @@ void P_up_mat::assemble(Vec ul, double dt) {
             MatSetValues(M, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, ADD_VALUES);
 
             Flat2D_IP(Q->nDofsJ, Q->nDofsJ, QPI, QPflat);
-            MatSetValues(I, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, ADD_VALUES);
+            //MatSetValues(I, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, ADD_VALUES);
+            MatSetValues(I, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, INSERT_VALUES);
         }
     }
     VecRestoreArray(ul, &uArray);
@@ -1100,3 +1109,119 @@ P_up_mat::~P_up_mat() {
     delete[] QPflat;
     delete Q;
 }
+
+RotMat_up::RotMat_up(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    l = _l;
+    e = _e;
+
+    Q = new Wii(l->q, geom);
+    U = new M1x_j_xy_i(l, e);
+    V = new M1y_j_xy_i(l, e);
+
+    Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    Vt = Alloc2D(V->nDofsJ, U->nDofsI);
+    Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qba = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    VtQU = Alloc2D(V->nDofsJ, V->nDofsJ);
+
+    UtQUflat = new double[U->nDofsJ*V->nDofsJ];
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
+}
+
+void RotMat_up::assemble(Vec q0, Vec ul, double dt) {
+    int ex, ey, ei, ii, jj, mp1, mp12;
+    int *inds_x, *inds_y, *inds_0;
+    double det, **J, vort, ux[2], lx[99], ly[99], ux2[2];
+    PetscScalar *q0Array, *u1Array;
+    GaussLobatto* quad = l->q;
+
+    mp1 = l->n + 1;
+    mp12 = mp1*mp1;
+
+    VecGetArray(q0, &q0Array);
+    VecGetArray(ul, &u1Array);
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+            inds_0 = topo->elInds0_l(ex, ey);
+
+            // incorportate jacobian tranformation for each element
+            Q->assemble(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
+ux2[0] = +J[1][1]*ux[0]/det - J[1][0]*ux[1]/det;
+ux2[1] = -J[0][1]*ux[0]/det + J[0][0]*ux[1]/det;
+                for(jj = 0; jj < mp1; jj++) {
+                    //lx[jj] = l->eval_q(quad->x[ii%mp1] - dt*ux[0], jj);
+                    //ly[jj] = l->eval_q(quad->x[ii/mp1] - dt*ux[1], jj);
+                    lx[jj] = l->eval_q(quad->x[ii%mp1] - dt*ux2[0], jj);
+                    ly[jj] = l->eval_q(quad->x[ii/mp1] - dt*ux2[1], jj);
+                }
+                vort = 0.0;
+                for(jj = 0; jj < mp12; jj++) {
+                    vort += q0Array[inds_0[jj]] * lx[jj%mp1] * ly[jj/mp1];
+                }
+
+                Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det;
+                Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det;
+            }
+
+            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+            Tran_IP(U->nDofsI, V->nDofsJ, V->A, Vt);
+
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qab, UtQab);
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Qba, VtQba);
+
+            // take cross product by multiplying the x projection of the row vector with
+            // the y component of the column vector and vice versa
+            Mult_IP(U->nDofsJ, U->nDofsJ, U->nDofsI, UtQab, V->A, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, V->nDofsI, VtQba, U->A, VtQU);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(q0, &q0Array);
+    VecRestoreArray(ul, &u1Array);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+}
+
+RotMat_up::~RotMat_up() {
+    Free2D(U->nDofsJ, Ut);
+    Free2D(V->nDofsJ, Vt);
+    Free2D(Q->nDofsI, Qab);
+    Free2D(Q->nDofsI, Qba);
+    Free2D(U->nDofsJ, UtQab);
+    Free2D(U->nDofsJ, VtQba);
+    Free2D(U->nDofsJ, UtQV);
+    Free2D(V->nDofsJ, VtQU);
+
+    delete[] UtQUflat;
+    delete Q;
+    delete U;
+    delete V;
+    MatDestroy(&M);
+}
+

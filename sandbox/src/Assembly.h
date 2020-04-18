@@ -193,3 +193,27 @@ class P_up_mat {
         Mat I;
         void assemble(Vec ul, double dt);
 };
+
+class RotMat_up {
+    public:
+        RotMat_up(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~RotMat_up();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        double* UtQUflat;
+        double** Ut;
+        double** Vt;
+        double** Qab;
+        double** Qba;
+        double** UtQab;
+        double** VtQba;
+        double** UtQV;
+        double** VtQU;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        Wii* Q;
+        void assemble(Vec q0, Vec ul, double dt);
+};
