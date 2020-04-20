@@ -28,48 +28,28 @@ class VertSolve {
 
         void solve_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i);
         void solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, L2Vecs* udwdx
-, double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x, L2Vecs* velz_o, L2Vecs* rho_o, L2Vecs* rt_o);
+, double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x, L2Vecs* F_rho_o, L2Vecs* F_rt_o);
         void assemble_operator(int ex, int ey, Vec velz, Vec theta, Vec rho, Vec rt, Vec exner, Mat* _PC);
         void assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
                                      Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner);
 
         void assemble_residual(int ex, int ey, Vec theta, Vec Pi, 
-                               Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G, Vec velz0);
+                               Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
 
         void repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
 
-        void set_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner,
-                        Vec F_w, Vec F_rho, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner, 
-                        bool add_delta, bool neg_scale);
-
         void assemble_pc(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, bool eos_update);
 
         double MaxNorm(Vec dx, Vec x, double max_norm);
-
-        void solve_schur_column(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
-                                Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, int itt);
-        void update_deltas(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
-                           Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
-        void update_delta_u(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
-                            Vec F_u, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
-        void update_delta_u_2(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec pi, 
-                                    Vec F_u, Vec F_rho, Vec d_u, Vec d_rho);
-
-        void update_delta_pi(int ex, int ey, Vec rho, Vec rt, Vec pi, Vec F_pi, Vec d_rho, Vec d_rt, Vec d_pi);
-
-        void update_delta_pi_2(int ex, int ey, Vec rt, Vec pi, Vec F_pi, Vec d_rt, Vec d_pi);
-        void assemble_and_update_2(int ex, int ey, Vec velz, Vec rho, Vec rt, Vec pi, 
-                                    Vec F_u, Vec F_rho);
-
-        void update_delta_u_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
-                                 Vec F_u, Vec F_rho, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
 
         void solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                                    Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, int ii);
 
         void horiz_visc(L2Vecs* velz, L2Vecs* d4w, double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x, 
                            Vec h_tmp_1, Vec h_tmp_2, Vec u_tmp_1, Vec u_tmp_2);
+
+        void AssembleVertMomVort(Vec* ul, L2Vecs* velz, KSP ksp1, Umat* M1, Wmat* M2, E21mat* EtoF, WtQdUdz_mat* Rz, L2Vecs* uuz);
 
         Mat _PCz;
         Mat pc_LAP;

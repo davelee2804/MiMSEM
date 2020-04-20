@@ -1164,6 +1164,8 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     L2Vecs* rho_h   = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_h    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* F_rho_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* F_rt_h  = new L2Vecs(geom->nk, topo, geom);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &xu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
@@ -1174,8 +1176,6 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rho_0->CopyFromHoriz(rho);     rho_0->UpdateLocal();   rho_0->HorizToVert();
     rt_0->CopyFromHoriz(rt);       rt_0->UpdateLocal();    rt_0->HorizToVert();
     exner_0->CopyFromHoriz(exner); exner_0->UpdateLocal(); exner_0->HorizToVert();
-
-    //AssembleVertMomVort(velx_0, velz_0);
 
     // 1.  Explicit horizontal solve
     if(!rank) cout << "horiztonal step (1).................." << endl;
@@ -1233,18 +1233,26 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecCopy(rt_0->vh[kk],  rt_2->vh[kk]);
         VecAXPY(rt_2->vh[kk],  -0.5*dt, Ft_0->vh[kk]);
         VecAXPY(rt_2->vh[kk],  -0.5*dt, Ft_1->vh[kk]);
+
+        // horizontal forcings for vertical solve
+        VecZeroEntries(F_rho_h->vh[kk]);
+        VecAXPY(F_rho_h->vh[kk], 0.5, Fp_0->vh[kk]);
+        VecAXPY(F_rho_h->vh[kk], 0.5, Fp_1->vh[kk]);
+        VecZeroEntries(F_rt_h->vh[kk]);
+        VecAXPY(F_rt_h->vh[kk], 0.5, Ft_0->vh[kk]);
+        VecAXPY(F_rt_h->vh[kk], 0.5, Ft_1->vh[kk]);
     }
 
-    AssembleVertMomVort(velx_0, velz_0);
-
     // 2.2 Implicit vertical solve
+    AssembleVertMomVort(velz_0);
+
     velz_h->CopyFromHoriz(velz_0->vh);
     rho_h->CopyFromHoriz(rho_0->vh);
     rt_h->CopyFromHoriz(rt_0->vh);
     exner_h->CopyFromHoriz(exner_0->vh);
 
     if(!rank) cout << "  vertical step (2).................." << endl;
-    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, NULL, velz_0, rho_2, rt_2);
+    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, ksp1, F_rho_h, F_rt_h);
     rho_2->CopyFromHoriz(rho_h->vh);     rho_2->UpdateLocal();   rho_2->HorizToVert();
     rt_2->CopyFromHoriz(rt_h->vh);       rt_2->UpdateLocal();    rt_2->HorizToVert();
     exner_2->CopyFromHoriz(exner_h->vh); exner_2->UpdateLocal(); exner_2->HorizToVert();
@@ -1276,18 +1284,26 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         VecCopy(rt_0->vh[kk],  rt_3->vh[kk]);
         VecAXPY(rt_3->vh[kk],  -0.5*dt, Ft_0->vh[kk]);
         VecAXPY(rt_3->vh[kk],  -0.5*dt, Ft_2->vh[kk]);
+
+        // horizontal forcings for vertical solve
+        VecZeroEntries(F_rho_h->vh[kk]);
+        VecAXPY(F_rho_h->vh[kk], 0.5, Fp_0->vh[kk]);
+        VecAXPY(F_rho_h->vh[kk], 0.5, Fp_2->vh[kk]);
+        VecZeroEntries(F_rt_h->vh[kk]);
+        VecAXPY(F_rt_h->vh[kk], 0.5, Ft_0->vh[kk]);
+        VecAXPY(F_rt_h->vh[kk], 0.5, Ft_2->vh[kk]);
     }
 
-    AssembleVertMomVort(velx_0, velz_0);
-
     // 3.1 Implicit vertical solve
+    AssembleVertMomVort(velz_0);
+
     velz_h->CopyFromHoriz(velz_0->vh);
     rho_h->CopyFromHoriz(rho_0->vh);
     rt_h->CopyFromHoriz(rt_0->vh);
     exner_h->CopyFromHoriz(exner_0->vh);
 
     if(!rank) cout << "  vertical step (3).................." << endl;
-    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, NULL, velz_0, rho_3, rt_3);
+    vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, del2, M1, M2, EtoF, ksp1, F_rho_h, F_rt_h);
     
     // update input vectors
     velz_h->CopyToVert(velz);
@@ -1362,6 +1378,8 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete rho_h;
     delete rt_h;
     delete exner_h;
+    delete F_rho_h;
+    delete F_rt_h;
 }
 // compute the vorticity components dudz, dvdz
 void Euler::HorizVort(Vec* velx) {
@@ -1409,7 +1427,7 @@ void Euler::HorizVort(Vec* velx) {
 }
 
 // compute the contribution of the vorticity vector to the vertical momentum equation
-void Euler::AssembleVertMomVort(Vec* velx, L2Vecs* velz) {
+void Euler::AssembleVertMomVort(L2Vecs* velz) {
     int kk;
     Vec _ul, ug, tmp, tmp1, dwdx;
 
@@ -1437,13 +1455,6 @@ void Euler::AssembleVertMomVort(Vec* velx, L2Vecs* velz) {
         MatMult(EtoF->E12, tmp, tmp1);
         KSPSolve(ksp1, tmp1, dwdx); // horizontal gradient of vertical velocity
 
-        //VecZeroEntries(ug);
-        //VecAXPY(ug, 0.5, velx[kk+0]);
-        //VecAXPY(ug, 0.5, velx[kk+1]);
-        //VecScatterBegin(topo->gtol_1, ug, _ul, INSERT_VALUES, SCATTER_FORWARD);
-        //VecScatterEnd(  topo->gtol_1, ug, _ul, INSERT_VALUES, SCATTER_FORWARD);
-        
-        //Rz->assemble(_ul, SCALE);
         VecZeroEntries(_ul);
         VecAXPY(_ul, 0.5, ul[kk+0]);
         VecAXPY(_ul, 0.5, ul[kk+1]);
