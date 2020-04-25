@@ -1067,13 +1067,9 @@ void P_up_mat::assemble(Vec ul, double dt) {
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, ux);
 
-//cout << dt*ux[0] << "\t" << dt*ux[1] << "\t";
-ux2[0] = +J[1][1]*ux[0]/det - J[1][0]*ux[1]/det;
-ux2[1] = -J[0][1]*ux[0]/det + J[0][0]*ux[1]/det;
-//cout << dt*ux2[0] << "\t" << dt*ux2[1] << endl;
+ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
+ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
                 for(int jj = 0; jj < mp1; jj++) {
-                    //lx[jj] = node->eval_q(quad->x[ii%mp1] - dt*ux[0], jj);
-                    //ly[jj] = node->eval_q(quad->x[ii/mp1] - dt*ux[1], jj);
                     lx[jj] = node->eval_q(quad->x[ii%mp1] - dt*ux2[0], jj);
                     ly[jj] = node->eval_q(quad->x[ii/mp1] - dt*ux2[1], jj);
                 }
@@ -1089,8 +1085,8 @@ ux2[1] = -J[0][1]*ux[0]/det + J[0][0]*ux[1]/det;
             MatSetValues(M, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, ADD_VALUES);
 
             Flat2D_IP(Q->nDofsJ, Q->nDofsJ, QPI, QPflat);
-            //MatSetValues(I, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, ADD_VALUES);
-            MatSetValues(I, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, INSERT_VALUES);
+            MatSetValues(I, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, ADD_VALUES);
+            //MatSetValues(I, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, INSERT_VALUES);
         }
     }
     VecRestoreArray(ul, &uArray);
@@ -1166,11 +1162,9 @@ void RotMat_up::assemble(Vec q0, Vec ul, double dt) {
                 J = geom->J[ei][ii];
 
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
-ux2[0] = +J[1][1]*ux[0]/det - J[1][0]*ux[1]/det;
-ux2[1] = -J[0][1]*ux[0]/det + J[0][0]*ux[1]/det;
+ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
+ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
                 for(jj = 0; jj < mp1; jj++) {
-                    //lx[jj] = l->eval_q(quad->x[ii%mp1] - dt*ux[0], jj);
-                    //ly[jj] = l->eval_q(quad->x[ii/mp1] - dt*ux[1], jj);
                     lx[jj] = l->eval_q(quad->x[ii%mp1] - dt*ux2[0], jj);
                     ly[jj] = l->eval_q(quad->x[ii/mp1] - dt*ux2[1], jj);
                 }

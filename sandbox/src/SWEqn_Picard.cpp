@@ -23,7 +23,7 @@
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
 //#define W2_ALPHA (0.25*M_PI)
-#define UP_VORT
+//#define UP_VORT
 
 using namespace std;
 
@@ -128,6 +128,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
 #ifdef UP_VORT
     P_up = new P_up_mat(topo, geom, node);
+    R_up = new RotMat_up(topo, geom, node, edge);
     KSPCreate(MPI_COMM_WORLD, &ksp_p);
     KSPSetOperators(ksp_p, P_up->M, P_up->M);
     KSPSetTolerances(ksp_p, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
@@ -212,11 +213,10 @@ void SWEqn::curl(Vec u, Vec *w) {
 // upwinded trial function for the vorticity
 void SWEqn::curl_up(Vec u, Vec *w) {
 #ifdef UP_VORT
-    Vec du, ul, wu;
+    Vec du, ul;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &du);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &wu);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
 
     VecScatterBegin(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
@@ -224,10 +224,8 @@ void SWEqn::curl_up(Vec u, Vec *w) {
 
     MatMult(E01M1, u, du);
     P_up->assemble(ul, dt);
-    KSPSolve(ksp_p, du, wu);
-    MatMult(P_up->I, wu, *w);
+    KSPSolve(ksp_p, du, *w);
 
-    VecDestroy(&wu);
     VecDestroy(&du);
     VecDestroy(&ul);
 #else
@@ -334,14 +332,31 @@ void SWEqn::diagnose_wxu(Vec* wxu) {
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, wxu);
+    VecZeroEntries(*wxu);
 
 #ifdef UP_VORT
-    curl_up(ui, &wi);
-    curl_up(uj, &wj);
+    Vec ul;
+
+    VecZeroEntries(uh);
+    VecAXPY(uh, 0.5, ui);
+    VecAXPY(uh, 0.5, uj);
+    curl_up(uh, &wi);
+    VecAXPY(wi, 1.0, fg);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+
+    VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
+    R_up->assemble(wl, ul, dt);
+    MatMult(R_up->M, uh, *wxu);
+
+    VecDestroy(&ul);
 #else
     curl(ui, &wi);
     curl(uj, &wj);
-#endif
+
     VecAXPY(wi, 1.0, wj);
     VecAYPX(wi, 0.5, fg);
 
@@ -354,6 +369,7 @@ void SWEqn::diagnose_wxu(Vec* wxu) {
 
     R->assemble(wl);
     MatMult(R->M, uh, *wxu);
+#endif
 
     VecDestroy(&wi);
     VecDestroy(&wj);
