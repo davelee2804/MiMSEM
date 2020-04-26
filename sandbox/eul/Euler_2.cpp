@@ -1177,6 +1177,8 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rt_0->CopyFromHoriz(rt);       rt_0->UpdateLocal();    rt_0->HorizToVert();
     exner_0->CopyFromHoriz(exner); exner_0->UpdateLocal(); exner_0->HorizToVert();
 
+    AssembleVertMomVort(velz_0);
+
     // 1.  Explicit horizontal solve
     if(!rank) cout << "horiztonal step (1).................." << endl;
     AssembleKEVecs(velx_0);
@@ -1244,7 +1246,7 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     }
 
     // 2.2 Implicit vertical solve
-    AssembleVertMomVort(velz_0);
+    //AssembleVertMomVort(velz_0);
 
     velz_h->CopyFromHoriz(velz_0->vh);
     rho_h->CopyFromHoriz(rho_0->vh);
@@ -1295,7 +1297,7 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     }
 
     // 3.1 Implicit vertical solve
-    AssembleVertMomVort(velz_0);
+    //AssembleVertMomVort(velz_0);
 
     velz_h->CopyFromHoriz(velz_0->vh);
     rho_h->CopyFromHoriz(rho_0->vh);

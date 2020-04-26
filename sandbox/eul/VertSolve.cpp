@@ -27,7 +27,8 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-//#define RAYLEIGH (1.0e-3)
+//#define RAYLEIGH (1.0/120.0)
+#define RAYLEIGH (4.0/120.0)
 //#define VISC 1
 //#define NEW_EOS 1
 
@@ -1134,6 +1135,7 @@ L2Vecs* F_rho_o, L2Vecs* F_rt_o)
             if(udwdx) VecAXPY(F_w, dt, udwdx->vz[ii]);
             //VecAXPY(F_w, 0.5*dt, d4w_i->vz[ii]);
             //VecAXPY(F_w, 0.5*dt, d4w_j->vz[ii]);
+            //VecAXPY(F_w, dt, d4w_i->vz[ii]);
 #ifdef NEW_EOS
             vo->Assemble_EOS_Residual_new(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
 #else
@@ -1148,8 +1150,8 @@ L2Vecs* F_rho_o, L2Vecs* F_rt_o)
             VecAXPY(dG_z, -1.0, rt_i->vz[ii] );
 
             // add the horizontal forcing
-            //VecAXPY(dF_z, dt, F_rho_o->vz[ii]);
-            //VecAXPY(dG_z, dt, F_rt_o->vz[ii] );
+            VecAXPY(dF_z, dt, F_rho_o->vz[ii]);
+            VecAXPY(dG_z, dt, F_rt_o->vz[ii] );
 
             MatMult(vo->VB, dF_z, F_rho);
             MatMult(vo->VB, dG_z, F_rt);
@@ -1208,10 +1210,6 @@ L2Vecs* F_rho_o, L2Vecs* F_rt_o)
                                  "\t|d_rt|/|rt|: "        << max_norm_rt    << endl;
     } while(!done);
 
-    for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecAXPY(rho_j->vz[ii], -dt, F_rho_o->vz[ii]);
-        VecAXPY(rt_j->vz[ii],  -dt, F_rt_o->vz[ii] );
-    }
     velz_i->CopyFromVert(velz_j->vz);
     rho_i->CopyFromVert(rho_j->vz);
     rt_i->CopyFromVert(rt_j->vz);
