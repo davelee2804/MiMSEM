@@ -42,7 +42,6 @@ class SWEqn {
         void solve_RK2_SS(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
         void solve_EEC(Vec ui, Vec hi, Vec uf, Vec hf, double dt, bool save);
         void laplacian(Vec ui, Vec* ddu);
-        void boundaryInt(Vec ui, Vec hi, Vec Ku, Vec* bi);
         void writeConservation(double time, Vec ui, Vec hi, double mass0, double vort0, double ener0);
     private:
         double viscosity();

@@ -36,6 +36,7 @@ class SWEqn {
         Vec hj;
         Mat A;
         P_up_mat* P_up;
+        RotMat_up* R_up;
         KSP ksp_p;
         void coriolis();
         void curl(Vec u, Vec* w);
