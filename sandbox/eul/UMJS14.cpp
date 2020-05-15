@@ -15,8 +15,8 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
+#include "HorizSolve.h"
 #include "VertSolve.h"
-#include "Solve3D.h"
 #include "Euler_2.h"
 
 using namespace std;
