@@ -29,6 +29,7 @@ class HorizSolve {
         Vec* fg;                 // coriolis vector (global)
         Vec* fl;                 // coriolis vector (local)
         KSP ksp1;
+        KSP ksp_up;
 
         double viscosity();
         void coriolis();

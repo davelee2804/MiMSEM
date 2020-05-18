@@ -24,6 +24,7 @@
 #define SCALE 1.0e+8
 
 //#define UPWIND_TEMP 1
+#define UPWIND_FAC (0.005)
 
 using namespace std;
 
@@ -87,6 +88,8 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp1, "ksp1_");
     KSPSetFromOptions(ksp1);
+
+    ksp_up = NULL;
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -173,6 +176,9 @@ HorizSolve::~HorizSolve() {
     delete edge;
     delete node;
     delete quad;
+#ifdef UPWIND_TEMP
+    if(ksp_up) KSPDestroy(&ksp_up);
+#endif
 }
 
 /*
@@ -293,8 +299,12 @@ void HorizSolve::diagnose_fluxes(int level, Vec u1, Vec u2, Vec h1l, Vec h2l, Ve
     VecZeroEntries(tmp1l);
     VecAXPY(tmp1l, 0.5, u1l);
     VecAXPY(tmp1l, 0.5, u2l);
-    F->assemble_up(tmp2l, level, SCALE, 0.25*dt, tmp1l);
-    M1->assemble_up(level, SCALE, 0.25*dt, tmp1l);
+    //F->assemble_up(tmp2l, level, SCALE, 0.01*dt, tmp1l);
+    //M1->assemble_up(level, SCALE, 0.01*dt, tmp1l);
+    //F->assemble_up(tmp2l, level, SCALE, 0.02*dt, tmp1l);
+    //M1->assemble_up(level, SCALE, 0.02*dt, tmp1l);
+    F->assemble_up(tmp2l, level, SCALE, UPWIND_FAC*dt, tmp1l);
+    M1->assemble_up(level, SCALE, UPWIND_FAC*dt, tmp1l);
 #else
     F->assemble(tmp2l, level, false, SCALE);
 #endif
@@ -440,15 +450,48 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
 
     // assemble in the skew-symmetric parts of the vector
     diagnose_Phi(level, velx1, velx2, uil, ujl, &Phi);
+#ifdef UPWIND_TEMP
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dPi);
+
+    VecZeroEntries(dudz_h);
+    VecAXPY(dudz_h, 0.5, uil);
+    VecAXPY(dudz_h, 0.5, ujl);
+    M1->assemble_up(level, SCALE, UPWIND_FAC*dt, dudz_h);
+
+    if(!ksp_up) {
+        PC pc;
+        KSPCreate(MPI_COMM_WORLD, &ksp_up);
+        KSPSetOperators(ksp_up, M1->MT, M1->MT);
+        KSPSetTolerances(ksp_up, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+        KSPSetType(ksp_up, KSPGMRES);
+        KSPGetPC(ksp_up, &pc);
+        PCSetType(pc, PCBJACOBI);
+        PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+        KSPSetOptionsPrefix(ksp_up, "ksp_up_");
+        KSPSetFromOptions(ksp_up);
+    }
+
+    MatMult(M2->M, Pi, velz_h);
+    MatMult(EtoF->E12, velz_h, dp);
+    KSPSolve(ksp_up, dp, dPi);
+
+    M1->assemble(level, SCALE, true);
+#else
     grad(false, Pi, &dPi, level);
+#endif
     diagnose_wxu(level, velx1, velx2, &wxu);
 
     MatMult(EtoF->E12, Phi, fu);
     VecAXPY(fu, 1.0, wxu);
 
     // add the pressure gradient force
+#ifdef UPWIND_TEMP
+    F->assemble_up(theta_h, level, SCALE, UPWIND_FAC*dt, dudz_h);
+    MatMult(F->MT, dPi, dp);
+#else
     F->assemble(theta_h, level, false, SCALE);
     MatMult(F->M, dPi, dp);
+#endif
     VecAXPY(fu, 1.0, dp);
 
     // second voritcity term
