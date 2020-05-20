@@ -185,25 +185,27 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
                 J = geom->J[ei][ii];
 
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ug);
+                ug[0] *= 1.0/geom->thick[lev][inds_0[ii]];
+                ug[1] *= 1.0/geom->thick[lev][inds_0[ii]];
 
-		// map velocity to local element coordinates
-		ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
+                // map velocity to local element coordinates
+                ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
                 ul[1] = (-J[1][0]*ug[0] + J[0][0]*ug[1])/det;
-		// evaluate the nodal bases at the upwinded locations
-		for(jj = 0; jj < mp1; jj++) {
+                // evaluate the nodal bases at the upwinded locations
+                for(jj = 0; jj < mp1; jj++) {
                     lx[jj] = l->eval_q(quad->x[ii%mp1] + dt*ul[0], jj);
                     ly[jj] = l->eval_q(quad->x[ii/mp1] + dt*ul[1], jj);
                 }
-		// evaluate the edge bases at the upwinded locations
-		for(jj = 0; jj < m0; jj++) {
-		    _ex[jj] = e->eval(quad->x[ii%mp1] + dt*ul[0], jj);
-		    _ey[jj] = e->eval(quad->x[ii/mp1] + dt*ul[1], jj);
-	        }
+                // evaluate the edge bases at the upwinded locations
+                for(jj = 0; jj < m0; jj++) {
+                    _ex[jj] = e->eval(quad->x[ii%mp1] + dt*ul[0], jj);
+                    _ey[jj] = e->eval(quad->x[ii/mp1] + dt*ul[1], jj);
+                }
                 // evaluate the 2 form basis at the upwinded locations
-		for(jj = 0; jj < m0*mp1; jj++) {
-		    Ut[jj][ii] = lx[jj%mp1]*_ey[jj/mp1];
-		    Vt[jj][ii] = _ex[jj%m0]*ly[jj/m0];
-		}
+                for(jj = 0; jj < m0*mp1; jj++) {
+                    Ut[jj][ii] = lx[jj%mp1]*_ey[jj/mp1];
+                    Vt[jj][ii] = _ex[jj%m0]*ly[jj/m0];
+                }
 
                 Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
                 Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
@@ -485,24 +487,26 @@ void Uhmat::assemble_up(Vec h2, int lev, double scale, double dt, Vec u1) {
                 J = geom->J[ei][ii];
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ug);
-		// map velocity to local element coordinates
-		ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
+                ug[0] *= 1.0/geom->thick[lev][inds_0[ii]];
+                ug[1] *= 1.0/geom->thick[lev][inds_0[ii]];
+                // map velocity to local element coordinates
+                ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
                 ul[1] = (-J[1][0]*ug[0] + J[0][0]*ug[1])/det;
-		// evaluate the nodal bases at the upwinded locations
-		for(jj = 0; jj < mp1; jj++) {
+                // evaluate the nodal bases at the upwinded locations
+                for(jj = 0; jj < mp1; jj++) {
                     lx[jj] = l->eval_q(quad->x[ii%mp1] + dt*ul[0], jj);
                     ly[jj] = l->eval_q(quad->x[ii/mp1] + dt*ul[1], jj);
                 }
-		// evaluate the edge bases at the upwinded locations
-		for(jj = 0; jj < m0; jj++) {
-		    _ex[jj] = e->eval(quad->x[ii%mp1] + dt*ul[0], jj);
-		    _ey[jj] = e->eval(quad->x[ii/mp1] + dt*ul[1], jj);
+                // evaluate the edge bases at the upwinded locations
+                for(jj = 0; jj < m0; jj++) {
+                    _ex[jj] = e->eval(quad->x[ii%mp1] + dt*ul[0], jj);
+                    _ey[jj] = e->eval(quad->x[ii/mp1] + dt*ul[1], jj);
 	        }
                 // evaluate the 2 form basis at the upwinded locations
-		for(jj = 0; jj < m0*mp1; jj++) {
-		    Ut[jj][ii] = lx[jj%mp1]*_ey[jj/mp1];
-		    Vt[jj][ii] = _ex[jj%m0]*ly[jj/m0];
-		}
+                for(jj = 0; jj < m0*mp1; jj++) {
+                    Ut[jj][ii] = lx[jj%mp1]*_ey[jj/mp1];
+                    Vt[jj][ii] = _ex[jj%m0]*ly[jj/m0];
+                }
 
                 Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
                 Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
