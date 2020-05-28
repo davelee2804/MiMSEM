@@ -179,7 +179,7 @@ class AdvEqn:
 		quad = self.quad
 		nx = len(self.dX) * quad.n
 		x = np.zeros(nx)
-        	for ii in np.arange(len(self.dX)):
+		for ii in np.arange(len(self.dX)):
                 	x[ii*quad.n:ii*quad.n+quad.n] = ii*self.dX[0] + self.dX[0]*0.5*(quad.x[:quad.n]+1)
 
 		xx = 2.0*np.pi*x

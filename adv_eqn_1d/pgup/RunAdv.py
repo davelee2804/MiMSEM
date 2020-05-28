@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import numpy as np
 import scipy
@@ -114,7 +114,7 @@ for step in np.arange(nsteps) + 1:
 
 	if (step%(nsteps/20)==0):
 		i_dump = i_dump + 1
-		print '\tdumping output for time step %.4d'%step
+		print('\tdumping output for time step %.4d'%step)
 		plot_2(hi,ht,h2,x,topo,topo_q,Njxi,Ejxi,i_dump,ho,uo,hc,uc,dX)
 
 	a=ad.M1*hi
@@ -136,7 +136,7 @@ a=ad.M1*ht
 err_2 = np.sqrt(np.dot(a,ht))
 a=ad.M1*h2
 err_3 = np.sqrt(np.dot(a,h2))
-print str(err_1) + '\t' + str(err_2) + '\t' + str(err_3)
+print(str(err_1) + '\t' + str(err_2) + '\t' + str(err_3))
 
 plt.plot(dt*np.arange(nsteps+1),(mass_a-mass_a[0])/mass_a[0],c='g')
 plt.plot(dt*np.arange(nsteps+1),(mass_2-mass_2[0])/mass_2[0],c='b')
