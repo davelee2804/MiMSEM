@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import os
 import sys
@@ -12,7 +12,7 @@ pn = int(sys.argv[1])
 ne = int(sys.argv[2])
 n_procs = int(sys.argv[3])
 
-path = './src/'
+path = './eul/'
 
 try:
 	os.makedirs(path + '/input')
@@ -33,7 +33,7 @@ for pi in np.arange(n_procs):
 # Write the grid metadata
 f = open(path + '/input/grid_res.txt', 'w')
 f.write(str(pn) + '\n')
-f.write(str(ne/pc.npx))
+f.write(str(ne//pc.npx))
 f.close()
 
 # Generate the geometry
