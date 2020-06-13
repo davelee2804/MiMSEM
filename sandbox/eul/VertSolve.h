@@ -24,6 +24,7 @@ class VertSolve {
         void viscosity();
 
         void diagTheta2(Vec* rho, Vec* rt, Vec* theta);
+        void diagTheta_up(Vec* rho, Vec* rt, Vec* theta, Vec* ul);
         void diagExner(int ex, int ey, Vec rt, Vec pi);
 
         void diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec _F);

@@ -64,7 +64,6 @@ VertSolve::VertSolve(Topo* _topo, Geom* _geom, double _dt) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &_Phi_z);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*elOrd2, &_theta_h);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &_tmpA1);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &_tmpA2);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &_tmpB1);
@@ -185,16 +184,13 @@ void VertSolve::initGZ() {
 }
 
 VertSolve::~VertSolve() {
-    int ii;
-
     VecDestroy(&_Phi_z);
-    VecDestroy(&_theta_h);
     VecDestroy(&_tmpA1);
     VecDestroy(&_tmpA2);
     VecDestroy(&_tmpB1);
     VecDestroy(&_tmpB2);
 
-    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+    for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&gv[ii]);
         VecDestroy(&zv[ii]);
     }
@@ -506,6 +502,38 @@ void VertSolve::diagTheta2(Vec* rho, Vec* rt, Vec* theta) {
             MatMult(vo->VAB2, rt[ei], frt);
 
             vo->AssembleLinearWithRho2(ex, ey, rho[ei], vo->VA2);
+            KSPSolve(kspColA2, frt, theta[ei]);
+        }
+    }
+    VecDestroy(&frt);
+    KSPDestroy(&kspColA2);
+}
+
+void VertSolve::diagTheta_up(Vec* rho, Vec* rt, Vec* theta, Vec* ul) {
+    int ex, ey, n2, ei;
+    Vec frt;
+    PC pc;
+    KSP kspColA2;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*n2, &frt);
+
+    KSPCreate(MPI_COMM_SELF, &kspColA2);
+    KSPSetOperators(kspColA2, vo->VA2, vo->VA2);
+    KSPGetPC(kspColA2, &pc);
+    PCSetType(pc, PCLU);
+    KSPSetOptionsPrefix(kspColA2, "kspColA2_");
+    KSPSetFromOptions(kspColA2);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+            vo->AssembleLinCon2_up(ex, ey, vo->VAB2, dt, ul);
+            MatMult(vo->VAB2, rt[ei], frt);
+
+            vo->AssembleLinearWithRho2_up(ex, ey, rho[ei], vo->VA2, dt, ul);
             KSPSolve(kspColA2, frt, theta[ei]);
         }
     }

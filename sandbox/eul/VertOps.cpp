@@ -2524,3 +2524,155 @@ void VertOps::AssembleConstWithRhoInv2(int ex, int ey, Vec rho, Mat B) {
     MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
 }
 
+void VertOps::AssembleLinearWithRho2_up(int ex, int ey, Vec rho, Mat A, double dt, Vec* uhl) {
+    int ii, jj, kk, ei, _n, _n2, mp1, mp12;
+    double det, **J, rk, gamma, ug[2], ul[2], _ex[99], _ey[99];
+    int* inds_0;
+    int inds2k[99];
+    PetscScalar *rArray, *uArray;
+
+    ei   = ey*topo->nElsX + ex;
+    _n   = W->nDofsJ;
+    _n2  = W->nDofsJ*W->nDofsJ;
+    mp1  = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    Q->assemble(ex, ey);
+    inds_0 = topo->elInds0_l(ex, ey);
+
+    MatZeroEntries(A);
+
+    // assemble the matrices
+    VecGetArray(rho, &rArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecGetArray(uhl[kk], &uArray);
+
+        // build the 2D mass matrix
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
+            // multuply by the vertical determinant to integrate, then
+            // divide piecewise constant density by the vertical determinant,
+            // so these cancel
+            rk = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                rk += rArray[kk*n2+jj]*gamma;
+            }
+            Q0[ii][ii] *= 0.5*rk/det;
+
+            // upwinded test functions
+            J = geom->J[ei][ii];
+            geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, ug);
+            // map velocity to local element coordinates
+	    ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
+            ul[1] = (-J[1][0]*ug[0] + J[0][0]*ug[1])/det;
+            ul[0] /= geom->thick[kk][inds_0[ii]];
+            ul[1] /= geom->thick[kk][inds_0[ii]];
+            for(jj = 0; jj < _n; jj++) {
+                _ex[jj] = edge->eval(quad->x[ii%mp1] + dt*ul[0], jj);
+                _ey[jj] = edge->eval(quad->x[ii/mp1] + dt*ul[1], jj);
+            }
+            for(jj = 0; jj < _n2; jj++) {
+                Wt[jj][ii] = _ex[jj%_n]*_ey[jj/_n];
+            }
+        }
+
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        // assemble the first basis function
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + (kk+0)*W->nDofsJ;
+        }
+        MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+
+        // assemble the second basis function
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + (kk+1)*W->nDofsJ;
+        }
+        MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+
+        VecGetArray(uhl[kk], &uArray);
+    }
+    VecRestoreArray(rho, &rArray);
+
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  A, MAT_FINAL_ASSEMBLY);
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+}
+
+void VertOps::AssembleLinCon2_up(int ex, int ey, Mat AB, double dt, Vec* uhl) {
+    int ii, jj, kk, ei, _n, _n2, mp1, mp12;
+    double det, **J, ug[2], ul[2], _ex[99], _ey[99];
+    int* inds_0;
+    int rows[99], cols[99];
+    PetscScalar* uArray;
+
+    ei   = ey*topo->nElsX + ex;
+    _n   = W->nDofsJ;
+    _n2  = W->nDofsJ*W->nDofsJ;
+    mp1  = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    Q->assemble(ex, ey);
+    inds_0 = topo->elInds0_l(ex, ey);
+
+    MatZeroEntries(AB);
+
+    // assemble the matrices
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecGetArray(uhl[kk], &uArray);
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
+            // multiply by the vertical jacobian, then scale the piecewise constant 
+            // basis by the vertical jacobian, so do nothing 
+            Q0[ii][ii] *= 0.5;
+
+            // upwinded test functions
+            J = geom->J[ei][ii];
+            geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, ug);
+            // map velocity to local element coordinates
+	    ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
+            ul[1] = (-J[1][0]*ug[0] + J[0][0]*ug[1])/det;
+            ul[0] /= geom->thick[kk][inds_0[ii]];
+            ul[1] /= geom->thick[kk][inds_0[ii]];
+            for(jj = 0; jj < _n; jj++) {
+                _ex[jj] = edge->eval(quad->x[ii%mp1] + dt*ul[0], jj);
+                _ey[jj] = edge->eval(quad->x[ii/mp1] + dt*ul[1], jj);
+            }
+            for(jj = 0; jj < _n2; jj++) {
+                Wt[jj][ii] = _ex[jj%_n]*_ey[jj/_n];
+            }
+        }
+
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            cols[ii] = ii + kk*W->nDofsJ;
+        }
+        // assemble the first basis function
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + (kk+0)*W->nDofsJ;
+        }
+        MatSetValues(AB, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+
+        // assemble the second basis function
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + (kk+1)*W->nDofsJ;
+        }
+        MatSetValues(AB, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+
+        VecGetArray(uhl[kk], &uArray);
+    }
+    MatAssemblyBegin(AB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(AB, MAT_FINAL_ASSEMBLY);
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+}
+
