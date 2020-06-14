@@ -2532,8 +2532,8 @@ void VertOps::AssembleLinearWithRho2_up(int ex, int ey, Vec rho, Mat A, double d
     PetscScalar *rArray, *uArray;
 
     ei   = ey*topo->nElsX + ex;
-    _n   = W->nDofsJ;
-    _n2  = W->nDofsJ*W->nDofsJ;
+    _n   = topo->elOrd;
+    _n2  = _n*_n;
     mp1  = quad->n + 1;
     mp12 = mp1*mp1;
 
@@ -2612,8 +2612,8 @@ void VertOps::AssembleLinCon2_up(int ex, int ey, Mat AB, double dt, Vec* uhl) {
     PetscScalar* uArray;
 
     ei   = ey*topo->nElsX + ex;
-    _n   = W->nDofsJ;
-    _n2  = W->nDofsJ*W->nDofsJ;
+    _n   = topo->elOrd;
+    _n2  = _n*_n;
     mp1  = quad->n + 1;
     mp12 = mp1*mp1;
 
