@@ -77,6 +77,12 @@ class VertSolve {
         void update_delta_u_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                                  Vec F_u, Vec F_rho, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
 
+        void solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
+                                   Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi);
+        void solve_schur_3(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i);
+        void assemble_residual_first_ord(int ex, int ey, Vec theta, Vec Pi, 
+                               Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
+
         Mat _PCz;
         Mat pc_LAP;
 
@@ -98,6 +104,7 @@ class VertSolve {
         Mat L_rt_pi_N_pi_inv_N_rho, L_rt_pi_N_pi_inv_N_rho_M_inv;
         Mat L_rho_pi_N_pi_inv_N_rho;
         Mat G_pi_N_pi_inv, G_pi_N_pi_inv_N_rt;
+        Mat Q_rt_rho_M_rho_inv_D_rho;
 
         KSP ksp_pi, ksp_rho, ksp_w;
 

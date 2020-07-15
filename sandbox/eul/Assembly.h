@@ -7,7 +7,9 @@ class Umat {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
+        Mat MT;
         void assemble(int lev, double scale, bool vert_scale);
+        void assemble_up(int lev, double scale, double dt, Vec u1);
 };
 
 class Wmat {
@@ -47,8 +49,9 @@ class Uhmat {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
+        Mat MT;
         void assemble(Vec h2, int lev, bool const_vert, double scale);
-        void assemble_up(Vec h2, int lev, double scale, Vec u1);
+        void assemble_up(Vec h2, int lev, double scale, double dt, Vec u1);
 };
 
 class Pvec {

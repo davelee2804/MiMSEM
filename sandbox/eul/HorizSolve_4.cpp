@@ -121,7 +121,8 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     // initialize the 1 form linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp1);
     KSPSetOperators(ksp1, M1->M, M1->M);
-    KSPSetTolerances(ksp1, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    //KSPSetTolerances(ksp1, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetTolerances(ksp1, 1.0e-14, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp1, KSPGMRES);
     KSPGetPC(ksp1, &pc);
     PCSetType(pc, PCBJACOBI);
@@ -132,7 +133,8 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     // initialize the 2 form linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp2);
     KSPSetOperators(ksp2, M2->M, M2->M);
-    KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    //KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetTolerances(ksp2, 1.0e-14, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp2, KSPGMRES);
     KSPGetPC(ksp2, &pc);
     PCSetType(pc, PCBJACOBI);
@@ -1229,8 +1231,12 @@ MatDestroy(&_KT2);
 
     MatAXPY(L_rho_pi_N_pi_inv_N_rt, -1.0, L_rho_rt, DIFFERENT_NONZERO_PATTERN); // seg fault for reused matrix
     if(schur) {
+#ifdef NEW_EOS
+    N2_rt->assemble(lev, SCALE, rt, pi);
+#else
         N2_rt->assemble(rho, lev, SCALE, false);
         MatScale(N2_rt->M, -1.0*RD/CV);
+#endif
 
         MatMatMult(L_rt_pi_N_pi_inv, N2_rt->M, reuse, PETSC_DEFAULT, &L_rt_pi_N_pi_inv_N_rho);
         //MatMatMult(L_rt_pi_N_pi_inv_N_rho, M2inv->M, reuse, PETSC_DEFAULT, &L_rt_pi_N_pi_inv_N_rho_M_inv);
@@ -1990,19 +1996,30 @@ void HorizSolve::assemble_and_update_3(int lev, Vec* theta, Vec velx_l, Vec velx
     // D_rt
     T->assemble(rt, lev, SCALE, true);
     MatMatMult(T->M, EtoF->E21, reuse, PETSC_DEFAULT, &D_rt);
+    //F->assemble(rt, lev, true, SCALE);
+    //MatMatMult(M2DM1_inv, F->M, reuse, PETSC_DEFAULT, &D_rt);
     MatScale(D_rt, 0.5*dt);
 
+    // M_u (inverse)
+    assemble_biharmonic(lev, reuse, &M_u);
+    MatAXPY(M_u, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
+    coriolisMatInv(M_u, &M_u_inv, reuse);
+    MatDestroy(&M_u);
+
     // temperature viscosity
-/*
     assemble_biharmonic_temp(lev, rho, reuse, &_PCx);
     schur->AddFromHorizMat(lev, _PCx, schur->VISC);
     MatDestroy(&_PCx);
-*/
+
+    // u.GRAD
+    K->assemble(velx_l, lev, SCALE); // 0.5 factor included here
+    MatMatMult(K->M, M1invDTM2, reuse, PETSC_DEFAULT, &UdotGRAD);
+    MatScale(UdotGRAD, dt);
 
     // Q_rt_rho
     T->assemble(theta_k, lev, SCALE, false);
     MatMatMult(M1invDT, T->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &M1invDTM2);
-    K->assemble(velx_l, lev, SCALE); // 0.5 factor included here
+    //K->assemble(velx_l, lev, SCALE); // 0.5 factor included here
     MatMatMult(K->M, M1invDTM2, reuse, PETSC_DEFAULT, &Q_rt_rho);
     MatScale(Q_rt_rho, dt);
 
@@ -2021,14 +2038,15 @@ void HorizSolve::assemble_and_update_3(int lev, Vec* theta, Vec velx_l, Vec velx
 #endif
 
     // M_u (inverse)
-#ifdef IMP_VISC
-    assemble_biharmonic(lev, reuse, &M_u);
-    MatAXPY(M_u, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
-    coriolisMatInv(M_u, &M_u_inv, reuse);
-    assemble_biharmonic_temp(lev, rho, reuse, _PCx); // mass matrix already included from vertical assembly
-#else
-    coriolisMatInv(R->M, &M_u_inv, reuse);
-#endif
+//#ifdef IMP_VISC
+//    assemble_biharmonic(lev, reuse, &M_u);
+//    MatAXPY(M_u, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
+//    coriolisMatInv(M_u, &M_u_inv, reuse);
+//    MatDestroy(&M_u);
+//    assemble_biharmonic_temp(lev, rho, reuse, _PCx); // mass matrix already included from vertical assembly
+//#else
+//    coriolisMatInv(R->M, &M_u_inv, reuse);
+//#endif
 
     MatMatMult(Q_rt_rho, M2inv->M, reuse, PETSC_DEFAULT, &Q_rt_rho_M_rho_inv);
 
@@ -2045,7 +2063,9 @@ void HorizSolve::assemble_and_update_3(int lev, Vec* theta, Vec velx_l, Vec velx
 
     schur->AddFromHorizMat(lev, L_rho_rt, schur->L_rho);
     schur->AddFromHorizMat(lev, L_rt_rt,  schur->L_rt );
-    if(!itt) schur->AddFromHorizMat(lev, Q_rt_rho_M_rho_inv, schur->Q);
+    schur->AddFromHorizMat(lev, Q_rt_rho_M_rho_inv, schur->Q);
+    schur->AddFromHorizMat(lev, Q_rt_rho, schur->Q2);
+    schur->AddFromHorizMat(lev, UdotGRAD, schur->A);
 
     // update the residuals
     MatMult(G_pi_N_pi_inv, F_pi, ones);
@@ -2068,6 +2088,7 @@ void HorizSolve::update_delta_u_3(int lev, Vec* theta, Vec velx_l, Vec velx_g, V
 {
     MatReuse reuse = MAT_INITIAL_MATRIX;
     Vec wl, wg, theta_k, ones, diag, tmp_h;
+    Mat DK;
     PC pc;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp_h);
@@ -2107,24 +2128,33 @@ void HorizSolve::update_delta_u_3(int lev, Vec* theta, Vec velx_l, Vec velx_g, V
 
     // G_rt
     K->assemble(dpil, lev, SCALE); // 0.5 factor included here
-    MatTranspose(K->M, reuse, &KT);
+    //MatTranspose(K->M, reuse, &KT);
+    MatTranspose(K->M, MAT_REUSE_MATRIX, &KT);
     M2_rho_inv->assemble(rho, lev, SCALE);
-    MatMatMult(KT, M2_rho_inv->M, reuse, PETSC_DEFAULT, &KTM2_inv);
-    MatMatMult(KTM2_inv, M2->M, reuse, PETSC_DEFAULT, &G_rt);
+    //MatMatMult(KT, M2_rho_inv->M, reuse, PETSC_DEFAULT, &KTM2_inv);
+    //MatMatMult(KTM2_inv, M2->M, reuse, PETSC_DEFAULT, &G_rt);
+    MatMatMult(KT, M2_rho_inv->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &KTM2_inv);
+    MatMatMult(KTM2_inv, M2->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &G_rt);
     MatScale(G_rt, dt);
 
     // G_pi
     F->assemble(theta_k, lev, false, SCALE);
-    MatMatMult(M1_inv, EtoF->E12, reuse, PETSC_DEFAULT, &M1invDT);
-    MatMatMult(M1invDT, M2->M, reuse, PETSC_DEFAULT, &M1invDTM2);
-    MatMatMult(F->M, M1invDTM2, reuse, PETSC_DEFAULT, &G_pi);
+    //MatMatMult(M1_inv, EtoF->E12, reuse, PETSC_DEFAULT, &M1invDT);
+    //MatMatMult(M1invDT, M2->M, reuse, PETSC_DEFAULT, &M1invDTM2);
+    //MatMatMult(F->M, M1invDTM2, reuse, PETSC_DEFAULT, &G_pi);
+    MatMatMult(M1_inv, EtoF->E12, MAT_REUSE_MATRIX, PETSC_DEFAULT, &M1invDT);
+    MatMatMult(M1invDT, M2->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &M1invDTM2);
+    MatMatMult(F->M, M1invDTM2, MAT_REUSE_MATRIX, PETSC_DEFAULT, &G_pi);
     MatScale(G_pi, 0.5*dt);
 
     // D_rho
-    MatMatMult(M2->M, EtoF->E21, reuse, PETSC_DEFAULT, &M2D);
-    MatMatMult(M2D, M1_inv, reuse, PETSC_DEFAULT, &M2DM1_inv);
+    //MatMatMult(M2->M, EtoF->E21, reuse, PETSC_DEFAULT, &M2D);
+    //MatMatMult(M2D, M1_inv, reuse, PETSC_DEFAULT, &M2DM1_inv);
+    MatMatMult(M2->M, EtoF->E21, MAT_REUSE_MATRIX, PETSC_DEFAULT, &M2D);
+    MatMatMult(M2D, M1_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &M2DM1_inv);
     F->assemble(rho, lev, true, SCALE);
-    MatMatMult(M2DM1_inv, F->M, reuse, PETSC_DEFAULT, &D_rho);
+    //MatMatMult(M2DM1_inv, F->M, reuse, PETSC_DEFAULT, &D_rho);
+    MatMatMult(M2DM1_inv, F->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &D_rho);
     MatScale(D_rho, 0.5*dt);
 
     // N_rt
@@ -2144,6 +2174,11 @@ void HorizSolve::update_delta_u_3(int lev, Vec* theta, Vec velx_l, Vec velx_g, V
     // M_u
     assemble_biharmonic(lev, reuse, &M_u);
     MatAXPY(M_u, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
+
+    K->assemble(velx_l, lev, SCALE); // 0.5 factor included here
+    MatMatMult(EtoF->E12, K->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DK);
+    MatAXPY(M_u, dt, DK, DIFFERENT_NONZERO_PATTERN);
+    MatDestroy(&DK);
 
     MatMatMult(G_pi, N2_pi_inv->M, reuse, PETSC_DEFAULT, &G_pi_N_pi_inv);
     MatMatMult(G_pi_N_pi_inv,  N2_rt->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &G_pi_N_pi_inv_N_rt);
@@ -2172,5 +2207,6 @@ void HorizSolve::update_delta_u_3(int lev, Vec* theta, Vec velx_l, Vec velx_g, V
     VecDestroy(&ones);
     VecDestroy(&theta_k);
     MatDestroy(&G_pi_N_pi_inv_N_rt);
+    MatDestroy(&M_u);
     KSPDestroy(&ksp_u);
 }

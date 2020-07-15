@@ -21,29 +21,25 @@ OBJS = LinAlg.o \
        ElMats.o \
        VertOps.o \
        Assembly.o \
-       Schur.o \
-       VertSolve_4.o \
-       HorizSolve_4.o \
-       Euler_PI_4.o \
-       UMJS14_imp.o
+       HorizSolve.o \
+       VertSolve.o \
+       Euler_2.o \
+       UMJS14.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-UMJS14_imp.o: UMJS14_imp.cpp Euler_PI_4.o HorizSolve_4.o VertSolve_4.o Schur.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c UMJS14_imp.cpp ${CXXFLAGS}
+UMJS14.o: UMJS14.cpp Euler_2.o VertSolve.o HorizSolve.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c UMJS14.cpp ${CXXFLAGS}
 
-Euler_PI_4.o: Euler_PI_4.cpp Euler_PI_4.h HorizSolve_4.o VertSolve_4.o Schur.o Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c Euler_PI_4.cpp ${CXXFLAGS}
+Euler_2.o: Euler_2.cpp Euler_2.h VertSolve.o HorizSolve.o Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Euler_2.cpp ${CXXFLAGS}
 
-HorizSolve_4.o: HorizSolve_4.cpp HorizSolve_4.h Schur.o VertOps.o Assembly.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c HorizSolve_4.cpp ${CXXFLAGS}
+VertSolve.o: VertSolve.cpp VertSolve.h HorizSolve.o Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c VertSolve.cpp ${CXXFLAGS}
 
-VertSolve_4.o: VertSolve_4.cpp VertSolve_4.h Schur.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c VertSolve_4.cpp ${CXXFLAGS}
-
-Schur.o: Schur.cpp Schur.h Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c Schur.cpp ${CXXFLAGS}
+HorizSolve.o: HorizSolve.cpp HorizSolve.h Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c HorizSolve.cpp ${CXXFLAGS}
 
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}

@@ -23,7 +23,13 @@ class Schur {
         Mat DUinv;
         Mat L_rho;
         Mat L_rt;
+        Mat A;
         Mat VISC;
+        Mat Q2;
+        Mat QT;
+        Mat Minv;
+        Mat QTMinv;
+        Mat QTMinvQ;
         KSP ksp_rt;
         KSP ksp_rho;
         VecScatter scat;

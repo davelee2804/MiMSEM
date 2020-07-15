@@ -33,7 +33,6 @@ class Euler {
         Vec* gv;                 // gravity vector
         Vec* zv;                 // level height vector
         VertOps* vo;
-        Schur* schur;
         KSP ksp1;
         KSP ksp2;
         KSP ksp_exner;
@@ -76,12 +75,6 @@ class Euler {
         void assemble_residual_z(int ex, int ey, Vec theta, Vec Pi, 
                                  Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
 
-        void assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, 
-                               Vec* F_u, Vec* F_w, L2Vecs* F_rho, L2Vecs* F_rt, L2Vecs* F_exner,
-                               Vec* du, Vec* dw, L2Vecs* drho, L2Vecs* drt, L2Vecs* dexner);
-
-        void solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save);
-
         void init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* h, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
@@ -90,8 +83,6 @@ class Euler {
 
         void repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
         void unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
-
-        void horizontal_corrections(int lev, Vec rho, Vec rt, Vec exner, Vec F_rt, Vec F_exner, Mat* N_pi_prime);
 
     private:
         // vertical vectors and matrices
@@ -130,8 +121,14 @@ class Euler {
         Mat pc_A_u_VB_inv;
         Mat pc_A_rt_VB_inv;
         Mat pc_A_rt_VB_inv_D_rho;
+        Mat pc_G_VB_rho_inv;
         Mat pc_M_rt;
+        Mat pc_M_rt_inv;
+        Mat pc_M_rt_VB_inv;
 
+        Mat pc_V0_invV0_rt_DT;
+        Mat pc_V0_invV0_rt_DT_VB_pi;
+        Mat pc_V0_invV0_rt_DT_VB_pi_VB_inv;
         // ..... schur preconditioner (horizontal)
         Mat pcx_D;
         Mat pcx_G;
@@ -152,18 +149,7 @@ class Euler {
         Mat pcx_M1_exner_M1_inv;
         Mat pcx_Au;
         Mat pcx_Au_M2_inv;
-        // .....potential temperature corrections
-        Mat pcx_M2_invM2;
-        Mat pcx_M2M2_invM2;
-        Mat pcx_DT_M2M2_invM2;
-        Mat pcx_M1_invDT_M2M2_invM2;
-        Mat pcx_LAP_Theta;
-        Mat pcx_M2_LAP_Theta;
-        Mat pcx_DT_LAP_Theta;
-        Mat pcx_M1_invDT_LAP_Theta;
-        Mat pcx_D_M1_invDT_LAP_Theta;
-        Mat pcx_LAP2_Theta;
-        Mat pcx_M2_Theta_N_Theta_inv;
+        Mat pcx_Mu_prime;
 
         Mat _PCz;
         Mat _PCx;

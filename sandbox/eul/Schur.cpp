@@ -88,11 +88,29 @@ void Schur::InitialiseMatrix() {
     MatMPIAIJSetPreallocation(Q, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
     MatZeroEntries(Q);
 
+    MatCreate(MPI_COMM_WORLD, &A);
+    MatSetSizes(A, lSize, lSize, gSize, gSize);
+    MatSetType(A, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(A, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
+    MatZeroEntries(A);
+
     MatCreate(MPI_COMM_WORLD, &VISC);
     MatSetSizes(VISC, lSize, lSize, gSize, gSize);
     MatSetType(VISC, MATMPIAIJ);
     MatMPIAIJSetPreallocation(VISC, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
     MatZeroEntries(VISC);
+
+    MatCreate(MPI_COMM_WORLD, &Q2);
+    MatSetSizes(Q2, lSize, lSize, gSize, gSize);
+    MatSetType(Q2, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(Q2, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
+    MatZeroEntries(Q2);
+
+    MatCreate(MPI_COMM_WORLD, &Minv);
+    MatSetSizes(Minv, lSize, lSize, gSize, gSize);
+    MatSetType(Minv, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(Minv, 11*elOrd2*elOrd2, PETSC_NULL, 11*elOrd2*elOrd2, PETSC_NULL);
+    MatZeroEntries(Minv);
 
     KSPCreate(MPI_COMM_WORLD, &ksp_rt);
     KSPCreate(MPI_COMM_WORLD, &ksp_rho);
@@ -102,6 +120,10 @@ void Schur::DestroyMatrix() {
     MatDestroy(&L_rho);
     MatDestroy(&L_rt);
     MatDestroy(&Q);
+    MatDestroy(&A);
+    MatDestroy(&VISC);
+    MatDestroy(&Minv);
+    MatDestroy(&Q2);
 
     KSPDestroy(&ksp_rt);
     KSPDestroy(&ksp_rho);

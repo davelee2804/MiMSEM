@@ -15,7 +15,9 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
-#include "Euler.h"
+#include "HorizSolve.h"
+#include "VertSolve.h"
+#include "Euler_2.h"
 
 using namespace std;
 
@@ -271,9 +273,12 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 120.0;
-    int nSteps = 12*24*30;
-    int dumpEvery = 360; //dump evert 12 hours
+    double dt = 60.0;//120.0;
+    //double dt = 120.0;
+    int nSteps = 12*24*60;
+    //int nSteps = 12*24*30;
+    int dumpEvery = 360; //dump evert 6 hours
+    //int dumpEvery = 360; //dump evert 12 hours
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -350,7 +355,7 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->StrangCarryover(velx, velz, rho, rt, exner, dump);
+        pe->Strang(velx, velz, rho, rt, exner, dump);
     }
 
     delete pe;

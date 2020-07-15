@@ -36,4 +36,9 @@ class Euler {
                             Vec* rt_i, Vec* rt_j, Vec* d_rt, 
                             Vec* pi_i, Vec* pi_j, Vec* d_pi, Vec* pi_h,
                             Vec* theta_i, Vec* theta_h);
+
+        double LineSearch(L1Vecs* velx_i, L1Vecs* velx_j, L1Vecs* d_u, 
+                       L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* d_w,
+                       L2Vecs* rho_i,  L2Vecs* rho_j,  L2Vecs* d_rho,
+                       L2Vecs* rt_i,   L2Vecs* rt_j,   L2Vecs* d_rt, L2Vecs* theta_i);
 };

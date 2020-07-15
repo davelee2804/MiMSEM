@@ -17,7 +17,6 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
-#include "Schur.h"
 #include "Euler_imp_4.h"
 
 #define RAD_EARTH 6371220.0
@@ -33,7 +32,7 @@
 #define HORIZ_TOL 1.0e-12
 #define RAYLEIGH 0.2
 
-#define EXPLICIT_RHO_UPDATE
+//#define EXPLICIT_RHO_UPDATE
 //#define EXPLICIT_THETA_UPDATE
 
 using namespace std;
@@ -142,8 +141,6 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     _PCx = NULL;
     pc_A_rt = NULL;
     _V0_invV0_rt = NULL;
-
-    schur = new Schur(topo, geom);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -339,8 +336,6 @@ Euler::~Euler() {
     delete quad;
 
     delete vo;
-
-    delete schur;
 
     MatDestroy(&_PCz);
 }
@@ -1162,9 +1157,7 @@ void Euler::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
                 MatMult(vo->VB, dG_z, F_rt);
 
                 // solve schur complement 
-                //assemble_operator_schur(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_j->vz[ii], 
-                //                        F_w, F_rho, F_rt, F_exner->vz[ii], d_w, d_rho, d_rt, d_exner);
-                assemble_operator_schur(ex, ey, theta_h->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_j->vz[ii], 
+                assemble_operator_schur(ex, ey, theta_i->vz[ii], velz_i->vz[ii], rho_i->vz[ii], rt_i->vz[ii], exner_j->vz[ii], 
                                         F_w, F_rho, F_rt, F_exner->vz[ii], d_w, d_rho, d_rt, d_exner);
 
                 VecAXPY(velz_j->vz[ii],  1.0, d_w);
@@ -1208,9 +1201,7 @@ void Euler::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
                 MatMult(M2->M, dG, frt);
 
                 // delta updates  - velx is a global vector, while theta and exner are local vectors
-                //assemble_schur_horiz(lev, theta_h->vl, velx_j[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
-                //                     fu, frho, frt, F_exner->vh[lev], du, drho, drt, dexner);
-                assemble_schur_horiz(lev, theta_h->vl, velx_i[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
+                assemble_schur_horiz(lev, theta_h->vl, velx_j[lev], rho_i->vl[lev], rt_i->vl[lev], exner_j->vl[lev], 
                                      fu, frho, frt, F_exner->vh[lev], du, drho, drt, dexner);
 
                 VecAXPY(velx_j[lev], 1.0, du);
@@ -1299,6 +1290,34 @@ void Euler::solve_schur(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i
     VecDestroy(&G_z);
     VecDestroy(&dF_z);
     VecDestroy(&dG_z);
+}
+
+void DiagMatInv(Mat A, int nk, int nkl, int nDofskG, VecScatter gtol_k, Mat* Ainv) {
+    int ii;
+    Vec diag_u_l, diag_u_g;
+    PetscScalar* uArray;
+
+    VecCreateSeq(MPI_COMM_SELF, nk, &diag_u_l);
+    VecCreateMPI(MPI_COMM_WORLD, nkl, nDofskG, &diag_u_g);
+
+    MatGetDiagonal(A, diag_u_g);
+    VecScatterBegin(gtol_k, diag_u_g, diag_u_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  gtol_k, diag_u_g, diag_u_l, INSERT_VALUES, SCATTER_FORWARD);
+    VecGetArray(diag_u_l, &uArray);
+    for(ii = 0; ii < nk; ii++) {
+        uArray[ii] = 1.0/uArray[ii];
+    }
+    VecRestoreArray(diag_u_l, &uArray);
+    VecScatterBegin(gtol_k, diag_u_l, diag_u_g, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  gtol_k, diag_u_l, diag_u_g, INSERT_VALUES, SCATTER_REVERSE);
+    MatCreate(MPI_COMM_WORLD, Ainv);
+    MatSetSizes(*Ainv, nkl, nkl, nDofskG, nDofskG);
+    MatSetType(*Ainv, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(*Ainv, 1, PETSC_NULL, 1, PETSC_NULL);
+    MatDiagonalSet(*Ainv, diag_u_g, INSERT_VALUES);
+
+    VecDestroy(&diag_u_l);
+    VecDestroy(&diag_u_g);
 }
 
 void Euler::diagnose_F_x(int level, Vec u1, Vec u2, Vec h1, Vec h2, Vec _F) {
@@ -2146,6 +2165,309 @@ void Euler::assemble_operator(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec 
     MatAssemblyEnd(  *_PC, MAT_FINAL_ASSEMBLY);
 }
 
+/*
+void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
+                                    Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner) {
+    int n2 = topo->elOrd*topo->elOrd;
+    bool build_ksp = (!_PCz) ? true : false;
+    MatReuse reuse = (!_PCz) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+
+    // [u,exner] block
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pc_DTV1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, pc_DTV1, reuse, PETSC_DEFAULT, &pc_V0_invDTV1);
+    vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    MatMatMult(vo->VA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &pc_G);
+    MatScale(pc_G, 0.5*dt);
+
+    // [u,rho] block
+    vo->AssembleLinearWithRT(ex, ey, exner, vo->VA, true);
+    vo->AssembleLinearWithRhoInv(ex, ey, rho, vo->VA_inv);
+    MatMatMult(vo->VA, vo->VA_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(pc_V0_invV0_rt, pc_G, reuse, PETSC_DEFAULT, &pc_A_u);
+    MatScale(pc_A_u, RD/CV);
+
+    // [rho,u] block
+    vo->AssembleLinearWithRT(ex, ey, rho, vo->VA, true);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, reuse, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_D_rho);
+    MatScale(pc_D_rho, 0.5*dt);
+
+    // [rt,u] block
+    vo->AssembleLinearWithRT(ex, ey, rt, vo->VA, true);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_D_rt);
+    MatScale(pc_D_rt, 0.5*dt);
+
+    // [rt,rho] block
+    if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &pc_A_rt);
+    vo->AssembleConstWithTheta(ex, ey, theta, pc_A_rt);
+
+    // [exner,rt] block
+    if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &pc_N_rt_inv);
+    vo->Assemble_EOS_BlockInv(ex, ey, rt, NULL, pc_N_rt_inv);
+    MatScale(pc_N_rt_inv, -1.0*CV/RD);
+
+    // [exner,exner] block
+    vo->AssembleConstWithRhoInv(ex, ey, exner, vo->VB_inv);
+    MatMatMult(vo->VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
+    MatMatMult(vo->VB, pc_VB_rt_invVB_pi, reuse, PETSC_DEFAULT, &pc_N_exner);
+
+    // 1. density corrections
+    vo->AssembleConstInv(ex, ey, vo->VB_inv);
+    MatMatMult(pc_A_u, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_A_u_VB_inv);
+    MatMatMult(pc_A_rt, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_A_rt_VB_inv);
+
+    MatMatMult(pc_A_u_VB_inv, pc_D_rho, reuse, PETSC_DEFAULT, &pc_M_u);
+    MatMatMult(pc_A_rt_VB_inv, pc_D_rho, reuse, PETSC_DEFAULT, &pc_A_rt_VB_inv_D_rho);
+
+    vo->AssembleLinear(ex, ey, vo->VA);
+    MatAYPX(pc_M_u, -1.0, vo->VA, DIFFERENT_NONZERO_PATTERN);
+    MatAXPY(pc_D_rt, -1.0, pc_A_rt_VB_inv_D_rho, DIFFERENT_NONZERO_PATTERN);
+
+    MatMult(pc_A_u_VB_inv, F_rho, _tmpA1);
+    VecAXPY(F_w, -1.0, _tmpA1);
+    
+    MatMult(pc_A_rt_VB_inv, F_rho, _tmpB1);
+    VecAXPY(F_rt, -1.0, _tmpB1);
+
+    // 2. density weighted potential temperature correction
+    MatMatMult(vo->VB, pc_N_rt_inv, reuse, PETSC_DEFAULT, &pc_VB_N_rt_inv);
+    MatMatMult(pc_VB_N_rt_inv, pc_N_exner, reuse, PETSC_DEFAULT, &pc_N_exner_2);
+    MatMult(pc_VB_N_rt_inv, F_exner, _tmpB1);
+    VecAXPY(F_rt, -1.0, _tmpB1);
+
+    // 3. schur complement solve for exner pressure
+    if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk-1)*n2, (geom->nk-1)*n2, 1, NULL, &pc_M_u_inv);
+    MatGetDiagonal(pc_M_u, _tmpA1);
+    VecSet(_tmpA2, 1.0);
+    VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
+    MatZeroEntries(pc_M_u_inv);
+    MatDiagonalSet(pc_M_u_inv, _tmpA2, INSERT_VALUES);
+
+    MatMatMult(pc_D_rt, pc_M_u_inv, reuse, PETSC_DEFAULT, &pc_D_rt_M_u_inv);
+    MatMatMult(pc_D_rt_M_u_inv, pc_G, reuse, PETSC_DEFAULT, &_PCz);
+    MatAXPY(_PCz, 1.0, pc_N_exner_2, DIFFERENT_NONZERO_PATTERN);
+    MatScale(_PCz, -1.0);
+
+    MatMult(pc_D_rt_M_u_inv, F_w, _tmpB1);
+    VecAXPY(F_rt, -1.0, _tmpB1);
+    VecScale(F_rt, -1.0);
+
+    if(build_ksp) {
+        PC pc;
+        KSPCreate(MPI_COMM_SELF, &ksp_exner);
+        KSPSetOperators(ksp_exner, _PCz, _PCz);
+        KSPGetPC(ksp_exner, &pc);
+        PCSetType(pc, PCLU);
+        KSPSetOptionsPrefix(ksp_exner, "ksp_exner_");
+        KSPSetFromOptions(ksp_exner);
+    }
+    KSPSolve(ksp_exner, F_rt, dexner);
+
+    // 4. back substitution
+    // -- velocity
+    MatMult(pc_G, dexner, _tmpA1);
+    VecAXPY(_tmpA1, 1.0, F_w);
+    MatMult(pc_M_u_inv, _tmpA1, dw);
+    VecScale(dw, -1.0);
+
+#ifndef EXPLICIT_THETA_UPDATE
+    // -- density weighted potential temperature
+    MatMult(pc_N_exner, dexner, _tmpB1);
+    VecAXPY(_tmpB1, 1.0, F_exner);
+    MatMult(pc_N_rt_inv, _tmpB1, drt);
+    VecScale(drt, -1.0);
+#endif
+
+#ifndef EXPLICIT_RHO_UPDATE
+    // -- density
+    MatMult(pc_D_rho, dw, _tmpB1);
+    VecAXPY(_tmpB1, 1.0, F_rho);
+    MatMult(vo->VB_inv, _tmpB1, drho);
+    VecScale(drho, -1.0);
+#endif
+}
+*/
+
+//#define NEW_SCHUR
+/*
+void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
+                                    Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner) {
+    int n2 = topo->elOrd*topo->elOrd;
+    bool build_ksp = (!_PCz) ? true : false;
+    MatReuse reuse = (!_PCz) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+
+    // [u,exner] block
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pc_DTV1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, pc_DTV1, reuse, PETSC_DEFAULT, &pc_V0_invDTV1);
+    vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    MatMatMult(vo->VA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &pc_G);
+    MatScale(pc_G, 0.5*dt);
+
+    // [u,rho] block
+#ifdef NEW_SCHUR
+    MatMatMult(vo->VA, vo->VA_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(pc_V0_invV0_rt, vo->V01, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT);
+    vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
+    //vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(pc_V0_invV0_rt_DT, vo->VB, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT_VB_pi);
+    vo->AssembleConstWithRhoInv(ex, ey, rho, vo->VB_inv);
+    MatMatMult(pc_V0_invV0_rt_DT_VB_pi, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt_DT_VB_pi_VB_inv);
+    vo->AssembleConst(ex, ey, vo->VB);
+    //vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
+    MatMatMult(pc_V0_invV0_rt_DT_VB_pi_VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_A_u);
+#else
+    vo->AssembleLinearWithRT(ex, ey, exner, vo->VA, true);
+    vo->AssembleLinearWithRhoInv(ex, ey, rho, vo->VA_inv);
+    MatMatMult(vo->VA, vo->VA_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(pc_V0_invV0_rt, pc_G, reuse, PETSC_DEFAULT, &pc_A_u);
+#endif
+    MatScale(pc_A_u, RD/CV);
+
+    // [rho,u] block
+    vo->AssembleLinearWithRT(ex, ey, rho, vo->VA, true);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, reuse, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_D_rho);
+    MatScale(pc_D_rho, 0.5*dt);
+
+    // [rt,u] block
+#ifdef NEW_SCHUR
+    vo->AssembleConstWithRho(ex, ey, rt, vo->VB);
+    MatMatMult(vo->VB, vo->V10, reuse, PETSC_DEFAULT, &pc_D_rt);
+#else
+    vo->AssembleLinearWithRT(ex, ey, rt, vo->VA, true);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_D_rt);
+#endif
+    MatScale(pc_D_rt, 0.5*dt);
+
+    // [rt,rt] block
+    vo->AssembleConLinWithW(ex, ey, velz, vo->VBA);
+    MatMatMult(vo->VBA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &pc_M_rt);
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatAYPX(pc_M_rt, 0.5*dt, vo->VB, DIFFERENT_NONZERO_PATTERN);
+#ifndef NEW_SCHUR
+    MatAYPX(pc_M_rt, 0.0, vo->VB, DIFFERENT_NONZERO_PATTERN);
+#endif
+
+    // [rt,rho] block
+    vo->AssembleConstWithRhoInv(ex, ey, rho, vo->VB_inv);
+    MatMatMult(pc_M_rt, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_M_rt_VB_inv);
+    vo->AssembleConstWithRho(ex, ey, exner, vo->VB);
+    MatMatMult(pc_M_rt_VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_A_rt);
+
+#ifdef NEW_SCHUR
+    if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, 1, NULL, &pc_M_rt_inv);
+    MatGetDiagonal(pc_M_rt, _tmpB1);
+    VecSet(_tmpB2, 1.0);
+    VecPointwiseDivide(_tmpB2, _tmpB2, _tmpB1);
+    MatZeroEntries(pc_M_rt_inv);
+    MatDiagonalSet(pc_M_rt_inv, _tmpB2, INSERT_VALUES);
+#else
+    if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &pc_M_rt_inv);
+    vo->AssembleConstInv(ex, ey, pc_M_rt_inv);
+#endif
+
+    // [exner,rt] block
+    if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &pc_N_rt_inv);
+    vo->Assemble_EOS_BlockInv(ex, ey, rt, NULL, pc_N_rt_inv);
+    MatScale(pc_N_rt_inv, -1.0*CV/RD);
+
+    // [exner,exner] block
+    vo->AssembleConstWithRhoInv(ex, ey, exner, vo->VB_inv);
+    MatMatMult(vo->VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
+    MatMatMult(vo->VB, pc_VB_rt_invVB_pi, reuse, PETSC_DEFAULT, &pc_N_exner);
+
+    // 1. density corrections
+    vo->AssembleConstInv(ex, ey, vo->VB_inv);
+    MatMatMult(pc_A_u, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_A_u_VB_inv);
+    MatMatMult(pc_A_rt, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_A_rt_VB_inv);
+
+    MatMatMult(pc_A_u_VB_inv, pc_D_rho, reuse, PETSC_DEFAULT, &pc_M_u);
+    MatMatMult(pc_A_rt_VB_inv, pc_D_rho, reuse, PETSC_DEFAULT, &pc_A_rt_VB_inv_D_rho);
+
+    vo->AssembleLinear(ex, ey, vo->VA);
+    MatAYPX(pc_M_u, -1.0, vo->VA, DIFFERENT_NONZERO_PATTERN);
+    MatAXPY(pc_D_rt, -1.0, pc_A_rt_VB_inv_D_rho, DIFFERENT_NONZERO_PATTERN);
+
+    MatMult(pc_A_u_VB_inv, F_rho, _tmpA1);
+    VecAXPY(F_w, -1.0, _tmpA1);
+    
+    MatMult(pc_A_rt_VB_inv, F_rho, _tmpB1);
+    VecAXPY(F_rt, -1.0, _tmpB1);
+
+    // 2. density weighted potential temperature correction
+    MatMatMult(pc_M_rt, pc_N_rt_inv, reuse, PETSC_DEFAULT, &pc_VB_N_rt_inv);
+    MatMatMult(pc_VB_N_rt_inv, pc_N_exner, reuse, PETSC_DEFAULT, &pc_N_exner_2);
+    MatMult(pc_VB_N_rt_inv, F_exner, _tmpB1);
+    VecAXPY(F_rt, -1.0, _tmpB1);
+
+    // 3. schur complement solve for exner pressure
+    if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk-1)*n2, (geom->nk-1)*n2, 1, NULL, &pc_M_u_inv);
+    MatGetDiagonal(pc_M_u, _tmpA1);
+    VecSet(_tmpA2, 1.0);
+    VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
+    MatZeroEntries(pc_M_u_inv);
+    MatDiagonalSet(pc_M_u_inv, _tmpA2, INSERT_VALUES);
+
+    MatMatMult(pc_D_rt, pc_M_u_inv, reuse, PETSC_DEFAULT, &pc_D_rt_M_u_inv);
+    MatMatMult(pc_D_rt_M_u_inv, pc_G, reuse, PETSC_DEFAULT, &_PCz);
+    MatAXPY(_PCz, 1.0, pc_N_exner_2, DIFFERENT_NONZERO_PATTERN);
+    MatScale(_PCz, -1.0);
+
+    MatMult(pc_D_rt_M_u_inv, F_w, _tmpB1);
+    VecAXPY(F_rt, -1.0, _tmpB1);
+    VecScale(F_rt, -1.0);
+
+    if(build_ksp) {
+        PC pc;
+        KSPCreate(MPI_COMM_SELF, &ksp_exner);
+        KSPSetOperators(ksp_exner, _PCz, _PCz);
+        KSPGetPC(ksp_exner, &pc);
+        PCSetType(pc, PCLU);
+        KSPSetOptionsPrefix(ksp_exner, "ksp_exner_");
+        KSPSetFromOptions(ksp_exner);
+    }
+    KSPSolve(ksp_exner, F_rt, dexner);
+
+    // 4. back substitution
+    // -- velocity
+    MatMult(pc_G, dexner, _tmpA1);
+    VecAXPY(_tmpA1, 1.0, F_w);
+    MatMult(pc_M_u_inv, _tmpA1, dw);
+    VecScale(dw, -1.0);
+
+#ifndef EXPLICIT_THETA_UPDATE
+    // -- density weighted potential temperature
+    MatMult(pc_N_exner, dexner, _tmpB1);
+    VecAXPY(_tmpB1, 1.0, F_exner);
+    MatMult(pc_N_rt_inv, _tmpB1, drt);
+    VecScale(drt, -1.0);
+#endif
+
+#ifndef EXPLICIT_RHO_UPDATE
+    // -- density
+    MatMult(pc_D_rho, dw, _tmpB1);
+    VecAXPY(_tmpB1, 1.0, F_rho);
+    MatMult(vo->VB_inv, _tmpB1, drho);
+    VecScale(drho, -1.0);
+#endif
+}
+*/
+
 void Euler::assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
                                     Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner) {
     int n2 = topo->elOrd*topo->elOrd;
@@ -2527,787 +2849,4 @@ void Euler::assemble_schur_horiz(int lev, Vec* theta, Vec velx, Vec rho, Vec rt,
     delete M2_pi_inv;
     delete M2_rt_inv;
     delete M2_rho_inv;
-}
-
-/*
-perform the (horiztonal) updates:
-  N_{\Pi}'     = -M_{\Theta}(N_{\Theta})^{-1}N_{\Pi}
-  F_{\Theta}'' = F_{\Theta}' - M_{\Theta}(N_{\Theta})^{-1}F_{\Pi}
-
-where M_{\Theta} includes the biharmonic viscosity for the density weighted potential temperature
-*/
-void Euler::horizontal_corrections(int lev, Vec rho, Vec rt, Vec exner, Vec F_rt, Vec F_exner, Mat* N_pi_prime) {
-    MatReuse reuse = (!N_pi_prime) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
-    WhmatInv* M2_rho_inv = new WhmatInv(topo, geom, edge);
-    N_rt_Inv* M2_pi_inv  = new N_rt_Inv(topo, geom, edge);
-    Vec ones_g, diag_g, F_tmp;
-    Mat M1_inv;
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &diag_g);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ones_g);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &F_tmp);
-
-    MatCreate(MPI_COMM_WORLD, &M1_inv);
-    MatSetSizes(M1_inv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
-    MatSetType(M1_inv, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M1_inv, 1, PETSC_NULL, 1, PETSC_NULL);
-    MatZeroEntries(M1_inv);
-
-    M2_pi_inv->assemble(rt, lev, SCALE, true);
-    MatScale(M2_pi_inv->M, -1.0*CV/RD);
-
-    // viscosity operator
-    M2->assemble(lev, SCALE, true);
-    M1->assemble(lev, SCALE, true);
-    MatGetDiagonal(M1->M, diag_g);
-    VecSet(ones_g, 1.0);
-    VecPointwiseDivide(diag_g, ones_g, diag_g);
-    MatDiagonalSet(M1_inv, diag_g, INSERT_VALUES);
-
-    M2_rho_inv->assemble(rho, lev, SCALE);
-    MatMatMult(M2_rho_inv->M, M2->M, reuse, PETSC_DEFAULT, &pcx_M2_invM2);
-    MatMatMult(M2->M, pcx_M2_invM2, reuse, PETSC_DEFAULT, &pcx_M2M2_invM2);
-    MatMatMult(EtoF->E12, pcx_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_DT_M2M2_invM2);
-    MatMatMult(M1_inv, pcx_DT_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_M1_invDT_M2M2_invM2);
-    MatMatMult(EtoF->E21, pcx_M1_invDT_M2M2_invM2, reuse, PETSC_DEFAULT, &pcx_LAP_Theta);
-
-    MatMatMult(M2->M, pcx_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_M2_LAP_Theta);
-    MatMatMult(EtoF->E12, pcx_M2_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_DT_LAP_Theta);
-    MatMatMult(M1_inv, pcx_DT_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_M1_invDT_LAP_Theta);
-    MatMatMult(EtoF->E21, pcx_M1_invDT_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_D_M1_invDT_LAP_Theta);
-    MatMatMult(M2->M, pcx_D_M1_invDT_LAP_Theta, reuse, PETSC_DEFAULT, &pcx_LAP2_Theta);
-
-    MatAYPX(pcx_LAP2_Theta, 0.5*dt*del2*del2, M2->M, DIFFERENT_NONZERO_PATTERN);
-    MatMatMult(pcx_LAP2_Theta, M2_pi_inv->M, reuse, PETSC_DEFAULT, &pcx_M2_Theta_N_Theta_inv);
-
-    M2_pi_inv->assemble(exner, lev, SCALE, false);
-    MatMatMult(pcx_M2_Theta_N_Theta_inv, M2_pi_inv->M, reuse, PETSC_DEFAULT, N_pi_prime);
-    MatScale(*N_pi_prime, -1.0);
-
-    MatMult(pcx_M2_Theta_N_Theta_inv, F_exner, F_tmp);
-    VecAXPY(F_rt, -1.0, F_tmp);
-
-    delete M2_rho_inv;
-    delete M2_pi_inv;
-    VecDestroy(&ones_g);
-    VecDestroy(&diag_g);
-    VecDestroy(&F_tmp);
-    MatDestroy(&M1_inv);
-}
-
-#define DO_VERT
-#define DO_HORIZ
-
-void Euler::assemble_schur_3d(L2Vecs* theta, Vec* velx, Vec* velz, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, 
-                              Vec* F_u, Vec* F_w, L2Vecs* F_rho, L2Vecs* F_rt, L2Vecs* F_exner,
-                              Vec* du, Vec* dw, L2Vecs* drho, L2Vecs* drt, L2Vecs* dexner) {
-    int n2 = topo->elOrd*topo->elOrd, ex, ey;
-    bool build_ksp;
-    MatReuse reuse;
-    Vec wl, wg, theta_k, h_tmp, diag_g, ones_g, m0_inv, ones_0;
-    Mat M2D, DTM2D, LAP_1, CTM1, M0_invCTM1, M0_inv, M1_inv, VISC, VISC2, M1_OP, Mu_prime, Mu_inv;
-    PC pc;
-    KSP ksp_u;
-    WmatInv* M2inv = new WmatInv(topo, geom, edge);
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &diag_g);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ones_g);
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &m0_inv);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &ones_0);
-
-    MatCreate(MPI_COMM_WORLD, &M0_inv);
-    MatSetSizes(M0_inv, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
-    MatSetType(M0_inv, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M0_inv, 1, PETSC_NULL, 1, PETSC_NULL);
-
-    MatCreate(MPI_COMM_WORLD, &M1_inv);
-    MatSetSizes(M1_inv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
-    MatSetType(M1_inv, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M1_inv, 1, PETSC_NULL, 1, PETSC_NULL);
-
-    VecZeroEntries(schur->b);
-    MatZeroEntries(schur->M);
-
-    // assemble in the vertical terms
-    for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-        build_ksp = (!_PCz) ? true : false;
-        reuse = (!_PCz) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
-
-        ex = ei%topo->nElsX;
-        ey = ei/topo->nElsX;
-
-        // [u,exner] block
-        vo->AssembleConst(ex, ey, vo->VB);
-        MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pc_DTV1);
-        vo->AssembleLinearInv(ex, ey, vo->VA_inv);
-        MatMatMult(vo->VA_inv, pc_DTV1, reuse, PETSC_DEFAULT, &pc_V0_invDTV1);
-        vo->AssembleLinearWithTheta(ex, ey, theta->vz[ei], vo->VA);
-        MatMatMult(vo->VA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &pc_G);
-        MatScale(pc_G, 0.5*dt);
-
-        // [u,rho] block
-        vo->AssembleLinearWithRT(ex, ey, exner->vz[ei], vo->VA, true);
-        vo->AssembleLinearWithRhoInv(ex, ey, rho->vz[ei], vo->VA_inv);
-        MatMatMult(vo->VA, vo->VA_inv, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
-        MatMatMult(pc_V0_invV0_rt, pc_G, reuse, PETSC_DEFAULT, &pc_A_u);
-        MatScale(pc_A_u, RD/CV);
-
-        // [rho,u] block
-        vo->AssembleLinearWithRT(ex, ey, rho->vz[ei], vo->VA, true);
-        vo->AssembleLinearInv(ex, ey, vo->VA_inv);
-        MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
-        MatMatMult(vo->V10, pc_V0_invV0_rt, reuse, PETSC_DEFAULT, &pc_DV0_invV0_rt);
-        vo->AssembleConst(ex, ey, vo->VB);
-        MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_D_rho);
-        MatScale(pc_D_rho, 0.5*dt);
-
-        // [rt,u] block
-        vo->AssembleLinearWithRT(ex, ey, rt->vz[ei], vo->VA, true);
-        vo->AssembleLinearInv(ex, ey, vo->VA_inv);
-        MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
-        MatMatMult(vo->V10, pc_V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DV0_invV0_rt);
-        MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &pc_D_rt);
-        MatScale(pc_D_rt, 0.5*dt);
-
-        // [rt,rt] block
-        vo->AssembleConLinWithW(ex, ey, velz[ei], vo->VBA);
-        MatMatMult(vo->VBA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &pc_M_rt);
-        vo->AssembleConst(ex, ey, vo->VB);
-        MatAYPX(pc_M_rt, 0.5*dt, vo->VB, DIFFERENT_NONZERO_PATTERN);
-
-        // [rt,rho] block
-        if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &pc_A_rt);
-        vo->AssembleConstWithTheta(ex, ey, theta->vz[ei], pc_A_rt);
-
-        // [exner,rt] block
-        if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &pc_N_rt_inv);
-        vo->Assemble_EOS_BlockInv(ex, ey, rt->vz[ei], NULL, pc_N_rt_inv);
-        MatScale(pc_N_rt_inv, -1.0*CV/RD);
-
-        // [exner,exner] block
-        vo->AssembleConstWithRhoInv(ex, ey, exner->vz[ei], vo->VB_inv);
-        MatMatMult(vo->VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
-        MatMatMult(vo->VB, pc_VB_rt_invVB_pi, reuse, PETSC_DEFAULT, &pc_N_exner);
-
-        // 1. density corrections
-        vo->AssembleConstInv(ex, ey, vo->VB_inv);
-        MatMatMult(pc_A_u, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_A_u_VB_inv);
-        MatMatMult(pc_A_rt, vo->VB_inv, reuse, PETSC_DEFAULT, &pc_A_rt_VB_inv);
-
-        MatMatMult(pc_A_u_VB_inv, pc_D_rho, reuse, PETSC_DEFAULT, &pc_M_u);
-        MatMatMult(pc_A_rt_VB_inv, pc_D_rho, reuse, PETSC_DEFAULT, &pc_A_rt_VB_inv_D_rho);
-
-        vo->AssembleLinear(ex, ey, vo->VA);
-        MatAYPX(pc_M_u, -1.0, vo->VA, DIFFERENT_NONZERO_PATTERN);
-        MatAXPY(pc_D_rt, -1.0, pc_A_rt_VB_inv_D_rho, DIFFERENT_NONZERO_PATTERN);
-
-        MatMult(pc_A_u_VB_inv, F_rho->vz[ei], _tmpA1);
-        VecAXPY(F_w[ei], -1.0, _tmpA1);
-
-        MatMult(pc_A_rt_VB_inv, F_rho->vz[ei], _tmpB1);
-        VecAXPY(F_rt->vz[ei], -1.0, _tmpB1);
-
-        // 2. density weighted potential temperature correction
-        // TODO: add temperature equation biharmonic viscosity to the mass matrix VB here
-        MatMatMult(vo->VB, pc_N_rt_inv, reuse, PETSC_DEFAULT, &pc_VB_N_rt_inv);
-        MatMatMult(pc_VB_N_rt_inv, pc_N_exner, reuse, PETSC_DEFAULT, &pc_N_exner_2);
-        MatMult(pc_VB_N_rt_inv, F_exner->vz[ei], _tmpB1);
-        VecAXPY(F_rt->vz[ei], -1.0, _tmpB1);
-
-        // 3. schur complement solve for exner pressure
-        if(build_ksp) MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk-1)*n2, (geom->nk-1)*n2, 1, NULL, &pc_M_u_inv);
-        MatGetDiagonal(pc_M_u, _tmpA1);
-        VecSet(_tmpA2, 1.0);
-        VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
-        MatZeroEntries(pc_M_u_inv);
-        MatDiagonalSet(pc_M_u_inv, _tmpA2, INSERT_VALUES);
-
-        MatMatMult(pc_D_rt, pc_M_u_inv, reuse, PETSC_DEFAULT, &pc_D_rt_M_u_inv);
-        MatMatMult(pc_D_rt_M_u_inv, pc_G, reuse, PETSC_DEFAULT, &_PCz);
-#ifndef DO_VERT
-        MatZeroEntries(_PCz);
-#endif
-        MatAXPY(_PCz, 1.0, pc_N_exner_2, DIFFERENT_NONZERO_PATTERN);
-        MatScale(_PCz, -1.0);
-#ifdef DO_VERT
-        MatMult(pc_D_rt_M_u_inv, F_w[ei], _tmpB1);
-        VecAXPY(F_rt->vz[ei], -1.0, _tmpB1);
-#endif
-        // add to the global system
-        schur->AddFromVertMat(ei, _PCz);
-    }
-    F_rt->VertToHoriz();
-    F_rt->UpdateGlobal();
-
-    // assemble in the horizontal terms
-    for(int kk = 0; kk < geom->nk; kk++) {
-        reuse = (!_PCx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
-
-        M1->assemble(kk, SCALE, true);
-        M2->assemble(kk, SCALE, true);
-        M2inv->assemble(kk, SCALE);
-
-        MatGetDiagonal(M1->M, diag_g);
-        VecSet(ones_g, 1.0);
-        VecPointwiseDivide(diag_g, ones_g, diag_g);
-        MatZeroEntries(M1_inv);
-        MatDiagonalSet(M1_inv, diag_g, INSERT_VALUES);
-
-        // [u,u] block
-        curl(false, velx[kk], &wg, kk, true);
-        VecScatterBegin(topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
-        R->assemble(wl, kk, SCALE);
-        MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
-        VecDestroy(&wg);
-
-        // [u,exner] block
-        VecZeroEntries(theta_k);
-        VecAXPY(theta_k, 0.5, theta->vl[kk+0]);
-        VecAXPY(theta_k, 0.5, theta->vl[kk+1]);
-        F->assemble(theta_k, kk, false, SCALE);
-        MatMatMult(M1_inv, EtoF->E12, reuse, PETSC_DEFAULT, &pcx_M1invD12);
-        MatMatMult(pcx_M1invD12, M2->M, reuse, PETSC_DEFAULT, &pcx_M1invD12M2);
-        MatMatMult(F->M, pcx_M1invD12M2, reuse, PETSC_DEFAULT, &pcx_G);
-        MatScale(pcx_G, 0.5*dt);
-
-        // [rt,u] block
-        F->assemble(rt->vl[kk], kk, true, SCALE);
-        MatMatMult(M1_inv, F->M, reuse, PETSC_DEFAULT, &pcx_M1invF_rt);
-        MatMatMult(EtoF->E21, pcx_M1invF_rt, reuse, PETSC_DEFAULT, &pcx_D21M1invF_rt);
-        MatMatMult(M2->M, pcx_D21M1invF_rt, reuse, PETSC_DEFAULT, &pcx_D);
-        MatScale(pcx_D, 0.5*dt);
-
-        // [rho,u] block
-        F->assemble(rho->vl[kk], kk, true, SCALE);
-        MatMatMult(M1_inv, F->M, reuse, PETSC_DEFAULT, &pcx_M1invF_rho);
-        MatMatMult(EtoF->E21, pcx_M1invF_rho, reuse, PETSC_DEFAULT, &pcx_D21M1invF_rho);
-        MatMatMult(M2->M, pcx_D21M1invF_rho, reuse, PETSC_DEFAULT, &pcx_D_rho);
-        MatScale(pcx_D_rho, 0.5*dt);
-
-        // density corrections
-        T->assemble(theta_k, kk, SCALE, false);
-        MatMatMult(T->M, M2inv->M, reuse, PETSC_DEFAULT, &pcx_A_rtM2_inv);
-        MatMatMult(pcx_A_rtM2_inv, pcx_D_rho, reuse, PETSC_DEFAULT, &pcx_D_prime);
-        MatAXPY(pcx_D, -1.0, pcx_D_prime, SAME_NONZERO_PATTERN);
-
-        MatGetDiagonal(F->M, diag_g);
-        VecPointwiseDivide(diag_g, ones_g, diag_g);
-        MatZeroEntries(M1_inv);
-        MatDiagonalSet(M1_inv, diag_g, INSERT_VALUES);
-
-        F->assemble(exner->vl[kk], kk, true, SCALE);
-        MatMatMult(F->M, M1_inv, reuse, PETSC_DEFAULT, &pcx_M1_exner_M1_inv);
-        MatMatMult(pcx_M1_exner_M1_inv, pcx_G, reuse, PETSC_DEFAULT, &pcx_Au);
-        MatScale(pcx_Au, RD/CV);
-        MatMatMult(pcx_Au, M2inv->M, reuse, PETSC_DEFAULT, &pcx_Au_M2_inv);
-        MatMatMult(pcx_Au_M2_inv, pcx_D_rho, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mu_prime);
-        MatAYPX(Mu_prime, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
-        coriolisMatInv(Mu_prime, &Mu_inv);
-
-        MatMult(pcx_Au_M2_inv, F_rho->vh[kk], diag_g);
-        VecAXPY(F_u[kk], -1.0, diag_g);
-
-        // build the preconditioner
-        MatMatMult(pcx_D, Mu_inv, reuse, PETSC_DEFAULT, &pcx_D_Mu_inv);
-        MatMatMult(pcx_D_Mu_inv, pcx_G, reuse, PETSC_DEFAULT, &_PCx);
-        MatScale(_PCx, -1.0);
-#ifdef DO_HORIZ
-        // update the rhs
-        MatMult(pcx_D_Mu_inv, F_u[kk], h_tmp);
-        VecAXPY(F_rt->vh[kk], -1.0, h_tmp);
-        // add to the global system
-        schur->AddFromHorizMat(kk, _PCx);
-#endif
-        MatDestroy(&Mu_prime);
-        MatDestroy(&Mu_inv);
-    }
-    MatAssemblyBegin(schur->M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  schur->M, MAT_FINAL_ASSEMBLY);
-
-    for(int kk = 0; kk < geom->nk; kk++) {
-        VecScale(F_rt->vh[kk], -1.0);
-    }
-    F_rt->UpdateLocal();
-    schur->RepackFromHoriz(F_rt->vl, schur->b);
-
-    // update the exner pressure
-    KSPSolve(schur->ksp, schur->b, schur->x);
-    schur->UnpackToHoriz(schur->x, dexner->vl);
-    dexner->HorizToVert();
-    dexner->UpdateGlobal();
-
-    // update the horizontal velocity
-#ifdef DO_HORIZ
-    for(int kk = 0; kk < geom->nk; kk++) {
-        m0->assemble(kk, SCALE);
-        M1->assemble(kk, SCALE, true);
-        M2->assemble(kk, SCALE, true);
-        M2inv->assemble(kk, SCALE);
-
-        MatGetDiagonal(M1->M, diag_g);
-        VecSet(ones_g, 1.0);
-        VecPointwiseDivide(diag_g, ones_g, diag_g);
-        MatZeroEntries(M1_inv);
-        MatDiagonalSet(M1_inv, diag_g, INSERT_VALUES);
-
-        // [u,u] block
-        curl(false, velx[kk], &wg, kk, true);
-        VecScatterBegin(topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  topo->gtol_0, wg, wl, INSERT_VALUES, SCATTER_FORWARD);
-        R->assemble(wl, kk, SCALE);
-        MatAYPX(R->M, 0.5*dt, M1->M, DIFFERENT_NONZERO_PATTERN);
-        VecDestroy(&wg);
-
-        // [u,exner] block
-        VecZeroEntries(theta_k);
-        VecAXPY(theta_k, 0.5, theta->vl[kk+0]);
-        VecAXPY(theta_k, 0.5, theta->vl[kk+1]);
-        F->assemble(theta_k, kk, false, SCALE);
-        MatMatMult(M1_inv, EtoF->E12, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M1invD12);
-        MatMatMult(pcx_M1invD12, M2->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M1invD12M2);
-        MatMatMult(F->M, pcx_M1invD12M2, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_G);
-        MatScale(pcx_G, 0.5*dt);
-
-        // [rho,u] block
-        F->assemble(rho->vl[kk], kk, true, SCALE);
-        MatMatMult(M1_inv, F->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M1invF_rho);
-        MatMatMult(EtoF->E21, pcx_M1invF_rho, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_D21M1invF_rho);
-        MatMatMult(M2->M, pcx_D21M1invF_rho, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_D_rho);
-        MatScale(pcx_D_rho, 0.5*dt);
-
-        // density corrections
-        MatGetDiagonal(F->M, diag_g);
-        VecPointwiseDivide(diag_g, ones_g, diag_g);
-        MatZeroEntries(M1_inv);
-        MatDiagonalSet(M1_inv, diag_g, INSERT_VALUES);
-
-        F->assemble(exner->vl[kk], kk, true, SCALE);
-        MatMatMult(F->M, M1_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_M1_exner_M1_inv);
-        MatMatMult(pcx_M1_exner_M1_inv, pcx_G, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_Au);
-        MatScale(pcx_Au, RD/CV);
-        MatMatMult(pcx_Au, M2inv->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pcx_Au_M2_inv);
-        MatMatMult(pcx_Au_M2_inv, pcx_D_rho, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mu_prime);
-        MatAYPX(Mu_prime, 1.0, R->M, DIFFERENT_NONZERO_PATTERN);
-
-        // viscosity correction
-        VecSet(ones_0, 1.0);
-        VecPointwiseDivide(m0_inv, ones_0, m0->vg);
-        MatDiagonalSet(M0_inv, m0_inv, INSERT_VALUES);
-
-        MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
-        MatMatMult(EtoF->E12, M2D, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DTM2D);
-        MatMatMult(M1_inv, DTM2D, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &LAP_1);
-
-        MatMatMult(NtoE->E01, M1->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &CTM1);
-        MatMatMult(M0_inv, CTM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0_invCTM1);
-        MatMatMult(NtoE->E10, M0_invCTM1, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VISC);
-
-        MatAssemblyBegin(LAP_1, MAT_FINAL_ASSEMBLY);
-        MatAssemblyEnd(  LAP_1, MAT_FINAL_ASSEMBLY);
-        MatAXPY(VISC, 1.0, LAP_1, DIFFERENT_NONZERO_PATTERN);
-        MatScale(VISC, del2);
-        MatMatMult(VISC, VISC, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VISC2);
-        MatMatMult(M1->M, VISC2, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M1_OP);  
-        MatAYPX(M1_OP, 0.5*dt, Mu_prime, DIFFERENT_NONZERO_PATTERN);
-
-        MatMult(pcx_G, dexner->vh[kk], ones_g);
-        VecAXPY(F_u[kk], 1.0, ones_g);
-        VecScale(F_u[kk], -1.0);
-
-        KSPCreate(MPI_COMM_WORLD, &ksp_u);
-        KSPSetOperators(ksp_u, M1_OP, M1_OP);
-        KSPSetTolerances(ksp_u, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-        KSPSetType(ksp_u, KSPGMRES);
-        KSPGetPC(ksp_u, &pc);
-        PCSetType(pc, PCBJACOBI);
-        PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
-        KSPSetOptionsPrefix(ksp_u, "ksp1_");
-        KSPSetFromOptions(ksp_u);
-        KSPSolve(ksp_u, F_u[kk], du[kk]);
-        KSPDestroy(&ksp_u);
-
-        MatDestroy(&M2D);
-        MatDestroy(&DTM2D);
-        MatDestroy(&LAP_1);
-        MatDestroy(&CTM1);
-        MatDestroy(&M0_invCTM1);
-        MatDestroy(&VISC);
-        MatDestroy(&VISC2);
-        MatDestroy(&M1_OP);
-        MatDestroy(&Mu_prime);
-    }
-#endif
-
-    for(int ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-        ex = ei%topo->nElsX;
-        ey = ei/topo->nElsX;
-
-        // [u,exner] block
-        vo->AssembleConst(ex, ey, vo->VB);
-        MatMatMult(vo->V01, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DTV1);
-        vo->AssembleLinearInv(ex, ey, vo->VA_inv);
-        MatMatMult(vo->VA_inv, pc_DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invDTV1);
-        vo->AssembleLinearWithTheta(ex, ey, theta->vz[ei], vo->VA);
-        MatMatMult(vo->VA, pc_V0_invDTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_G);
-        MatScale(pc_G, 0.5*dt);
-
-        // [u,rho] block
-        vo->AssembleLinearWithRT(ex, ey, exner->vz[ei], vo->VA, true);
-        vo->AssembleLinearWithRhoInv(ex, ey, rho->vz[ei], vo->VA_inv);
-        MatMatMult(vo->VA, vo->VA_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
-        MatMatMult(pc_V0_invV0_rt, pc_G, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_A_u);
-        MatScale(pc_A_u, RD/CV);
-
-        // [rho,u] block
-        vo->AssembleLinearWithRT(ex, ey, rho->vz[ei], vo->VA, true);
-        vo->AssembleLinearInv(ex, ey, vo->VA_inv);
-        MatMatMult(vo->VA_inv, vo->VA, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invV0_rt);
-        MatMatMult(vo->V10, pc_V0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_DV0_invV0_rt);
-        vo->AssembleConst(ex, ey, vo->VB);
-        MatMatMult(vo->VB, pc_DV0_invV0_rt, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_D_rho);
-        MatScale(pc_D_rho, 0.5*dt);
-
-        // [exner,rt] block
-        vo->Assemble_EOS_BlockInv(ex, ey, rt->vz[ei], NULL, pc_N_rt_inv);
-        MatScale(pc_N_rt_inv, -1.0*CV/RD);
-
-        // [exner,exner] block
-        vo->AssembleConstWithRhoInv(ex, ey, exner->vz[ei], vo->VB_inv);
-        MatMatMult(vo->VB_inv, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
-        MatMatMult(vo->VB, pc_VB_rt_invVB_pi, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_N_exner);
-
-        vo->AssembleConstInv(ex, ey, vo->VB_inv);
-        MatMatMult(pc_A_u, vo->VB_inv, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_A_u_VB_inv);
-        MatMatMult(pc_A_u_VB_inv, pc_D_rho, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_M_u);
-
-        vo->AssembleLinear(ex, ey, vo->VA);
-        MatAYPX(pc_M_u, -1.0, vo->VA, DIFFERENT_NONZERO_PATTERN);
-
-        MatGetDiagonal(pc_M_u, _tmpA1);
-        VecSet(_tmpA2, 1.0);
-        VecPointwiseDivide(_tmpA2, _tmpA2, _tmpA1);
-        MatZeroEntries(pc_M_u_inv);
-        MatDiagonalSet(pc_M_u_inv, _tmpA2, INSERT_VALUES);
-#ifdef DO_VERT
-        // update the vertical velocity
-        MatMult(pc_G, dexner->vz[ei], _tmpA1);
-        VecAXPY(_tmpA1, 1.0, F_w[ei]);
-        MatMult(pc_M_u_inv, _tmpA1, dw[ei]);
-        VecScale(dw[ei], -1.0);
-#endif
-        // update the density
-/*
-        MatMult(pc_D_rho, dw[ei], _tmpB1);
-        VecAXPY(_tmpB1, 1.0, F_rho->vz[ei]);
-        MatMult(vo->VB_inv, _tmpB1, drho->vz[ei]);
-        VecScale(drho->vz[ei], -1.0); // TODO: horiztonal flux update
-*/
-        // update the density weighted potential temperature
-        MatMult(pc_N_exner, dexner->vz[ei], _tmpB1);
-        VecAXPY(_tmpB1, 1.0, F_exner->vz[ei]);
-        MatMult(pc_N_rt_inv, _tmpB1, drt->vz[ei]);
-        VecScale(drt->vz[ei], -1.0);
-    }
-    drt->VertToHoriz();
-    drt->UpdateGlobal();
-
-    VecDestroy(&wl);
-    VecDestroy(&theta_k);
-    VecDestroy(&h_tmp);
-    VecDestroy(&diag_g);
-    VecDestroy(&ones_g);
-    VecDestroy(&m0_inv);
-    VecDestroy(&ones_0);
-    MatDestroy(&M0_inv);
-    MatDestroy(&M1_inv);
-    delete M2inv;
-}
-
-void Euler::solve_schur_3d(Vec* velx_i, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, bool save) {
-    bool done = false;
-    int itt = 0, elOrd2 = topo->elOrd*topo->elOrd, ex, ey;
-    double max_norm_u, max_norm_w, max_norm_rt, max_norm_exner, norm_x;
-    L2Vecs* velz_j = new L2Vecs(geom->nk-1, topo, geom);
-    L2Vecs* rho_j = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_j = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
-    L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
-    L2Vecs* F_w     = new L2Vecs(geom->nk-1, topo, geom);
-    L2Vecs* F_rho   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* F_rt    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* F_exner = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* d_w     = new L2Vecs(geom->nk-1, topo, geom);
-    L2Vecs* d_rho   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* d_rt    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* d_exner = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* l2_tmp  = new L2Vecs(geom->nk, topo, geom);
-    Vec* velx_j = new Vec[geom->nk];
-    Vec* dudz_i = new Vec[geom->nk];
-    Vec* dudz_j = new Vec[geom->nk];
-    Vec* F_u    = new Vec[geom->nk];
-    Vec* d_u    = new Vec[geom->nk];
-    Vec _F, _G, dF, dG, F_z, G_z, dF_z, dG_z, h_tmp, dtheta;
-
-    for(int lev = 0; lev < geom->nk; lev++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &velx_j[lev]);
-        VecCopy(velx_i[lev], velx_j[lev]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_i[lev]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dudz_j[lev]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &F_u[lev]);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &d_u[lev]);
-    }
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_G);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dF);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dG);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
-
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_z);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
-
-    velz_i->UpdateLocal();  velz_i->HorizToVert();
-    rho_i->UpdateLocal();   rho_i->HorizToVert();
-    rt_i->UpdateLocal();    rt_i->HorizToVert();
-    exner_i->UpdateLocal(); exner_i->HorizToVert();
-    velz_j->CopyFromVert(velz_i->vz);   velz_j->VertToHoriz();  velz_j->UpdateGlobal();
-    rho_j->CopyFromVert(rho_i->vz);     rho_j->VertToHoriz();   rho_j->UpdateGlobal();
-    rt_j->CopyFromVert(rt_i->vz);       rt_j->VertToHoriz();    rt_j->UpdateGlobal();
-    exner_j->CopyFromVert(exner_i->vz); exner_j->VertToHoriz(); exner_j->UpdateGlobal();
-    exner_h->CopyFromVert(exner_i->vz); exner_h->VertToHoriz(); exner_h->UpdateGlobal();
-
-    // diagnose the vorticity terms
-    diagHorizVort(velx_i, dudz_i);
-    for(int lev = 0; lev < geom->nk; lev++) {
-        VecCopy(dudz_i[lev], dudz_j[lev]);
-    }
-
-    diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz);
-    theta_h->CopyFromVert(theta_i->vz);
-    theta_i->VertToHoriz();
-    theta_h->VertToHoriz();
-    theta_h->UpdateGlobal();
-
-    do {
-        max_norm_u = max_norm_w = max_norm_rt = max_norm_exner = 0.0;
-
-        if(itt) {
-            rho_j->UpdateLocal();
-            rho_j->HorizToVert();
-            rt_j->UpdateLocal();
-            rt_j->HorizToVert();
-            exner_j->HorizToVert(); // local update already done
-            diagTheta2(rho_j->vz, rt_j->vz, theta_h->vz);
-            for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-                VecZeroEntries(exner_h->vz[ii]);
-                VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
-                VecAXPY(exner_h->vz[ii], 0.5, exner_j->vz[ii]);
-
-                VecScale(theta_h->vz[ii], 0.5);
-                VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
-            }
-            theta_h->VertToHoriz();
-            theta_h->UpdateGlobal();
-            exner_h->VertToHoriz();
-            exner_h->UpdateGlobal();
-
-            diagHorizVort(velx_j, dudz_j);
-        }
-
-        // assemble the residual vectors
-        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-            ex = ii%topo->nElsX;
-            ey = ii/topo->nElsX;
-
-            vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner->vz[ii]);
-#ifdef DO_VERT
-            assemble_residual_z(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
-                                rt_i->vz[ii], rt_j->vz[ii], F_w->vz[ii], F_z, G_z);
-#else
-            VecZeroEntries(F_z);
-            VecZeroEntries(G_z);
-#endif
-            vo->AssembleConst(ex, ey, vo->VB);
-            MatMult(vo->V10, F_z, dF_z);
-            MatMult(vo->V10, G_z, dG_z);
-            VecAYPX(dF_z, dt, rho_j->vz[ii]);
-            VecAYPX(dG_z, dt, rt_j->vz[ii]);
-            VecAXPY(dF_z, -1.0, rho_i->vz[ii]);
-            VecAXPY(dG_z, -1.0, rt_i->vz[ii]);
-            MatMult(vo->VB, dF_z, F_rho->vz[ii]);
-            MatMult(vo->VB, dG_z, F_rt->vz[ii]);
-        }
-        F_exner->VertToHoriz();
-        F_exner->UpdateGlobal();
-        F_rho->VertToHoriz();
-        F_rho->UpdateGlobal();
-        F_rt->VertToHoriz();
-        F_rt->UpdateGlobal();
-
-#ifdef DO_HORIZ
-        for(int lev = 0; lev < geom->nk; lev++) {
-            // horizontal velocity residual
-            assemble_residual_x(lev, theta_h->vl, dudz_i, dudz_j, velz_i->vh, velz_j->vh, exner_h->vh[lev], 
-                                velx_i[lev], velx_j[lev], rho_i->vh[lev], rho_j->vh[lev], F_u[lev], _F, _G);
-            // density and density weighted potential temperature residuals horiztonal flux components
-            M2->assemble(lev, SCALE, true);
-            MatMult(EtoF->E21, _F, dF);
-            MatMult(EtoF->E21, _G, dG);
-            MatMult(M2->M, dF, h_tmp);
-            VecAXPY(F_rho->vh[lev], dt, h_tmp);
-            MatMult(M2->M, dG, h_tmp);
-            VecAXPY(F_rt->vh[lev], dt, h_tmp);
-
-            // add in the viscous term
-            M1->assemble(lev, SCALE, true);
-            VecZeroEntries(dF);
-            VecAXPY(dF, 0.5, theta_h->vh[lev+0]);
-            VecAXPY(dF, 0.5, theta_h->vh[lev+1]);
-
-            grad(false, dF, &dtheta, lev);
-            F->assemble(rho_j->vl[lev], lev, true, SCALE);
-            MatMult(F->M, dtheta, _F);
-            VecDestroy(&dtheta);
-
-            KSPSolve(ksp1, _F, _G);
-            MatMult(EtoF->E21, _G, dG);
-
-            grad(false, dG, &dtheta, lev);
-            MatMult(EtoF->E21, dtheta, dG);
-            VecDestroy(&dtheta);
-            MatMult(M2->M, dG, dF);
-            VecAXPY(F_rt->vh[lev], dt*del2*del2, dF);
-        }
-#endif
-        F_rho->UpdateLocal();
-        F_rho->HorizToVert();
-        F_rt->UpdateLocal();
-        F_rt->HorizToVert();
-
-        assemble_schur_3d(theta_h, velx_i, velz_i->vz, rho_i, rt_i, exner_j, 
-                          F_u, F_w->vz, F_rho, F_rt, F_exner, d_u, d_w->vz, d_rho, d_rt, d_exner);
-
-        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-#ifdef DO_VERT
-            VecAXPY(velz_j->vz[ii], 1.0, d_w->vz[ii]);
-#endif
-            max_norm_w = MaxNorm(d_w->vz[ii], velz_j->vz[ii], max_norm_w);
-        }
-        MPI_Allreduce(&max_norm_w, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w = norm_x;
-        for(int lev = 0; lev < geom->nk; lev++) {
-#ifdef DO_HORIZ
-            VecAXPY(velx_j[lev],      1.0, d_u[lev]        );
-#endif
-            VecAXPY(rt_j->vh[lev],    1.0, d_rt->vh[lev]   );
-            VecAXPY(exner_j->vh[lev], 1.0, d_exner->vh[lev]);
-            max_norm_u = MaxNorm(d_u[lev], velx_j[lev], max_norm_u);
-            max_norm_rt = MaxNorm(d_rt->vh[lev], rt_j->vh[lev], max_norm_rt);
-        }
-        MPI_Allreduce(&max_norm_u,  &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_u  = norm_x;
-        MPI_Allreduce(&max_norm_rt, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rt = norm_x;
-
-        exner_j->UpdateLocal();
-        VecZeroEntries(schur->b);
-        schur->RepackFromHoriz(exner_j->vl, schur->b);
-        VecNorm(schur->b, NORM_2, &norm_x);
-        VecNorm(schur->x, NORM_2, &max_norm_exner);
-
-        // udpate the density
-        for(int lev = 0; lev < geom->nk; lev++) {
-            VecCopy(rho_i->vh[lev], l2_tmp->vh[lev]);
-#ifdef DO_HORIZ
-            diagnose_F_x(lev, velx_i[lev], velx_j[lev], rho_i->vh[lev], rho_j->vh[lev], _F);
-            MatMult(EtoF->E21, _F, dF);
-            VecAXPY(l2_tmp->vh[lev], -dt, dF);
-#endif
-        }
-        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-#ifdef DO_VERT
-            ex = ii%topo->nElsX;
-            ey = ii/topo->nElsX;
-            diagnose_F_z(ex, ey, velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], F_z);
-            MatMult(vo->V10, F_z, rho_j->vz[ii]);
-#else
-            VecZeroEntries(rho_j->vz[ii]);
-#endif
-        }
-        rho_j->VertToHoriz();
-        rho_j->UpdateGlobal();
-        for(int lev = 0; lev < geom->nk; lev++) {
-            VecAYPX(rho_j->vh[lev], -dt, l2_tmp->vh[lev]);
-        }
-        
-        if(!rank) cout << itt << ":\t|d_exner|: "        << max_norm_exner <<
-                                 "\t|exner|: "           << norm_x         <<
-                                 "\t|d_exner|/|exner|: " << max_norm_exner/norm_x << 
-                                 "\t|d_rt|/|rt|: "       << max_norm_rt    << 
-                                 "\t|d_u|/|u|: "         << max_norm_u     <<
-                                 "\t|d_w|/|w|: "         << max_norm_w     << endl;
-        max_norm_exner /= norm_x;        
-        if(max_norm_exner < 1.0e-8 && max_norm_u < 1.0e-8 && max_norm_w < 1.0e-8) done = true;
-
-        itt++;
-    } while(!done);
-
-    velz_j->VertToHoriz();
-    velz_j->UpdateGlobal();
-
-    // update the input/output fields
-    for(int lev = 0; lev < geom->nk; lev++) {
-        VecCopy(velx_j[lev], velx_i[lev]);
-    }
-    velz_i->CopyFromHoriz(velz_j->vh);
-    rho_i->CopyFromHoriz(rho_j->vh);
-    rt_i->CopyFromHoriz(rt_j->vh);
-    exner_i->CopyFromHoriz(exner_j->vh);
-
-    // write output
-    if(save) {
-        dump(velx_i, velz_i, rho_i, rt_i, exner_i, theta_h, step++);
-    }
-
-    delete velz_j;
-    delete rho_j;
-    delete rt_j;
-    delete exner_j;
-    delete exner_h;
-    delete theta_i;
-    delete theta_h;
-    delete F_w;
-    delete F_rho;
-    delete F_rt;
-    delete F_exner;
-    delete d_rho;
-    delete d_rt;
-    delete d_exner;
-    delete l2_tmp;
-    for(int lev = 0; lev < geom->nk; lev++) {
-        VecDestroy(&velx_j[lev]);
-        VecDestroy(&dudz_i[lev]);
-        VecDestroy(&dudz_j[lev]);
-        VecDestroy(&F_u[lev]);
-        VecDestroy(&d_u[lev]);
-    }
-    delete[] velx_j;
-    delete[] dudz_i;
-    delete[] dudz_j;
-    delete[] F_u;
-    delete[] d_u;
-    VecDestroy(&_F);
-    VecDestroy(&_G);
-    VecDestroy(&dF);
-    VecDestroy(&dG);
-    VecDestroy(&F_z);
-    VecDestroy(&G_z);
-    VecDestroy(&dF_z);
-    VecDestroy(&dG_z);
-    VecDestroy(&h_tmp);
 }

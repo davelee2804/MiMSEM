@@ -98,10 +98,10 @@ class HorizSolve {
         void update_delta_u_3(int lev, Vec* theta, Vec velx_l, Vec velx_g, Vec rho, Vec rt, Vec pi, 
                                   Vec F_u, Vec F_rho, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, Vec dpil);
 
-        Mat _PCx, L_rho_rho;
+        Mat _PCx, L_rho_rho, D_rt;
 
     private:
-        Mat M_u, M_u_inv, M0_inv, M1_inv, G_rt, G_pi, D_rho, D_rt, Q_rt_rho;
+        Mat M_u, M_u_inv, M0_inv, M1_inv, G_rt, G_pi, D_rho, Q_rt_rho;
         Mat M1invDT, M1invDTM2, KT, KTM2_inv, M2D, M2DM1_inv;
         Mat D_rho_M_u_inv, D_rt_M_u_inv, L_rho_rt, L_rho_pi, L_rt_rt, L_rt_pi;
         Mat L_rho_pi_N_pi_inv, L_rt_pi_N_pi_inv, L_rho_pi_N_pi_inv_N_rt, L_rt_pi_N_pi_inv_N_rt, Q_rt_rho_M_rho_inv;

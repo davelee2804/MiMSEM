@@ -17,7 +17,8 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
-#include "Euler.h"
+#include "HorizSolve.h"
+#include "Euler_3.h"
 
 #define RAD_EARTH 6371220.0
 //#define RAD_EARTH (6371220.0/125.0)
@@ -182,6 +183,8 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     exner_prev = new L2Vecs(geom->nk, topo, geom);
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    horiz = new HorizSolve(topo, geom, dt);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -374,6 +377,7 @@ Euler::~Euler() {
     delete quad;
 
     delete vo;
+    delete horiz;
 
     delete velz_prev;
     delete rho_prev;
@@ -1686,34 +1690,18 @@ void DestroyHorizVecs(Vec* vecs, Geom* geom) {
     delete[] vecs;
 }
 
-#define FIRST_STEP_EXPLICIT
-
 void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     int     ii;
     char    fieldname[100];
-    Vec     wi, bu, xu;
+    Vec     wi;
     L2Vecs* velz_1  = new L2Vecs(geom->nk-1, topo, geom);
     L2Vecs* rho_0   = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rho_1   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rho_2   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rho_3   = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rho_4   = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rho_5   = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_0    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_1    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_2    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_3    = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* rt_4    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_5    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_i = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* Fp      = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* Ft      = new L2Vecs(geom->nk, topo, geom);
-    Vec*    Fu      = CreateHorizVecs(topo, geom);
-    Vec*    velx_2  = CreateHorizVecs(topo, geom);
-    Vec*    velx_3  = CreateHorizVecs(topo, geom);
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &xu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
 
     // 1.  explicit vertical solve using data from the end of the previous horizontal step
     if(!rank) cout << "vertical half step (1)..............." << endl;
@@ -1728,9 +1716,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     exner_i->UpdateLocal();
     exner_i->HorizToVert();
 
-#ifdef FIRST_STEP_EXPLICIT
     exner_prev->CopyFromVert(exner_i->vz);
-#endif
 
     if(firstStep) {
         AssembleKEVecs(velx, velz);
@@ -1751,24 +1737,7 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         velz_1->CopyFromVert(velz);
         AssembleVertMomVort(velx, velz_1);
 #endif
-
-#ifdef FIRST_STEP_EXPLICIT
         VertSolve_Explicit(velz_1->vz, rho_1->vz, rt_1->vz, exner_i->vz, velz, rho_0->vz, rt_0->vz, exner_prev->vz);
-#else
-        for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-            VecCopy(velz[ii],      velz_1->vz[ii]);
-            VecCopy(rho_0->vz[ii], rho_1->vz[ii] );
-            VecCopy(rt_0->vz[ii],  rt_1->vz[ii]  );
-            VecScale(velz_1->vz[ii],  2.0);
-            VecScale(rho_1->vz[ii],   2.0);
-            VecScale(rt_1->vz[ii],    2.0);
-            VecScale(exner_i->vz[ii], 2.0);
-            VecAXPY(velz_1->vz[ii],  -1.0, velz_prev->vz[ii] );
-            VecAXPY(rho_1->vz[ii],   -1.0, rho_prev->vz[ii]  );
-            VecAXPY(rt_1->vz[ii],    -1.0, rt_prev->vz[ii]   );
-            VecAXPY(exner_i->vz[ii], -1.0, exner_prev->vz[ii]);
-        }
-#endif
     }
     velz_1->VertToHoriz();
     velz_1->UpdateGlobal();
@@ -1779,109 +1748,24 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
     exner_i->VertToHoriz();
     exner_i->UpdateGlobal();
 
-    // 2.1 first horiztonal substep
-    if(!rank) cout << "horiztonal step (1).................." << endl;
-    AssembleKEVecs(velx, velz_1->vz);
-    HorizRHS(velx, rho_1, rt_1, exner_i->vh, Fu, Fp->vh, Ft->vh, velz_1->vh);
-    for(ii = 0; ii < geom->nk; ii++) {
-        // momentum
-        M1->assemble(ii, SCALE, true);
-        MatMult(M1->M, velx[ii], bu);
-        VecAXPY(bu, -dt, Fu[ii]);
-        KSPSolve(ksp1, bu, velx_2[ii]);
-
-        // continuity
-        VecCopy(rho_1->vh[ii], rho_2->vh[ii]);
-        VecAXPY(rho_2->vh[ii], -dt, Fp->vh[ii]);
-
-        // internal energy
-        VecCopy(rt_1->vh[ii], rt_2->vh[ii]);
-        VecAXPY(rt_2->vh[ii], -dt, Ft->vh[ii]);
-    }
-    rho_2->UpdateLocal();
-    rt_2->UpdateLocal();
-    rt_2->HorizToVert();
-
-    // 2.2 second horiztonal step
-    if(!rank) cout << "horiztonal step (2).................." << endl;
-    AssembleKEVecs(velx_2, velz_1->vz);
-    DiagExner(rt_2->vz, exner_i);
-    HorizRHS(velx_2, rho_2, rt_2, exner_i->vh, Fu, Fp->vh, Ft->vh, velz_1->vh);
-    for(ii = 0; ii < geom->nk; ii++) {
-        // momentum
-        VecZeroEntries(xu);
-        VecAXPY(xu, 0.75, velx[ii]);
-        VecAXPY(xu, 0.25, velx_2[ii]);
-        M1->assemble(ii, SCALE, true);
-        MatMult(M1->M, xu, bu);
-        VecAXPY(bu, -0.25*dt, Fu[ii]);
-        KSPSolve(ksp1, bu, velx_3[ii]);
-
-        // continuity
-        VecZeroEntries(rho_3->vh[ii]);
-        VecAXPY(rho_3->vh[ii], 0.75, rho_1->vh[ii]);
-        VecAXPY(rho_3->vh[ii], 0.25, rho_2->vh[ii]);
-        VecAXPY(rho_3->vh[ii], -0.25*dt, Fp->vh[ii]);
-
-        // internal energy
-        VecZeroEntries(rt_3->vh[ii]);
-        VecAXPY(rt_3->vh[ii], 0.75, rt_1->vh[ii]);
-        VecAXPY(rt_3->vh[ii], 0.25, rt_2->vh[ii]);
-        VecAXPY(rt_3->vh[ii], -0.25*dt, Ft->vh[ii]);
-    }
-    rho_3->UpdateLocal();
-    rt_3->UpdateLocal();
-    rt_3->HorizToVert();
-
-    // 2.3 third horiztonal step
-    if(!rank) cout << "horiztonal step (3).................." << endl;
-    AssembleKEVecs(velx_3, velz_1->vz);
-    DiagExner(rt_3->vz, exner_i);
-    HorizRHS(velx_3, rho_3, rt_3, exner_i->vh, Fu, Fp->vh, Ft->vh, velz_1->vh);
-    for(ii = 0; ii < geom->nk; ii++) {
-        // momentum
-        VecZeroEntries(xu);
-        VecAXPY(xu, 1.0/3.0, velx[ii]);
-        VecAXPY(xu, 2.0/3.0, velx_3[ii]);
-        M1->assemble(ii, SCALE, true);
-        MatMult(M1->M, xu, bu);
-        VecAXPY(bu, (-2.0/3.0)*dt, Fu[ii]);
-        KSPSolve(ksp1, bu, velx[ii]);
-
-        // continuity
-        VecZeroEntries(rho_4->vh[ii]);
-        VecAXPY(rho_4->vh[ii], 1.0/3.0, rho_1->vh[ii]);
-        VecAXPY(rho_4->vh[ii], 2.0/3.0, rho_3->vh[ii]);
-        VecAXPY(rho_4->vh[ii], (-2.0/3.0)*dt, Fp->vh[ii]);
-
-        // internal energy
-        VecZeroEntries(rt_4->vh[ii]);
-        VecAXPY(rt_4->vh[ii], 1.0/3.0, rt_1->vh[ii]);
-        VecAXPY(rt_4->vh[ii], 2.0/3.0, rt_3->vh[ii]);
-        VecAXPY(rt_4->vh[ii], (-2.0/3.0)*dt, Ft->vh[ii]);
-    }
-    rho_4->UpdateLocal();
-    rho_4->HorizToVert();
-    rt_4->UpdateLocal();
-    rt_4->HorizToVert();
+    horiz->solve_schur(velx, velz_1, rho_1, rt_1, exner_i);
 
     // carry over the vertical fields to the next time level
     velz_prev->CopyFromVert(velz_1->vz);
-    rho_prev->CopyFromVert(rho_4->vz);
-    rt_prev->CopyFromVert(rt_4->vz);
-    DiagExner(rt_4->vz, exner_i);
+    rho_prev->CopyFromVert(rho_1->vz);
+    rt_prev->CopyFromVert(rt_1->vz);
     exner_prev->CopyFromVert(exner_i->vz);
 
     // 3.  second vertical half step
     if(!rank) cout << "vertical half step (2)..............." << endl;
     AssembleKEVecs(velx, velz_1->vz);
     velz_1->CopyToVert(velz);
-    rho_5->CopyFromVert(rho_4->vz);
-    rt_5->CopyFromVert(rt_4->vz);
+    rho_5->CopyFromVert(rho_1->vz);
+    rt_5->CopyFromVert(rt_1->vz);
 #ifdef WITH_UDWDX
     AssembleVertMomVort(velx, velz_1);
 #endif
-    VertSolve(velz, rho_5->vz, rt_5->vz, exner_i->vz, velz_1->vz, rho_4->vz, rt_4->vz, exner_prev->vz);
+    VertSolve(velz, rho_5->vz, rt_5->vz, exner_i->vz, velz_1->vz, rho_1->vz, rt_1->vz, exner_prev->vz);
 
     // update input vectors
     rho_5->VertToHoriz();
@@ -1932,27 +1816,14 @@ void Euler::StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner,
         geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
     }
 
-    VecDestroy(&xu);
-    VecDestroy(&bu);
     delete velz_1;
     delete rho_0;
     delete rho_1;
-    delete rho_2;
-    delete rho_3;
-    delete rho_4;
     delete rho_5;
     delete rt_0;
     delete rt_1;
-    delete rt_2;
-    delete rt_3;
-    delete rt_4;
     delete rt_5;
     delete exner_i;
-    delete Fp;
-    delete Ft;
-    DestroyHorizVecs(Fu, geom);
-    DestroyHorizVecs(velx_2, geom);
-    DestroyHorizVecs(velx_3, geom);
 }
 
 // compute the vorticity components dudz, dvdz
@@ -2011,22 +1882,6 @@ void Euler::AssembleVertMomVort(Vec* velx, L2Vecs* velz) {
     for(kk = 0; kk < geom->nk-1; kk++) {
         VecZeroEntries(uuz->vh[kk]);
     }
-
-/*
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecScatterBegin(topo->gtol_1, velx[kk], ul, INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  topo->gtol_1, velx[kk], ul, INSERT_VALUES, SCATTER_FORWARD);
-        Rz->assemble(ul, kk, SCALE);
-        if(kk > 0) {
-            MatMult(Rz->M, uz[kk-1], tmp);
-            VecAXPY(uuz->vh[kk-1], 0.5, tmp);
-        }
-        if(kk < geom->nk - 1) {
-            MatMult(Rz->M, uz[kk+0], tmp);
-            VecAXPY(uuz->vh[kk+0], 0.5, tmp);
-        }
-    }
-*/
 
     velz->VertToHoriz();
     velz->UpdateGlobal();
