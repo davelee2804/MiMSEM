@@ -16,6 +16,7 @@ class L2Vecs {
         void CopyFromHoriz(Vec* vf);
         void CopyToVert(Vec* vf);
         void CopyToHoriz(Vec* vf);
+        double GlobalNorm();
 };
 
 class L1Vecs {

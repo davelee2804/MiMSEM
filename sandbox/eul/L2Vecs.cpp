@@ -157,6 +157,17 @@ void L2Vecs::CopyToHoriz(Vec* vf) {
     }
 }
 
+double L2Vecs::GlobalNorm() {
+    int ii;
+    double norm_sq = 0.0, dot;
+
+    for(ii = 0; ii < nk; ii++) {
+        VecDot(vh[ii], vh[ii], &dot);
+        norm_sq += dot;
+    }
+    return sqrt(norm_sq);
+}
+
 L1Vecs::L1Vecs(int _nk, Topo* _topo, Geom* _geom) {
     int ii;
 
