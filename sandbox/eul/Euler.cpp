@@ -737,10 +737,10 @@ void Euler::SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt)
         VecCopy(Ft[ii], rt_sum);
         VecScale(rt_sum, -_dt*RD/CV);
         VecAXPY(rt_sum, 1.0, rt[ii]);
-        T->assemble(rt_sum, ii, SCALE);
+        T->assemble(rt_sum, ii, SCALE, true);
         MatMult(T->M, exner_i[ii], rhs);
         
-        T->assemble(rt[ii], ii, SCALE);
+        T->assemble(rt[ii], ii, SCALE, true);
         KSPSolve(kspE, rhs, exner_f[ii]);
     }
     VecDestroy(&rt_sum);
@@ -1441,7 +1441,7 @@ void Euler::DiagExner(Vec* rtz, L2Vecs* exner) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            vo->Assemble_EOS_RHS(ex, ey, rtz[ei], eos_rhs);
+            vo->Assemble_EOS_RHS(ex, ey, rtz[ei], eos_rhs, CP*pow(RD/P0, RD/CV), RD/CV);
             vo->AssembleConstInv(ex, ey, VB);
             MatMult(VB, eos_rhs, exner->vz[ei]);
         }

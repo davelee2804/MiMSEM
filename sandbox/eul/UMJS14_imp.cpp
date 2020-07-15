@@ -16,9 +16,9 @@
 #include "VertOps.h"
 #include "Assembly.h"
 #include "Schur.h"
-#include "VertSolve.h"
-#include "HorizSolve.h"
-#include "Euler_PI.h"
+#include "VertSolve_4.h"
+#include "HorizSolve_4.h"
+#include "Euler_PI_4.h"
 
 using namespace std;
 
@@ -127,6 +127,11 @@ double z_at_level(double* x, int ki) {
     double frac = (1.0*ki)/NK;
 
     return ZTOP*(sqrt(mu*frac*frac + 1.0) - 1.0)/(sqrt(mu + 1.0) - 1.0);
+/*
+    double d_theta = M_PI/NK;
+    double theta = ki*d_theta;
+    return ZTOP*0.5*(1.0 - cos(theta));
+*/
 }
 
 double z_taper(double* x, int ki) {
@@ -310,9 +315,9 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 600.0;//360.0;
-    int nSteps = 10*24*10;
-    int dumpEvery = 20; //dump every two hours (for now)
+    double dt = 120.0;//360.0;//600.0;
+    int nSteps = 2;//10*24*10;
+    int dumpEvery = 1; //dump every two hours (for now)
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -406,6 +411,7 @@ int main(int argc, char** argv) {
 
     pe->solve_vert_exner(velz, rho, rt, exner, false);
 */
+
     if(startStep==0) {
         L2Vecs* rho_tmp = new L2Vecs(geom->nk, topo, geom);
         L2Vecs* rt_tmp = new L2Vecs(geom->nk, topo, geom);
@@ -426,17 +432,22 @@ int main(int argc, char** argv) {
         write(pe->horiz, velx, velz, rho, rt, exner, NULL, 1);
     }
 
-    //pe->step = 5;
-    //pe->solve_gs(velx, velz, rho, rt, exner, true);
-    //write(hs, velx, velz, rho, rt, exner, NULL, 2);
-    
     pe->step = 2;
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
-        dump = (step%dumpEvery == 0) ? true : false;
-        pe->solve_gs(velx, velz, rho, rt, exner, dump);
+        dump = true;//(step%dumpEvery == 0) ? true : false;
+        //pe->solve_gs(velx, velz, rho, rt, exner, dump);
+        //pe->solve_horiz(velx, velz, rho, rt, exner, dump);
+        //pe->solve_gs_vh(velx, velz, rho, rt, exner, dump);
+        //pe->solve_schur(velx, velz, rho, rt, exner, dump);
+        pe->solve_schur_3(velx, velz, rho, rt, exner, dump);
+        //pe->solve_gauss_seidel(velx, velz, rho, rt, exner, dump);
+        //pe->vert->solve_schur(velz, rho, rt, exner);
+        //pe->horiz->solve_schur(velx, velz, rho, rt, exner);
+        //write(pe->horiz, velx, velz, rho, rt, exner, NULL, step);
+        write(pe->horiz, velx, velz, rho, rt, exner, NULL, step+1);
     }
 
     for(ki = 0; ki < NK; ki++) {

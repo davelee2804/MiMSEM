@@ -15,12 +15,14 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
-#include "Euler.h"
+#include "VertSolve.h"
+#include "Solve3D.h"
+#include "Euler_2.h"
 
 using namespace std;
 
 #define RAD_EARTH (6371220.0/125.0)
-#define NK 10
+#define NK 16
 #define OMEGA 0.0
 #define ZTOP 10000.0
 #define U0 20.0
@@ -31,7 +33,8 @@ using namespace std;
 #define CV 717.5
 #define RD 287.0
 #define P0 100000.0
-#define LAMBDA_C (2.0*M_PI/3.0)
+//#define LAMBDA_C (2.0*M_PI/3.0)
+#define LAMBDA_C (2.0*M_PI/3.0 - M_PI)
 #define PHI_C 0.0
 #define THETA_PRIME_D 5000.0
 #define THETA_PRIME_DELTA 1.0
@@ -190,9 +193,9 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 1.0;
-    int nSteps = 3600; // 1 hour
-    int dumpEvery = 1;//100;
+    double dt = 0.5;
+    int nSteps = 7200; // 1 hour
+    int dumpEvery = 900;//100;
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -232,8 +235,8 @@ int main(int argc, char** argv) {
     }
 
     // initialise the potential temperature top and bottom boundary conditions
-    pe->initTheta(pe->theta_b, theta_b_init);
-    pe->initTheta(pe->theta_t, theta_t_init);
+    //pe->initTheta(pe->theta_b, theta_b_init);
+    //pe->initTheta(pe->theta_t, theta_t_init);
 
     if(startStep == 0) {
         pe->init1(velx, u_init, v_init);
@@ -266,10 +269,10 @@ int main(int argc, char** argv) {
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
-            cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
+            cout << "doing step:\t" << step << ", time (hours): \t" << step*dt/60.0/60.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->StrangCarryover(velx, velz, rho, rt, exner, dump);
+        pe->Trapazoidal(velx, velz, rho, rt, exner, dump);
     }
 
     delete pe;

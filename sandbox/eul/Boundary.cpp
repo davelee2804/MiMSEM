@@ -248,6 +248,27 @@ void Boundary::_assembleGrad(int lev) {
     VecGetArray(ql, &qArray);
     VecGetArray(bl, &bArray);
 
+int rank;
+Vec _bl, _bg, _tl, _tg, _ll, _lg, _rl, _rg;
+PetscScalar *blArray, *tlArray, *llArray, *rlArray;
+MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+VecCreateSeq(MPI_COMM_SELF, topo->n0, &_bl);
+VecCreateSeq(MPI_COMM_SELF, topo->n0, &_tl);
+VecCreateSeq(MPI_COMM_SELF, topo->n0, &_ll);
+VecCreateSeq(MPI_COMM_SELF, topo->n0, &_rl);
+VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &_bg);
+VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &_tg);
+VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &_lg);
+VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &_rg);
+VecZeroEntries(_bl);
+VecZeroEntries(_tl);
+VecZeroEntries(_ll);
+VecZeroEntries(_rl);
+VecGetArray(_bl, &blArray);
+VecGetArray(_tl, &tlArray);
+VecGetArray(_ll, &llArray);
+VecGetArray(_rl, &rlArray);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -255,6 +276,19 @@ void Boundary::_assembleGrad(int lev) {
             inds_0 = topo->elInds0_l(ex, ey);
             inds_x = topo->elInds1x_l(ex, ey);
             inds_y = topo->elInds1y_l(ex, ey);
+
+if(!lev){
+int* inds_0g=topo->elInds0_g(ex,ey);
+for(ii = 0; ii < mp1*mp1; ii++) {
+J = geom->J[ei][ii];
+det = geom->det[ei][ii];
+tang = sqrt(J[0][0]*J[0][0] + J[1][0]*J[1][0]);
+norm = sqrt(J[0][1]*J[0][1] + J[1][1]*J[1][1]);
+//547,548,333
+cout.precision(16);
+if(inds_0g[ii]==548)cout<<rank<<"\t"<<J[0][0]<<"\t"<<J[0][1]<<"\t"<<J[1][0]<<"\t"<<J[1][1]<<"\ttang: "<<tang<<"\tnorm: "<<norm<<"\tdet: "<<det<<"\t"<<tang*norm/det<<endl;
+}
+}
 
             for(ii = 0; ii < mp1; ii++) {
                 // bottom
@@ -311,6 +345,33 @@ void Boundary::_assembleGrad(int lev) {
 
     VecScatterBegin(topo->gtol_1, bl, bg, ADD_VALUES, SCATTER_REVERSE);
     VecScatterEnd(  topo->gtol_1, bl, bg, ADD_VALUES, SCATTER_REVERSE);
+
+VecRestoreArray(_bl, &blArray);
+VecRestoreArray(_tl, &tlArray);
+VecRestoreArray(_ll, &llArray);
+VecRestoreArray(_rl, &rlArray);
+VecScatterBegin(topo->gtol_0, _bl, _bg, ADD_VALUES, SCATTER_REVERSE);
+VecScatterEnd(  topo->gtol_0, _bl, _bg, ADD_VALUES, SCATTER_REVERSE);
+VecScatterBegin(topo->gtol_0, _tl, _tg, ADD_VALUES, SCATTER_REVERSE);
+VecScatterEnd(  topo->gtol_0, _tl, _tg, ADD_VALUES, SCATTER_REVERSE);
+VecScatterBegin(topo->gtol_0, _ll, _lg, ADD_VALUES, SCATTER_REVERSE);
+VecScatterEnd(  topo->gtol_0, _ll, _lg, ADD_VALUES, SCATTER_REVERSE);
+VecScatterBegin(topo->gtol_0, _rl, _rg, ADD_VALUES, SCATTER_REVERSE);
+VecScatterEnd(  topo->gtol_0, _rl, _rg, ADD_VALUES, SCATTER_REVERSE);
+VecAXPY(_bg, -1.0, _tg);
+VecAXPY(_lg, -1.0, _rg);
+double norm_bt, norm_lr;
+VecNorm(_bg, NORM_2, &norm_bt);
+VecNorm(_lg, NORM_2, &norm_lr);
+
+VecDestroy(&_bl);
+VecDestroy(&_tl);
+VecDestroy(&_ll);
+VecDestroy(&_rl);
+VecDestroy(&_bg);
+VecDestroy(&_tg);
+VecDestroy(&_lg);
+VecDestroy(&_rg);
 }
 
 void Boundary::AssembleGrad(int lev, Vec u, Vec h, bool upwind) {

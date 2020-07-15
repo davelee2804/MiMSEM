@@ -17,7 +17,8 @@ using namespace std;
 using std::string;
 
 //#define WITH_HDF5
-#define RAD_SPHERE 6371220.0
+//#define RAD_SPHERE 6371220.0
+#define RAD_SPHERE (6371220.0/125.0)
 //#define RAD_SPHERE 1.0
 
 Geom::Geom(int _pi, Topo* _topo, int _nk) {
@@ -455,7 +456,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
     int ex, ey, ii, mp1, mp12;
     int *inds0;
     char filename[100];
-    double val;
+    double val, fac;
     Vec hl, hxl, hxg;
     PetscScalar *hxArray, *hArray;
     PetscViewer viewer;
@@ -468,6 +469,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
     VecScatterEnd(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &hxl);
+    VecZeroEntries(hxl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &hxg);
     VecZeroEntries(hxg);
 
@@ -482,20 +484,31 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
             for(ii = 0; ii < mp12; ii++) {
                 interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &val);
 
-                hxArray[inds0[ii]] = val;
+                //hxArray[inds0[ii]] = val;
                 // assume piecewise constant in the vertical, so rescale by
                 // the vertical determinant inverse
                 if(vert_scale) {
-                    hxArray[inds0[ii]] *= 1.0/thick[lev][inds0[ii]];
+                    //hxArray[inds0[ii]] *= 1.0/thick[lev][inds0[ii]];
+                    val *= 1.0/thick[lev][inds0[ii]];
                 }
+                if(ii == 0 || ii == mp1-1 || ii == (mp1-1)*mp1 || ii == mp1*mp1-1) {
+                    fac = 0.25;
+                } else if(ii/mp1 == 0 || ii/mp1 == mp1-1 || ii%mp1 == 0 || ii%mp1 == mp1-1) {
+                    fac = 0.5;
+                } else {
+                    fac = 1.0;
+                }
+                hxArray[inds0[ii]] += (fac*val);
             }
         }
     }
     VecRestoreArray(hl, &hArray);
     VecRestoreArray(hxl, &hxArray);
 
-    VecScatterBegin(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
+    //VecScatterBegin(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
+    //VecScatterEnd(  topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(topo->gtol_0, hxl, hxg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_0, hxl, hxg, ADD_VALUES, SCATTER_REVERSE);
 
 #ifdef WITH_HDF5
     sprintf(filename, "output/%s_%.3u_%.4u.h5", fieldname, lev, tstep);
