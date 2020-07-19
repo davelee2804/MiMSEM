@@ -15,12 +15,14 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
-#include "Euler.h"
+#include "HorizSolve.h"
+#include "VertSolve.h"
+#include "Euler_2.h"
 
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define NK 30
+#define NK 8
 #define P0 100000.0
 #define RD 287.0
 #define GAMMA 0.005
@@ -258,7 +260,6 @@ void LoadVecsVert(Vec* vecs, int nk, char* fieldname, int step, Topo* topo, Geom
         VecLoad(l2Vecs->vh[ki], viewer);
         PetscViewerDestroy(&viewer);
     }
-    l2Vecs->UpdateLocal();
     l2Vecs->HorizToVert();
     l2Vecs->CopyToVert(vecs);
 
@@ -291,6 +292,7 @@ int main(int argc, char** argv) {
     geom = new Geom(rank, topo, NK);
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
+
     pe   = new Euler(topo, geom, dt);
     pe->step = startStep;
 
@@ -350,7 +352,7 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->StrangCarryover(velx, velz, rho, rt, exner, dump);
+        pe->Trapazoidal(velx, velz, rho, rt, exner, dump);
     }
 
     delete pe;

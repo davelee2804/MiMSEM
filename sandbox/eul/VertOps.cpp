@@ -224,8 +224,6 @@ void VertOps::AssembleConst(int ex, int ey, Mat B) {
     inds0 = topo->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(B);
 
     // assemble the matrices
@@ -267,8 +265,6 @@ void VertOps::AssembleLinear(int ex, int ey, Mat A) {
     ei    = ey*topo->nElsX + ex;
     inds0 = topo->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
-
-    Q->assemble(ex, ey);
 
     MatZeroEntries(A);
 
@@ -315,15 +311,12 @@ void VertOps::AssembleLinCon(int ex, int ey, Mat AB) {
     ei   = ey*topo->nElsX + ex;
     mp12 = (quad->n + 1)*(quad->n + 1);
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(AB);
 
     // assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
             Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
             // multiply by the vertical jacobian, then scale the piecewise constant 
             // basis by the vertical jacobian, so do nothing 
@@ -364,8 +357,6 @@ void VertOps::AssembleLinCon2(int ex, int ey, Mat AB) {
 
     ei   = ey*topo->nElsX + ex;
     mp12 = (quad->n + 1)*(quad->n + 1);
-
-    Q->assemble(ex, ey);
 
     MatZeroEntries(AB);
 
@@ -413,8 +404,6 @@ void VertOps::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_int
     mp1  = quad->n + 1;
     mp12 = mp1*mp1;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(A);
 
     // assemble the matrices
@@ -427,7 +416,6 @@ void VertOps::AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_int
         VecGetArray(rho[kk], &rArray);
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
             Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
 
             // multuply by the vertical determinant to integrate, then
@@ -474,8 +462,6 @@ void VertOps::AssembleLinearWithRho2(int ex, int ey, Vec rho, Mat A) {
     ei   = ey*topo->nElsX + ex;
     mp1  = quad->n + 1;
     mp12 = mp1*mp1;
-
-    Q->assemble(ex, ey);
 
     MatZeroEntries(A);
 
@@ -528,14 +514,11 @@ void VertOps::AssembleLinearInv(int ex, int ey, Mat A) {
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(A);
 
     for(kk = 0; kk < geom->nk-1; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            //Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
             Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
             // for linear field we multiply by the vertical jacobian determinant when
             // integrating, and do no other trasformations for the basis functions
@@ -568,8 +551,6 @@ void VertOps::AssembleConstWithRhoInv(int ex, int ey, Vec rho, Mat B) {
     inds0 = topo->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
-
-    Q->assemble(ex, ey);
 
     MatZeroEntries(B);
 
@@ -621,8 +602,6 @@ void VertOps::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(B);
 
     // assemble the matrices
@@ -630,7 +609,6 @@ void VertOps::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
             Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
             // for constant field we multiply by the vertical jacobian determinant when integrating, 
             // then divide by the vertical jacobian for both the trial and the test functions
@@ -670,8 +648,6 @@ void VertOps::AssembleConLinWithW(int ex, int ey, Vec velz, Mat BA) {
     ei    = ey*topo->nElsX + ex;
 
     MatZeroEntries(BA);
-
-    Q->assemble(ex, ey);
 
     VecGetArray(velz, &wArray);
     for(kk = 0; kk < geom->nk; kk++) {
@@ -748,8 +724,6 @@ void VertOps::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_intern
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(A);
 
     // assemble the matrices
@@ -762,7 +736,6 @@ void VertOps::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_intern
         // build the 2D mass matrix
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            //Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det/det);
             Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
 
             // multuply by the vertical determinant to integrate, then
@@ -816,8 +789,6 @@ void VertOps::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(A);
 
     // assemble the matrices
@@ -827,7 +798,6 @@ void VertOps::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
 
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            //QB[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
             QB[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
             // for linear field we multiply by the vertical jacobian determinant when integrating, 
             // and do no other trasformations for the basis functions
@@ -885,10 +855,7 @@ void VertOps::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs, double facto
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
 
-    //fac = CP*pow(RD/P0, RD/CV);
     fac = factor;
-
-    Q->assemble(ex, ey);
 
     VecZeroEntries(eos_rhs);
 
@@ -912,7 +879,6 @@ void VertOps::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs, double facto
             // scale by matric term and vertical basis function at quadrature point ii
             det = geom->det[ei][ii];
             rk *= 1.0/(det*geom->thick[kk][inds0[ii]]);
-            //rtq[ii] = fac*pow(rk, RD/CV);
             rtq[ii] = fac*pow(rk, exponent);
         }
 
@@ -945,15 +911,12 @@ void VertOps::AssembleConstInv(int ex, int ey, Mat B) {
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(B);
 
     // assemble the matrices
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
-            //Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
             Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
             Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
         }
@@ -985,14 +948,11 @@ void VertOps::AssembleRayleigh(int ex, int ey, Mat A) {
     inds0 = topo->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(A);
 
     // top level
     for(ii = 0; ii < mp12; ii++) {
         det = geom->det[ei][ii];
-        //Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det/det);
         Q0[ii][ii]  = Q->A[ii][ii]*(SCALE/det);
         // assembly the contributions from the top two levels only
         Q0[ii][ii] *= 0.5*(geom->thick[geom->nk-1][inds0[ii]] + geom->thick[geom->nk-2][inds0[ii]]);
@@ -1057,8 +1017,6 @@ void VertOps::AssembleLinConWithTheta(int ex, int ey, Mat AB, Vec theta) {
     mp1  = quad->n + 1;
     mp12 = mp1*mp1;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(AB);
 
     // assemble the matrices
@@ -1072,7 +1030,6 @@ void VertOps::AssembleLinConWithTheta(int ex, int ey, Mat AB, Vec theta) {
         if(kk > 0) {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                //Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det/det);
                 Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det);
 
                 tk = 0.0;
@@ -1133,8 +1090,6 @@ void VertOps::AssembleLinConWithRho(int ex, int ey, Mat AB, Vec rho) {
     mp12 = mp1*mp1;
     inds0 = topo->elInds0_l(ex, ey);
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(AB);
 
     // assemble the matrices
@@ -1192,8 +1147,6 @@ void VertOps::AssembleConLin(int ex, int ey, Mat BA) {
 
     MatZeroEntries(BA);
 
-    Q->assemble(ex, ey);
-
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -1239,8 +1192,6 @@ void VertOps::AssembleConstEoS(int ex, int ey, Vec rt, Mat B) {
 
     fac = CP*pow(RD/P0, RD/CV);
     fac *= RD/CV;
-
-    Q->assemble(ex, ey);
 
     MatZeroEntries(B);
 
@@ -1293,8 +1244,6 @@ void VertOps::AssembleConstWithThetaInv(int ex, int ey, Vec theta, Mat B) {
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(B);
 
     // assemble the matrices
@@ -1340,8 +1289,6 @@ void VertOps::AssembleLinearWithBousInv(int ex, int ey, Vec bous, bool add_I, Ma
     inds0 = topo->elInds0_l(ex, ey);
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
-
-    Q->assemble(ex, ey);
 
     MatZeroEntries(A);
 
@@ -1420,8 +1367,6 @@ void VertOps::AssembleConLin2(int ex, int ey, Mat BA) {
 
     MatZeroEntries(BA);
 
-    Q->assemble(ex, ey);
-
     for(kk = 0; kk < geom->nk; kk++) {
         for(ii = 0; ii < mp12; ii++) {
             det = geom->det[ei][ii];
@@ -1463,8 +1408,6 @@ void VertOps::AssembleConstWithEOS(int ex, int ey, Vec rt, Mat B) {
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
-
-    Q->assemble(ex, ey);
 
     MatZeroEntries(B);
 
@@ -1515,8 +1458,6 @@ void VertOps::AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B) {
     inds0 = topo->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
-
-    Q->assemble(ex, ey);
 
     MatZeroEntries(B);
 
@@ -1573,8 +1514,6 @@ void VertOps::Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_r
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
-
-    Q->assemble(ex, ey);
 
     VecZeroEntries(eos_rhs);
 
@@ -1640,7 +1579,6 @@ void VertOps::Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Vec theta, Mat B) {
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
 
-    Q->assemble(ex, ey);
     MatZeroEntries(B);
 
     for(ii = 0; ii < W->nDofsJ; ii++) {
@@ -1744,8 +1682,6 @@ void VertOps::AssembleLinearWithThetaExp(int ex, int ey, Vec theta, double expon
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(A);
 
     // assemble the matrices
@@ -1806,8 +1742,6 @@ void VertOps::AssembleLinearWithRhoExp(int ex, int ey, Vec rho, double exponent,
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(A);
 
     // assemble the matrices
@@ -1860,8 +1794,6 @@ void VertOps::AssembleLinearWithRhoInv(int ex, int ey, Vec rho, Mat A) {
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(A);
 
     VecGetArray(rho, &rArray);
@@ -1903,8 +1835,6 @@ void VertOps::AssembleConstWithThetaExp(int ex, int ey, Vec theta, double expone
     inds0 = topo->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
-
-    Q->assemble(ex, ey);
 
     MatZeroEntries(B);
 
@@ -1957,8 +1887,6 @@ void VertOps::AssembleConstWithRhoExp(int ex, int ey, Vec rho, double exponent, 
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(B);
 
     // assemble the matrices
@@ -2004,8 +1932,6 @@ void VertOps::AssembleLinearWithW(int ex, int ey, Vec velz, Mat A) {
     inds0 = topo->elInds0_l(ex, ey);
 
     MatZeroEntries(A);
-
-    Q->assemble(ex, ey);
 
     VecGetArray(velz, &wArray);
     for(kk = 0; kk < geom->nk; kk++) {
@@ -2092,8 +2018,6 @@ void VertOps::AssembleLinearWithRho_up(int ex, int ey, Vec rho, Vec vel, Mat A) 
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(A);
 
     // assemble the matrices
@@ -2139,7 +2063,6 @@ void VertOps::AssembleLinearWithRho_up(int ex, int ey, Vec rho, Vec vel, Mat A) 
     VecRestoreArray(vel, &vArray);
 
     // assemble the right hand side
-    Q->assemble(ex, ey);
     MatZeroEntries(A);
     for(kk = 0; kk < geom->nk-1; kk++) {
         for(ii = 0; ii < mp12; ii++) {
@@ -2189,8 +2112,6 @@ void VertOps::AssembleLinearWithRayleighInv(int ex, int ey, double dt_fric, Mat 
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(A);
 
     for(kk = 0; kk < geom->nk-1; kk++) {
@@ -2227,8 +2148,6 @@ void VertOps::AssembleLinearWithThetaInv(int ex, int ey, Vec theta, Mat A) {
     inds0 = topo->elInds0_l(ex, ey);
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
-
-    Q->assemble(ex, ey);
 
     MatZeroEntries(A);
 
@@ -2273,8 +2192,6 @@ void VertOps::Assemble_EOS_Residual_new(int ex, int ey, Vec rt, Vec exner, Vec e
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
-
-    Q->assemble(ex, ey);
 
     VecZeroEntries(eos_rhs);
 
@@ -2343,7 +2260,6 @@ void VertOps::AssembleN_PiInv(int ex, int ey, Vec rt, Vec pi, Mat A, bool do_inv
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
 
-    Q->assemble(ex, ey);
     MatZeroEntries(A);
 
     VecGetArray(rt, &rtArray);
@@ -2417,7 +2333,6 @@ void VertOps::AssembleN_RT(int ex, int ey, Vec rt, Vec pi, Mat A) {
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
 
-    Q->assemble(ex, ey);
     MatZeroEntries(A);
 
     VecGetArray(rt, &rtArray);
@@ -2487,8 +2402,6 @@ void VertOps::AssembleConstWithRhoInv2(int ex, int ey, Vec rho, Mat B) {
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
-    Q->assemble(ex, ey);
-
     MatZeroEntries(B);
 
     // assemble the matrices
@@ -2522,5 +2435,155 @@ void VertOps::AssembleConstWithRhoInv2(int ex, int ey, Vec rho, Mat B) {
     VecRestoreArray(rho, &rArray);
     MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
+}
+
+void VertOps::AssembleLinearWithRho2_up(int ex, int ey, Vec rho, Mat A, double dt, Vec* uhl) {
+    int ii, jj, kk, ei, _n, _n2, mp1, mp12;
+    double det, **J, rk, gamma, ug[2], ul[2], _ex[99], _ey[99];
+    int* inds_0;
+    int inds2k[99];
+    PetscScalar *rArray, *uArray;
+
+    ei   = ey*topo->nElsX + ex;
+    _n   = topo->elOrd;
+    _n2  = _n*_n;
+    mp1  = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    inds_0 = topo->elInds0_l(ex, ey);
+
+    MatZeroEntries(A);
+
+    // assemble the matrices
+    VecGetArray(rho, &rArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecGetArray(uhl[kk], &uArray);
+
+        // build the 2D mass matrix
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
+            // multuply by the vertical determinant to integrate, then
+            // divide piecewise constant density by the vertical determinant,
+            // so these cancel
+            rk = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                rk += rArray[kk*n2+jj]*gamma;
+            }
+            Q0[ii][ii] *= 0.5*rk/det;
+
+            // upwinded test functions
+            J = geom->J[ei][ii];
+            geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, ug);
+            // map velocity to local element coordinates
+	    ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
+            ul[1] = (-J[1][0]*ug[0] + J[0][0]*ug[1])/det;
+            ul[0] /= geom->thick[kk][inds_0[ii]];
+            ul[1] /= geom->thick[kk][inds_0[ii]];
+            for(jj = 0; jj < _n; jj++) {
+                _ex[jj] = edge->eval(quad->x[ii%mp1] + dt*ul[0], jj);
+                _ey[jj] = edge->eval(quad->x[ii/mp1] + dt*ul[1], jj);
+            }
+            for(jj = 0; jj < _n2; jj++) {
+                Wt[jj][ii] = _ex[jj%_n]*_ey[jj/_n];
+            }
+        }
+
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        // assemble the first basis function
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + (kk+0)*W->nDofsJ;
+        }
+        MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+
+        // assemble the second basis function
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            inds2k[ii] = ii + (kk+1)*W->nDofsJ;
+        }
+        MatSetValues(A, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQWflat, ADD_VALUES);
+
+        VecGetArray(uhl[kk], &uArray);
+    }
+    VecRestoreArray(rho, &rArray);
+
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  A, MAT_FINAL_ASSEMBLY);
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+}
+
+void VertOps::AssembleLinCon2_up(int ex, int ey, Mat AB, double dt, Vec* uhl) {
+    int ii, jj, kk, ei, _n, _n2, mp1, mp12;
+    double det, **J, ug[2], ul[2], _ex[99], _ey[99];
+    int* inds_0;
+    int rows[99], cols[99];
+    PetscScalar* uArray;
+
+    ei   = ey*topo->nElsX + ex;
+    _n   = topo->elOrd;
+    _n2  = _n*_n;
+    mp1  = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    inds_0 = topo->elInds0_l(ex, ey);
+
+    MatZeroEntries(AB);
+
+    // assemble the matrices
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecGetArray(uhl[kk], &uArray);
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = Q->A[ii][ii]*(SCALE/det);
+            // multiply by the vertical jacobian, then scale the piecewise constant 
+            // basis by the vertical jacobian, so do nothing 
+            Q0[ii][ii] *= 0.5;
+
+            // upwinded test functions
+            J = geom->J[ei][ii];
+            geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, ug);
+            // map velocity to local element coordinates
+	    ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
+            ul[1] = (-J[1][0]*ug[0] + J[0][0]*ug[1])/det;
+            ul[0] /= geom->thick[kk][inds_0[ii]];
+            ul[1] /= geom->thick[kk][inds_0[ii]];
+            for(jj = 0; jj < _n; jj++) {
+                _ex[jj] = edge->eval(quad->x[ii%mp1] + dt*ul[0], jj);
+                _ey[jj] = edge->eval(quad->x[ii/mp1] + dt*ul[1], jj);
+            }
+            for(jj = 0; jj < _n2; jj++) {
+                Wt[jj][ii] = _ex[jj%_n]*_ey[jj/_n];
+            }
+        }
+
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            cols[ii] = ii + kk*W->nDofsJ;
+        }
+        // assemble the first basis function
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + (kk+0)*W->nDofsJ;
+        }
+        MatSetValues(AB, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+
+        // assemble the second basis function
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + (kk+1)*W->nDofsJ;
+        }
+        MatSetValues(AB, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+
+        VecGetArray(uhl[kk], &uArray);
+    }
+    MatAssemblyBegin(AB, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(AB, MAT_FINAL_ASSEMBLY);
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 }
 

@@ -26,6 +26,8 @@ class Euler {
         UtQWmat* Rh;
         WtQdUdz_mat* Rz;
         Whmat* T;
+        WmatInv* M2inv;
+        Mat KT;
         Vec* fg;                 // coriolis vector (global)
         bool firstStep;
         double k2i;              // kinetic to internal energy exchange
@@ -36,13 +38,15 @@ class Euler {
         Vec* gv;
         Vec* zv;
         Vec* uz;                 // dudz and dvdz vorticity components
+        Vec* uzl;
+        Vec* uzl_prev;
+        Vec* ul;
+        Vec* ul_prev;
         L2Vecs* uuz;             // u.dudz + v.dvdz vorticity velocity product
         Mat VA;
         Mat VB;
         KSP ksp1;
         KSP ksp2;
-        KSP kspE;
-        KSP kspColA;
         KSP kspColA2; // for the diagnosis of theta without boundary conditions
 
         VertSolve* vert;
@@ -63,26 +67,23 @@ class Euler {
         void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu, Vec Flux, Vec uzb, Vec uzt, Vec velz_b, Vec velz_t);
         void thetaBCVec(int ex, int ey, Mat A, Vec* bTheta);
-        void diagTheta2(Vec* rho, Vec* rt, Vec* theta);
-        void AssembleKEVecs(Vec* velx, Vec* velz);
-        void VertToHoriz2(int ex, int ey, int ki, int kf, Vec pv, Vec* ph);
-        void HorizToVert2(int ex, int ey, Vec* ph, Vec pv);
+        void diagTheta(Vec* rho, Vec* rt, Vec* theta);
+        void diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs);
+        void AssembleKEVecs(Vec* velx);
         void init0(Vec* q, ICfunc3D* func);
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* p, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
         void HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft, Vec* velz);
         void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
-        void StrangCarryover(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
+        void Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
+        void Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
-        void VertSolve_Explicit(Vec* velz, Vec* rho, Vec* rt, Vec* exner, Vec* velz_n, Vec* rho_n, Vec* rt_n, Vec* exner_n);
         double int2(Vec ug);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
 
         void DiagExner(Vec* rtz, L2Vecs* exner);
 
         void HorizVort(Vec* velx);
-        void AssembleVertMomVort(Vec* velx, L2Vecs* velz);
-
-        L2Vecs* exner_prev;
+        void AssembleVertMomVort(L2Vecs* velz);
 };

@@ -7,11 +7,8 @@ class L2Vecs {
         Geom* geom;
         Vec* vh;
         Vec* vz;
-        Vec* vl;
         void VertToHoriz();
         void HorizToVert();
-        void UpdateLocal();
-        void UpdateGlobal();
         void CopyFromVert(Vec* vf);
         void CopyFromHoriz(Vec* vf);
         void CopyToVert(Vec* vf);

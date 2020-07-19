@@ -24,13 +24,10 @@ L2Vecs::L2Vecs(int _nk, Topo* _topo, Geom* _geom) {
 
     vh = new Vec[nk];
     vz = new Vec[n2];
-    vl = new Vec[nk];
 
     for(ii = 0; ii < nk; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vh[ii]);
-        VecCreateSeq(MPI_COMM_SELF, topo->n2, &vl[ii]);
         VecZeroEntries(vh[ii]);
-        VecZeroEntries(vl[ii]);
     }
 
     for(ii = 0; ii < n2; ii++) {
@@ -46,10 +43,8 @@ L2Vecs::~L2Vecs() {
 
     for(ii = 0; ii < nk; ii++) {
         VecDestroy(&vh[ii]);
-        VecDestroy(&vl[ii]);
     }
     delete[] vh;
-    delete[] vl;
 
     for(ii = 0; ii < n2; ii++) {
         VecDestroy(&vz[ii]);
@@ -70,11 +65,11 @@ void L2Vecs::VertToHoriz() {
 
             VecGetArray(vz[ei], &zArray);
             for(kk = 0; kk < nk; kk++) {
-                VecGetArray(vl[kk], &hArray);
+                VecGetArray(vh[kk], &hArray);
                 for(ii = 0; ii < n2; ii++) {
                     hArray[inds2[ii]] = zArray[kk*n2+ii];
                 }
-                VecRestoreArray(vl[kk], &hArray);
+                VecRestoreArray(vh[kk], &hArray);
             }
             VecRestoreArray(vz[ei], &zArray);
         }
@@ -94,32 +89,14 @@ void L2Vecs::HorizToVert() {
 
             VecGetArray(vz[ei], &zArray);
             for(kk = 0; kk < nk; kk++) {
-                VecGetArray(vl[kk], &hArray);
+                VecGetArray(vh[kk], &hArray);
                 for(ii = 0; ii < n2; ii++) {
                     zArray[kk*n2+ii] = hArray[inds2[ii]];
                 }
-                VecRestoreArray(vl[kk], &hArray);
+                VecRestoreArray(vh[kk], &hArray);
             }
             VecRestoreArray(vz[ei], &zArray);
         }
-    }
-}
-
-void L2Vecs::UpdateLocal() {
-    int ii;
-
-    for(ii = 0; ii < nk; ii++) {
-        VecScatterBegin(topo->gtol_2, vh[ii], vl[ii], INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(topo->gtol_2,   vh[ii], vl[ii], INSERT_VALUES, SCATTER_FORWARD);
-    }
-}
-
-void L2Vecs::UpdateGlobal() {
-    int ii;
-
-    for(ii = 0; ii < nk; ii++) {
-        VecScatterBegin(topo->gtol_2, vl[ii], vh[ii], INSERT_VALUES, SCATTER_REVERSE);
-        VecScatterEnd(topo->gtol_2,   vl[ii], vh[ii], INSERT_VALUES, SCATTER_REVERSE);
     }
 }
 
