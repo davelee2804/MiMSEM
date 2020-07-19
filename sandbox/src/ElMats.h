@@ -50,5 +50,6 @@ class Wii {
         double** A;
         GaussLobatto* quad;
         Geom* geom;
-        void assemble(int ex, int ey);
+    private:
+        void assemble();
 };

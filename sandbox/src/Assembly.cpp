@@ -58,17 +58,11 @@ void Umat::assemble() {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            // incorporate the jacobian transformation for each element
-            Q->assemble(ex, ey);
-
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                //Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
-                //Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                //Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det;
                 Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det;
                 Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det;
@@ -161,13 +155,10 @@ void Wmat::assemble() {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds = topo->elInds2_g(ex, ey);
-            // incorporate the jacobian transformation for each element
-            Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                //Qaa[ii][ii] = Q->A[ii][ii]/det/det;
                 Qaa[ii][ii] = Q->A[ii][ii]/det;
             }
 
@@ -244,18 +235,12 @@ void Uhmat::assemble(Vec h2) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            // incorporate the jacobian transformation for each element
-            Q->assemble(ex, ey);
-
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
 
-                //Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det/det);
-                //Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
-                //Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det/det);
                 Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det;
                 Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det;
                 Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det;
@@ -357,11 +342,7 @@ void Pvec::assemble() {
     // assemble values into local vector
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            // incorporate the jacobian transformation for each element
-            Q->assemble(ex, ey);
-
             for(ii = 0; ii < np12; ii++) {
-                //entries[ii] = Q->A[ii][ii];
                 entries[ii] = Q->A[ii][ii]*geom->det[ey*topo->nElsX + ex][ii];
             }
             inds_x = topo->elInds0_l(ex, ey);
@@ -407,8 +388,7 @@ WtQmat::WtQmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 }
 
 void WtQmat::assemble() {
-    int ex, ey, ei, mp1, mp12, ii, *inds_2, *inds_0;
-    double det;
+    int ex, ey, mp1, mp12, ii, *inds_2, *inds_0;
     M2_j_xy_i* W = new M2_j_xy_i(e);
     Wii* Q = new Wii(e->l->q, geom);
     double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
@@ -428,13 +408,7 @@ void WtQmat::assemble() {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            // incorportate jacobian tranformation for each element
-            Q->assemble(ex, ey);
-
-            ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
-                det = geom->det[ei][ii];
-                //Qaa[ii][ii] = Q->A[ii][ii]/det;
                 Qaa[ii][ii] = Q->A[ii][ii];
             }
 
@@ -492,12 +466,9 @@ void PtQmat::assemble() {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            // incorportate jacobian tranformation for each element
-            Q->assemble(ex, ey);
             for(int ii = 0; ii < (l->q->n+1)*(l->q->n+1); ii++) {
                 Qaa[ii][ii] = Q->A[ii][ii]*geom->det[ey*topo->nElsX + ex][ii];
             }
-            //Mult_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Q->A, PtQ);
             Mult_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
             Flat2D_IP(P->nDofsJ, Q->nDofsJ, PtQ, PtQflat);
 
@@ -533,7 +504,7 @@ UtQmat::UtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 void UtQmat::assemble() {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_0, *inds_0x, *inds_0y;
-    double det, **J;
+    double **J;
     Wii* Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
@@ -560,18 +531,10 @@ void UtQmat::assemble() {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            // incorportate jacobian tranformation for each element
-            Q->assemble(ex, ey);
-
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
-                det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                //Qaa[ii][ii] = J[0][0]*Q->A[ii][ii]/det;
-                //Qab[ii][ii] = J[1][0]*Q->A[ii][ii]/det;
-                //Qba[ii][ii] = J[0][1]*Q->A[ii][ii]/det;
-                //Qbb[ii][ii] = J[1][1]*Q->A[ii][ii]/det;
                 Qaa[ii][ii] = J[0][0]*Q->A[ii][ii];
                 Qab[ii][ii] = J[1][0]*Q->A[ii][ii];
                 Qba[ii][ii] = J[0][1]*Q->A[ii][ii];
@@ -673,17 +636,12 @@ void WtQUmat::assemble(Vec u1) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            // incorportate jacobian tranformation for each element
-            Q->assemble(ex, ey);
-
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
 
-                //Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det/det;
-                //Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]/det/det;
                 Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det;
                 Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]/det;
             }
@@ -775,17 +733,12 @@ void RotMat::assemble(Vec q0) {
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
 
-            // incorportate jacobian tranformation for each element
-            Q->assemble(ex, ey);
-
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
 
-                //Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
-                //Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det/det;
                 Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det;
                 Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det;
             }
@@ -996,14 +949,11 @@ void Whmat::assemble(Vec h2) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds = topo->elInds2_g(ex, ey);
-            // incorporate the jacobian transformation for each element
-            Q->assemble(ex, ey);
 
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &hi);
                 det = geom->det[ei][ii];
-                //Qaa[ii][ii] = hi*Q->A[ii][ii]/det/det;
                 Qaa[ii][ii] = hi*Q->A[ii][ii]/det;
             }
 
@@ -1033,3 +983,194 @@ void Whmat::assemble(Vec h2) {
 Whmat::~Whmat() {
     MatDestroy(&M);
 }
+
+P_up_mat::P_up_mat(Topo* _topo, Geom* _geom, LagrangeNode* _node) {
+    topo = _topo;
+    geom = _geom;
+    node = _node;
+
+    Q = new Wii(node->q, geom);
+    QP = Alloc2D(Q->nDofsJ, Q->nDofsJ);
+    QPI = Alloc2D(Q->nDofsJ, Q->nDofsJ);
+    QPflat = new double[Q->nDofsJ*Q->nDofsJ];
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 8*Q->nDofsJ, PETSC_NULL, 8*Q->nDofsJ, PETSC_NULL);
+
+    MatCreate(MPI_COMM_WORLD, &I);
+    MatSetSizes(I, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
+    MatSetType(I, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(I, 8*Q->nDofsJ, PETSC_NULL, 8*Q->nDofsJ, PETSC_NULL);
+}
+
+void P_up_mat::assemble(Vec ul, double dt) {
+    int ex, ey, ei, mp1, mp12, ii, *inds;
+    double ux[2], lx[99], ly[99], det, **J, ux2[2];
+    PetscScalar* uArray;
+    GaussLobatto* quad = node->q;
+
+    mp1 = node->q->n + 1;
+    mp12 = mp1*mp1;
+
+    MatZeroEntries(M);
+    MatZeroEntries(I);
+
+    VecGetArray(ul, &uArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, ux);
+
+                ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
+                ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
+                for(int jj = 0; jj < mp1; jj++) {
+                    lx[jj] = node->eval_q(quad->x[ii%mp1] - dt*ux2[0], jj);
+                    ly[jj] = node->eval_q(quad->x[ii/mp1] - dt*ux2[1], jj);
+                }
+                for(int jj = 0; jj < mp12; jj++) {
+                    QP[ii][jj]  = det * Q->A[ii][ii] * lx[jj%mp1] * ly[jj/mp1];
+                    QPI[ii][jj] = lx[jj%mp1] * ly[jj/mp1];
+                }
+            }
+
+            inds = topo->elInds0_g(ex, ey);
+
+            Flat2D_IP(Q->nDofsJ, Q->nDofsJ, QP, QPflat);
+            MatSetValues(M, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, ADD_VALUES);
+
+            Flat2D_IP(Q->nDofsJ, Q->nDofsJ, QPI, QPflat);
+            MatSetValues(I, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(ul, &uArray);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(I, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  I, MAT_FINAL_ASSEMBLY);
+}
+
+P_up_mat::~P_up_mat() {
+    MatDestroy(&M);
+    MatDestroy(&I);
+    Free2D(Q->nDofsJ, QP);
+    Free2D(Q->nDofsJ, QPI);
+    delete[] QPflat;
+    delete Q;
+}
+
+RotMat_up::RotMat_up(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    l = _l;
+    e = _e;
+
+    Q = new Wii(l->q, geom);
+    U = new M1x_j_xy_i(l, e);
+    V = new M1y_j_xy_i(l, e);
+
+    Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    Vt = Alloc2D(V->nDofsJ, U->nDofsI);
+    Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qba = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    VtQU = Alloc2D(V->nDofsJ, V->nDofsJ);
+
+    UtQUflat = new double[U->nDofsJ*V->nDofsJ];
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
+}
+
+void RotMat_up::assemble(Vec q0, Vec ul, double dt) {
+    int ex, ey, ei, ii, jj, mp1, mp12;
+    int *inds_x, *inds_y, *inds_0;
+    double det, **J, vort, ux[2], lx[99], ly[99], ux2[2];
+    PetscScalar *q0Array, *u1Array;
+    GaussLobatto* quad = l->q;
+
+    mp1 = l->n + 1;
+    mp12 = mp1*mp1;
+
+    VecGetArray(q0, &q0Array);
+    VecGetArray(ul, &u1Array);
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+            inds_0 = topo->elInds0_l(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
+                ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
+                ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
+                for(jj = 0; jj < mp1; jj++) {
+                    lx[jj] = l->eval_q(quad->x[ii%mp1] - dt*ux2[0], jj);
+                    ly[jj] = l->eval_q(quad->x[ii/mp1] - dt*ux2[1], jj);
+                }
+                vort = 0.0;
+                for(jj = 0; jj < mp12; jj++) {
+                    vort += q0Array[inds_0[jj]] * lx[jj%mp1] * ly[jj/mp1];
+                }
+
+                Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det;
+                Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det;
+            }
+
+            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+            Tran_IP(U->nDofsI, V->nDofsJ, V->A, Vt);
+
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qab, UtQab);
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Qba, VtQba);
+
+            // take cross product by multiplying the x projection of the row vector with
+            // the y component of the column vector and vice versa
+            Mult_IP(U->nDofsJ, U->nDofsJ, U->nDofsI, UtQab, V->A, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, V->nDofsI, VtQba, U->A, VtQU);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(q0, &q0Array);
+    VecRestoreArray(ul, &u1Array);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+}
+
+RotMat_up::~RotMat_up() {
+    Free2D(U->nDofsJ, Ut);
+    Free2D(V->nDofsJ, Vt);
+    Free2D(Q->nDofsI, Qab);
+    Free2D(Q->nDofsI, Qba);
+    Free2D(U->nDofsJ, UtQab);
+    Free2D(U->nDofsJ, VtQba);
+    Free2D(U->nDofsJ, UtQV);
+    Free2D(V->nDofsJ, VtQU);
+
+    delete[] UtQUflat;
+    delete Q;
+    delete U;
+    delete V;
+    MatDestroy(&M);
+}
+
