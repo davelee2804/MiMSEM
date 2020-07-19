@@ -35,8 +35,12 @@ class SWEqn {
         Vec uj;
         Vec hj;
         Mat A;
+        P_up_mat* P_up;
+        RotMat_up* R_up;
+        KSP ksp_p;
         void coriolis();
         void curl(Vec u, Vec* w);
+        void curl_up(Vec u, Vec* w);
         void diagnose_F(Vec* F);
         void diagnose_Phi(Vec* Phi);
         void diagnose_wxu(Vec* wxu);

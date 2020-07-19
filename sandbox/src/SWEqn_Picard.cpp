@@ -23,14 +23,13 @@
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
 //#define W2_ALPHA (0.25*M_PI)
-
-#define WEAK_FORM_H
+//#define UP_VORT
 
 using namespace std;
 
 SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     PC pc;
-    int ii, jj;
+    int ii, jj, size;
     int dof_proc;
     int* loc = new int[_topo->n1+_topo->n2];
     IS is_g, is_l;
@@ -40,6 +39,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     geom = _geom;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     grav = 9.80616*(RAD_SPHERE/RAD_EARTH);
     omega = 7.292e-5;
@@ -89,7 +89,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     KSPSetType(ksp, KSPGMRES);
     KSPGetPC(ksp, &pc);
     PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, 2*topo->elOrd*(topo->elOrd+1), NULL);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp, "sw_");
     KSPSetFromOptions(ksp);
 
@@ -124,6 +124,20 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     VecDestroy(&xg);
 
     topog = NULL;
+
+#ifdef UP_VORT
+    P_up = new P_up_mat(topo, geom, node);
+    R_up = new RotMat_up(topo, geom, node, edge);
+    KSPCreate(MPI_COMM_WORLD, &ksp_p);
+    KSPSetOperators(ksp_p, P_up->M, P_up->M);
+    KSPSetTolerances(ksp_p, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp_p, KSPGMRES);
+    KSPGetPC(ksp_p, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp_p, "p_up_");
+    KSPSetFromOptions(ksp_p);
+#endif
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -193,6 +207,29 @@ void SWEqn::curl(Vec u, Vec *w) {
     VecPointwiseDivide(*w, du, m0->vg);
 
     VecDestroy(&du);
+}
+
+// upwinded trial function for the vorticity
+void SWEqn::curl_up(Vec u, Vec *w) {
+#ifdef UP_VORT
+    Vec du, ul;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &du);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+
+    VecScatterBegin(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
+
+    MatMult(E01M1, u, du);
+    P_up->assemble(ul, dt);
+    KSPSolve(ksp_p, du, *w);
+
+    VecDestroy(&du);
+    VecDestroy(&ul);
+#else
+    curl(u, w);
+#endif
 }
 
 // dH/du = hu = F
@@ -294,9 +331,31 @@ void SWEqn::diagnose_wxu(Vec* wxu) {
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, wxu);
+    VecZeroEntries(*wxu);
 
+#ifdef UP_VORT
+    Vec ul;
+
+    VecZeroEntries(uh);
+    VecAXPY(uh, 0.5, ui);
+    VecAXPY(uh, 0.5, uj);
+    curl_up(uh, &wi);
+    VecAXPY(wi, 1.0, fg);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+
+    VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
+    R_up->assemble(wl, ul, dt);
+    MatMult(R_up->M, uh, *wxu);
+
+    VecDestroy(&ul);
+#else
     curl(ui, &wi);
     curl(uj, &wj);
+
     VecAXPY(wi, 1.0, wj);
     VecAYPX(wi, 0.5, fg);
 
@@ -309,6 +368,7 @@ void SWEqn::diagnose_wxu(Vec* wxu) {
 
     R->assemble(wl);
     MatMult(R->M, uh, *wxu);
+#endif
 
     VecDestroy(&wi);
     VecDestroy(&wj);
@@ -452,26 +512,9 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
 
     // continuity term
     MatMult(EtoF->E21, F, htmp1);
-#ifdef WEAK_FORM_H
     MatMult(M2->M, htmp1, htmp2);
     VecAXPY(fh, 1.0, htmp2);
-#else
-    VecAXPY(fh, 1.0, htmp1);
-#endif
     repack(fs, fu, fh);
-
-    /*{
-        Vec* Zi;
-        MatNullSpace null;
-        Zi = diagnose_null_space_vecs(uj, hj, 1);
-        MatNullSpaceCreate(MPI_COMM_WORLD, PETSC_FALSE, 1, Zi, &null);
-        MatNullSpaceRemove(null, fs);
-        MatNullSpaceDestroy(&null);
-        for(int ii = 0; ii < 1; ii++) {
-            VecDestroy(&Zi[ii]);
-        }
-        delete[] Zi;
-    }*/
 
     // assemble the mass matrix terms
     VecZeroEntries(fu);
@@ -486,26 +529,18 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
         VecAXPY(utmp, 0.5, ui);
         VecAXPY(utmp, 0.5, uj);
         laplacian(utmp, &d2u);
-        //laplacian(uj, &d2u);
         laplacian(d2u, &d4u);
         MatMult(M1->M, d4u, d2u);
-        //VecAXPY(fu, -dt, d2u); // sign??
-        VecAXPY(fu, dt, d2u); // sign??
+        VecAXPY(fu, dt, d2u);
         VecDestroy(&d2u);
         VecDestroy(&d4u);
     }
 
-#ifdef WEAK_FORM_H
     MatMult(M2->M, hj, fh);
     MatMult(M2->M, hi, htmp1);
     VecAXPY(fh, -1.0, htmp1);
-#else
-    VecCopy(hj, fh);
-    VecAXPY(fh, -1.0, hj);
-#endif
 
     repack(f, fu, fh);
-    //VecAXPY(f, -dt, fs);
     VecAXPY(f, dt, fs);
 
     // clean up
@@ -553,17 +588,13 @@ void SWEqn::assemble_operator(double dt) {
     MatMPIAIJSetPreallocation(A, 16*n2, PETSC_NULL, 16*n2, PETSC_NULL);
 
     // [u,u] block // TODO: incorporate viscosity? time step = 1.0*dt?
+    MatAssemblyBegin(Muu, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Muu, MAT_FINAL_ASSEMBLY);
     MatCopy(M1->M, Muu, DIFFERENT_NONZERO_PATTERN);
     R->assemble(fl);
     MatAXPY(Muu, 0.5*dt, R->M, DIFFERENT_NONZERO_PATTERN);
-
-    // add in the viscosity
-    /*{
-       Mat VISC;
-       MatMatMult(E12M2, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &VISC);
-       MatDestroy(&VISC);
-       MatAXPY(Muu, -0.5*del2*dt, VISC, DIFFERENT_NONZERO_PATTERN);
-    }*/
+    MatAssemblyBegin(Muu, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Muu, MAT_FINAL_ASSEMBLY);
 
     MatGetOwnershipRange(Muu, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
@@ -581,6 +612,9 @@ void SWEqn::assemble_operator(double dt) {
     // [u,h] block
     MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Muh);
     MatScale(Muh, 0.5*dt*grav);
+    MatAssemblyBegin(Muh, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Muh, MAT_FINAL_ASSEMBLY);
+
     MatGetOwnershipRange(Muh, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(Muh, mm, &nCols, &cols, &vals);
@@ -597,6 +631,9 @@ void SWEqn::assemble_operator(double dt) {
     // [h,u] block
     MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mhu);
     MatScale(Mhu, 0.5*dt*H_mean);
+    MatAssemblyBegin(Mhu, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Mhu, MAT_FINAL_ASSEMBLY);
+
     MatGetOwnershipRange(Mhu, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(Mhu, mm, &nCols, &cols, &vals);
@@ -611,7 +648,10 @@ void SWEqn::assemble_operator(double dt) {
     }
 
     // [h,h] block
+    MatAssemblyBegin(Mhh, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Mhh, MAT_FINAL_ASSEMBLY);
     MatCopy(M2->M, Mhh, DIFFERENT_NONZERO_PATTERN);
+
     MatGetOwnershipRange(Mhh, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(Mhh, mm, &nCols, &cols, &vals);
@@ -707,6 +747,10 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
 }
 
 SWEqn::~SWEqn() {
+#ifdef UP_VORT
+    delete P_up;
+    KSPDestroy(&ksp_p);
+#endif
     KSPDestroy(&ksp);
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);
