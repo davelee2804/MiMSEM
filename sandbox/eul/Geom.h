@@ -3,7 +3,7 @@ typedef double (LevelFunc) (double* xi, int ki);
 
 class Geom {
     public:
-        Geom(int _pi, Topo* _topo, int _nk);
+        Geom(Topo* _topo, int _nk);
         ~Geom();
         int pi;
         int nl;

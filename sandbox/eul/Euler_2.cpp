@@ -399,7 +399,8 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
     Vec wl, wi, Ru, Ku, Mh, d2u, d4u, theta_k, dExner, dp;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
+    //VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_k);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ru);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ku);
@@ -496,10 +497,10 @@ void Euler::massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux) {
 void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
     int kk;
     double dot;
-    Vec pu, Fh, dF, theta_l, theta_g, dTheta, rho_dTheta_1, rho_dTheta_2, d2Theta, d3Theta;
+    Vec pu, Fh, dF, theta_g, dTheta, rho_dTheta_1, rho_dTheta_2, d2Theta, d3Theta;
 
     // compute the horiztonal mass fluxes
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l);
+    //VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_l);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &pu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dF);
@@ -511,10 +512,14 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
     }
 
     for(kk = 0; kk < geom->nk; kk++) {
-        VecZeroEntries(theta_l);
-        VecAXPY(theta_l, 0.5, pi[kk+0]);
-        VecAXPY(theta_l, 0.5, pi[kk+1]);
-        F->assemble(theta_l, kk, false, SCALE);
+        //VecZeroEntries(theta_l);
+        //VecAXPY(theta_l, 0.5, pi[kk+0]);
+        //VecAXPY(theta_l, 0.5, pi[kk+1]);
+        //F->assemble(theta_l, kk, false, SCALE);
+        VecZeroEntries(theta_g);
+        VecAXPY(theta_g, 0.5, pi[kk+0]);
+        VecAXPY(theta_g, 0.5, pi[kk+1]);
+        F->assemble(theta_g, kk, false, SCALE);
 
         M1->assemble(kk, SCALE, true);
         MatMult(F->M, uh[kk], pu);
@@ -530,8 +535,8 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
 
         // apply horiztonal viscosity
         if(rho_l) {
-            VecScatterBegin(topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_REVERSE);
-            VecScatterEnd(  topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_REVERSE);
+            //VecScatterBegin(topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_REVERSE);
+            //VecScatterEnd(  topo->gtol_2, theta_l, theta_g, INSERT_VALUES, SCATTER_REVERSE);
 
             M2->assemble(kk, SCALE, false);
             grad(false, theta_g, &dTheta, kk);
@@ -553,7 +558,7 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
     VecDestroy(&pu);
     VecDestroy(&Fh);
     VecDestroy(&dF);
-    VecDestroy(&theta_l);
+    //VecDestroy(&theta_l);
     if(rho_l) {
         VecDestroy(&theta_g);
         VecDestroy(&rho_dTheta_1);
@@ -942,18 +947,19 @@ double Euler::int2(Vec ug) {
     int ex, ey, ei, ii, mp1, mp12;
     double det, uq, local, global;
     PetscScalar *array_2;
-    Vec _ul;
+    //Vec _ul;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &_ul);
-    VecScatterBegin(topo->gtol_2, ug, _ul, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, ug, _ul, INSERT_VALUES, SCATTER_FORWARD);
+    //VecCreateSeq(MPI_COMM_SELF, topo->n2, &_ul);
+    //VecScatterBegin(topo->gtol_2, ug, _ul, INSERT_VALUES, SCATTER_FORWARD);
+    //VecScatterEnd(topo->gtol_2, ug, _ul, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
     local = 0.0;
 
-    VecGetArray(_ul, &array_2);
+    //VecGetArray(_ul, &array_2);
+    VecGetArray(ug, &array_2);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -966,11 +972,12 @@ double Euler::int2(Vec ug) {
             }
         }
     }
-    VecRestoreArray(_ul, &array_2);
+    //VecRestoreArray(_ul, &array_2);
+    VecRestoreArray(ug, &array_2);
 
     MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-    VecDestroy(&_ul);
+    //VecDestroy(&_ul);
 
     return global;
 }
@@ -1474,7 +1481,10 @@ void Euler::AssembleVertMomVort(L2Vecs* velz) {
     VecDestroy(&dwdx);
 }
 
-void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
+#define SIGMA_B 3000.0
+#define K_F 1.1574074074074073e-05
+
+void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save, Vec* theta_eq) {
     char    fieldname[100];
     Vec     wi, bu;
     Vec*    Fu_0    = CreateHorizVecs(topo, geom);
@@ -1488,6 +1498,7 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     L2Vecs* rt_h    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* theta_0 = new L2Vecs(geom->nk+1, topo, geom);
+    double  k_v;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
 
@@ -1498,7 +1509,7 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     rt_0->CopyFromHoriz(rt);       rt_0->HorizToVert();
     exner_0->CopyFromHoriz(exner); exner_0->HorizToVert();
 
-    AssembleVertMomVort(velz_0);
+    //AssembleVertMomVort(velz_0);
 
     if(firstStep) {
         vert->diagTheta2(rho_0->vz, rt_0->vz, vert->theta_h->vz);
@@ -1528,6 +1539,15 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
                                   velx[kk], velx[kk], ul[kk], ul[kk], Fu_0[kk]);
 
         M1->assemble(kk, SCALE, true);
+        // add the boundary layer friction
+        if(theta_eq && geom->levs[kk][0] < SIGMA_B) {
+            k_v = 0.0;
+            if(geom->levs[kk+1][0] < SIGMA_B) k_v += 0.5*dt*K_F*(SIGMA_B - geom->levs[kk+1][0])/SIGMA_B;
+            if(geom->levs[kk+0][0] < SIGMA_B) k_v += 0.5*dt*K_F*(SIGMA_B - geom->levs[kk+0][0])/SIGMA_B;
+            MatScale(M1->M, 1.0 + k_v);
+            MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+            MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+        }
         MatMult(M1->M, velx_0[kk], bu);
         VecAXPY(bu, -dt, Fu_0[kk]);
         KSPSolve(ksp1, bu, velx[kk]);
@@ -1543,7 +1563,8 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     rt_h->CopyFromHoriz(rt_0->vh);
     exner_h->CopyFromHoriz(exner_0->vh);
 
-    vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, uuz, velx_0, velx, ul_prev, ul);
+    //vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, uuz, velx_0, velx, ul_prev, ul);
+    vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, NULL, velx_0, velx, ul_prev, ul, theta_eq);
 
     // 3.  Explicit horiztonal solve
     if(!rank) cout << "horiztonal step (3).................." << endl;
@@ -1555,6 +1576,15 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
                                   velx_0[kk], velx[kk], ul[kk], ul_prev[kk], Fu_0[kk]);
 
         M1->assemble(kk, SCALE, true);
+        // add the boundary layer friction
+        if(theta_eq && geom->levs[kk][0] < SIGMA_B) {
+            k_v = 0.0;
+            if(geom->levs[kk+1][0] < SIGMA_B) k_v += 0.5*dt*K_F*(SIGMA_B - geom->levs[kk+1][0])/SIGMA_B;
+            if(geom->levs[kk+0][0] < SIGMA_B) k_v += 0.5*dt*K_F*(SIGMA_B - geom->levs[kk+0][0])/SIGMA_B;
+            MatScale(M1->M, 1.0 + k_v);
+            MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+            MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+        }
         MatMult(M1->M, velx_0[kk], bu);
         VecAXPY(bu, -dt, Fu_0[kk]);
         KSPSolve(ksp1, bu, velx[kk]);

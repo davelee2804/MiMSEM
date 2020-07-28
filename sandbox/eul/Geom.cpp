@@ -21,14 +21,14 @@ using std::string;
 //#define RAD_SPHERE (6371220.0/125.0)
 //#define RAD_SPHERE 1.0
 
-Geom::Geom(int _pi, Topo* _topo, int _nk) {
+Geom::Geom(Topo* _topo, int _nk) {
     int ii, jj;
     ifstream file;
     char filename[100];
     string line;
     double value;
 
-    pi   = _pi;
+    pi   = _topo->pi;
     topo = _topo;
     nk   = _nk;
 
@@ -464,16 +464,17 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
-    VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
+//    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
+//    VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterEnd(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &hxl);
     VecZeroEntries(hxl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &hxg);
     VecZeroEntries(hxg);
 
-    VecGetArray(hl, &hArray);
+//    VecGetArray(hl, &hArray);
+    VecGetArray(h, &hArray);
     VecGetArray(hxl, &hxArray);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -484,11 +485,9 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
             for(ii = 0; ii < mp12; ii++) {
                 interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &val);
 
-                //hxArray[inds0[ii]] = val;
                 // assume piecewise constant in the vertical, so rescale by
                 // the vertical determinant inverse
                 if(vert_scale) {
-                    //hxArray[inds0[ii]] *= 1.0/thick[lev][inds0[ii]];
                     val *= 1.0/thick[lev][inds0[ii]];
                 }
                 if(ii == 0 || ii == mp1-1 || ii == (mp1-1)*mp1 || ii == mp1*mp1-1) {
@@ -502,7 +501,8 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
             }
         }
     }
-    VecRestoreArray(hl, &hArray);
+//    VecRestoreArray(hl, &hArray);
+    VecRestoreArray(h, &hArray);
     VecRestoreArray(hxl, &hxArray);
 
     //VecScatterBegin(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
@@ -522,7 +522,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
     PetscViewerDestroy(&viewer);
     VecDestroy(&hxg);
     VecDestroy(&hxl);
-    VecDestroy(&hl);
+//    VecDestroy(&hl);
 
     // also write the vector itself
     sprintf(filename, "output/%s_%.3u_%.4u.vec", fieldname, lev, tstep);
@@ -540,7 +540,8 @@ void Geom::writeVertToHoriz(Vec* vecs, char* fieldname, int tstep, int nv) {
 
     hvecs = new Vec[nv];
     for(kk = 0; kk < nv; kk++) {
-        VecCreateSeq(MPI_COMM_SELF, topo->n2, &hvecs[kk]);
+//        VecCreateSeq(MPI_COMM_SELF, topo->n2, &hvecs[kk]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hvecs[kk]);
         VecZeroEntries(hvecs[kk]);
     }
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &gvec);
@@ -563,9 +564,10 @@ void Geom::writeVertToHoriz(Vec* vecs, char* fieldname, int tstep, int nv) {
     }
 
     for(kk = 0; kk < nv; kk++) {
-        VecZeroEntries(gvec);
-        VecScatterBegin(topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
-        VecScatterEnd(  topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
+//        VecZeroEntries(gvec);
+//        VecScatterBegin(topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
+//        VecScatterEnd(  topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
+        VecCopy(hvecs[kk], gvec);
         write2(gvec, fieldname, tstep, kk, false);
     }
 

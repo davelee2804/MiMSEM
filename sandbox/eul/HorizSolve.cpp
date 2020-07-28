@@ -262,7 +262,8 @@ void HorizSolve::laplacian(bool assemble, Vec ui, Vec* ddu, int lev) {
 void HorizSolve::diagnose_fluxes(int level, Vec u1, Vec u2, Vec h1l, Vec h2l, Vec* theta_l, Vec _F, Vec _G, Vec u1l, Vec u2l) {
     Vec hu, b, tmp2l, tmp1l;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &tmp2l);
+    //VecCreateSeq(MPI_COMM_SELF, topo->n2, &tmp2l);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp2l);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &tmp1l);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &hu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &b);
@@ -317,8 +318,8 @@ void HorizSolve::diagnose_fluxes(int level, Vec u1, Vec u2, Vec h1l, Vec h2l, Ve
     VecDestroy(&tmp1l);
 }
 
-void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* theta, L2Vecs* dF, L2Vecs* dG, Vec* u1l, Vec* u2l) {
-    Vec _F, _G, tmp1, rho_dTheta_1, rho_dTheta_2, tmp2, tmp2l, dTheta, d3Theta;
+void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* theta, L2Vecs* dF, L2Vecs* dG, Vec* u1l, Vec* u2l, bool do_temp_visc) {
+    Vec _F, _G, tmp1, rho_dTheta_1, rho_dTheta_2, tmp2, dTheta, d3Theta;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_G);
@@ -326,22 +327,25 @@ void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* the
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_1);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_2);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp2);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &tmp2l);
 
     for(int kk = 0; kk < geom->nk; kk++) {
         diagnose_fluxes(kk, u1[kk], u2[kk], h1l[kk], h2l[kk], theta->vh, _F, _G, u1l[kk], u2l[kk]);
 
-        if(do_visc) {
+        if(do_temp_visc) {
             VecZeroEntries(tmp2);
             VecAXPY(tmp2, 0.5, theta->vh[kk+0]);
             VecAXPY(tmp2, 0.5, theta->vh[kk+1]);
             M2->assemble(kk, SCALE, false);
             grad(false, tmp2, &dTheta, kk);
 
-            VecZeroEntries(tmp2l);
-            VecAXPY(tmp2l, 0.5, h1l[kk]);
-            VecAXPY(tmp2l, 0.5, h2l[kk]);
-            F->assemble(tmp2l, kk, true, SCALE);
+            //VecZeroEntries(tmp2l);
+            //VecAXPY(tmp2l, 0.5, h1l[kk]);
+            //VecAXPY(tmp2l, 0.5, h2l[kk]);
+            //F->assemble(tmp2l, kk, true, SCALE);
+            VecZeroEntries(tmp2);
+            VecAXPY(tmp2, 0.5, h1l[kk]);
+            VecAXPY(tmp2, 0.5, h2l[kk]);
+            F->assemble(tmp2, kk, true, SCALE);
             MatMult(F->M, dTheta, rho_dTheta_1);
 
             KSPSolve(ksp1, rho_dTheta_1, rho_dTheta_2);
@@ -367,7 +371,6 @@ void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* the
     VecDestroy(&rho_dTheta_1);
     VecDestroy(&rho_dTheta_2);
     VecDestroy(&tmp2);
-    VecDestroy(&tmp2l);
 }
 
 void HorizSolve::diagnose_Phi(int level, Vec u1, Vec u2, Vec u1l, Vec u2l, Vec* Phi) {
@@ -434,7 +437,8 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &wxz);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &velz_h);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
+    //VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dudz_h);
 
     m0->assemble(level, SCALE);
