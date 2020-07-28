@@ -86,6 +86,7 @@ class VertOps {
         void AssembleConstWithRhoInv2(int ex, int ey, Vec theta, Mat B);
         void AssembleLinearWithRho2_up(int ex, int ey, Vec rho, Mat A, double dt, Vec* uhl);
         void AssembleLinCon2_up(int ex, int ey, Mat AB, double dt, Vec* uhl);
+        void AssembleConLinWithRho(int ex, int ey, Mat BA, Vec rho);
 
         // new eos
         void Assemble_EOS_Residual_new(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs);

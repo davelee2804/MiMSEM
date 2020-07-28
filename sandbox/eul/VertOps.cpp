@@ -1291,14 +1291,12 @@ void VertOps::AssembleLinearWithBousInv(int ex, int ey, Vec bous, bool add_I, Ma
     mp12  = mp1*mp1;
 
     MatZeroEntries(A);
-
     if(add_I) {
         WtQW_2 = new double*[n2];
         for(ii = 0; ii < n2; ii++) {
             WtQW_2[ii] = new double[n2];
         }
     }
-
     VecGetArray(bous, &bArray);
     for(kk = 0; kk < geom->nk-1; kk++) {
         for(ii = 0; ii < mp12; ii++) {
@@ -2587,3 +2585,85 @@ void VertOps::AssembleLinCon2_up(int ex, int ey, Mat AB, double dt, Vec* uhl) {
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 }
 
+#define SIGMA_B 3000.0
+#define K_A 2.8935185185185185e-07
+#define K_S 2.8935185185185184e-06
+
+void VertOps::AssembleConLinWithRho(int ex, int ey, Mat BA, Vec rho) {
+    int ii, jj, kk, ei, mp1, mp12, *inds0;
+    double det, tk, gamma, k_theta = 0.0;
+    int rows[99], cols[99];
+    PetscScalar* tArray;
+
+    ei   = ey*topo->nElsX + ex;
+    mp1  = quad->n + 1;
+    mp12 = mp1*mp1;
+    inds0 = topo->elInds0_l(ex, ey);
+
+    MatZeroEntries(BA);
+
+    // assemble the matrices
+    VecGetArray(rho, &tArray);
+    for(kk = 0; kk < geom->nk; kk++) {
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            rows[ii] = ii + kk*W->nDofsJ;
+        }
+
+        for(ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            Q0[ii][ii] = 0.5*Q->A[ii][ii]*(SCALE/det);
+
+            tk = 0.0;
+            for(jj = 0; jj < n2; jj++) {
+                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
+                tk += tArray[kk*n2+jj]*gamma;
+            }
+            Q0[ii][ii] *= tk/det;
+            Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
+
+            // bottom level
+            if(geom->levs[kk+0][inds0[ii]] > SIGMA_B) {
+                k_theta = 0.0;
+            } else {
+                k_theta = (SIGMA_B - geom->levs[kk+0][inds0[ii]])/SIGMA_B;
+                k_theta *= pow(cos(geom->s[inds0[ii]][1]), 4);
+                k_theta *= (K_S - K_A);
+            }
+            k_theta += K_A;
+            QB[ii][ii] = k_theta*Q0[ii][ii];
+
+            // top level
+            if(geom->levs[kk+1][inds0[ii]] > SIGMA_B) {
+                k_theta = 0.0;
+            } else {
+                k_theta = (SIGMA_B - geom->levs[kk+1][inds0[ii]])/SIGMA_B;
+                k_theta *= pow(cos(geom->s[inds0[ii]][1]), 4);
+                k_theta *= (K_S - K_A);
+            }
+            k_theta += K_A;
+            QT[ii][ii] = k_theta*Q0[ii][ii];
+        }
+
+        // bottom level
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QB, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            cols[ii] = ii + (kk+0)*W->nDofsJ;
+        }
+        MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+
+        // top level
+        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QT, WtQ);
+        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+        Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+        for(ii = 0; ii < W->nDofsJ; ii++) {
+            cols[ii] = ii + (kk+1)*W->nDofsJ;
+        }
+        MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQWflat, ADD_VALUES);
+    }
+    VecRestoreArray(rho, &tArray);
+
+    MatAssemblyBegin(BA, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
+}
