@@ -17,6 +17,8 @@
 #define CV 717.5
 #define P0 100000.0
 
+#define SCALE 1.0e+8
+
 using namespace std;
 
 // mass matrix for the 1 form vector (x-normal degrees of
@@ -34,12 +36,31 @@ Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
 
-    delete U;
-
     MT = NULL;
+
+    //MatDuplicate(M, MAT_DO_NOT_COPY_VALUES, &_M);
+    MatCreate(MPI_COMM_WORLD, &_M);
+    MatSetSizes(_M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(_M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(_M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+    _assemble(0, SCALE, false);
+
+    delete U;
 }
 
 void Umat::assemble(int lev, double scale, bool vert_scale) {
+    //MatCopy(_M, M, SAME_NONZERO_PATTERN);
+    MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  _M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+    MatCopy(_M, M, DIFFERENT_NONZERO_PATTERN);
+    MatScale(M, 1.0/geom->thick[lev][0]);
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+}
+
+void Umat::_assemble(int lev, double scale, bool vert_scale) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_0;
     Wii* Q = new Wii(l->q, geom);
@@ -103,20 +124,26 @@ void Umat::assemble(int lev, double scale, bool vert_scale) {
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            MatSetValues(_M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            MatSetValues(_M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            MatSetValues(_M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            MatSetValues(_M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
         }
     }
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(_M, MAT_FINAL_ASSEMBLY);
 
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
@@ -267,6 +294,7 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
 Umat::~Umat() {
     MatDestroy(&M);
     if(MT) MatDestroy(&MT);
+    //MatDestroy(&_M);
 }
 
 // 2 form mass matrix
@@ -282,10 +310,31 @@ Wmat::Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
 
+    MatCreate(MPI_COMM_WORLD, &_M);
+    MatSetSizes(_M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
+    MatSetType(_M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(_M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
+
+    //MatDuplicate(M, MAT_DO_NOT_COPY_VALUES, &_M);
+    _assemble(0, SCALE, false);
+
     delete W;
 }
 
 void Wmat::assemble(int lev, double scale, bool vert_scale) {
+//cout << "HERE....\n";
+    MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  _M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+    MatCopy(_M, M, DIFFERENT_NONZERO_PATTERN);
+    MatScale(M, 1.0/geom->thick[lev][0]);
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+//cout << "...done.\n";
+}
+
+void Wmat::_assemble(int lev, double scale, bool vert_scale) {
     int ex, ey, ei, mp1, mp12, ii, *inds, *inds0;
     double det;
     Wii* Q = new Wii(e->l->q, geom);
@@ -311,7 +360,6 @@ void Wmat::assemble(int lev, double scale, bool vert_scale) {
             inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                //Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det/det);
                 Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det);
                 if(vert_scale) {
                     Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
@@ -323,12 +371,15 @@ void Wmat::assemble(int lev, double scale, bool vert_scale) {
 
             Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
-            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+            //MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+            MatSetValues(_M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
         }
     }
 
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(_M, MAT_FINAL_ASSEMBLY);
 
     Free2D(Q->nDofsI, Qaa);
     Free2D(W->nDofsJ, Wt);
@@ -341,6 +392,7 @@ void Wmat::assemble(int lev, double scale, bool vert_scale) {
 
 Wmat::~Wmat() {
     MatDestroy(&M);
+    MatDestroy(&_M);
 }
 
 // 1 form mass matrix with 2 forms interpolated to quadrature points
@@ -1701,7 +1753,8 @@ void EoSvec::assemble(Vec rt, int lev, double scale) {
     double p, rtq[99], fac;
     PetscScalar *rtArray, *vArray;
 
-    VecZeroEntries(vl);
+    //VecZeroEntries(vl);
+    VecZeroEntries(vg);
 
     mp1 = e->l->q->n + 1;
     mp12 = mp1*mp1;
@@ -1709,7 +1762,8 @@ void EoSvec::assemble(Vec rt, int lev, double scale) {
     fac = CP*pow(RD/P0, RD/CV);
 
     VecGetArray(rt, &rtArray);
-    VecGetArray(vl, &vArray);
+    //VecGetArray(vl, &vArray);
+    VecGetArray(vg, &vArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -1734,10 +1788,11 @@ void EoSvec::assemble(Vec rt, int lev, double scale) {
         }
     }
     VecRestoreArray(rt, &rtArray);
-    VecRestoreArray(vl, &vArray);
+    //VecRestoreArray(vl, &vArray);
+    VecRestoreArray(vg, &vArray);
 
-    VecScatterBegin(topo->gtol_2, vl, vg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_2,   vl, vg, INSERT_VALUES, SCATTER_REVERSE);
+    //VecScatterBegin(topo->gtol_2, vl, vg, INSERT_VALUES, SCATTER_REVERSE);
+    //VecScatterEnd(topo->gtol_2,   vl, vg, INSERT_VALUES, SCATTER_REVERSE);
 }
 
 void EoSvec::assemble_quad(Vec rt1, Vec rt2, int lev, double scale) {
@@ -1749,13 +1804,15 @@ void EoSvec::assemble_quad(Vec rt1, Vec rt2, int lev, double scale) {
     double third = 1.0/3.0;
     PetscScalar *rt1Array, *rt2Array, *vArray;
 
-    VecZeroEntries(vl);
+    //VecZeroEntries(vl);
+    VecZeroEntries(vg);
 
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
     VecGetArray(rt1, &rt1Array);
     VecGetArray(rt2, &rt2Array);
-    VecGetArray(vl, &vArray);
+    //VecGetArray(vl, &vArray);
+    VecGetArray(vg, &vArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds0 = topo->elInds0_l(ex, ey);
@@ -1786,10 +1843,11 @@ void EoSvec::assemble_quad(Vec rt1, Vec rt2, int lev, double scale) {
     }
     VecRestoreArray(rt1, &rt1Array);
     VecRestoreArray(rt2, &rt2Array);
-    VecRestoreArray(vl, &vArray);
+    //VecRestoreArray(vl, &vArray);
+    VecRestoreArray(vg, &vArray);
 
-    VecScatterBegin(topo->gtol_2, vl, vg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_2,   vl, vg, INSERT_VALUES, SCATTER_REVERSE);
+    //VecScatterBegin(topo->gtol_2, vl, vg, INSERT_VALUES, SCATTER_REVERSE);
+    //VecScatterEnd(topo->gtol_2,   vl, vg, INSERT_VALUES, SCATTER_REVERSE);
 }
 
 EoSvec::~EoSvec() {

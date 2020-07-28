@@ -8,8 +8,10 @@ class Umat {
         LagrangeEdge* e;
         Mat M;
         Mat MT;
+        Mat _M;
         void assemble(int lev, double scale, bool vert_scale);
         void assemble_up(int lev, double scale, double dt, Vec u1);
+        void _assemble(int lev, double scale, bool vert_scale);
 };
 
 class Wmat {
@@ -20,7 +22,9 @@ class Wmat {
         Geom* geom;
         LagrangeEdge* e;
         Mat M;
+        Mat _M;
         void assemble(int lev, double scale, bool vert_scale);
+        void _assemble(int lev, double scale, bool vert_scale);
 };
 
 class Uhmat {
