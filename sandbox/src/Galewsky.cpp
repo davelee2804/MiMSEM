@@ -6,19 +6,13 @@
 #include <petsc.h>
 #include <petscvec.h>
 
-#define IMPLICIT
-
 #include "LinAlg.h"
 #include "Basis.h"
 #include "Topo.h"
 #include "Geom.h"
 #include "ElMats.h"
 #include "Assembly.h"
-#ifdef IMPLICIT
 #include "SWEqn_Picard.h"
-#else
-#include "SWEqn.h"
-#endif
 
 using namespace std;
 
@@ -87,29 +81,17 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-#ifdef IMPLICIT
     double dt = 300.0;//40.0;
-#else
-    double dt = 120.0;//0.1*(2.0*M_PI/(4.0*12))/80.0;
-#endif
     double vort_0, mass_0, ener_0;
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-#ifdef IMPLICIT
     int nSteps = 10*24*12;//7200*3;
     int dumpEvery = 1*12;//6*30*3;
-#else
-    int nSteps = 5040;
-    int dumpEvery = 30;
-#endif
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
     Vec ui, hi, wi;
-#ifndef IMPLICIT
-    Vec uf, hf;
-#endif
     PetscViewer viewer;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
@@ -119,18 +101,14 @@ int main(int argc, char** argv) {
 
     cout << "importing topology for processor: " << rank << " of " << size << endl;
 
-    topo = new Topo(rank);
-    geom = new Geom(rank, topo);
+    topo = new Topo();
+    geom = new Geom(topo);
     sw = new SWEqn(topo, geom);
     sw->step = startStep;
-sw->do_visc = false;
+    sw->do_visc = false;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
-#ifndef IMPLICIT
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uf);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hf);
-#endif
 
     if(startStep == 0) {
         sw->init1(ui, u_init, v_init);
@@ -152,11 +130,7 @@ sw->do_visc = false;
         PetscViewerDestroy(&viewer);
     }
 
-#ifdef IMPLICIT
     sw->curl(ui, &wi);
-#else
-    sw->diagnose_w(ui, &wi, false);
-#endif
     vort_0 = sw->int0(wi);
     mass_0 = sw->int2(hi);
     ener_0 = sw->intE(ui, hi);
@@ -167,13 +141,7 @@ sw->do_visc = false;
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-#ifdef IMPLICIT
         sw->solve(ui, hi, dt, dump);
-#else
-        sw->solve_RK2_SS(ui, hi, uf, hf, dt, dump);
-        VecCopy(uf,ui);
-        VecCopy(hf,hi);
-#endif
         if(dump) {
             sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
         }
@@ -185,10 +153,6 @@ sw->do_visc = false;
 
     VecDestroy(&ui);
     VecDestroy(&hi);
-#ifndef IMPLICIT
-    VecDestroy(&uf);
-    VecDestroy(&hf);
-#endif
 
     PetscFinalize();
 

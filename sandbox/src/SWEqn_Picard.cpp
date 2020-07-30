@@ -82,9 +82,12 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     A = NULL;
 
+    M1_pc = new U0mat(topo, geom, node, edge);
+
     // initialize the linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M1->M, M1->M);
+    //KSPSetOperators(ksp, M1->M, M1_pc->M);
     KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
     KSPGetPC(ksp, &pc);
@@ -105,8 +108,9 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     }
     for(ii = 0; ii < topo->n2; ii++) {
         jj = ii + topo->n1;
-        dof_proc = topo->loc2[ii] / topo->n2l;
-        loc[jj] = dof_proc * (topo->n1l + topo->n2l) + topo->loc2[ii] % topo->n2l + topo->n1l;
+        //dof_proc = topo->loc2[ii] / topo->n2l;
+        //loc[jj] = dof_proc * (topo->n1l + topo->n2l) + topo->loc2[ii] % topo->n2l + topo->n1l;
+        loc[jj] = rank*(topo->n1l + topo->n2l) + ii + topo->n1l;//220720
     }
 
     ISCreateStride(MPI_COMM_SELF, topo->n1+topo->n2, 0, 1, &is_l);
@@ -234,8 +238,9 @@ void SWEqn::curl_up(Vec u, Vec *w) {
 
 // dH/du = hu = F
 void SWEqn::diagnose_F(Vec* F) {
-    Vec hu, b, hil, hjl;
+    Vec hu, b/*, hil, hjl*/;
 
+/*
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hil);
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hjl);
 
@@ -243,6 +248,7 @@ void SWEqn::diagnose_F(Vec* F) {
     VecScatterEnd(  topo->gtol_2, hi, hil, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterBegin(topo->gtol_2, hj, hjl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_2, hj, hjl, INSERT_VALUES, SCATTER_FORWARD);
+*/
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, F);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &hu);
@@ -251,7 +257,8 @@ void SWEqn::diagnose_F(Vec* F) {
     VecZeroEntries(hu);
 
     // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
-    M1h->assemble(hil);
+//    M1h->assemble(hil);
+    M1h->assemble(hi);
 
     MatMult(M1h->M, ui, b);
     VecAXPY(hu, 1.0/3.0, b);
@@ -259,7 +266,8 @@ void SWEqn::diagnose_F(Vec* F) {
     MatMult(M1h->M, uj, b);
     VecAXPY(hu, 1.0/6.0, b);
 
-    M1h->assemble(hjl);
+//    M1h->assemble(hjl);
+    M1h->assemble(hj);
 
     MatMult(M1h->M, ui, b);
     VecAXPY(hu, 1.0/6.0, b);
@@ -272,8 +280,8 @@ void SWEqn::diagnose_F(Vec* F) {
 
     VecDestroy(&hu);
     VecDestroy(&b);
-    VecDestroy(&hil);
-    VecDestroy(&hjl);
+//    VecDestroy(&hil);
+//    VecDestroy(&hjl);
 }
 
 // dH/dh = (1/2)u^2 + gh = \Phi
@@ -417,20 +425,21 @@ void SWEqn::laplacian(Vec u, Vec* ddu) {
 }
 
 void SWEqn::unpack(Vec x, Vec u, Vec h) {
-    Vec xl, ul, hl;
+    Vec xl, ul;
     PetscScalar *xArray, *uArray, *hArray;
     int ii;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1 + topo->n2, &xl);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
+//    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
 
     VecScatterBegin(gtol_x, x, xl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  gtol_x, x, xl, INSERT_VALUES, SCATTER_FORWARD);
 
     VecGetArray(xl, &xArray);
     VecGetArray(ul, &uArray);
-    VecGetArray(hl, &hArray);
+//    VecGetArray(hl, &hArray);
+    VecGetArray(h, &hArray);
     for(ii = 0; ii < topo->n1; ii++) {
         uArray[ii] = xArray[ii];
     }
@@ -439,35 +448,36 @@ void SWEqn::unpack(Vec x, Vec u, Vec h) {
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
-    VecRestoreArray(hl, &hArray);
+//    VecRestoreArray(hl, &hArray);
+    VecRestoreArray(h, &hArray);
 
     VecScatterBegin(topo->gtol_1, ul, u, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(  topo->gtol_1, ul, u, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterBegin(topo->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
+//    VecScatterBegin(topo->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
+//    VecScatterEnd(  topo->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
 
     VecDestroy(&xl);
     VecDestroy(&ul);
-    VecDestroy(&hl);
+//    VecDestroy(&hl);
 }
 
 void SWEqn::repack(Vec x, Vec u, Vec h) {
-    Vec xl, ul, hl;
+    Vec xl, ul;
     PetscScalar *xArray, *uArray, *hArray;
     int ii;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1 + topo->n2, &xl);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
-
+//    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
     VecScatterBegin(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterEnd(  topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
 
     VecGetArray(xl, &xArray);
     VecGetArray(ul, &uArray);
-    VecGetArray(hl, &hArray);
+//    VecGetArray(hl, &hArray);
+    VecGetArray(h, &hArray);
     for(ii = 0; ii < topo->n1; ii++) {
         xArray[ii] = uArray[ii];
     }
@@ -476,14 +486,15 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
-    VecRestoreArray(hl, &hArray);
+//    VecRestoreArray(hl, &hArray);
+    VecRestoreArray(h, &hArray);
 
     VecScatterBegin(gtol_x, xl, x, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(  gtol_x, xl, x, INSERT_VALUES, SCATTER_REVERSE);
 
     VecDestroy(&xl);
     VecDestroy(&ul);
-    VecDestroy(&hl);
+//    VecDestroy(&hl);
 }
 
 void SWEqn::assemble_residual(Vec x, Vec f) {
@@ -774,6 +785,8 @@ SWEqn::~SWEqn() {
     delete M1h;
     delete K;
 
+    delete M1_pc;
+
     delete edge;
     delete node;
     delete quad;
@@ -1015,8 +1028,8 @@ void SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
     VecScatterEnd(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     MatMult(EtoF->E21, ug, dug);
-    VecScatterBegin(topo->gtol_2, dug, dul, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, dug, dul, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterBegin(topo->gtol_2, dug, dul, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterEnd(topo->gtol_2, dug, dul, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
@@ -1026,7 +1039,8 @@ void SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
     local_i[0] = local_i[1] = 0.0;
 
     VecGetArray(ul, &array_1);
-    VecGetArray(dul, &array_2);
+//    VecGetArray(dul, &array_2);
+    VecGetArray(dug, &array_2);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -1064,7 +1078,8 @@ void SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
         }
     }
     VecRestoreArray(ul, &array_1);
-    VecRestoreArray(dul, &array_2);
+//    VecRestoreArray(dul, &array_2);
+    VecRestoreArray(dug, &array_2);
 
     MPI_Allreduce(local_1, global_1, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(local_2, global_2, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -1089,8 +1104,8 @@ void SWEqn::err2(Vec ug, ICfunc* fu, double* norms) {
     Vec ul;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &ul);
-    VecScatterBegin(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterBegin(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterEnd(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
@@ -1099,7 +1114,8 @@ void SWEqn::err2(Vec ug, ICfunc* fu, double* norms) {
     local_2[0] = local_2[1] = 0.0;
     local_i[0] = local_i[1] = 0.0;
 
-    VecGetArray(ul, &array_2);
+//    VecGetArray(ul, &array_2);
+    VecGetArray(ug, &array_2);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -1129,7 +1145,8 @@ if(fabs(geom->s[inds0[ii]][1]) > 0.45*M_PI) continue;
             }
         }
     }
-    VecRestoreArray(ul, &array_2);
+//    VecRestoreArray(ul, &array_2);
+    VecRestoreArray(ug, &array_2);
 
     MPI_Allreduce(local_1, global_1, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(local_2, global_2, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -1187,15 +1204,16 @@ double SWEqn::int2(Vec ug) {
     Vec ul;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &ul);
-    VecScatterBegin(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterBegin(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterEnd(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
     local = 0.0;
 
-    VecGetArray(ul, &array_2);
+//    VecGetArray(ul, &array_2);
+    VecGetArray(ug, &array_2);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -1209,7 +1227,8 @@ double SWEqn::int2(Vec ug) {
             }
         }
     }
-    VecRestoreArray(ul, &array_2);
+//    VecRestoreArray(ul, &array_2);
+    VecRestoreArray(ug, &array_2);
 
     MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
@@ -1230,8 +1249,8 @@ double SWEqn::intE(Vec ug, Vec hg) {
     VecScatterEnd(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
-    VecScatterBegin(topo->gtol_2, hg, hl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, hg, hl, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterBegin(topo->gtol_2, hg, hl, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterEnd(topo->gtol_2, hg, hl, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
@@ -1239,7 +1258,8 @@ double SWEqn::intE(Vec ug, Vec hg) {
     local = 0.0;
 
     VecGetArray(ul, &array_1);
-    VecGetArray(hl, &array_2);
+//    VecGetArray(hl, &array_2);
+    VecGetArray(hg, &array_2);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -1255,7 +1275,8 @@ double SWEqn::intE(Vec ug, Vec hg) {
         }
     }
     VecRestoreArray(ul, &array_1);
-    VecRestoreArray(hl, &array_2);
+//    VecRestoreArray(hl, &array_2);
+    VecRestoreArray(hg, &array_2);
 
     MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 

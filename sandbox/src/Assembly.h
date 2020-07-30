@@ -217,3 +217,15 @@ class RotMat_up {
         Wii* Q;
         void assemble(Vec q0, Vec ul, double dt);
 };
+
+class U0mat {
+    public:
+        U0mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~U0mat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble();
+};

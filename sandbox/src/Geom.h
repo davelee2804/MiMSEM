@@ -1,6 +1,6 @@
 class Geom {
     public:
-        Geom(int _pi, Topo* _topo);
+        Geom(Topo* _topo);
         ~Geom();
         int pi;
         int nl;

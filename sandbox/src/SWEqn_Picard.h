@@ -28,6 +28,7 @@ class SWEqn {
         Vec topog;
         Mat E01M1;
         Mat E12M2;
+        U0mat* M1_pc;
         KSP ksp;           // 1 form mass matrix linear solver
         VecScatter gtol_x;
         Vec ui;

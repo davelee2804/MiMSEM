@@ -20,15 +20,15 @@ using std::string;
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
 
-Geom::Geom(int _pi, Topo* _topo) {
+Geom::Geom(Topo* _topo) {
     int ii, jj;
     ifstream file;
     char filename[100];
     string line;
     double value;
 
-    pi = _pi;
     topo = _topo;
+    pi = topo->pi;
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -416,14 +416,15 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     mp12 = mp1*mp1;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
-    VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
+//    VecScatterEnd(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &hxl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &hxg);
     VecZeroEntries(hxg);
 
-    VecGetArray(hl, &hArray);
+//    VecGetArray(hl, &hArray);
+    VecGetArray(h, &hArray);
     VecGetArray(hxl, &hxArray);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -438,7 +439,8 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
             }
         }
     }
-    VecRestoreArray(hl, &hArray);
+//    VecRestoreArray(hl, &hArray);
+    VecRestoreArray(h, &hArray);
     VecRestoreArray(hxl, &hxArray);
 
     VecScatterBegin(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);

@@ -12,9 +12,7 @@
 using namespace std;
 using std::string;
 
-//#define CONTIGUOUS_2FORM_ELEMENT_DOFS
-
-Topo::Topo(int _pi) {
+Topo::Topo() {
     Vec vl, vg;
 
     int ii, n_procs;
@@ -23,7 +21,7 @@ Topo::Topo(int _pi) {
     char filename[100];
     string line;
 
-    pi = _pi;
+    MPI_Comm_rank(MPI_COMM_WORLD, &pi);
 
     // read the element order and number of elements in each dimension per processor
     sprintf(filename, "input/grid_res.txt");
@@ -119,12 +117,10 @@ Topo::Topo(int _pi) {
     // create the global index sets
     ISCreateGeneral(MPI_COMM_WORLD, n0, loc0, PETSC_COPY_VALUES, &is_g_0);
     ISCreateGeneral(MPI_COMM_WORLD, n1, loc1, PETSC_COPY_VALUES, &is_g_1);
-    ISCreateGeneral(MPI_COMM_WORLD, n2, loc2, PETSC_COPY_VALUES, &is_g_2);
 
     // create the local index sets
     ISCreateStride(MPI_COMM_SELF, n0, 0, 1, &is_l_0);
     ISCreateStride(MPI_COMM_SELF, n1, 0, 1, &is_l_1);
-    ISCreateStride(MPI_COMM_SELF, n2, 0, 1, &is_l_2);
 
     // load the local sizes
     sprintf(filename, "input/local_sizes_%.4u.txt", pi);
@@ -156,12 +152,6 @@ Topo::Topo(int _pi) {
     VecScatterCreate(vg, is_g_1, vl, is_l_1, &gtol_1);
     VecDestroy(&vl);
     VecDestroy(&vg);
-
-    VecCreateSeq(MPI_COMM_SELF, n2, &vl);
-    VecCreateMPI(MPI_COMM_WORLD, n2l, nDofs2G, &vg);
-    VecScatterCreate(vg, is_g_2, vl, is_l_2, &gtol_2);
-    VecDestroy(&vl);
-    VecDestroy(&vg);
 }
 
 Topo::~Topo() {
@@ -182,15 +172,12 @@ Topo::~Topo() {
 
     ISDestroy(&is_g_0);
     ISDestroy(&is_g_1);
-    ISDestroy(&is_g_2);
 
     ISDestroy(&is_l_0);
     ISDestroy(&is_l_1);
-    ISDestroy(&is_l_2);
 
     VecScatterDestroy(&gtol_0);
     VecScatterDestroy(&gtol_1);
-    VecScatterDestroy(&gtol_2);
 }
 
 void Topo::loadObjs(char* filename, int* loc) {
@@ -252,18 +239,11 @@ int* Topo::elInds1y_l(int ex, int ey) {
 }
 
 int* Topo::elInds2_l(int ex, int ey) {
-    int ix, iy, kk;
+    int kk;
+    int offset = (ey*nElsX+ex)*elOrd*elOrd;
 
-    kk = 0;
-    for(iy = 0; iy < elOrd ; iy++) {
-        for(ix = 0; ix < elOrd; ix++) {
-#ifdef CONTIGUOUS_2FORM_ELEMENT_DOFS
-            inds2_l[kk] = (ey*nElsX + ex)*elOrd*elOrd + iy*elOrd+ix;
-#else
-            inds2_l[kk] = (ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix;
-#endif
-            kk++;
-        }
+    for(kk = 0; kk < elOrd*elOrd; kk++) {
+        inds2_l[kk] = offset + kk;
     }
 
     return inds2_l;
@@ -312,21 +292,12 @@ int* Topo::elInds1y_g(int ex, int ey) {
 }
 
 int* Topo::elInds2_g(int ex, int ey) {
-    int ix, iy, kk;
+    int kk;
+    int offset = pi*n2;
 
-#ifdef CONTIGUOUS_2FORM_ELEMENT_DOFS
     inds2_g = elInds2_l(ex, ey);
-#endif
-    kk = 0;
-    for(iy = 0; iy < elOrd ; iy++) {
-        for(ix = 0; ix < elOrd; ix++) {
-#ifdef CONTIGUOUS_2FORM_ELEMENT_DOFS
-            inds2_g[kk] += loc2[0];
-#else
-            inds2_g[kk] = loc2[(ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix];
-#endif
-            kk++;
-        }
+    for(kk = 0; kk < elOrd*elOrd; kk++) {
+        inds2_g[kk] += offset;
     }
 
     return inds2_g;
