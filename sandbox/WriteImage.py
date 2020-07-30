@@ -1,30 +1,27 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import sys
 import numpy as np
 from matplotlib import pyplot as plt
 import matplotlib.tri as mtri
-import h5py
+#import h5py
 from Geom2 import *
 
-pn = 3
+pn = 2
 ne = 12
-print 'writing image'
+print('writing image')
 xg, yg, zg = init_geom(pn,ne,False,False)
-print '...done'
+print('...done')
 
 filename = sys.argv[1]
-fieldname = sys.argv[2]
-tmin = float(sys.argv[3])
-tmax = float(sys.argv[4])
-print 'file to read ' + filename
+tmin = float(sys.argv[2])
+tmax = float(sys.argv[3])
+print('file to read ' + filename)
 #f = h5py.File(filename,'r')
 #print f
 #print f.name
 #print f.keys()
 #print f.values()[0]
-##w = f[fieldname][()]
-#w = f[fieldname][:]
 #print w.shape
 #print xg.shape
 
