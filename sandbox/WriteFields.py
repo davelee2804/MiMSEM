@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import sys
 import numpy as np
@@ -12,7 +12,7 @@ pn = 3
 ne = 24
 nk = 24
 path = './output/'
-print 'generate geometry...'
+print('generate geometry...')
 xg, yg, zg = init_geom(pn,ne,False,False)
 
 xlen = xg.shape[0]
@@ -27,10 +27,13 @@ for ii in np.arange(xlen):
 	X[ii][2] = zg[ii]
 
 triang = mtri.Triangulation(theta,phi)
-angs = zip(theta,phi)
+#angs = zip(theta,phi)
+angs = np.zeros((len(theta),2))
+angs[:,0] = theta
+angs[:,1] = phi
 delaunay = scipy.spatial.Delaunay(angs)
 
-print '\t...done'
+print('\t...done')
 
 nx = 64
 ny = 128
@@ -50,7 +53,7 @@ field_i = 0
 for fieldname in fieldnames:
 	for kk in np.arange(nk):
 		filename = path + fieldname + '%.3d'%kk + '_%.4d'%step + '.dat'
-		print filename
+		print(filename)
 
 		#delete text lines
 		f = open(filename,'r')
@@ -138,7 +141,7 @@ velz_yz = np.zeros((nk-1,ny))
 for fieldname in fieldnames:
 	for kk in np.arange(nk-1):
 		filename = path + fieldname + '%.3d'%kk + '_%.4d'%step + '.dat'
-		print filename
+		print(filename)
 
 		#delete text lines
 		f = open(filename,'r')
@@ -200,7 +203,7 @@ theta_yz = np.zeros((nk+1,ny))
 for fieldname in fieldnames:
 	for kk in np.arange(nk+1):
 		filename = path + fieldname + '%.3d'%kk + '_%.4d'%step + '.dat'
-		print filename
+		print(filename)
 
 		#delete text lines
 		f = open(filename,'r')

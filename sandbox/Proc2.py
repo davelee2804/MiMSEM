@@ -12,14 +12,14 @@ class Side:
 
 class Proc:
 	def __init__(self,pn,nxg,nxl,pix,piy,npx,fi,n_procs,path):
-		self.polyDeg = pn
-		self.nElsXFace = nxg
-		self.nElsXProc = nxl
-		self.procX = pix
-		self.procY = piy
-		self.nProcsX = npx
-		self.faceID = fi
-		self.nProcs = n_procs
+		self.polyDeg = int(pn)
+		self.nElsXFace = int(nxg)
+		self.nElsXProc = int(nxl)
+		self.procX = int(pix)
+		self.procY = int(piy)
+		self.nProcsX = int(npx)
+		self.faceID = int(fi)
+		self.nProcs = int(n_procs)
 		self.procID = fi*npx*npx + piy*npx + pix
 		self.path = path
 
@@ -71,8 +71,7 @@ class Proc:
 
 		# global offsets
 		self.shift0 = self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc
-		#self.shift1 = 2*(self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc)
-		#self.shift2 = self.faceID*self.nDofsXFace*self.nDofsXFace + self.procY*self.nDofsXProc*self.nDofsXFace + self.procX*self.nDofsXProc
+		#self.shift0 = self.faceID*self.nDofsXFace*self.nDofsXFace + (self.procY*self.nProcsX+self.procX)*self.nDofsXProc*self.nDofsXProc
 		self.shift1 = 2*(self.faceID*self.nDofsXFace*self.nDofsXFace + (self.procY*self.nProcsX+self.procX)*self.nDofsXProc*self.nDofsXProc)
 		self.shift2 = self.faceID*self.nDofsXFace*self.nDofsXFace + (self.procY*self.nProcsX+self.procX)*self.nDofsXProc*self.nDofsXProc
 
@@ -91,6 +90,11 @@ class Proc:
 		for iy in np.arange(self.nDofsXProc):
 			for ix in np.arange(self.nDofsXProc):
 				self.loc0[iy*(self.nDofsXProc+1) + ix] = self.shift0 + iy*self.nDofsXFace + ix
+				#ey = iy // self.polyDeg
+				#py = iy % self.polyDeg
+				#ex = ix // self.polyDeg
+				#px = ix % self.polyDeg
+				#self.loc0[iy*(self.nDofsXProc+1) + ix] = self.shift0 + (ey*self.nElsXProc + ex)*self.polyDeg*self.polyDeg + py*self.polyDeg+px
 
 		# hanging nodes
 		if self.faceID == 0 and self.SE == None:
@@ -101,30 +105,27 @@ class Proc:
 		# global indices of local x normal edges
 		for iy in np.arange(self.nDofsXProc):
 			for ix in np.arange(self.nDofsXProc):
-				#self.loc1x[iy*(self.nDofsXProc+1) + ix] = self.shift1 + 2*(iy*self.nDofsXFace + ix)
-				ey = iy / self.polyDeg
+				ey = iy // self.polyDeg
 				py = iy % self.polyDeg
-				ex = ix / self.polyDeg
+				ex = ix // self.polyDeg
 				px = ix % self.polyDeg
 				self.loc1x[iy*(self.nDofsXProc+1) + ix] = self.shift1 + 2*((ey*self.nElsXProc + ex)*self.polyDeg*self.polyDeg + py*self.polyDeg+px)
 
 		# global indices of local y normal edges
 		for iy in np.arange(self.nDofsXProc):
 			for ix in np.arange(self.nDofsXProc):
-				#self.loc1y[iy*(self.nDofsXProc) + ix] = self.shift1 + 2*(iy*self.nDofsXFace + ix) + 1
-				ey = iy / self.polyDeg
+				ey = iy // self.polyDeg
 				py = iy % self.polyDeg
-				ex = ix / self.polyDeg
+				ex = ix // self.polyDeg
 				px = ix % self.polyDeg
 				self.loc1y[iy*(self.nDofsXProc) + ix] = self.shift1 + 2*((ey*self.nElsXProc + ex)*self.polyDeg*self.polyDeg + py*self.polyDeg+px) + 1
 
 		# global indices of local faces
 		for iy in np.arange(self.nDofsXProc):
 			for ix in np.arange(self.nDofsXProc):
-				#self.loc2[iy*(self.nDofsXProc) + ix] = self.shift2 + iy*self.nDofsXFace + ix
-				ey = iy / self.polyDeg
+				ey = iy // self.polyDeg
 				py = iy % self.polyDeg
-				ex = ix / self.polyDeg
+				ex = ix // self.polyDeg
 				px = ix % self.polyDeg
 				self.loc2[iy*self.nDofsXProc + ix] = self.shift2 + (ey*self.nElsXProc + ex)*self.polyDeg*self.polyDeg + py*self.polyDeg+px
 
@@ -193,7 +194,7 @@ class Proc:
 				self.loc0[(self.nDofsXProc)*(self.nDofsXProc+1)] = gInds0[0]
 
 		else:
-			print 'adjacency error (2.0)'
+			print('adjacency error (2.0)')
 
 		# now do the edges (north and south procs on same face)
 		if eAxis[0][0] == +1 and nAxis[1][1] == +1:
@@ -226,7 +227,7 @@ class Proc:
 				self.loc1y[(self.nDofsXProc)*(self.nDofsXProc) + ix] = gInds1y[ix]
 
 		else:
-			print 'adjacency error (2.1)'
+			print('adjacency error (2.1)')
 
 	# node to edge and edge to face incidence relations
 	def buildIncidence(self):
@@ -407,9 +408,9 @@ class ParaCube:
 		self.nx = nx		# number of elements across a face (global)
 		self.path = path
 
-		npx = int(np.sqrt(n_procs/6))
+		npx = int(np.sqrt(n_procs//6))
 		self.npx = npx
-		print 'no. procs in each dimsion: ' + str(self.npx)
+		print('no. procs in each dimsion: ' + str(self.npx))
 
 		self.faces = [None]*6
 		for fi in np.arange(6):
@@ -484,7 +485,7 @@ class ParaCube:
 		for fi in np.arange(6):
 			face = self.faces[fi]
 			for pj in np.arange(npx*npx):
-				self.procs[pi] = Proc(self.pn,self.nx,self.nx/self.npx,pj%npx,pj/npx,npx,fi,self.np,self.path)
+				self.procs[pi] = Proc(self.pn,self.nx,self.nx//self.npx,pj%npx,pj//npx,npx,fi,self.np,self.path)
 				face.procs[pj] = self.procs[pi]
 				pi = pi + 1
 
@@ -529,7 +530,7 @@ class ParaCube:
 			elif axis[1][0] == +1:
 				sideProcs = south.getE(-1)
 			else:
-				print 'adjacency error (1.0)'
+				print('adjacency error (1.0)')
 
 			for pi in np.arange(npx):
 				proc = face.procs[pi]
@@ -547,7 +548,7 @@ class ParaCube:
 			elif axis[0][1] == +1:
 				sideProcs = east.getS(-1)
 			else:
-				print 'adjacency error (1.1)'
+				print('adjacency error (1.1)')
 
 			for pi in np.arange(npx):
 				proc = face.procs[pi*npx + npx - 1]
@@ -565,7 +566,7 @@ class ParaCube:
 			elif axis[1][0] == +1:
 				sideProcs = north.getW(-1)
 			else:
-				print 'adjacency error (1.2)'
+				print('adjacency error (1.2)')
 
 			for pi in np.arange(npx):
 				proc = face.procs[npx*(npx-1) + pi]
@@ -583,7 +584,7 @@ class ParaCube:
 			elif axis[0][1] == +1:
 				sideProcs = west.getN(-1)
 			else:
-				print 'adjacency error (1.3)'
+				print('adjacency error (1.3)')
 
 			for pi in np.arange(npx):
 				proc = face.procs[npx*pi]
@@ -625,7 +626,7 @@ class ParaCube:
 			else:
 				neighbours[7] = proc.WS.proc.pi
 
-			print str(pi) + ':\t' + str(neighbours)
+			print(str(pi) + ':\t' + str(neighbours))
 
 	def print_neighbours(self,pi):
 		neighbours = np.zeros(8,dtype=np.int32)
