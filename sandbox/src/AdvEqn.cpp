@@ -9,7 +9,6 @@
 #include <petscmat.h>
 #include <petscpc.h>
 #include <petscksp.h>
-#include <petscsnes.h>
 
 #include "LinAlg.h"
 #include "Basis.h"
@@ -18,9 +17,6 @@
 #include "ElMats.h"
 #include "Assembly.h"
 #include "AdvEqn.h"
-
-#define RAD_EARTH 6371220.0
-#define RAD_SPHERE 6371220.0
 
 using namespace std;
 
@@ -49,9 +45,12 @@ AdvEqn::AdvEqn(Topo* _topo, Geom* _geom) {
     // incidence matrices
     EtoF = new E21mat(topo);
 
+    M1_pc = new U0mat(topo, geom, node, edge);
+
     // initialize the linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp1);
     KSPSetOperators(ksp1, M1->M, M1->M);
+    //KSPSetOperators(ksp1, M1->M, M1_pc->M);
     KSPSetTolerances(ksp1, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp1, KSPGMRES);
     KSPGetPC(ksp1, &pc);
@@ -63,7 +62,9 @@ AdvEqn::AdvEqn(Topo* _topo, Geom* _geom) {
     KT = NULL;
 }
 
-void AdvEqn::diagnose_F(Vec _u, Vec _q, Vec dF) {
+#define UPWIND
+
+void AdvEqn::diagnose_F(Vec _u, Vec _q, Vec dF, double dt) {
     Vec ul, b, F;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
@@ -73,7 +74,12 @@ void AdvEqn::diagnose_F(Vec _u, Vec _q, Vec dF) {
     VecScatterBegin(topo->gtol_1, _u, ul, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, _u, ul, INSERT_VALUES, SCATTER_FORWARD);
 
+#ifdef UPWIND
+    M1->assemble_up(dt, ul);
+    K->assemble_up(ul, dt);
+#else
     K->assemble(ul);
+#endif
     if(KT) {
         MatTranspose(K->M, MAT_REUSE_MATRIX, &KT);
     } else {
@@ -97,11 +103,11 @@ void AdvEqn::solve(Vec ui, Vec qi, Vec uj, Vec qj, double dt, bool save) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &f1);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &f2);
 
-    diagnose_F(ui, qi, f1);
+    diagnose_F(ui, qi, f1, dt);
     VecCopy(qi, q1);
     VecAXPY(q1, -dt, f1);
 
-    diagnose_F(uj, q1, f2);
+    diagnose_F(uj, q1, f2, dt);
     VecCopy(q1, q2);
     VecAXPY(q2, -dt, f2);
 
@@ -138,6 +144,8 @@ AdvEqn::~AdvEqn() {
     delete EtoF;
 
     delete K;
+
+    delete M1_pc;
 
     delete edge;
     delete node;

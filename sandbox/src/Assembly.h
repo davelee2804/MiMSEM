@@ -8,6 +8,7 @@ class Umat {
         LagrangeEdge* e;
         Mat M;
         void assemble();
+        void assemble_up(double dt, Vec u1);
 };
 
 class Wmat {
@@ -123,6 +124,7 @@ class WtQUmat {
         M2_j_xy_i* W;
         Wii* Q;
         void assemble(Vec u1);
+        void assemble_up(Vec u1, double dt);
 };
 
 class RotMat {

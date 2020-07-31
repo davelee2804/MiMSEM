@@ -119,6 +119,122 @@ void Umat::assemble() {
     delete V;
 }
 
+// upwinded test function matrix
+void Umat::assemble_up(double dt, Vec u1) {
+    int ex, ey, ei, m0, mp1, mp12, ii, jj;
+    int *inds_x, *inds_y;
+    double det, **J, ug[2], ul[2], lx[99], ly[99], _ex[99], _ey[99];
+    PetscScalar *u1Array;
+    GaussLobatto* quad = l->q;
+    Wii* Q = new Wii(l->q, geom);
+    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+    M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
+    double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    double** UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
+
+    m0 = l->q->n;
+    mp1 = l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    MatZeroEntries(M);
+    VecGetArray(u1, &u1Array);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ug);
+
+                // map velocity to local element coordinates
+                ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
+                ul[1] = (-J[1][0]*ug[0] + J[0][0]*ug[1])/det;
+                // evaluate the nodal bases at the upwinded locations
+                for(jj = 0; jj < mp1; jj++) {
+                    lx[jj] = l->eval_q(quad->x[ii%mp1] + dt*ul[0], jj);
+                    ly[jj] = l->eval_q(quad->x[ii/mp1] + dt*ul[1], jj);
+                }
+                // evaluate the edge bases at the upwinded locations
+                for(jj = 0; jj < m0; jj++) {
+                    _ex[jj] = e->eval(quad->x[ii%mp1]/* + dt*ul[0]*/, jj);
+                    _ey[jj] = e->eval(quad->x[ii/mp1]/* + dt*ul[1]*/, jj);
+                }
+                // evaluate the 2 form basis at the upwinded locations
+                for(jj = 0; jj < m0*mp1; jj++) {
+                    Ut[jj][ii] = lx[jj%mp1]*_ey[jj/mp1];
+                    Vt[jj][ii] = _ex[jj%m0]*ly[jj/m0];
+                }
+
+                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det;
+                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det;
+                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det;
+            }
+
+            // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qab, VtQba);
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
+
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQaa, U->A, UtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, V->A, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, U->A, VtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
+
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(u1, &u1Array);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+    Free2D(U->nDofsJ, UtQaa);
+    Free2D(U->nDofsJ, UtQab);
+    Free2D(U->nDofsJ, VtQba);
+    Free2D(U->nDofsJ, VtQbb);
+    Free2D(U->nDofsJ, UtQU);
+    Free2D(U->nDofsJ, UtQV);
+    Free2D(U->nDofsJ, VtQU);
+    Free2D(U->nDofsJ, VtQV);
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(Q->nDofsI, Qab);
+    Free2D(Q->nDofsI, Qbb);
+    delete[] UtQUflat;
+    delete Q;
+    delete U;
+    delete V;
+}
+
 Umat::~Umat() {
     MatDestroy(&M);
 }
@@ -640,6 +756,75 @@ void WtQUmat::assemble(Vec u1) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
+
+                Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det;
+                Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]/det;
+            }
+
+            Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+            Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQaa);
+            Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qab, WtQab);
+
+            Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQaa, U->A, WtQU);
+            Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQab, V->A, WtQV);
+
+            Flat2D_IP(W->nDofsJ, U->nDofsJ, WtQU, WtQUflat);
+            Flat2D_IP(W->nDofsJ, V->nDofsJ, WtQV, WtQVflat);
+
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+            inds_2 = topo->elInds2_g(ex, ey);
+
+            MatSetValues(M, W->nDofsJ, inds_2, U->nDofsJ, inds_x, WtQUflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds_2, V->nDofsJ, inds_y, WtQVflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(u1, &u1Array);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+}
+
+void WtQUmat::assemble_up(Vec u1, double dt) {
+    int ex, ey, ei, ii, jj, mp1, mp12, m0;
+    int *inds_x, *inds_y, *inds_2;
+    double det, **J, ux[2], ul[2], lx[99], ly[99], _ex[99], _ey[99];
+    PetscScalar* u1Array;
+    GaussLobatto* quad = l->q;
+
+    m0 = l->q->n;
+    mp1 = l->n + 1;
+    mp12 = mp1*mp1;
+
+    VecGetArray(u1, &u1Array);
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
+
+                // map velocity to local element coordinates
+                ul[0] = (+J[1][1]*ux[0] - J[0][1]*ux[1])/det;
+                ul[1] = (-J[1][0]*ux[0] + J[0][0]*ux[1])/det;
+                // evaluate the nodal bases at the upwinded locations
+                for(jj = 0; jj < mp1; jj++) {
+                    lx[jj] = l->eval_q(quad->x[ii%mp1] + dt*ul[0], jj);
+                    ly[jj] = l->eval_q(quad->x[ii/mp1] + dt*ul[1], jj);
+                }
+                // evaluate the edge bases at the upwinded locations
+                for(jj = 0; jj < m0; jj++) {
+                    _ex[jj] = e->eval(quad->x[ii%mp1]/* + dt*ul[0]*/, jj);
+                    _ey[jj] = e->eval(quad->x[ii/mp1]/* + dt*ul[1]*/, jj);
+                }
+                // evaluate the 2 form basis at the upwinded locations
+                for(jj = 0; jj < m0*mp1; jj++) {
+                    U->A[ii][jj] = lx[jj%mp1]*_ey[jj/mp1];
+                    V->A[ii][jj] = _ex[jj%m0]*ly[jj/m0];
+                }
 
                 Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det;
                 Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]/det;

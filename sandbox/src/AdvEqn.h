@@ -13,6 +13,7 @@ class AdvEqn {
         Topo* topo;
         Geom* geom;
         Umat* M1;
+        U0mat* M1_pc;
         Wmat* M2;
         WtQUmat* K;
         E21mat* EtoF;
@@ -21,6 +22,6 @@ class AdvEqn {
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
         void init2(Vec h, ICfunc* func);
         void err2(Vec u, ICfunc* fu, double* norms);
-        void diagnose_F(Vec _u, Vec _q, Vec dF);
+        void diagnose_F(Vec _u, Vec _q, Vec dF, double dt);
         void solve(Vec ui, Vec qi, Vec uj, Vec qj, double _dt, bool save);
 };

@@ -19,42 +19,55 @@ using namespace std;
 #define RAD_EARTH 6371220.0
 #define RAD_SPHERE 6371220.0
 
+#define T_PERIOD (12.0*24.0*60.0*60.0)
+
+double deform_flow_time = 0.0;
+
 double u_init(double* x) {
     double phi = asin(x[2]/RAD_SPHERE);
+    double lambda = atan2(x[1],x[0]);
+    double lambda_prime = lambda - 2.0*M_PI*deform_flow_time/T_PERIOD;
 
-    return 20.0*cos(phi);
+    return (10.0*RAD_EARTH/T_PERIOD)*sin(lambda_prime)*sin(lambda_prime)*sin(2.0*phi)*cos(M_PI*deform_flow_time/T_PERIOD) +
+           (2.0*M_PI*RAD_EARTH/T_PERIOD)*cos(phi);
 }
 
 double v_init(double* x) {
-    return 0.0;
+    double phi = asin(x[2]/RAD_SPHERE);
+    double lambda = atan2(x[1],x[0]);
+    double lambda_prime = lambda - 2.0*M_PI*deform_flow_time/T_PERIOD;
+
+    return (10.0*RAD_EARTH/T_PERIOD)*sin(2.0*lambda_prime)*cos(phi)*cos(M_PI*deform_flow_time/T_PERIOD);
+}
+
+double rad(double lambda, double phi, double lambda_0, double phi_0) {
+    return RAD_SPHERE*acos(sin(phi_0)*sin(phi) + cos(phi_0)*cos(phi)*cos(lambda-lambda_0));
 }
 
 double h_init(double* x) {
     double phi = asin(x[2]/RAD_SPHERE);
     double lambda = atan2(x[1],x[0]);
-    double hHat = 1.0;
-    double h;
-    double alpha = 1.0/3.0;
-    double beta = 1.0/15.0;
-    double phi2 = 0.0;
+    double lambda_1 = 5.0*M_PI/6.0 + M_PI;
+    double lambda_2 = 7.0*M_PI/6.0 + M_PI;
+    double rad_0 = 0.5*RAD_EARTH;
+    double rad_1 = rad(lambda, phi, lambda_1, 0.0);
+    double rad_2 = rad(lambda, phi, lambda_2, 0.0);
 
-    alpha *= 2.0;
-    beta = alpha;
-
-    h = hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
-
-    return h;
+    if(rad_1 < rad_0) return 0.5*(1.0 + cos(M_PI*rad_1/rad_0));
+    if(rad_2 < rad_0) return 0.5*(1.0 + cos(M_PI*rad_2/rad_0));
+    return 0.0;
 }
 
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 0.5*10424.884347085605;
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 2*192;
-    int dumpEvery = 2*24;
+    //int nSteps = 384;
+    int nSteps = 800;
+    int dumpEvery = 100;
+    double dt = T_PERIOD/nSteps;
     Topo* topo;
     Geom* geom;
     AdvEqn* ad;
@@ -79,8 +92,6 @@ int main(int argc, char** argv) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hj);
 
     if(startStep == 0) {
-        ad->init1(ui, u_init, v_init);
-        ad->init1(uj, u_init, v_init);
         ad->init2(hi, h_init);
 
         sprintf(fieldname,"velocity");
@@ -101,7 +112,12 @@ int main(int argc, char** argv) {
         VecCopy(ui, uj);
     }
 
+    deform_flow_time = startStep * dumpEvery * dt;
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
+        ad->init1(ui, u_init, v_init);
+        deform_flow_time += dt;
+        ad->init1(uj, u_init, v_init);
+
         if(!rank) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
