@@ -29,6 +29,7 @@
 using namespace std;
 
 HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
+    int ii;
     PC pc;
 
     dt = _dt;
@@ -90,6 +91,11 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetFromOptions(ksp1);
 
     ksp_up = NULL;
+
+    Fk = new Vec[geom->nk];
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fk[ii]);
+    }
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -156,9 +162,11 @@ HorizSolve::~HorizSolve() {
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&fg[ii]);
         VecDestroy(&fl[ii]);
+        VecDestroy(&Fk[ii]);
     }
     delete[] fg;
     delete[] fl;
+    delete[] Fk;
 
     delete m0;
     delete M1;
@@ -319,9 +327,10 @@ void HorizSolve::diagnose_fluxes(int level, Vec u1, Vec u2, Vec h1l, Vec h2l, Ve
 }
 
 void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* theta, L2Vecs* dF, L2Vecs* dG, Vec* u1l, Vec* u2l, bool do_temp_visc) {
-    Vec _F, _G, tmp1, rho_dTheta_1, rho_dTheta_2, tmp2, dTheta, d3Theta;
+    //Vec _F, _G, tmp1, rho_dTheta_1, rho_dTheta_2, tmp2, dTheta, d3Theta;
+    Vec _G, tmp1, rho_dTheta_1, rho_dTheta_2, tmp2, dTheta, d3Theta;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
+    //VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_G);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmp1);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_1);
@@ -329,7 +338,8 @@ void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* the
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp2);
 
     for(int kk = 0; kk < geom->nk; kk++) {
-        diagnose_fluxes(kk, u1[kk], u2[kk], h1l[kk], h2l[kk], theta->vh, _F, _G, u1l[kk], u2l[kk]);
+        //diagnose_fluxes(kk, u1[kk], u2[kk], h1l[kk], h2l[kk], theta->vh, _F, _G, u1l[kk], u2l[kk]);
+        diagnose_fluxes(kk, u1[kk], u2[kk], h1l[kk], h2l[kk], theta->vh, Fk[kk], _G, u1l[kk], u2l[kk]);
 
         if(do_temp_visc) {
             VecZeroEntries(tmp2);
@@ -359,13 +369,14 @@ void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* the
             VecDestroy(&d3Theta);
             VecDestroy(&dTheta);
         }
-        MatMult(EtoF->E21, _F, dF->vh[kk]);
+        //MatMult(EtoF->E21, _F, dF->vh[kk]);
+        MatMult(EtoF->E21, Fk[kk], dF->vh[kk]);
         MatMult(EtoF->E21, _G, dG->vh[kk]);
     }
     dF->HorizToVert();
     dG->HorizToVert();
 
-    VecDestroy(&_F);
+    //VecDestroy(&_F);
     VecDestroy(&_G);
     VecDestroy(&tmp1);
     VecDestroy(&rho_dTheta_1);
@@ -430,6 +441,7 @@ void HorizSolve::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
 void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi, 
                               Vec velx1, Vec velx2, Vec uil, Vec ujl, Vec fu)
 {
+    double k2i_l;
     Vec Phi, dPi, wxu, wxz, utmp, d2u, d4u;
     Vec theta_h, dp, dudz_h, velz_h;
 
@@ -497,6 +509,12 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
     MatMult(F->M, dPi, dp);
 #endif
     VecAXPY(fu, 1.0, dp);
+
+    // update the horizontal kinetic to internal energy exchange
+    if(level == 0) k2i = 0.0;
+    VecDot(Fk[level], dp, &k2i_l);
+    k2i_l /= SCALE;
+    k2i   += k2i_l;
 
     // second voritcity term
     if(level > 0) {

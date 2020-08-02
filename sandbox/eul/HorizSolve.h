@@ -6,6 +6,7 @@ class HorizSolve {
         ~HorizSolve();
         double dt;
         double del2;
+        double k2i;
         bool do_visc;
         int rank;
         int size;
@@ -28,6 +29,7 @@ class HorizSolve {
         UtQWmat* Rh;
         Vec* fg;                 // coriolis vector (global)
         Vec* fl;                 // coriolis vector (local)
+        Vec* Fk;
         KSP ksp1;
         KSP ksp_up;
 
