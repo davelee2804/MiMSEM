@@ -456,8 +456,8 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
     int ex, ey, ii, mp1, mp12;
     int *inds0;
     char filename[100];
-    double val, fac;
-    Vec hl, hxl, hxg;
+    double val;
+    Vec hxl, hxg;
     PetscScalar *hxArray, *hArray;
     PetscViewer viewer;
 
@@ -487,6 +487,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
 
                 // assume piecewise constant in the vertical, so rescale by
                 // the vertical determinant inverse
+/*
                 if(vert_scale) {
                     val *= 1.0/thick[lev][inds0[ii]];
                 }
@@ -498,6 +499,8 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
                     fac = 1.0;
                 }
                 hxArray[inds0[ii]] += (fac*val);
+*/
+                hxArray[inds0[ii]] = val;
             }
         }
     }
@@ -505,10 +508,10 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
     VecRestoreArray(h, &hArray);
     VecRestoreArray(hxl, &hxArray);
 
-    //VecScatterBegin(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
-    //VecScatterEnd(  topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterBegin(topo->gtol_0, hxl, hxg, ADD_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_0, hxl, hxg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
+    //VecScatterBegin(topo->gtol_0, hxl, hxg, ADD_VALUES, SCATTER_REVERSE);
+    //VecScatterEnd(  topo->gtol_0, hxl, hxg, ADD_VALUES, SCATTER_REVERSE);
 
 #ifdef WITH_HDF5
     sprintf(filename, "output/%s_%.3u_%.4u.h5", fieldname, lev, tstep);

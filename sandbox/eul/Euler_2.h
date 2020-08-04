@@ -27,6 +27,7 @@ class Euler {
         WtQdUdz_mat* Rz;
         Whmat* T;
         WmatInv* M2inv;
+        Umat_ray* M1ray;
         Mat KT;
         Vec* fg;                 // coriolis vector (global)
         bool firstStep;

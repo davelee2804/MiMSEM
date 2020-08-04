@@ -2585,13 +2585,50 @@ void VertOps::AssembleLinCon2_up(int ex, int ey, Mat AB, double dt, Vec* uhl) {
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 }
 
-#define SIGMA_B 3000.0
+double compute_sigma(double phi, double z) {
+    double _GRAVITY = 9.80616;
+    double _RD      = 287.0;
+    double _TE      = 310.0;
+    double _TP      = 240.0;
+    double _T0      = (0.5*(_TE + _TP));
+    double _GAMMA   = 0.005;
+    double _KP      = 3.0;
+
+    double A        = 1.0/_GAMMA;
+    double B        = (_TE - _TP)/((_TE + _TP)*_TP);
+    double H        = _RD*_T0/_GRAVITY;
+    double b        = 2.0;
+    double fac      = z/(b*H);
+    double fac2     = fac*fac;
+
+    double int_torr_1 = A*(exp(_GAMMA*z/_T0) - 1.0) + B*z*exp(-fac2);
+
+    double C        = 0.5*(_KP + 2.0)*(_TE - _TP)/(_TE*_TP);
+
+    double int_torr_2 = C*z*exp(-fac2);
+
+    double cp       = cos(phi);
+    double cpk      = pow(cp, _KP);
+    double cpkp2    = pow(cp, _KP+2.0);
+    double _fac     = cpk - (_KP/(_KP+2.0))*cpkp2;
+
+    double sigma    = exp(-_GRAVITY*int_torr_1/_RD + _GRAVITY*int_torr_2*_fac/_RD);
+
+    double SIGMA_B  = 0.7;//3000.0;
+
+    double _sigma   = (sigma - SIGMA_B)/(1.0 - SIGMA_B);
+
+    if(_sigma < 0.0) _sigma = 0.0;
+
+    return _sigma;
+}
+
 #define K_A 2.8935185185185185e-07
 #define K_S 2.8935185185185184e-06
 
 void VertOps::AssembleConLinWithRho(int ex, int ey, Mat BA, Vec rho) {
     int ii, jj, kk, ei, mp1, mp12, *inds0;
-    double det, tk, gamma, k_theta = 0.0;
+    double det, tk, gamma, k_theta = 0.0, sigma;
     int rows[99], cols[99];
     PetscScalar* tArray;
 
@@ -2622,10 +2659,13 @@ void VertOps::AssembleConLinWithRho(int ex, int ey, Mat BA, Vec rho) {
             Q0[ii][ii] *= 1.0/geom->thick[kk][inds0[ii]];
 
             // bottom level
-            if(geom->levs[kk+0][inds0[ii]] > SIGMA_B) {
+            //if(geom->levs[kk+0][inds0[ii]] > SIGMA_B) {
+            sigma = compute_sigma(geom->s[inds0[ii]][1], geom->levs[kk+0][inds0[ii]]);
+            if(sigma < 0.0) {
                 k_theta = 0.0;
             } else {
-                k_theta = (SIGMA_B - geom->levs[kk+0][inds0[ii]])/SIGMA_B;
+                //k_theta = (SIGMA_B - sigma)/SIGMA_B;
+                k_theta  = sigma;
                 k_theta *= pow(cos(geom->s[inds0[ii]][1]), 4);
                 k_theta *= (K_S - K_A);
             }
@@ -2633,10 +2673,13 @@ void VertOps::AssembleConLinWithRho(int ex, int ey, Mat BA, Vec rho) {
             QB[ii][ii] = k_theta*Q0[ii][ii];
 
             // top level
-            if(geom->levs[kk+1][inds0[ii]] > SIGMA_B) {
+            //if(geom->levs[kk+1][inds0[ii]] > SIGMA_B) {
+            sigma = compute_sigma(geom->s[inds0[ii]][1], geom->levs[kk+1][inds0[ii]]);
+            if(sigma < 0.0) {
                 k_theta = 0.0;
             } else {
-                k_theta = (SIGMA_B - geom->levs[kk+1][inds0[ii]])/SIGMA_B;
+                //k_theta = (SIGMA_B - geom->levs[kk+1][inds0[ii]])/SIGMA_B;
+                k_theta  = sigma;
                 k_theta *= pow(cos(geom->s[inds0[ii]][1]), 4);
                 k_theta *= (K_S - K_A);
             }

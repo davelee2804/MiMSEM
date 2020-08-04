@@ -8,5 +8,6 @@ void Mult_DF_IP(int ni, int nj, int nk, double** A, double** B, double** C);
 void Mult_FD_IP(int ni, int nj, int nk, double** A, double** B, double** C);
 double** Tran(int ni, int nj, double** A);
 void Tran_IP(int ni, int nj, double** A, double** B);
+void Ax_b(int ni, int nj, double** A, double* x, double* b);
 int Inv(double** A, double** Ainv, int n);
 void Inverse(double** A, double** Ainv, int n);

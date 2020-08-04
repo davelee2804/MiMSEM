@@ -148,6 +148,18 @@ void Tran_IP(int ni, int nj, double** A, double** B) {
     }
 }
 
+// Matrix vector multiplication
+void Ax_b(int ni, int nj, double** A, double* x, double* b) {
+    int ii, jj;
+
+    for(ii = 0; ii < ni; ii++) {
+        b[ii] = 0.0;
+        for(jj = 0; jj < nj; jj++) {
+            b[ii] += A[ii][jj]*x[jj];
+        }
+    }
+}
+
 #define SWAP(a,b) {temp=(a);(a)=(b);(b)=temp;}
 // Matrix inverse into supplied matrix
 int Inv( double** A, double** Ainv, int n ) {

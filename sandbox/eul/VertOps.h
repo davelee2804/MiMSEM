@@ -1,3 +1,5 @@
+double compute_sigma(double phi, double z);
+
 class VertOps {
     public:
         VertOps(Topo* _topo, Geom* _geom);

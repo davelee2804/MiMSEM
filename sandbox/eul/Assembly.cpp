@@ -2755,3 +2755,517 @@ void N_RT2_mat::assemble(int lev, double scale, Vec rt) {
 N_RT2_mat::~N_RT2_mat() {
     MatDestroy(&M);
 }
+
+double _compute_sigma(double phi, double z) {
+    double _GRAVITY = 9.80616;
+    double _RD      = 287.0;
+    double _TE      = 310.0;
+    double _TP      = 240.0;
+    double _T0      = (0.5*(_TE + _TP));
+    double _GAMMA   = 0.005;
+    double _KP      = 3.0;
+
+    double A        = 1.0/_GAMMA;
+    double B        = (_TE - _TP)/((_TE + _TP)*_TP);
+    double H        = _RD*_T0/_GRAVITY;
+    double b        = 2.0;
+    double fac      = z/(b*H);
+    double fac2     = fac*fac;
+
+    double int_torr_1 = A*(exp(_GAMMA*z/_T0) - 1.0) + B*z*exp(-fac2);
+
+    double C        = 0.5*(_KP + 2.0)*(_TE - _TP)/(_TE*_TP);
+
+    double int_torr_2 = C*z*exp(-fac2);
+
+    double cp       = cos(phi);
+    double cpk      = pow(cp, _KP);
+    double cpkp2    = pow(cp, _KP+2.0);
+    double _fac     = cpk - (_KP/(_KP+2.0))*cpkp2;
+
+    double sigma    = exp(-_GRAVITY*int_torr_1/_RD + _GRAVITY*int_torr_2*_fac/_RD);
+
+    double SIGMA_B  = 0.7;//3000.0;
+
+    double _sigma   = (sigma - SIGMA_B)/(1.0 - SIGMA_B);
+
+    if(_sigma < 0.0) _sigma = 0.0;
+
+    return _sigma;
+}
+
+Umat_ray::Umat_ray(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    l = _l;
+    e = _e;
+
+    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+
+    delete U;
+}
+
+#define K_F 1.1574074074074073e-05
+
+void Umat_ray::assemble(int lev, double scale, double dt) {
+    int ex, ey, ei, ii, mp1, mp12;
+    int *inds_x, *inds_y, *inds_0;
+    Wii* Q = new Wii(l->q, geom);
+    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+    M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
+    double det, **J, sigma_b, sigma_t, k_v;
+    double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    double** UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double** UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
+
+    MatZeroEntries(M);
+
+    mp1 = l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            inds_0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+
+                sigma_b = _compute_sigma(geom->s[inds_0[ii]][1], geom->levs[lev+0][inds_0[ii]]);
+                sigma_t = _compute_sigma(geom->s[inds_0[ii]][1], geom->levs[lev+1][inds_0[ii]]);
+                k_v = 0.5*dt*K_F*(sigma_b + sigma_t);
+
+                Qaa[ii][ii] *= k_v/geom->thick[lev][inds_0[ii]];
+                Qab[ii][ii] *= k_v/geom->thick[lev][inds_0[ii]];
+                Qbb[ii][ii] *= k_v/geom->thick[lev][inds_0[ii]];
+            }
+
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Vt, Qab, VtQba);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
+
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQaa, U->A, UtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, V->A, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, U->A, VtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+    Free2D(U->nDofsJ, UtQaa);
+    Free2D(U->nDofsJ, UtQab);
+    Free2D(U->nDofsJ, VtQba);
+    Free2D(U->nDofsJ, VtQbb);
+    Free2D(U->nDofsJ, UtQU);
+    Free2D(U->nDofsJ, UtQV);
+    Free2D(U->nDofsJ, VtQU);
+    Free2D(U->nDofsJ, VtQV);
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(Q->nDofsI, Qab);
+    Free2D(Q->nDofsI, Qbb);
+    delete[] UtQUflat;
+    delete Q;
+    delete U;
+    delete V;
+}
+
+Umat_ray::~Umat_ray() {
+    MatDestroy(&M);
+}
+
+//////////////////////////////////////////////////////////////
+Uvec::Uvec(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* _edge) {
+    topo = _topo;
+    geom = _geom;
+    node = _node;
+    edge = _edge;
+
+    Q = new Wii(node->q, geom);
+    U = new M1x_j_xy_i(node, edge);
+    V = new M1y_j_xy_i(node, edge);
+    Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &vg);
+}
+
+void Uvec::assemble(int lev, double scale, bool vert_scale, Vec vel) {
+    int ex, ey, ei, ii, mp1, mp12;
+    int *inds_x, *inds_y, *inds_0;
+    double det, **J;
+    PetscScalar *vArray, *velArray;
+    double _u[2], Qaa[99], Qab[99], Qba[99], Qbb[99], rhs[99];
+
+    mp1 = node->q->n + 1;
+    mp12 = mp1*mp1;
+
+    VecZeroEntries(vl);
+    VecZeroEntries(vg);
+
+    VecGetArray(vl, &vArray);
+    VecGetArray(vel, &velArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            inds_0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+
+                // horiztonal velocity is piecewise constant in the vertical
+                if(vert_scale) {
+                    Qaa[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                    Qab[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                    Qbb[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                }
+                Qba[ii] = Qab[ii];
+
+                // multiply by the velocity vector
+                geom->interp1_l(ex, ey, ii%mp1, ii/mp1, velArray, _u);
+
+                Qaa[ii] *= _u[0];
+                Qba[ii] *= _u[0];
+                Qab[ii] *= _u[1];
+                Qbb[ii] *= _u[1];
+            }
+
+            inds_x = topo->elInds1x_l(ex, ey);
+            inds_y = topo->elInds1y_l(ex, ey);
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Ut, Qaa, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_x[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Ut, Qab, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_x[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Vt, Qba, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_y[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Vt, Qbb, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_y[ii]] += rhs[ii];
+            }
+        }
+    }
+    VecRestoreArray(vl, &vArray);
+    VecRestoreArray(vel, &velArray);
+
+    VecScatterBegin(topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+}
+
+void Uvec::assemble_hu(int lev, double scale, bool vert_scale, Vec vel, Vec rho) {
+    int ex, ey, ei, ii, mp1, mp12;
+    int *inds_x, *inds_y, *inds_0;
+    double det, **J;
+    PetscScalar *vArray, *velArray, *rhoArray;
+    double _u[2], _r, Qaa[99], Qab[99], Qba[99], Qbb[99], rhs[99];
+
+    mp1 = node->q->n + 1;
+    mp12 = mp1*mp1;
+
+    VecZeroEntries(vl);
+    VecZeroEntries(vg);
+
+    VecGetArray(vl, &vArray);
+    VecGetArray(vel, &velArray);
+    VecGetArray(rho, &rhoArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            inds_0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+
+                // horiztonal velocity is piecewise constant in the vertical
+                if(vert_scale) {
+                    Qaa[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                    Qab[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                    Qbb[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                }
+                Qba[ii] = Qab[ii];
+
+                // multiply by the velocity vector
+                geom->interp1_l(ex, ey, ii%mp1, ii/mp1, velArray, _u);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rhoArray, &_r);
+                if(vert_scale) _r *= 1.0/geom->thick[lev][inds_0[ii]];
+
+                Qaa[ii] *= (_u[0] * _r);
+                Qba[ii] *= (_u[0] * _r);
+                Qab[ii] *= (_u[1] * _r);
+                Qbb[ii] *= (_u[1] * _r);
+            }
+
+            inds_x = topo->elInds1x_l(ex, ey);
+            inds_y = topo->elInds1y_l(ex, ey);
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Ut, Qaa, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_x[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Ut, Qab, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_x[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Vt, Qba, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_y[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Vt, Qbb, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_y[ii]] += rhs[ii];
+            }
+        }
+    }
+    VecRestoreArray(vl, &vArray);
+    VecRestoreArray(vel, &velArray);
+    VecRestoreArray(rho, &rhoArray);
+
+    VecScatterBegin(topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+}
+
+void Uvec::assemble_wxu(int lev, double scale, Vec vel, Vec vort) {
+    int ex, ey, ei, ii, mp1, mp12;
+    int *inds_x, *inds_y, *inds_0;
+    double det, **J;
+    double _u[2], _q, Qab[99], Qba[99], rhs[99];
+    PetscScalar *vortArray, *velArray, *vArray;
+
+    mp1 = node->n + 1;
+    mp12 = mp1*mp1;
+
+    VecZeroEntries(vl);
+    VecZeroEntries(vg);
+
+    VecGetArray(vort, &vortArray);
+    VecGetArray(vel, &velArray);
+    VecGetArray(vl, &vArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_x = topo->elInds1x_l(ex, ey);
+            inds_y = topo->elInds1y_l(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            inds_0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+                geom->interp0(ex, ey, ii%mp1, ii/mp1, vortArray, &_q);
+                _q *= 1.0/geom->thick[lev][inds_0[ii]];
+                geom->interp1_l(ex, ey, ii%mp1, ii/mp1, velArray, _u);
+
+                Qab[ii] = (-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qba[ii] = (+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]*(scale/det);
+
+                Qab[ii] *= (_q*_u[1])/geom->thick[lev][inds_0[ii]];
+                Qba[ii] *= (_q*_u[0])/geom->thick[lev][inds_0[ii]];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Ut, Qab, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_x[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Vt, Qba, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_y[ii]] += rhs[ii];
+            }
+        }
+    }
+    VecRestoreArray(vort, &vortArray);
+    VecRestoreArray(vel, &velArray);
+    VecRestoreArray(vl, &vArray);
+
+    VecScatterBegin(topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+}
+
+Uvec::~Uvec() {
+    delete U;
+    delete V;
+    delete Q;
+
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+}
+
+Wvec::Wvec(Topo* _topo, Geom* _geom, LagrangeEdge* _edge) {
+    topo = _topo;
+    geom = _geom;
+    edge = _edge;
+
+    Q = new Wii(edge->l->q, geom);
+    W = new M2_j_xy_i(edge);
+
+    Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &vg);
+}
+
+void Wvec::assemble(int lev, double scale, bool vert_scale, Vec rho) {
+    int ex, ey, ei, mp1, mp12, ii, *inds, *inds0;
+    double det, Qaa[99], rhs[99], _r;
+    PetscScalar *vArray, *rhoArray;
+
+    mp1 = edge->l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    VecZeroEntries(vg);
+
+    VecGetArray(vg, &vArray);
+    VecGetArray(rho, &rhoArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds = topo->elInds2_l(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            inds0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Qaa[ii]  = Q->A[ii][ii]*(scale/det);
+                if(vert_scale) {
+                    Qaa[ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                }
+                geom->interp2_l(ex, ey, ii%mp1, ii/mp1, rhoArray, &_r);
+                Qaa[ii] *= _r;
+            }
+
+            Ax_b(W->nDofsJ, Q->nDofsI, Wt, Qaa, rhs);
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                vArray[inds[ii]] += rhs[ii];
+            }
+        }
+    }
+
+    VecRestoreArray(vg, &vArray);
+    VecRestoreArray(rho, &rhoArray);
+}
+
+void Wvec::assemble_K(int lev, double scale, bool vert_scale, Vec vel1, Vec vel2) {
+    int ex, ey, ei, ii, mp1, mp12;
+    int *inds_2, *inds_0;
+    double det, **J, _uxg[2], _uxl[2], Qaa[99], Qab[99], rhs_a[99], rhs_b[99];
+    PetscScalar *vArray, *vel1Array, *vel2Array;
+
+    mp1 = edge->l->n + 1;
+    mp12 = mp1*mp1;
+
+    VecZeroEntries(vg);
+
+    VecGetArray(vg, &vArray);
+    VecGetArray(vel1, &vel1Array);
+    VecGetArray(vel2, &vel2Array);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            inds_0 = topo->elInds0_l(ex, ey);
+            inds_2 = topo->elInds2_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+                geom->interp1_l(ex, ey, ii%mp1, ii/mp1, vel1Array, _uxl);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, vel2Array, _uxg);
+                // horiztontal velocity is piecewise constant in the vertical
+                _uxg[0] *= 1.0/geom->thick[lev][inds_0[ii]];
+                _uxg[1] *= 1.0/geom->thick[lev][inds_0[ii]];
+
+                Qaa[ii] = 0.5*(_uxg[0]*J[0][0] + _uxg[1]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qab[ii] = 0.5*(_uxg[0]*J[0][1] + _uxg[1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+
+                // rescale by the inverse of the vertical determinant (piecewise 
+                // constant in the vertical)
+                Qaa[ii] *= (_uxl[0]/geom->thick[lev][inds_0[ii]]);
+                Qab[ii] *= (_uxl[1]/geom->thick[lev][inds_0[ii]]);
+            }
+
+            Ax_b(W->nDofsJ, Q->nDofsI, Wt, Qaa, rhs_a);
+            Ax_b(W->nDofsJ, Q->nDofsI, Wt, Qab, rhs_b);
+            for(ii = 0; ii < W->nDofsJ; ii++) {
+                vArray[inds_2[ii]] += (rhs_a[ii] + rhs_b[ii]);
+            }
+        }
+    }
+    VecRestoreArray(vg, &vArray);
+    VecRestoreArray(vel1, &vel1Array);
+    VecRestoreArray(vel2, &vel2Array);
+}
+
+Wvec::~Wvec() {
+    delete W;
+    delete Q;
+    Free2D(W->nDofsJ, Wt);
+    VecDestroy(&vg);
+}

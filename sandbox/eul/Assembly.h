@@ -414,3 +414,51 @@ class N_RT2_mat {
         Mat M;
         void assemble(int lev, double scale, Vec rt);
 };
+
+class Umat_ray {
+    public:
+        Umat_ray(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~Umat_ray();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble(int lev, double scale, double dt);
+};
+
+//////////////////////////////////////////////////////////////////
+class Uvec {
+    public:
+        Uvec(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* _edge);
+        ~Uvec();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* node;
+        LagrangeEdge* edge;
+        Vec vl;
+        Vec vg;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        Wii* Q;
+        double** Ut;
+        double** Vt;
+        void assemble(int lev, double scale, bool vert_scale, Vec vel);
+        void assemble_hu(int lev, double scale, bool vert_scale, Vec vel, Vec rho);
+        void assemble_wxu(int lev, double scale, Vec vel, Vec vort);
+};
+
+class Wvec {
+    public:
+        Wvec(Topo* _topo, Geom* _geom, LagrangeEdge* _edge);
+        ~Wvec();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* edge;
+        Vec vg;
+        M2_j_xy_i* W;
+        Wii* Q;
+        double** Wt;
+        void assemble(int lev, double scale, bool vert_scale, Vec rho);
+        void assemble_K(int lev, double scale, bool vert_scale, Vec vel1, Vec vel2);
+};
