@@ -424,7 +424,7 @@ class Umat_ray {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
-        void assemble(int lev, double scale, double dt);
+        void assemble(int lev, double scale, double dt, Vec exner, Vec exner_s);
 };
 
 //////////////////////////////////////////////////////////////////

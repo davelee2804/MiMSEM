@@ -322,7 +322,6 @@ Wmat::Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 }
 
 void Wmat::assemble(int lev, double scale, bool vert_scale) {
-//cout << "HERE....\n";
     MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  _M, MAT_FINAL_ASSEMBLY);
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
@@ -331,7 +330,6 @@ void Wmat::assemble(int lev, double scale, bool vert_scale) {
     MatScale(M, 1.0/geom->thick[lev][0]);
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
-//cout << "...done.\n";
 }
 
 void Wmat::_assemble(int lev, double scale, bool vert_scale) {
@@ -2794,6 +2792,18 @@ double _compute_sigma(double phi, double z) {
     return _sigma;
 }
 
+double compute_k_v(double exner, double exner_s) {
+    double p        = pow(exner/CP, CP/RD);
+    double ps       = pow(exner_s/CP, CP/RD);
+    double sigma    = p/ps;
+    double sigma_b  = 0.7;
+    double k_f      = 1.1574074074074073e-05;
+
+    if(sigma < sigma_b) return 0.0;
+
+    return k_f*(sigma - sigma_b)/(1.0 - sigma_b);
+}
+
 Umat_ray::Umat_ray(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     topo = _topo;
     geom = _geom;
@@ -2812,13 +2822,13 @@ Umat_ray::Umat_ray(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e)
 
 #define K_F 1.1574074074074073e-05
 
-void Umat_ray::assemble(int lev, double scale, double dt) {
+void Umat_ray::assemble(int lev, double scale, double dt, Vec exner_k, Vec exner_s) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_0;
     Wii* Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
-    double det, **J, sigma_b, sigma_t, k_v;
+    double det, **J, k_v;
     double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
     double** UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
@@ -2833,6 +2843,8 @@ void Umat_ray::assemble(int lev, double scale, double dt) {
     double** Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
     double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
     double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
+    double _e, _es;
+    PetscScalar *eArray, *esArray;
 
     MatZeroEntries(M);
 
@@ -2841,6 +2853,9 @@ void Umat_ray::assemble(int lev, double scale, double dt) {
 
     Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
     Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+
+    VecGetArray(exner_k, &eArray);
+    VecGetArray(exner_s, &esArray);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -2854,9 +2869,15 @@ void Umat_ray::assemble(int lev, double scale, double dt) {
                 Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
                 Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
 
-                sigma_b = _compute_sigma(geom->s[inds_0[ii]][1], geom->levs[lev+0][inds_0[ii]]);
-                sigma_t = _compute_sigma(geom->s[inds_0[ii]][1], geom->levs[lev+1][inds_0[ii]]);
-                k_v = 0.5*dt*K_F*(sigma_b + sigma_t);
+                //sigma_b = _compute_sigma(geom->s[inds_0[ii]][1], geom->levs[lev+0][inds_0[ii]]);
+                //sigma_t = _compute_sigma(geom->s[inds_0[ii]][1], geom->levs[lev+1][inds_0[ii]]);
+                //k_v = 0.5*dt*K_F*(sigma_b + sigma_t);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, eArray, &_e);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, esArray, &_es);
+                _e /= geom->thick[lev][inds_0[ii]];
+                _es /= geom->thick[0][inds_0[ii]];
+                k_v = compute_k_v(_e, _es);
+                k_v *= dt;
 
                 Qaa[ii][ii] *= k_v/geom->thick[lev][inds_0[ii]];
                 Qab[ii][ii] *= k_v/geom->thick[lev][inds_0[ii]];
@@ -2891,6 +2912,9 @@ void Umat_ray::assemble(int lev, double scale, double dt) {
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
+    VecRestoreArray(exner_k, &eArray);
+    VecRestoreArray(exner_s, &esArray);
 
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
@@ -2964,12 +2988,10 @@ void Uvec::assemble(int lev, double scale, bool vert_scale, Vec vel) {
                 Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                if(vert_scale) {
-                    Qaa[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                    Qab[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                    Qbb[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                }
-                Qba[ii] = Qab[ii];
+                Qaa[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qab[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qbb[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qba[ii]  = Qab[ii];
 
                 // multiply by the velocity vector
                 geom->interp1_l(ex, ey, ii%mp1, ii/mp1, velArray, _u);
@@ -3041,12 +3063,10 @@ void Uvec::assemble_hu(int lev, double scale, bool vert_scale, Vec vel, Vec rho)
                 Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                if(vert_scale) {
-                    Qaa[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                    Qab[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                    Qbb[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                }
-                Qba[ii] = Qab[ii];
+                Qaa[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qab[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qbb[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qba[ii]  = Qab[ii];
 
                 // multiply by the velocity vector
                 geom->interp1_l(ex, ey, ii%mp1, ii/mp1, velArray, _u);
