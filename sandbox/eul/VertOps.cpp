@@ -17,6 +17,7 @@
 #define CP 1004.5
 #define CV 717.5
 #define P0 100000.0
+#define GRAVITY 9.80616
 #define SCALE 1.0e+8
 
 using namespace std;
@@ -1538,8 +1539,8 @@ void VertOps::Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_r
             det = geom->det[ei][ii];
             rk *= 1.0/(det*geom->thick[kk][inds0[ii]]);
             ek *= 1.0/(det*geom->thick[kk][inds0[ii]]);
-if(ek<0.0){ek=1.0e-8;/*cout<<"ERROR! -ve exner pressure: "<<ek<<endl;*/}
-if(rk<0.0){rk=1.0e-8;/*cout<<"ERROR! -ve potential temp: "<<rk<<endl;*/}
+//if(ek<0.0){ek=1.0e-8;/*cout<<"ERROR! -ve exner pressure: "<<ek<<endl;*/}
+//if(rk<0.0){rk=1.0e-8;/*cout<<"ERROR! -ve potential temp: "<<rk<<endl;*/}
 
             rtq[ii] = log(ek) - (RD/CV)*log(rk) - log(CP) - (RD/CV)*log(RD/P0);
         }
@@ -2583,6 +2584,214 @@ void VertOps::AssembleLinCon2_up(int ex, int ey, Mat AB, double dt, Vec* uhl) {
     MatAssemblyEnd(AB, MAT_FINAL_ASSEMBLY);
 
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+}
+
+double compute_k_T(double phi, double exner, double exner_s, double theta) {
+    double p        = pow(exner/CP, CP/RD);
+    double ps       = pow(exner_s/CP, CP/RD);
+    double sigma    = p/ps;
+    double sigma_b  = 0.7;
+    double theta_eq;
+    double k_a      = 2.8935185185185185e-07;
+    double k_s      = 2.8935185185185184e-06;
+    double k_t      = 0.0;
+    double t_eq     = 315.0 - 60.0*sin(phi)*sin(phi) - 10.0*log(p)*cos(phi)*cos(phi);
+
+    t_eq *= pow(p, RD/CP);
+    if(t_eq < 200.0) t_eq = 200.0;
+
+    theta_eq = t_eq*pow(1.0/p, RD/CP);
+
+    if(sigma > sigma_b) {
+        k_t  = (k_s - k_a)*(sigma - sigma_b)/(1.0 - sigma_b);
+        k_t *= pow(cos(phi), 4.0);
+    }
+    k_t += k_a;
+
+    return k_t*(theta - theta_eq);
+}
+/*
+ double compute_k_t(double phi, double ps, double p, double theta) {
+    double sigma    = p/ps;
+    double sigma_b  = 0.7;
+    double theta_eq;
+    double k_a      = 2.8935185185185185e-07;
+    double k_s      = 2.8935185185185184e-06;
+    double k_t      = 0.0;
+    double t_eq     = 315.0 - 60.0*sin(phi)*sin(phi) - 10.0*log(p/P0)*cos(phi)*cos(phi);
+
+    t_eq *= pow(p/P0, RD/CP);
+    if(t_eq < 200.0) t_eq = 200.0;
+
+    theta_eq = t_eq*pow(P0/p, RD/CP);
+
+    if(sigma > sigma_b) {
+        k_t  = (k_s - k_a)*(sigma - sigma_b)/(1.0 - sigma_b);
+        k_t *= pow(cos(phi), 4.0);
+    }
+    k_t += k_a;
+
+    return k_t*(theta - theta_eq);
+}
+*/
+
+void VertOps::AssembleTempForcing_HS(int ex, int ey, Vec exner, Vec theta, Vec rho, Vec vec) {
+    int ei     = ey*topo->nElsX + ex;
+    int mp1    = quad->n + 1;
+    int mp12   = mp1*mp1;
+    int* inds0 = topo->elInds0_l(ex, ey);
+    double _e, _tb, _tt, _es, gamma, det;
+    double ps[99], phb[99], pht[99], ktt[99], ktb[99], rh[99], kt[99];
+    PetscScalar *eArray, *tArray, *rArray, *vArray;
+
+    VecZeroEntries(vec);
+
+    VecGetArray(exner, &eArray);
+    VecGetArray(theta, &tArray);
+    VecGetArray(rho,   &rArray);
+    VecGetArray(vec,   &vArray);
+
+/*
+    for(int kk = 0; kk < geom->nk; kk++) {
+        for(int jj = 0; jj < n2; jj++) {
+            for(int ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                _e = _tb = _tt = _r = _es = 0.0;
+                for(int ll = 0; ll < n2; ll++) {
+                    gamma = geom->edge->ejxi[ii%mp1][ll%topo->elOrd]*geom->edge->ejxi[ii/mp1][ll/topo->elOrd];
+                    _e  += eArray[kk*n2+ll]*gamma;
+                    _tb += tArray[(kk+0)*n2+ll]*gamma;
+                    _tt += tArray[(kk+1)*n2+ll]*gamma;
+                    _r  += rArray[kk*n2+ll]*gamma;
+                    _es += eArray[ll]*gamma;
+                }
+                _e  /= (det*geom->thick[kk][inds0[ii]]);
+                _tb /= (det);
+                _tt /= (det);
+                _r  /= (det*geom->thick[kk][inds0[ii]]);
+                _es /= (det*geom->thick[kk][inds0[ii]]);
+
+                k_t = compute_k_T(cos(geom->s[inds0[ii]][1]), _e, _es, 0.5*(_tb + _tt));
+
+                vArray[kk*n2+jj] += Wt[jj][ii] * Q->A[ii][ii] * SCALE * _r * k_t;
+            }
+        }
+    }
+*/
+    // compute the surface pressure
+/*
+    for(int ii = 0; ii < mp12; ii++) {
+        det = geom->det[ei][ii];
+        _es = _tb = 0.0;
+        for(int ll = 0; ll < n2; ll++) {
+            gamma = geom->edge->ejxi[ii%mp1][ll%topo->elOrd]*geom->edge->ejxi[ii/mp1][ll/topo->elOrd];
+            _es += eArray[ll]*gamma;
+            _tb += tArray[ll]*gamma;
+        }
+        _es /= (det*geom->thick[0][inds0[ii]]);
+        _tb /= (det);
+        ps[ii] = P0*pow(_es/CP, CP/RD);
+        phb[ii] = ps[ii];
+        ktb[ii] = compute_k_t(cos(geom->s[inds0[ii]][1]), ps[ii], ps[ii], _tb);
+    }
+
+    for(int kk = 0; kk < geom->nk; kk++) {
+        for(int ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            rh[ii] = _tt = 0.0;
+            for(int ll = 0; ll < n2; ll++) {
+                gamma   = geom->edge->ejxi[ii%mp1][ll%topo->elOrd]*geom->edge->ejxi[ii/mp1][ll/topo->elOrd];
+                rh[ii] += rArray[kk*n2+ll]*gamma;
+                _tt    += tArray[(kk+1)*n2+ll]*gamma;
+            }
+            rh[ii] /= (det*geom->thick[kk][inds0[ii]]);
+            _tt    /= (det);
+            pht[ii] = phb[ii] - GRAVITY * rh[ii] * geom->thick[kk][inds0[ii]];
+            ktt[ii] = compute_k_t(cos(geom->s[inds0[ii]][1]), ps[ii], pht[ii], _tt);
+        }
+        for(int jj = 0; jj < n2; jj++) {
+            for(int ii = 0; ii < mp12; ii++) {
+                vArray[kk*n2+jj] += Wt[jj][ii] * Q->A[ii][ii] * SCALE * rh[ii] * 0.5 * (ktb[ii] + ktt[ii]);
+            }
+        }
+        for(int ii = 0; ii < mp12; ii++) {
+            phb[ii] = pht[ii];
+            ktb[ii] = ktt[ii];
+        }
+    }
+*/
+    // precompute the hydrostatic pressure (& density)
+/*
+    for(int ii = 0; ii < mp12; ii++) {
+        ph[geom->nk*n2+ii] = 0.0;
+    }
+    for(int kk = geom->nk-1; kk >= 0; kk--) {
+        for(int ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            rh[kk*n2+ii] = 0.0;
+            for(int ll = 0; ll < n2; ll++) {
+                gamma = geom->edge->ejxi[ii%mp1][ll%topo->elOrd]*geom->edge->ejxi[ii/mp1][ll/topo->elOrd];
+                rh[kk*n2+ii] += rArray[kk*n2+ll]*gamma;
+            }
+            rh[kk*n2+ii] /= (det*geom->thick[kk][inds0[ii]]);
+            ph[kk*n2+ii]  = ph[(kk+1)*n2+ii] + GRAVITY * rh[kk*n2+ii] * geom->thick[kk][inds0[ii]];
+        }
+    }
+
+    for(int kk = 0; kk < geom->nk; kk++) {
+        for(int ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            _tb = _tt = 0.0;
+            for(int ll = 0; ll < n2; ll++) {
+                gamma = geom->edge->ejxi[ii%mp1][ll%topo->elOrd]*geom->edge->ejxi[ii/mp1][ll/topo->elOrd];
+                _tb  += tArray[(kk+0)*n2+ll]*gamma;
+                _tt  += tArray[(kk+1)*n2+ll]*gamma;
+            }
+            _tb    /= (det);
+            _tt    /= (det);
+            ktb[ii] = compute_k_t(cos(geom->s[inds0[ii]][1]), ph[ii], ph[(kk+0)*n2+ii], _tb);
+            ktt[ii] = compute_k_t(cos(geom->s[inds0[ii]][1]), ph[ii], ph[(kk+1)*n2+ii], _tt);
+        }
+        for(int jj = 0; jj < n2; jj++) {
+            for(int ii = 0; ii < mp12; ii++) {
+                vArray[kk*n2+jj] += Wt[jj][ii] * Q->A[ii][ii] * SCALE * rh[kk*n2+ii] * 0.5 * (ktb[ii] + ktt[ii]);
+            }
+        }
+    }
+*/
+    for(int kk = 0; kk < geom->nk; kk++) {
+        for(int ii = 0; ii < mp12; ii++) {
+            det = geom->det[ei][ii];
+            _e = _tb = _tt = rh[ii] = _es = 0.0;
+            for(int ll = 0; ll < n2; ll++) {
+                gamma = geom->edge->ejxi[ii%mp1][ll%topo->elOrd]*geom->edge->ejxi[ii/mp1][ll/topo->elOrd];
+                _e  += eArray[kk*n2+ll]*gamma;
+                _tb += tArray[(kk+0)*n2+ll]*gamma;
+                _tt += tArray[(kk+1)*n2+ll]*gamma;
+                rh[ii] += rArray[kk*n2+ll]*gamma;
+                _es += eArray[ll]*gamma;
+            }
+            _e  /= (det*geom->thick[kk][inds0[ii]]);
+            _tb /= (det);
+            _tt /= (det);
+            rh[ii] /= (det*geom->thick[kk][inds0[ii]]);
+            _es /= (det*geom->thick[0][inds0[ii]]);
+
+            kt[ii] = compute_k_T(cos(geom->s[inds0[ii]][1]), _e, _es, 0.5*(_tb + _tt));
+//cout << kt[ii]*120.0 << endl;
+        }
+
+        for(int jj = 0; jj < n2; jj++) {
+            for(int ii = 0; ii < mp12; ii++) {
+                vArray[kk*n2+jj] += Wt[jj][ii] * Q->A[ii][ii] * SCALE * rh[ii] * kt[ii];
+            }
+        }
+    }
+
+    VecRestoreArray(exner, &eArray);
+    VecRestoreArray(theta, &tArray);
+    VecRestoreArray(rho,   &rArray);
+    VecRestoreArray(vec,   &vArray);
 }
 
 double compute_sigma(double phi, double z) {
