@@ -21,6 +21,7 @@ OBJS = LinAlg.o \
        ElMats.o \
        VertOps.o \
        Assembly.o \
+       HorizSolve.o \
        VertSolve.o \
        Euler_2.o \
        Bubble.o
@@ -28,14 +29,17 @@ OBJS = LinAlg.o \
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
-Bubble.o: Bubble.cpp Euler_2.o VertSolve.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+Bubble.o: Bubble.cpp Euler_2.o VertSolve.o HorizSolve.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Bubble.cpp ${CXXFLAGS}
 
-Euler_2.o: Euler_2.cpp Euler_2.h VertSolve.o Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+Euler_2.o: Euler_2.cpp Euler_2.h VertSolve.o HorizSolve.o Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Euler_2.cpp ${CXXFLAGS}
 
-VertSolve.o: VertSolve.cpp VertSolve.h Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+VertSolve.o: VertSolve.cpp VertSolve.h HorizSolve.o Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c VertSolve.cpp ${CXXFLAGS}
+
+HorizSolve.o: HorizSolve.cpp HorizSolve.h Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c HorizSolve.cpp ${CXXFLAGS}
 
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}

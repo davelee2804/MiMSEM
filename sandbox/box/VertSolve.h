@@ -16,6 +16,9 @@ class VertSolve {
         Vec* gv;                 // gravity vector
         Vec* zv;                 // level height vector
         VertOps* vo;
+        L2Vecs* theta_h;
+        L2Vecs* exner_h;
+        HorizSolve* horiz;
 
         void initGZ();
         void viscosity();
@@ -31,6 +34,9 @@ void solve_schur(
 L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
 L2Vecs* udwdx, Mat M2, E21mat* EtoF, KSP ksp_x,
 L2Vecs* F_rho_o, L2Vecs* F_rt_o, Vec* ul, WtQdUdz_mat* Rz);
+void solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
+                              L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l,
+                              Mat M2, E21mat* EtoF, KSP ksp_x, WtQdUdz_mat* Rz);
 
         void assemble_operator(int ex, int ey, Vec velz, Vec theta, Vec rho, Vec rt, Vec exner, Mat* _PC);
         void assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 

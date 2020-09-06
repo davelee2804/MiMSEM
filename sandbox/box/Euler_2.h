@@ -38,7 +38,9 @@ class Euler {
         Vec* zv;
         Vec* uz;                 // dudz and dvdz vorticity components
         Vec* uzl;
+        Vec* uzl_prev;
         Vec* ul;
+        Vec* ul_prev;
         L2Vecs* uuz;             // u.dudz + v.dvdz vorticity velocity product
         Mat VA;
         Mat VB;
@@ -60,9 +62,9 @@ class Euler {
 
         double viscosity();
         void initGZ();
-        void grad(KSP _ksp, Mat _M2, Vec phi, Vec* u, int lev);            // weak form grad operator
-        void curl(Vec u, Vec* w, int lev);  // weak form curl operator
-        void laplacian(Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
+        void grad(KSP _ksp, Mat _M2, Vec phi, Vec* u);            // weak form grad operator
+        void curl(Vec u, Vec* w);  // weak form curl operator
+        void laplacian(Vec u, Vec* ddu);       // laplacian operator via helmholtz decomposition
         void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux);
         void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu, Vec Flux, Vec uzb, Vec uzt, Vec velz_b, Vec velz_t);
@@ -76,6 +78,7 @@ class Euler {
         void HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft, Vec* velz);
         void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
         void Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
+        void Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
         double int2(Vec ug);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);

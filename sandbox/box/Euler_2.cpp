@@ -17,6 +17,7 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
+#include "HorizSolve.h"
 #include "VertSolve.h"
 #include "Euler_2.h"
 
@@ -141,13 +142,17 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     }
     uz = new Vec[geom->nk-1];
     uzl = new Vec[geom->nk-1];
+    uzl_prev = new Vec[geom->nk-1];
     for(ii = 0; ii < geom->nk - 1; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uz[ii]);
         VecCreateSeq(MPI_COMM_SELF, topo->n1, &uzl[ii]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &uzl_prev[ii]);
     }
     ul = new Vec[geom->nk];
+    ul_prev = new Vec[geom->nk];
     for(ii = 0; ii < geom->nk; ii++) {
         VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul[ii]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul_prev[ii]);
     }
 #ifdef WITH_UDWDX
     uuz = new L2Vecs(geom->nk-1, topo, geom);
@@ -301,9 +306,11 @@ Euler::~Euler() {
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&Kh[ii]);
         VecDestroy(&ul[ii]);
+        VecDestroy(&ul_prev[ii]);
     }
     delete[] Kh;
     delete[] ul;
+    delete[] ul_prev;
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&gv[ii]);
         VecDestroy(&zv[ii]);
@@ -313,9 +320,11 @@ Euler::~Euler() {
     for(ii = 0; ii < geom->nk-1; ii++) {
         VecDestroy(&uz[ii]);
         VecDestroy(&uzl[ii]);
+        VecDestroy(&uzl_prev[ii]);
     }
     delete[] uz;
     delete[] uzl;
+    delete[] uzl_prev;
 #ifdef WITH_UDWDX
     delete uuz;
 #endif
@@ -378,7 +387,7 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ku);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mh);
 
-    curl(uh, &wi, lev);
+    curl(uh, &wi);
     VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
 
@@ -394,7 +403,7 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
     VecAXPY(theta_k, 0.5, theta_l[lev+0]);
     VecAXPY(theta_k, 0.5, theta_l[lev+1]);
 
-    grad(ksp1, M2->M, exner, &dExner, lev);
+    grad(ksp1, M2->M, exner, &dExner);
     F->assemble(theta_k, lev, false, SCALE);
     MatMult(F->M, dExner, dp);
     VecAXPY(Fu, 1.0, dp);
@@ -419,8 +428,8 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
 
     // add in the biharmonic viscosity
     if(do_visc) {
-        laplacian(uh, &d2u, lev);
-        laplacian(d2u, &d4u, lev);
+        laplacian(uh, &d2u);
+        laplacian(d2u, &d4u);
         VecZeroEntries(d2u);
         MatMult(M1->M, d4u, d2u);
         VecAXPY(Fu, 1.0, d2u);
@@ -497,14 +506,14 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
 
         // apply horiztonal viscosity
         if(rho_l) {
-            grad(ksp1o, M2->Mo, theta_g, &dTheta, kk);
+            grad(ksp1o, M2->Mo, theta_g, &dTheta);
             F->assemble(rho_l[kk], kk, true, SCALE);
             MatMult(F->M, dTheta, rho_dTheta_1);
 
             KSPSolve(ksp1, rho_dTheta_1, rho_dTheta_2);
             MatMult(EtoF->E21, rho_dTheta_2, d2Theta);
 
-            grad(ksp1, M2->M, d2Theta, &d3Theta, kk);
+            grad(ksp1, M2->M, d2Theta, &d3Theta);
             MatMult(EtoF->E21, d3Theta, d2Theta);
             VecAXPY(Fp[kk], del2*del2, d2Theta);
             VecDestroy(&d3Theta);
@@ -549,7 +558,7 @@ void Euler::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
 /*
 Take the weak form gradient of a 2 form scalar field as a 1 form vector field
 */
-void Euler::grad(KSP _ksp, Mat _M2, Vec phi, Vec* u, int lev) {
+void Euler::grad(KSP _ksp, Mat _M2, Vec phi, Vec* u) {
     Vec Mphi, dMphi;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, u);
@@ -567,7 +576,7 @@ void Euler::grad(KSP _ksp, Mat _M2, Vec phi, Vec* u, int lev) {
 /*
 Take the weak form curl of a 1 form vector field as a 1 form vector field
 */
-void Euler::curl(Vec u, Vec* w, int lev) {
+void Euler::curl(Vec u, Vec* w) {
     Vec Mu, dMu;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
@@ -582,7 +591,7 @@ void Euler::curl(Vec u, Vec* w, int lev) {
     VecDestroy(&dMu);
 }
 
-void Euler::laplacian(Vec ui, Vec* ddu, int lev) {
+void Euler::laplacian(Vec ui, Vec* ddu) {
     Vec Du, Cu, RCu;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &RCu);
@@ -593,11 +602,11 @@ void Euler::laplacian(Vec ui, Vec* ddu, int lev) {
     MatMult(EtoF->E21, ui, Du);
 
     // grad (weak form)
-    grad(ksp1, M2->M, Du, ddu, lev);
+    grad(ksp1, M2->M, Du, ddu);
 
     /*** rotational component ***/
     // curl (weak form)
-    curl(ui, &Cu, lev);
+    curl(ui, &Cu);
 
     // rot (strong form)
     MatMult(NtoE->E10, Cu, RCu);
@@ -1208,7 +1217,7 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
         delete l2Theta;
 
         for(int kk = 0; kk < geom->nk; kk++) {
-            curl(velx[kk], &wi, kk);
+            curl(velx[kk], &wi);
 
             sprintf(fieldname, "vorticity");
             geom->write0(wi, fieldname, step, kk);
@@ -1260,6 +1269,153 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete exner_h;
     delete F_rho_h;
     delete F_rt_h;
+}
+
+void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
+    char    fieldname[100];
+    Vec     wi, bu;
+    Vec*    Fu_0    = CreateHorizVecs(topo, geom);
+    Vec*    velx_0  = CreateHorizVecs(topo, geom);
+    L2Vecs* velz_0  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_0   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_0    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_0 = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* velz_h  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_h   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_h    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_0 = new L2Vecs(geom->nk+1, topo, geom);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+
+    // 0.  Copy initial fields
+    for(int kk = 0; kk < geom->nk; kk++) VecCopy(velx[kk], velx_0[kk]);
+    velz_0->CopyFromVert(velz);    velz_0->VertToHoriz();
+    rho_0->CopyFromHoriz(rho);     rho_0->HorizToVert();
+    rt_0->CopyFromHoriz(rt);       rt_0->HorizToVert();
+    exner_0->CopyFromHoriz(exner); exner_0->HorizToVert();
+
+    //AssembleVertMomVort(velz_0);
+
+    if(firstStep) {
+        vert->diagTheta2(rho_0->vz, rt_0->vz, vert->theta_h->vz);
+        vert->theta_h->VertToHoriz();
+        for(int kk = 0; kk < geom->nk; kk++) {
+            VecScatterBegin(topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+            VecScatterEnd(  topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+        }
+    } else {
+        for(int kk = 0; kk < geom->nk-1; kk++) {
+            VecCopy(uzl[kk], uzl_prev[kk]);
+        }
+    }
+
+    for(int kk = 0; kk < geom->nk; kk++) {
+        VecCopy(ul[kk], ul_prev[kk]);
+    }
+
+    // 1.  Explicit horizontal momentum solve (predictor)
+    if(!rank) cout << "horiztonal step (1).................." << endl;
+    diagTheta(rho_0->vz, rt_0->vz, theta_0->vz);
+    theta_0->VertToHoriz();
+    HorizVort(velx);
+    if(firstStep) for(int kk = 0; kk < geom->nk-1; kk++) VecCopy(uzl[kk], uzl_prev[kk]);
+    for(int kk = 0; kk < geom->nk; kk++) {
+        vert->horiz->momentum_rhs(kk, theta_0->vh, uzl, uzl, velz_0->vh, velz_0->vh, exner_0->vh[kk],
+                                  velx[kk], velx[kk], ul[kk], ul[kk], Fu_0[kk]);
+
+        MatMult(M1->M, velx_0[kk], bu);
+
+        VecAXPY(bu, -dt, Fu_0[kk]);
+        KSPSolve(ksp1, bu, velx[kk]);
+
+        VecScatterBegin(topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+    }
+
+    // 2.  Implicit vertical solve
+    if(!rank) cout << "  vertical step (2).................." << endl;
+    velz_h->CopyFromHoriz(velz_0->vh);
+    rho_h->CopyFromHoriz(rho_0->vh);
+    rt_h->CopyFromHoriz(rt_0->vh);
+    exner_h->CopyFromHoriz(exner_0->vh);
+
+    vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, uuz, velx_0, velx, ul_prev, ul, M2->Mo, EtoF, ksp1o, Rz);
+    //vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, M2->Mo, EtoF, ksp1o, F_rho_h, F_rt_h, ul, Rz);
+
+    // 3.  Explicit horiztonal solve
+    if(!rank) cout << "horiztonal step (3).................." << endl;
+    diagTheta(rho_h->vz, rt_h->vz, theta_0->vz);
+    theta_0->VertToHoriz();
+    HorizVort(velx);
+    for(int kk = 0; kk < geom->nk; kk++) {
+        vert->horiz->momentum_rhs(kk, vert->theta_h->vh, uzl, uzl_prev, velz_h->vh, velz_0->vh, vert->exner_h->vh[kk],
+                                  velx_0[kk], velx[kk], ul[kk], ul_prev[kk], Fu_0[kk]);
+
+        MatMult(M1->M, velx_0[kk], bu);
+
+        VecAXPY(bu, -dt, Fu_0[kk]);
+        KSPSolve(ksp1, bu, velx[kk]);
+
+        VecScatterBegin(topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+    }
+
+    // update input vectors
+    velz_h->CopyToVert(velz);
+    rho_h->CopyToHoriz(rho);
+    rt_h->CopyToHoriz(rt);
+    exner_h->CopyToHoriz(exner);
+
+    diagnostics(velx, velz, rho, rt, exner);
+
+    // write output
+    if(save) {
+        step++;
+
+        L2Vecs* l2Theta = new L2Vecs(geom->nk+1, topo, geom);
+        diagTheta(rho_h->vz, rt_h->vz, l2Theta->vz);
+        l2Theta->VertToHoriz();
+        for(int kk = 0; kk < geom->nk+1; kk++) {
+            sprintf(fieldname, "theta");
+            geom->write2(l2Theta->vh[kk], fieldname, step, kk, false);
+        }
+        delete l2Theta;
+
+        for(int kk = 0; kk < geom->nk; kk++) {
+            curl(velx[kk], &wi);
+
+            sprintf(fieldname, "vorticity");
+            geom->write0(wi, fieldname, step, kk);
+            sprintf(fieldname, "velocity_h");
+            geom->write1(velx[kk], fieldname, step, kk);
+            sprintf(fieldname, "density");
+            geom->write2(rho[kk], fieldname, step, kk, true);
+            sprintf(fieldname, "rhoTheta");
+            geom->write2(rt[kk], fieldname, step, kk, true);
+            sprintf(fieldname, "exner");
+            geom->write2(exner[kk], fieldname, step, kk, true);
+
+            VecDestroy(&wi);
+        }
+        sprintf(fieldname, "velocity_z");
+        geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
+    }
+
+    firstStep = false;
+
+    VecDestroy(&bu);
+    DestroyHorizVecs(Fu_0, geom);
+    DestroyHorizVecs(velx_0, geom);
+    delete velz_0;
+    delete rho_0;
+    delete rt_0;
+    delete exner_0;
+    delete velz_h;
+    delete rho_h;
+    delete rt_h;
+    delete exner_h;
+    delete theta_0;
 }
 
 // compute the vorticity components dudz, dvdz
