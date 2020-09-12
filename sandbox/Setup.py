@@ -12,7 +12,7 @@ pn = int(sys.argv[1])
 ne = int(sys.argv[2])
 n_procs = int(sys.argv[3])
 
-path = './src/'
+path = './eul/'
 
 try:
 	os.makedirs(path + '/input')
