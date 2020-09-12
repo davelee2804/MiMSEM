@@ -102,12 +102,12 @@ def plot_2(h,u,v,x,topo,topo_q,N,E,step,ho,uo,hc,uc,dX):
 
 	plt.plot(x,hx,'g-')
 	plt.plot(x,vx,'b-')
-	plt.plot(x,ux,'r-')
+	plt.plot(x,ux,'r-.')
 	plt.legend([r'$A$',r'$A_{PG;\Delta t}$',r'$-A_{PG;-\Delta t}^{\top}$'])
 	plt.ylim([-0.2,+1.2])
 	plt.xlabel('$x$')
 	plt.ylabel('$q$')
-	plt.savefig('wave_mim_%.4d'%step + '.png')
+	plt.savefig('wave_mim_%.4d'%step + '.pdf')
 	if step==20:
 		plt.show()
 	plt.clf()

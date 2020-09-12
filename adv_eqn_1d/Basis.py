@@ -44,10 +44,10 @@ class GaussLobatto:
 			self.w = np.array([0.02777777777777777777778,0.1654953615608055250463,0.274538712500161735281,0.3464285109730463451151,0.3715192743764172335601,\
                                0.3464285109730463451151,0.2745387125001617352807,0.165495361560805525046,0.02777777777777777777778])
 		else:
-			print 'invalid gauss-lobatto quadrature order: ' + str(n)
+			print('invalid gauss-lobatto quadrature order: ' + str(n))
 
 		if np.abs(np.sum(self.w) - 2.0) > 1.0e-8:
-			print 'quadrature weights error!'
+			print('quadrature weights error!')
 
 class LagrangeNode:
 	def __init__(self,n,m):
@@ -81,7 +81,7 @@ class LagrangeNode:
 			for m in np.arange(len(xi)):
 				if m == i or m == j:
 					continue
-                        	a = a*(x-xi[m])/(xi[j]-xi[m])
+				a = a*(x-xi[m])/(xi[j]-xi[m])
 
 			d = d + a
 

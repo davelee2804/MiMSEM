@@ -24,7 +24,7 @@ class Pmat:
 			PtQ = mult(Pt,Q)
 			self.Me = mult(PtQ,P)
 			for jj in np.arange(n2):
-				r = jj/n
+				r = jj//n
 				c = jj%n
 				rows[ii] = inds1[r]
 				cols[ii] = inds1[c]
@@ -55,14 +55,14 @@ class Umat:
 			PtQ = mult(Pt,Q)
 			self.Me = mult(PtQ,P)
 			for jj in np.arange(np12):
-				row = inds0[jj/np1]
+				row = inds0[jj//np1]
 				col = inds0[jj%np1]
 				ii = maps[row,col]
 				if ii == -1:
-					print 'ERROR! assembly'
+					print('ERROR! assembly')
 				rows[ii] = row
 				cols[ii] = col
-				vals[ii] = vals[ii] + self.Me[jj/np1,jj%np1]
+				vals[ii] = vals[ii] + self.Me[jj//np1,jj%np1]
 
 		nr = topo.nx*topo.n
 		nc = topo.nx*topo.n
@@ -78,7 +78,7 @@ class Umat:
 		for ex in np.arange(topo.nx):
 			inds0 = topo.localToGlobal0(ex)
 			for jj in np.arange(ne*ne):
-				row = inds0[jj/ne]
+				row = inds0[jj//ne]
 				col = inds0[jj%ne]
 				if maps[row][col] == -1:
 					maps[row][col] = ii
@@ -109,12 +109,12 @@ class PtQmat:
 			inds1 = topo.localToGlobal1(ex)
 			inds0 = topo_q.localToGlobal0(ex)
 			for jj in np.arange(m0*n):
-				r = inds1[jj/m0]
+				r = inds1[jj//m0]
 				c = inds0[jj%m0]
 				ii = maps[r][c]
 				rows[ii] = r
 				cols[ii] = c
-				vals[ii] = vals[ii] + PtQ[jj/m0,jj%m0]
+				vals[ii] = vals[ii] + PtQ[jj//m0,jj%m0]
 
 		nr = topo.nx*topo.n
 		nc = topo.nx*topo_q.n
@@ -131,7 +131,7 @@ class PtQmat:
 			inds1 = topo.localToGlobal1(ex)
 			inds0 = topo_q.localToGlobal0(ex)
 			for jj in np.arange(m0*topo.n):
-				r = inds1[jj/m0]
+				r = inds1[jj//m0]
 				c = inds0[jj%m0]
 				if maps[r][c] == -1:
 					maps[r][c] = ii
@@ -165,14 +165,14 @@ class UtQmat:
 			Q = (dX[ex]/2.0) * Wii(topo_q.n).A
 			PtQ = mult(Pt,Q)
 			for jj in np.arange(nrl*ncl):
-				row = inds0[jj/ncl]
+				row = inds0[jj//ncl]
 				col = inds0q[jj%ncl]
 				ii = maps[row][col]
 				if ii == -1:
-					print 'ERROR! assembly'
+					print('ERROR! assembly')
 				rows[ii] = row
 				cols[ii] = col
-				vals[ii] = vals[ii] + PtQ[jj/ncl][jj%ncl]
+				vals[ii] = vals[ii] + PtQ[jj//ncl][jj%ncl]
 
 		nr = topo.nx*topo.n
 		nc = topo.nx*topo_q.n
@@ -191,7 +191,7 @@ class UtQmat:
 			inds0q = topo_q.localToGlobal0(ex)
 			inds0 = topo.localToGlobal0(ex)
 			for jj in np.arange(nrl*ncl):
-				row = inds0[jj/ncl]
+				row = inds0[jj//ncl]
 				col = inds0q[jj%ncl]
 				if maps[row][col] == -1:
 					maps[row][col] = ii
@@ -218,14 +218,14 @@ class Umat_up:
 			PtQ = mult(M_test_T,Q)
 			self.Me = mult(PtQ,M_trial)
 			for jj in np.arange(np12):
-				row = inds0[jj/np1]
+				row = inds0[jj//np1]
 				col = inds0[jj%np1]
 				ii = maps[row,col]
 				if ii == -1:
-					print 'ERROR! assembly'
+					print('ERROR! assembly')
 				rows[ii] = row
 				cols[ii] = col
-				vals[ii] = vals[ii] + self.Me[jj/np1,jj%np1]
+				vals[ii] = vals[ii] + self.Me[jj//np1,jj%np1]
 
 		nr = topo.nx*topo.n
 		nc = topo.nx*topo.n
@@ -241,7 +241,7 @@ class Umat_up:
 		for ex in np.arange(topo.nx):
 			inds0 = topo.localToGlobal0(ex)
 			for jj in np.arange(ne*ne):
-				row = inds0[jj/ne]
+				row = inds0[jj//ne]
 				col = inds0[jj%ne]
 				if maps[row][col] == -1:
 					maps[row][col] = ii
@@ -267,7 +267,7 @@ class Pmat_up:
 			PtQ = mult(M_test_T,Q)
 			self.Me = mult(PtQ,M_trial)
 			for jj in np.arange(n2):
-				r = jj/n
+				r = jj//n
 				c = jj%n
 				rows[ii] = inds1[r]
 				cols[ii] = inds1[c]
@@ -310,12 +310,12 @@ class PtU_u:
 			PtQuU = mult(PtQu,U)
 
 			for jj in np.arange(np1*n):
-				r = inds1[jj/np1]
+				r = inds1[jj//np1]
 				c = inds0[jj%np1]
 				ii = maps[r][c]
 				rows[ii] = r
 				cols[ii] = c
-				vals[ii] = vals[ii] + PtQuU[jj/np1,jj%np1]
+				vals[ii] = vals[ii] + PtQuU[jj//np1,jj%np1]
 
 		nr = topo.nx*topo.n
 		nc = topo.nx*topo.n
@@ -332,7 +332,7 @@ class PtU_u:
 			inds1 = topo.localToGlobal1(ex)
 			inds0 = topo.localToGlobal0(ex)
 			for jj in np.arange(m0*topo.n):
-				r = inds1[jj/m0]
+				r = inds1[jj//m0]
 				c = inds0[jj%m0]
 				if maps[r][c] == -1:
 					maps[r][c] = ii
@@ -402,7 +402,7 @@ class U_u_TP_up:
 		eq = int(xg/dx[0])
 		xq = (xg - eq*dx[0])*(2.0/dx[0]) - 1.0
 		if np.abs(xq) > 1.0:
-			print 'ERROR! ' + str(xq)
+			print('ERROR! ' + str(xq))
 		return xq,eq
 
 class U_u_TP_up_2:
@@ -464,7 +464,7 @@ class U_u_TP_up_2:
 		eq = int(xg/dx[0])
 		xq = (xg - eq*dx[0])*(2.0/dx[0]) - 1.0
 		if np.abs(xq) > 1.0:
-			print 'ERROR! ' + str(xq)
+			print('ERROR! ' + str(xq))
 		return xq,eq
 
 class U_u_TP_up_3:
@@ -522,7 +522,7 @@ class U_u_TP_up_3:
 		eq = int(xg/dx[0])
 		xq = (xg - eq*dx[0])*(2.0/dx[0]) - 1.0
 		if np.abs(xq) > 1.0:
-			print 'ERROR! ' + str(xq)
+			print('ERROR! ' + str(xq))
 		return xq,eq
 
 class P_interp:

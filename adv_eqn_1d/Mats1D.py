@@ -9,7 +9,7 @@ def mult(M, N):
 	nj = N.shape[1]
 
 	if mj != ni:
-		print 'ERROR! matrix shapes dont match'
+		print('ERROR! matrix shapes dont match')
 
 	MN = np.zeros((mi,nj),dtype=np.float64)
 	for i in np.arange(mi):
