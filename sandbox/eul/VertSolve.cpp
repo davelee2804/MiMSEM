@@ -27,7 +27,7 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-//#define RAYLEIGH (4.0/120.0)
+#define RAYLEIGH (4.0/120.0)
 //#define VISC 1
 //#define NEW_EOS 1
 
@@ -372,8 +372,8 @@ void VertSolve::solve_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
 
         itt++;
 
-        //if(max_norm_exner < 1.0e-6 && max_norm_w < 1.0e-8 && max_norm_rho < 1.0e-6 && max_norm_rt < 1.0e-6) done = true;
-        if(max_norm_exner < 1.0e-8 && max_norm_w < 1.0e-8 && max_norm_rho < 1.0e-8 && max_norm_rt < 1.0e-8) done = true;
+        //if(max_norm_exner < 1.0e-8 && max_norm_w < 1.0e-8 && max_norm_rho < 1.0e-8 && max_norm_rt < 1.0e-8) done = true;
+        if(max_norm_exner < 1.0e-12 && max_norm_rho < 1.0e-12 && max_norm_rt < 1.0e-12) done = true;
         if(!rank) cout << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
                                  "\t|d_w|/|w|: "          << max_norm_w     <<
                                  "\t|d_rho|/|rho|: "      << max_norm_rho   <<
@@ -1064,8 +1064,6 @@ L2Vecs* F_rho_o, L2Vecs* F_rt_o)
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
-    L2Vecs* d4w_i = new L2Vecs(geom->nk-1, topo, geom);
-    L2Vecs* d4w_j = new L2Vecs(geom->nk-1, topo, geom);
     Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F_z, G_z, dF_z, dG_z;
     Vec h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2;
 
@@ -1117,8 +1115,6 @@ L2Vecs* F_rho_o, L2Vecs* F_rt_o)
     F_rho_o->UpdateLocal(); F_rho_o->HorizToVert();
     F_rt_o->UpdateLocal();  F_rt_o->HorizToVert();
 
-    //horiz_visc(velz_i, d4w_i, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
-
     do {
         k2i_z = 0.0;
         max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
@@ -1132,9 +1128,6 @@ L2Vecs* F_rho_o, L2Vecs* F_rt_o)
                               rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z);
 
             if(udwdx) VecAXPY(F_w, dt, udwdx->vz[ii]);
-            //VecAXPY(F_w, 0.5*dt, d4w_i->vz[ii]);
-            //VecAXPY(F_w, 0.5*dt, d4w_j->vz[ii]);
-            //VecAXPY(F_w, dt, d4w_i->vz[ii]);
 #ifdef NEW_EOS
             vo->Assemble_EOS_Residual_new(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
 #else
@@ -1193,7 +1186,6 @@ L2Vecs* F_rho_o, L2Vecs* F_rt_o)
         }
         theta_h->VertToHoriz();
         theta_j->VertToHoriz();
-        //horiz_visc(velz_j, d4w_j, del2_x, M1, M2, EtoF, ksp_x, h_tmp_1, h_tmp_2, u_tmp_1, u_tmp_2);
 
         MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_exner = norm_x;
         MPI_Allreduce(&max_norm_w,     &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w     = norm_x;
@@ -1202,7 +1194,8 @@ L2Vecs* F_rho_o, L2Vecs* F_rt_o)
 
         itt++;
 
-        if(max_norm_exner < 1.0e-8 && max_norm_w < 1.0e-8 && max_norm_rho < 1.0e-8 && max_norm_rt < 1.0e-8) done = true;
+        //if(max_norm_exner < 1.0e-8 && max_norm_w < 1.0e-8 && max_norm_rho < 1.0e-8 && max_norm_rt < 1.0e-8) done = true;
+        if(max_norm_exner < 1.0e-12 && max_norm_rho < 1.0e-12 && max_norm_rt < 1.0e-12) done = true;
         if(!rank) cout << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
                                  "\t|d_w|/|w|: "          << max_norm_w     <<
                                  "\t|d_rho|/|rho|: "      << max_norm_rho   <<
@@ -1238,8 +1231,6 @@ L2Vecs* F_rho_o, L2Vecs* F_rt_o)
     delete velz_h;
     delete rho_h;
     delete rt_h;
-    delete d4w_i;
-    delete d4w_j;
     VecDestroy(&F_w);
     VecDestroy(&F_rho);
     VecDestroy(&F_rt);
@@ -1257,34 +1248,6 @@ L2Vecs* F_rho_o, L2Vecs* F_rt_o)
     VecDestroy(&u_tmp_2);
     VecDestroy(&h_tmp_1);
     VecDestroy(&h_tmp_2);
-}
-
-void VertSolve::horiz_visc(L2Vecs* velz, L2Vecs* d4w, double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x, 
-                           Vec h_tmp_1, Vec h_tmp_2, Vec u_tmp_1, Vec u_tmp_2) 
-{
-    M1->assemble(0, SCALE, false);
-    M2->assemble(0, SCALE, false);
-
-    velz->VertToHoriz();
-    velz->UpdateGlobal();
-    for(int kk = 0; kk < geom->nk-1; kk++) {
-        // first laplacian
-        MatMult(M2->M, velz->vh[kk], h_tmp_1);
-        MatMult(EtoF->E12, h_tmp_1, u_tmp_1);
-        KSPSolve(ksp_x, u_tmp_1, u_tmp_2);
-        MatMult(EtoF->E21, u_tmp_2, h_tmp_2);
-        VecScale(h_tmp_2, del2_x*1.25);
-        // second laplacian
-        MatMult(M2->M, h_tmp_2, h_tmp_1);
-        MatMult(EtoF->E12, h_tmp_1, u_tmp_1);
-        KSPSolve(ksp_x, u_tmp_1, u_tmp_2);
-        MatMult(EtoF->E21, u_tmp_2, h_tmp_2);
-        VecScale(h_tmp_2, del2_x*1.25);
-
-        MatMult(M2->M, h_tmp_2, d4w->vh[kk]);
-    }
-    d4w->UpdateLocal();
-    d4w->HorizToVert();
 }
 
 // compute the contribution of the vorticity vector to the vertical momentum equation

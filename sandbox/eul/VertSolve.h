@@ -46,9 +46,6 @@ class VertSolve {
         void solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                                    Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, int ii);
 
-        void horiz_visc(L2Vecs* velz, L2Vecs* d4w, double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x, 
-                           Vec h_tmp_1, Vec h_tmp_2, Vec u_tmp_1, Vec u_tmp_2);
-
         void AssembleVertMomVort(Vec* ul, L2Vecs* velz, KSP ksp1, Umat* M1, Wmat* M2, E21mat* EtoF, WtQdUdz_mat* Rz, L2Vecs* uuz);
 
         Mat _PCz;

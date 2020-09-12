@@ -18,6 +18,7 @@
 #include "VertOps.h"
 #include "Assembly.h"
 #include "VertSolve.h"
+//#include "VertSolve_NoConserve.h"
 #include "Solve3D.h"
 #include "Euler_2.h"
 
@@ -31,7 +32,6 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-//#define RAYLEIGH (1.0e-3)
 #define WITH_UDWDX
 
 using namespace std;
@@ -1131,7 +1131,7 @@ void DestroyHorizVecs(Vec* vecs, Geom* geom) {
     }
     delete[] vecs;
 }
-#if 0
+
 void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     char    fieldname[100];
     Vec     wi, bu, xu;
@@ -1186,9 +1186,6 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     for(int kk = 0; kk < geom->nk; kk++) {
         // momentum
         M1->assemble(kk, SCALE, true);
-#ifdef RAYLEIGH
-        if(kk == geom->nk-1) MatScale(M1->M, 1.0 + RAYLEIGH*dt);
-#endif
         MatMult(M1->M, velx_0[kk], bu);
         VecAXPY(bu, -dt, Fu_0[kk]);
 
@@ -1215,9 +1212,6 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     for(int kk = 0; kk < geom->nk; kk++) {
         // momentum
         M1->assemble(kk, SCALE, true);
-#ifdef RAYLEIGH
-        if(kk == geom->nk-1) MatScale(M1->M, 1.0 + RAYLEIGH*dt);
-#endif
         MatMult(M1->M, velx_0[kk], bu);
         VecAXPY(bu, -0.5*dt, Fu_0[kk]);
         VecAXPY(bu, -0.5*dt, Fu_1[kk]);
@@ -1266,9 +1260,6 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     for(int kk = 0; kk < geom->nk; kk++) {
         // momentum
         M1->assemble(kk, SCALE, true);
-#ifdef RAYLEIGH
-        if(kk == geom->nk-1) MatScale(M1->M, 1.0 + RAYLEIGH*dt);
-#endif
         MatMult(M1->M, velx_0[kk], bu);
         VecAXPY(bu, -0.5*dt, Fu_0[kk]);
         VecAXPY(bu, -0.5*dt, Fu_2[kk]);
@@ -1383,7 +1374,7 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete F_rho_h;
     delete F_rt_h;
 }
-#endif
+#if 0
 void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     char    fieldname[100];
     Vec     wi, bu, xu;
@@ -1580,6 +1571,7 @@ VecZeroEntries(velx_0[kk]);
     delete F_rho_h;
     delete F_rt_h;
 }
+#endif
 
 // compute the vorticity components dudz, dvdz
 void Euler::HorizVort(Vec* velx) {
