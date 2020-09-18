@@ -14,14 +14,14 @@ from Proj import *
 from AdvEqn import *
 from Plotting import *
 
-ne = 20
+ne = 10
 dXe = 1.0#1.25
 
 X,dX=GenMesh(ne,dXe)
 
 # test that the edge functions are a partition of unity (so that boundary terms conserve mass)
-N = 3 # polynomial order
-M = 3 # quadrature order
+N = 6 # polynomial order
+M = 6 # quadrature order
 topo = Topo(ne,N)
 topo_q = Topo(ne,M)
 quad = GaussLobatto(M)
@@ -144,46 +144,85 @@ plt.xlabel('wavenumber, $k$')
 plt.savefig('eig_vals_real.png')
 plt.show()
 
-nt = 64
-A_cen = np.zeros((nt,len(hi)-2))
-A_upw = np.zeros((nt,len(hi)-2))
-A_dwn = np.zeros((nt,len(hi)-2))
+###############################
+
+nt = 60
+_dt = 0.0016
+A_cen = np.zeros((nt,len(hi)))
+A_upw = np.zeros((nt,len(hi)))
+A_dwn = np.zeros((nt,len(hi)))
+
+cfl = (_dt*(np.arange(nt)+1))/(1.0/(ne*ui[0]*N))
+print(cfl)
+
+###############################
+nx = ne*N
+x = np.zeros(nx)
+for ii in np.arange(ne):
+	x[ii*quad.n:ii*quad.n+quad.n] = ii*dX[0] + dX[0]*0.5*(quad.x[:quad.n]+1)
+
+	xx = 2.0*np.pi*x
+	kk = 1.0*(np.arange(nx) - nx/2 + 1)
+	x2 = (2.0*np.pi/nx)*np.arange(nx)
+
+F = np.zeros((nx,nx),dtype=np.complex128)
+for ii in np.arange(nx):
+	for jj in np.arange(nx):
+		F[ii,jj] = np.exp(1.0j*kk[jj]*xx[ii])
+
+Finv = np.linalg.inv(F)
+
+node = LagrangeNode(topo.n,quad.n)
+edge = LagrangeEdge(topo.n,quad.n)
+QP = P_interp(topo,quad,dX,node,edge).M
+PQ = PtQmat(topo,quad,dX).M
+
+P2F = Finv * QP
+###############################
+
 for i in np.arange(nt):
-	dt = 0.0005*i
+	dt = _dt*(i+1)
 	print('time step: ' + str(dt))
 	ad = AdvEqn(topo,quad,dX,dt,ui)
 
-	kc,wc = ad.disp_rel(ad.A_cen,False)
-	ku,wu = ad.disp_rel(ad.A_upw,False)
-	kd,wd = ad.disp_rel(ad.A_up2,False)
+	#w1,v = scipy.sparse.linalg.eigs(ad.St,k=nx-2)
+	#inds = np.argsort(np.abs(w1.imag))[::-1]
+	#w1 = w1[inds]
+	#v = v[:,inds]
+	#for j in np.arange(nx-2):
+	#	vf = np.dot(P2F,v[:,j])
+	#	inds = np.argsort(np.abs(vf))[::-1]
+	#	k0 = inds[0]
+	#	A_cen[i,k0] = np.sqrt(w1[j].real*w1[j].real + w1[j].imag*w1[j].imag)
 
-	w1,v = scipy.sparse.linalg.eigs(ad.St,k=len(hi)-2)
-	wi = w1.imag
-	inds1 = np.argsort(wi)[::-1]
-	w1s = w1[inds1]
-	for j in np.arange(len(hi)-2):
-		A_cen[i,j] = np.sqrt(w1s[j].real*w1s[j].real + w1s[j].imag*w1s[j].imag)
+	w1,v = scipy.sparse.linalg.eigs(ad.Q_up_2,k=nx-2)
+	inds = np.argsort(np.abs(w1.imag))[::-1]
+	w1 = w1[inds]
+	v = v[:,inds]
+	for j in np.arange(nx-2):
+		vf = np.dot(P2F,v[:,j])
+		inds = np.argsort(np.abs(vf))[::-1]
+		k0 = inds[0]
+		A_upw[i,k0] = np.sqrt(w1[j].real*w1[j].real + w1[j].imag*w1[j].imag)
 
-	w1,v = scipy.sparse.linalg.eigs(ad.Q_up_2,k=len(hi)-2)
-	wi = w1.imag
-	inds1 = np.argsort(wi)[::-1]
-	w1s = w1[inds1]
-	for j in np.arange(len(hi)-2):
-		A_upw[i,j] = np.sqrt(w1s[j].real*w1s[j].real + w1s[j].imag*w1s[j].imag)
+	#w1,v = scipy.sparse.linalg.eigs(ad.Q_up,k=nx-2)
+	#inds = np.argsort(np.abs(w1.imag))[::-1]
+	#w1 = w1[inds]
+	#v = v[:,inds]
+	#for j in np.arange(nx-2):
+	#	vf = np.dot(P2F,v[:,j])
+	#	inds = np.argsort(np.abs(vf))[::-1]
+	#	k0 = inds[0]
+	#	A_dwn[i,k0] = np.sqrt(w1[j].real*w1[j].real + w1[j].imag*w1[j].imag)
 
-	w1,v = scipy.sparse.linalg.eigs(ad.Q_up,k=len(hi)-2)
-	wi = w1.imag
-	inds1 = np.argsort(wi)[::-1]
-	w1s = w1[inds1]
-	for j in np.arange(len(hi)-2):
-		A_dwn[i,j] = np.sqrt(w1s[j].real*w1s[j].real + w1s[j].imag*w1s[j].imag)
+plt.rcParams['image.cmap'] = 'jet'
 
-plt.contourf(A_cen.transpose(),100)
+[XX,YY] = np.meshgrid(cfl,kk)
+
+plt.contourf(XX,YY,A_upw.transpose(),40)
 plt.colorbar()
-plt.show()
-plt.contourf(A_upw.transpose(),100)
-plt.colorbar()
-plt.show()
-plt.contourf(A_dwn.transpose(),100)
-plt.colorbar()
+plt.ylim([-28,28])
+plt.ylabel('wavenumber, $k$')
+plt.xlabel('CFL number')
+plt.savefig('A_stable_p6.png')
 plt.show()
