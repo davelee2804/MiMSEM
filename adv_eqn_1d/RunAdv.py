@@ -3,6 +3,7 @@
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition, mark_inset)
 
 from Basis import *
 from Topo import *
@@ -48,6 +49,7 @@ time = 5.0
 #nsteps = 400
 nsteps = 1000
 dt = time/nsteps
+nsteps = nsteps*10
 
 x = np.zeros(ne*M)
 for ii in np.arange(ne):
@@ -144,15 +146,15 @@ plt.plot(dt*np.arange(nsteps+1),(mass_t-mass_t[0])/mass_t[0],c='r')
 plt.title('mass conservation')
 plt.legend([r'$A$',r'$A_{PG;\Delta t}$',r'$-A_{PG;-\Delta t}^{\top}$'])
 plt.xlabel('time, $t$')
-plt.savefig('mass_conservation.png')
+plt.savefig('mass_conservation.pdf')
 plt.show()
-plt.plot(dt*np.arange(nsteps+1),(energy-energy[0])/energy[0],c='g')
-plt.plot(dt*np.arange(nsteps+1),(energy2-energy2[0])/energy2[0],c='b')
-plt.plot(dt*np.arange(nsteps+1),(energyt-energyt[0])/energyt[0],c='r')
+plt.plot(dt*np.arange(nsteps+1),(energy-energy[0])/energy[0],'g-')
+plt.plot(dt*np.arange(nsteps+1),(energy2-energy2[0])/energy2[0],'b-')
+plt.plot(dt*np.arange(nsteps+1),(energyt-energyt[0])/energyt[0],'r-')
 plt.title('energy conservation')
 plt.legend([r'$A$',r'$A_{PG;\Delta t}$',r'$-A_{PG;-\Delta t}^{\top}$'])
 plt.xlabel('time, $t$')
-plt.savefig('energy_conservation.png')
+plt.savefig('energy_conservation.pdf')
 plt.show()
 
 tt = time*np.linspace(0.0,1.0,i_dump+1,endpoint=True)
@@ -165,33 +167,50 @@ plt.savefig('adv_mim_hc.png')
 plt.clf()
 
 # eigenvalues for the implicit operator
-w,v = scipy.sparse.linalg.eigs(ad.St,k=len(hi)-2)
-wi = w.imag
-inds = np.argsort(wi)[::-1]
-wii = wi[inds]
-plt.plot(w[inds].real,wii,'g.')
+fig,ax1=plt.subplots()
 
-w,v = scipy.sparse.linalg.eigs(ad.Q_up_2,k=len(hi)-2)
-wi = w.imag
-inds = np.argsort(wi)[::-1]
-wii = wi[inds]
-vii = v[:,inds]
-plt.plot(w[inds].real,wii,'b.')
+w1,v = scipy.sparse.linalg.eigs(ad.St,k=len(hi)-2)
+wi = w1.imag
+inds1 = np.argsort(wi)[::-1]
+wii1 = wi[inds1]
+plt.plot(w1[inds1].real,wii1,'g.')
 
-w,v = scipy.sparse.linalg.eigs(ad.Q_up,k=len(hi)-2)
-wi = w.imag
-inds = np.argsort(wi)[::-1]
-wii = wi[inds]
-plt.plot(w[inds].real,wii,'r+')
+w2,v = scipy.sparse.linalg.eigs(ad.Q_up_2,k=len(hi)-2)
+wi = w2.imag
+inds2 = np.argsort(wi)[::-1]
+wii2 = wi[inds2]
+plt.plot(w2[inds2].real,wii2,'b.')
 
-xx=np.linspace(0.4,1.0,8193)
+w3,v = scipy.sparse.linalg.eigs(ad.Q_up,k=len(hi)-2)
+wi = w3.imag
+inds3 = np.argsort(wi)[::-1]
+wii3 = wi[inds3]
+plt.plot(w3[inds3].real,wii3,'r+')
+
+#xx=np.linspace(0.4,1.0,8193)
+xx=np.linspace(0.0,1.0,8193)
 plt.plot(xx,np.sqrt(1.0-xx*xx),c='k')
 plt.plot(xx,-np.sqrt(1.0-xx*xx),c='k')
+plt.xlim([0,2])
+plt.ylim([-1,+1])
 plt.title('trapazoidal advection operator eigenvalues')
 plt.legend([r'$A$',r'$A_{PG;\Delta t}$',r'$-A_{PG;-\Delta t}^{\top}$'])
 plt.xlabel('real component, $\omega^r$')
 plt.ylabel('imaginary component, $\omega^i$')
-plt.savefig('stab_regions.png')
+
+ax2 = plt.axes([0,0,1,1])
+ip = InsetPosition(ax1, [0.6,0.1,0.3,0.6])
+ax2.set_axes_locator(ip)
+mark_inset(ax1,ax2,loc1=2,loc2=3,fc="none",ec='0.5')
+ax2.plot(xx,np.sqrt(1.0-xx*xx),c='k')
+ax2.plot(xx,-np.sqrt(1.0-xx*xx),c='k')
+ax2.plot(w1[inds1].real,wii1,'g.')
+ax2.plot(w2[inds2].real,wii2,'b.')
+ax2.plot(w3[inds3].real,wii3,'r+')
+ax2.set_xlim(0.90,1.01)
+ax2.set_ylim(-0.40,+0.40)
+
+plt.savefig('stab_regions.pdf')
 plt.show()
 
 kc,wc = ad.disp_rel(ad.A_cen,False)

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import sys
 import numpy as np
@@ -87,7 +87,7 @@ a=ad.M0*F_1
 err_2 = np.sqrt(np.dot(a,F_1))
 a=ad.M0*F_2
 err_3 = np.sqrt(np.dot(a,F_2))
-print str(err_1) + '\t' + str(err_2) + '\t' + str(err_3)
+print(str(err_1) + '\t' + str(err_2) + '\t' + str(err_3))
 
 
 #uc = np.zeros((21,M*ne),dtype=np.float64)

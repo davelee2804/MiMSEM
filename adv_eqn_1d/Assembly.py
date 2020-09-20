@@ -454,19 +454,6 @@ class U_u_TP_up_2:
 
 		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
 
-	def advect_q(self,x,dx,u,dt,ei,lx):
-		xo = ei*dx[0] + 0.5*dx[0]*(x+1.0)
-		xg = xo - dt*u
-		if xg > lx:
-			xg = xg - lx
-		if xg < 0.0:
-			xg = xg + lx
-		eq = int(xg/dx[0])
-		xq = (xg - eq*dx[0])*(2.0/dx[0]) - 1.0
-		if np.abs(xq) > 1.0:
-			print('ERROR! ' + str(xq))
-		return xq,eq
-
 class U_u_TP_up_3:
 	def __init__(self,topo,quad,dX,vel_q,node,edge,dt,step):
 		ne = len(dX)
@@ -540,6 +527,48 @@ class P_interp:
 				for edge_i in np.arange(edge.n):
 					eq = edge.eval(xq,edge_i)
 					val = gl.w[quad_i] * eq
+					row_i = el_i*node.n+quad_i
+					if row_i == nr:
+						row_i = 0
+					col_i = el_i*edge.n+edge_i
+					A[row_i,col_i] = A[row_i,col_i] + val
+					B[row_i,col_i] = 1
+
+		nnz = 0
+		rows = np.zeros(nr*nc,dtype=np.int32)
+		cols = np.zeros(nr*nc,dtype=np.int32)
+		vals = np.zeros(nr*nc,dtype=np.float64)
+		for row_i in np.arange(nr):
+			for col_i in np.arange(nc):
+				if B[row_i][col_i] == 1:
+					rows[nnz] = row_i
+					cols[nnz] = col_i
+					vals[nnz] = A[row_i][col_i]
+					nnz = nnz + 1
+
+		rows = rows[:nnz]
+		cols = cols[:nnz]
+		vals = vals[:nnz]
+
+		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+class P_interp_2:
+	def __init__(self,topo,quad,dX,node,edge):
+		ne = len(dX)
+		nr = ne*node.n
+		nc = ne*edge.n
+		A = np.zeros((nr,nc),dtype=np.float64)
+		B = np.zeros((nr,nc),dtype=np.int32)
+
+		gl = GaussLobatto(node.n)
+		for el_i in np.arange(ne):
+			for quad_i in np.arange(gl.n+1):
+				xq = gl.x[quad_i]
+				for edge_i in np.arange(edge.n):
+					eq = edge.eval(xq,edge_i)
+					val = eq * (2.0/dX[el_i])
+					if quad_i == 0 or quad_i == gl.n:
+						val = 0.5*val
 					row_i = el_i*node.n+quad_i
 					if row_i == nr:
 						row_i = 0
