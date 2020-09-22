@@ -211,12 +211,11 @@ Wii::Wii(GaussLobatto* _quad, Geom* _geom) {
 }
 
 void Wii::assemble(int ex, int ey) {
-    int ii, mp1, mi, ei;
-    //double det;
+    int ii, mp1, mi;
 
     mp1 = quad->n + 1;
     mi = mp1*mp1;
-    ei = ey*geom->topo->nElsX + ex;
+    //ei = ey*geom->topo->nElsX + ex;
 
     for(ii = 0; ii < mi; ii++) {
         //det = geom->det[ei][ii];

@@ -34,6 +34,8 @@ class SWEqn {
         Vec hi;
         Vec uj;
         Vec hj;
+        Vec uil;
+        Vec ujl;
         Mat A;
         P_up_mat* P_up;
         RotMat_up* R_up;
@@ -44,6 +46,7 @@ class SWEqn {
         void diagnose_F(Vec* F);
         void diagnose_Phi(Vec* Phi);
         void diagnose_wxu(Vec* wxu);
+        void diagnose_q(Vec* qi, Vec* qj);
         void init0(Vec q, ICfunc* func);
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
         void init2(Vec h, ICfunc* func);
