@@ -49,6 +49,7 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
 
     // 0 form lumped mass matrix (vector)
     m0 = new Pvec(topo, geom, node);
+    m0h = new Phvec(topo, geom, node);
 
     // 1 form mass matrix
     M1 = new Umat(topo, geom, node, edge);
@@ -104,6 +105,7 @@ double HorizSolve::viscosity() {
     double dx = sqrt(ae/topo->nDofs0G);
     double del4 = 0.072*pow(dx,3.2);
 
+del4 *= 2.0;
     return -sqrt(del4);
 }
 
@@ -169,6 +171,7 @@ HorizSolve::~HorizSolve() {
     delete[] Fk;
 
     delete m0;
+    delete m0h;
     delete M1;
     delete M2;
 
@@ -327,10 +330,8 @@ void HorizSolve::diagnose_fluxes(int level, Vec u1, Vec u2, Vec h1l, Vec h2l, Ve
 }
 
 void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* theta, L2Vecs* dF, L2Vecs* dG, Vec* u1l, Vec* u2l, bool do_temp_visc) {
-    //Vec _F, _G, tmp1, rho_dTheta_1, rho_dTheta_2, tmp2, dTheta, d3Theta;
     Vec _G, tmp1, rho_dTheta_1, rho_dTheta_2, tmp2, dTheta, d3Theta;
 
-    //VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_G);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmp1);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_1);
@@ -338,7 +339,6 @@ void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* the
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp2);
 
     for(int kk = 0; kk < geom->nk; kk++) {
-        //diagnose_fluxes(kk, u1[kk], u2[kk], h1l[kk], h2l[kk], theta->vh, _F, _G, u1l[kk], u2l[kk]);
         diagnose_fluxes(kk, u1[kk], u2[kk], h1l[kk], h2l[kk], theta->vh, Fk[kk], _G, u1l[kk], u2l[kk]);
 
         if(do_temp_visc) {
@@ -348,10 +348,6 @@ void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* the
             M2->assemble(kk, SCALE, false);
             grad(false, tmp2, &dTheta, kk);
 
-            //VecZeroEntries(tmp2l);
-            //VecAXPY(tmp2l, 0.5, h1l[kk]);
-            //VecAXPY(tmp2l, 0.5, h2l[kk]);
-            //F->assemble(tmp2l, kk, true, SCALE);
             VecZeroEntries(tmp2);
             VecAXPY(tmp2, 0.5, h1l[kk]);
             VecAXPY(tmp2, 0.5, h2l[kk]);
@@ -369,14 +365,12 @@ void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* the
             VecDestroy(&d3Theta);
             VecDestroy(&dTheta);
         }
-        //MatMult(EtoF->E21, _F, dF->vh[kk]);
         MatMult(EtoF->E21, Fk[kk], dF->vh[kk]);
         MatMult(EtoF->E21, _G, dG->vh[kk]);
     }
     dF->HorizToVert();
     dG->HorizToVert();
 
-    //VecDestroy(&_F);
     VecDestroy(&_G);
     VecDestroy(&tmp1);
     VecDestroy(&rho_dTheta_1);
@@ -406,6 +400,30 @@ void HorizSolve::diagnose_Phi(int level, Vec u1, Vec u2, Vec u1l, Vec u2l, Vec* 
     VecAXPY(*Phi, 1.0/3.0, b);
 
     VecDestroy(&b);
+}
+
+void HorizSolve::diagnose_q(int level, bool do_assemble, Vec rho, Vec vel, Vec* qi) {
+    Vec rhs, tmp, tmp1;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &rhs);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &tmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmp1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, qi);
+
+    if(do_assemble) M1->assemble(level, SCALE, true);
+    MatMult(M1->M, vel, tmp1);
+    MatMult(NtoE->E01, tmp1, rhs);
+
+    if(do_assemble) m0->assemble(level, SCALE);
+    VecPointwiseMult(tmp, m0->vg, fg[level]);
+    VecAXPY(rhs, 1.0, tmp);
+
+    m0h->assemble(rho, level, SCALE);
+    VecPointwiseDivide(*qi, rhs, m0h->vg);
+
+    VecDestroy(&rhs);
+    VecDestroy(&tmp);
+    VecDestroy(&tmp1);
 }
 
 void HorizSolve::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
@@ -439,18 +457,19 @@ void HorizSolve::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
 }
 
 void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi, 
-                              Vec velx1, Vec velx2, Vec uil, Vec ujl, Vec fu)
+                              Vec velx1, Vec velx2, Vec uil, Vec ujl, Vec rho1, Vec rho2, Vec fu)
 {
     double k2i_l;
-    Vec Phi, dPi, wxu, wxz, utmp, d2u, d4u;
+    Vec Phi, dPi, utmp, d2u, d4u;
     Vec theta_h, dp, dudz_h, velz_h;
+    Vec qi, qj, qh, ql;
 
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &qh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dp);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &wxz);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &velz_h);
-    //VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_h);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dudz_h);
 
     m0->assemble(level, SCALE);
@@ -495,10 +514,34 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
 #else
     grad(false, Pi, &dPi, level);
 #endif
-    diagnose_wxu(level, velx1, velx2, &wxu);
 
     MatMult(EtoF->E12, Phi, fu);
-    VecAXPY(fu, 1.0, wxu);
+
+    //diagnose_wxu(level, velx1, velx2, &wxu);
+    //VecAXPY(fu, 1.0, wxu);
+    diagnose_q(level, false, rho1, velx1, &qi);
+    diagnose_q(level, false, rho2, velx2, &qj);
+    VecZeroEntries(qh);
+    VecAXPY(qh, 0.5, qi);
+    VecAXPY(qh, 0.5, qj);
+    VecScatterBegin(topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);
+    R->assemble(ql, level, SCALE);
+
+    VecZeroEntries(dp);
+    F->assemble(rho1, level, true, SCALE);
+    MatMult(F->M, velx1, utmp);
+    VecAXPY(dp, 1.0/3.0, utmp);
+    MatMult(F->M, velx2, utmp);
+    VecAXPY(dp, 1.0/6.0, utmp);
+    F->assemble(rho2, level, true, SCALE);
+    MatMult(F->M, velx1, utmp);
+    VecAXPY(dp, 1.0/6.0, utmp);
+    MatMult(F->M, velx2, utmp);
+    VecAXPY(dp, 1.0/3.0, utmp);
+    KSPSolve(ksp1, dp, utmp);
+    MatMult(R->M, utmp, dp);
+    VecAXPY(fu, 1.0, dp);
 
     // add the pressure gradient force
 #ifdef UPWIND_TEMP
@@ -509,7 +552,6 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
     MatMult(F->M, dPi, dp);
 #endif
     VecAXPY(fu, 1.0, dp);
-
     // update the horizontal kinetic to internal energy exchange
     if(level == 0) k2i = 0.0;
     VecDot(Fk[level], dp, &k2i_l);
@@ -560,12 +602,15 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
     VecDestroy(&utmp);
     VecDestroy(&Phi);
     VecDestroy(&dPi);
-    VecDestroy(&wxu);
+    //VecDestroy(&wxu);
     VecDestroy(&theta_h);
     VecDestroy(&dp);
-    VecDestroy(&wxz);
     VecDestroy(&dudz_h);
     VecDestroy(&velz_h);
+    VecDestroy(&qi);
+    VecDestroy(&qj);
+    VecDestroy(&qh);
+    VecDestroy(&ql);
 }
 
 // compute the vorticity components dudz, dvdz

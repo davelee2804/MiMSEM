@@ -2910,6 +2910,7 @@ void Umat_ray::assemble(int lev, double scale, double dt, Vec exner_k, Vec exner
             MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
         }
     }
+
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
 

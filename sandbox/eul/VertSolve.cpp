@@ -30,7 +30,6 @@
 #define SCALE 1.0e+8
 //#define RAYLEIGH (1.0/120.0)
 #define RAYLEIGH (4.0/120.0)
-//#define VISC 1
 //#define NEW_EOS 1
 
 using namespace std;
@@ -576,17 +575,6 @@ void VertSolve::assemble_residual(int ex, int ey, Vec theta, Vec Pi,
     VecAXPY(fw, 0.5*dt*RAYLEIGH, _tmpA1);
     MatMult(vo->VA, velz1, _tmpA1);
     VecAXPY(fw, 0.5*dt*RAYLEIGH, _tmpA1);
-#endif
-
-    // add the laplacian viscosity
-#ifdef VISC
-    VecZeroEntries(_tmpA1);
-    VecAXPY(_tmpA1, 0.5*dt*visc, velz1);
-    VecAXPY(_tmpA1, 0.5*dt*visc, velz2);
-    MatMult(vo->V10, _tmpA1, _tmpB1);
-    MatMult(vo->VB, _tmpB1, _tmpB2);
-    MatMult(vo->V01, _tmpB2, _tmpA1);
-    VecAXPY(fw, -1.0, _tmpA1);
 #endif
 }
 
@@ -1310,7 +1298,7 @@ void VertSolve::AssembleVertMomVort(Vec* ul, L2Vecs* velz, KSP ksp1, Umat* M1, W
 
 // incorportate the horizontal divergence terms into the solve
 void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
-                              L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, Vec* theta_eq) {
+                              L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing) {
     bool done = false;
     int ex, ey, elOrd2, itt = 0;
     double norm_x, max_norm_w, max_norm_exner, max_norm_rho, max_norm_rt;
@@ -1374,7 +1362,7 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
         max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
 
         rho_j->VertToHoriz();
-        horiz->advection_rhs(velx1, velx2, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, u1l, u2l, step%10==0);
+        horiz->advection_rhs(velx1, velx2, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, u1l, u2l, /*step%10==0*/0);
 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
@@ -1401,12 +1389,8 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
             MatMult(vo->VB, dF_z, F_rho);
             MatMult(vo->VB, dG_z, F_rt);
 
-            // add the non-homogeneous horizontal temperature forcing (if required)
-            if(theta_eq) {
-                VecCopy(theta_h->vz[ii], d_theta);
-                VecAXPY(d_theta, -1.0, theta_eq[ii]);
-                vo->AssembleConLinWithRho(ex, ey, vo->VBA2, rho_h->vz[ii]);
-                MatMult(vo->VBA2, d_theta, dG_z);
+            if(hs_forcing) {
+                vo->AssembleTempForcing_HS(ex, ey, exner_h->vz[ii], theta_h->vz[ii], rho_h->vz[ii], dG_z);
                 VecAXPY(F_rt, dt, dG_z);
             }
 
@@ -1456,7 +1440,7 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
 
         itt++;
 
-        if(max_norm_exner < 1.0e-8 && max_norm_w < 1.0e-8 && max_norm_rho < 1.0e-8 && max_norm_rt < 1.0e-8) done = true;
+        if(max_norm_exner < 1.0e-12 && max_norm_rho < 1.0e-12 && max_norm_rt < 1.0e-12) done = true;
         if(!rank) cout << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
                                  "\t|d_w|/|w|: "          << max_norm_w     <<
                                  "\t|d_rho|/|rho|: "      << max_norm_rho   <<

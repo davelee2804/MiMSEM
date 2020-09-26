@@ -22,7 +22,7 @@
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define NK 8
+#define NK 30
 #define P0 100000.0
 #define RD 287.0
 #define GAMMA 0.005
@@ -272,9 +272,9 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 120.0;
-    int nSteps = 12*24*30;
-    int dumpEvery = 360; //dump evert 12 hours
+    double dt = 60.0;
+    int nSteps = 12*24*60;
+    int dumpEvery = 720; //dump evert 12 hours
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -288,8 +288,8 @@ int main(int argc, char** argv) {
 
     cout << "importing topology for processor: " << rank << " of " << size << endl;
 
-    topo = new Topo(rank);
-    geom = new Geom(rank, topo, NK);
+    topo = new Topo();
+    geom = new Geom(topo, NK);
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
 
@@ -313,10 +313,6 @@ int main(int argc, char** argv) {
         VecCreateSeq(MPI_COMM_SELF, (NK-1)*topo->elOrd*topo->elOrd, &velz[ii]);
         VecZeroEntries(velz[ii]);
     }
-
-    // initialise the potential temperature top and bottom boundary conditions
-    //pe->initTheta(pe->theta_b, theta_b_init);
-    //pe->initTheta(pe->theta_t, theta_t_init);
 
     if(startStep == 0) {
         pe->init1(velx, u_init, v_init);
@@ -352,7 +348,8 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->Trapazoidal(velx, velz, rho, rt, exner, dump);
+        //pe->Trapazoidal(velx, velz, rho, rt, exner, dump);
+        pe->Strang(velx, velz, rho, rt, exner, dump);
     }
 
     delete pe;

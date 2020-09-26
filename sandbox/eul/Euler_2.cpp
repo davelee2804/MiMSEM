@@ -1487,7 +1487,7 @@ void Euler::AssembleVertMomVort(L2Vecs* velz) {
 //#define SIGMA_B 3000.0
 //#define K_F 1.1574074074074073e-05
 
-void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save, Vec* theta_eq) {
+void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     char    fieldname[100];
     Vec     wi, bu;
     Vec*    Fu_0    = CreateHorizVecs(topo, geom);
@@ -1538,30 +1538,16 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     if(firstStep) for(int kk = 0; kk < geom->nk-1; kk++) VecCopy(uzl[kk], uzl_prev[kk]);
     for(int kk = 0; kk < geom->nk; kk++) {
         vert->horiz->momentum_rhs(kk, theta_0->vh, uzl, uzl, velz_0->vh, velz_0->vh, exner_0->vh[kk],
-                                  velx[kk], velx[kk], ul[kk], ul[kk], Fu_0[kk]);
+                                  velx[kk], velx[kk], ul[kk], ul[kk], rho_0->vh[kk], rho_0->vh[kk], Fu_0[kk]);
 
         M1->assemble(kk, SCALE, true);
         MatMult(M1->M, velx_0[kk], bu);
+
         // add the boundary layer friction
-/*
-        //if(theta_eq && geom->levs[kk][0] < SIGMA_B) {
-        sigma = compute_sigma(geom->s[0][1], geom->levs[kk][0]);
-        if(theta_eq && sigma > 0) {
-            //k_v = 0.0;
-            //if(geom->levs[kk+1][0] < SIGMA_B) k_v += 0.5*dt*K_F*(SIGMA_B - geom->levs[kk+1][0])/SIGMA_B;
-            //if(geom->levs[kk+0][0] < SIGMA_B) k_v += 0.5*dt*K_F*(SIGMA_B - geom->levs[kk+0][0])/SIGMA_B;
-            k_v = 0.5*dt*K_F*sigma;
-            sigma = compute_sigma(geom->s[0][1], geom->levs[kk+1][0]);
-            if(sigma > 0.0) k_v += 0.5*dt*K_F*sigma;
-            MatScale(M1->M, 1.0 + k_v);
-            MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
-            MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
-        }
-*/
-        M1ray->assemble(kk, SCALE, dt);
-        MatAXPY(M1->M, 1.0, M1ray->M, DIFFERENT_NONZERO_PATTERN);
-        MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
-        MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+        //M1ray->assemble(kk, SCALE, dt, exner_0->vh[kk], exner_0->vh[0]);
+        //MatAXPY(M1->M, 1.0, M1ray->M, DIFFERENT_NONZERO_PATTERN);
+        //MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+        //MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
 
         VecAXPY(bu, -dt, Fu_0[kk]);
         KSPSolve(ksp1, bu, velx[kk]);
@@ -1577,8 +1563,7 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     rt_h->CopyFromHoriz(rt_0->vh);
     exner_h->CopyFromHoriz(exner_0->vh);
 
-    //vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, uuz, velx_0, velx, ul_prev, ul);
-    vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, NULL, velx_0, velx, ul_prev, ul, theta_eq);
+    vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, NULL, velx_0, velx, ul_prev, ul, false);
 
     // 3.  Explicit horiztonal solve
     if(!rank) cout << "horiztonal step (3).................." << endl;
@@ -1587,30 +1572,16 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     HorizVort(velx);
     for(int kk = 0; kk < geom->nk; kk++) {
         vert->horiz->momentum_rhs(kk, vert->theta_h->vh, uzl, uzl_prev, velz_h->vh, velz_0->vh, vert->exner_h->vh[kk],
-                                  velx_0[kk], velx[kk], ul[kk], ul_prev[kk], Fu_0[kk]);
+                                  velx_0[kk], velx[kk], ul[kk], ul_prev[kk], rho_0->vh[kk], rho_h->vh[kk], Fu_0[kk]);
 
         M1->assemble(kk, SCALE, true);
         MatMult(M1->M, velx_0[kk], bu);
+
         // add the boundary layer friction
-/*
-        //if(theta_eq && geom->levs[kk][0] < SIGMA_B) {
-        sigma = compute_sigma(geom->s[0][1], geom->levs[kk][0]);
-        if(theta_eq && sigma > 0) {
-            //k_v = 0.0;
-            //if(geom->levs[kk+1][0] < SIGMA_B) k_v += 0.5*dt*K_F*(SIGMA_B - geom->levs[kk+1][0])/SIGMA_B;
-            //if(geom->levs[kk+0][0] < SIGMA_B) k_v += 0.5*dt*K_F*(SIGMA_B - geom->levs[kk+0][0])/SIGMA_B;
-            k_v = 0.5*dt*K_F*sigma;
-            sigma = compute_sigma(geom->s[0][1], geom->levs[kk+1][0]);
-            if(sigma > 0.0) k_v += 0.5*dt*K_F*sigma;
-            MatScale(M1->M, 1.0 + k_v);
-            MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
-            MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
-        }
-*/
-        M1ray->assemble(kk, SCALE, dt);
-        MatAXPY(M1->M, 1.0, M1ray->M, DIFFERENT_NONZERO_PATTERN);
-        MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
-        MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+        //M1ray->assemble(kk, SCALE, dt, exner_h->vh[kk], exner_h->vh[0]);
+        //MatAXPY(M1->M, 1.0, M1ray->M, DIFFERENT_NONZERO_PATTERN);
+        //MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+        //MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
 
         VecAXPY(bu, -dt, Fu_0[kk]);
         KSPSolve(ksp1, bu, velx[kk]);
