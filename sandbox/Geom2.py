@@ -3,7 +3,7 @@
 import sys
 import numpy as np
 #from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import pyplot as plt
+#from matplotlib import pyplot as plt
 
 from Proc2 import *
 
@@ -32,9 +32,9 @@ def init_geom(pn, ne, make_image, expand_sphere):
 	
 		X[pn*ne] = +0.25*np.pi
 	
-	if make_image:
-		fig = plt.figure()
-		ax = Axes3D(fig)
+	#if make_image:
+	#	fig = plt.figure()
+	#	ax = Axes3D(fig)
 
 	x0 = np.zeros(nx*nx+1)
 	y0 = np.zeros(nx*nx+1)
@@ -63,10 +63,10 @@ def init_geom(pn, ne, make_image, expand_sphere):
 	y0[nx*nx] = np.cos(phi)*np.sin(theta)
 	z0[nx*nx] = np.sin(phi)
 
-	if make_image:
-		ax.scatter(x0[:nx*nx], y0[:nx*nx], z0[:nx*nx], c='g')
+	#if make_image:
+	#	ax.scatter(x0[:nx*nx], y0[:nx*nx], z0[:nx*nx], c='g')
 		#plot the first hanging node
-		ax.scatter(x0[nx*nx], y0[nx*nx], z0[nx*nx], c='g', marker='s')
+	#	ax.scatter(x0[nx*nx], y0[nx*nx], z0[nx*nx], c='g', marker='s')
 
 	# rotate north +pi/2
 	A1 = np.zeros((3,3),dtype=np.int8)
@@ -94,12 +94,12 @@ def init_geom(pn, ne, make_image, expand_sphere):
 	y1[nx*nx] = A1[1,1]*np.cos(phi)*np.sin(theta)
 	z1[nx*nx] = A1[2,0]*np.cos(phi)*np.cos(theta)
 
-	if make_image:
-		ax.scatter(x1[:nx*nx], y1[:nx*nx], z1[:nx*nx], c='r')
+	#if make_image:
+	#	ax.scatter(x1[:nx*nx], y1[:nx*nx], z1[:nx*nx], c='r')
                 #jj=[str(a) for a in np.linspace(0.0,1.0,nx*nx)]
 		#ax.scatter(x1[:nx*nx], y1[:nx*nx], z1[:nx*nx], c=jj)
 		#plot the second hanging node
-		ax.scatter(x1[nx*nx], y1[nx*nx], z1[nx*nx], c='r', marker='s')
+	#	ax.scatter(x1[nx*nx], y1[nx*nx], z1[nx*nx], c='r', marker='s')
 
 	# rotate east +pi/2
 	A2 = np.zeros((3,3),dtype=np.int8)
@@ -118,8 +118,8 @@ def init_geom(pn, ne, make_image, expand_sphere):
 			z2[ii] = A2[2,1]*y1[ii]
 			ii = ii + 1
 
-	if make_image:
-		ax.scatter(x2, y2, z2, c='b')
+	#if make_image:
+	#	ax.scatter(x2, y2, z2, c='b')
 
 	# rotate north +pi/2
 	A3 = np.zeros((3,3),dtype=np.int8)
@@ -138,8 +138,8 @@ def init_geom(pn, ne, make_image, expand_sphere):
 			z3[ii] = A3[2,2]*z2[ii]
 			ii = ii + 1
 
-	if make_image:
-		ax.scatter(x3, y3, z3, c='c')
+	#if make_image:
+	#	ax.scatter(x3, y3, z3, c='c')
 
 	# rotate east +pi/2
 	A4 = np.zeros((3,3),dtype=np.int8)
@@ -158,8 +158,8 @@ def init_geom(pn, ne, make_image, expand_sphere):
 			z4[ii] = A4[2,0]*x3[ii]
 			ii = ii + 1
 
-	if make_image:
-		ax.scatter(x4, y4, z4, c='m')
+	#if make_image:
+	#	ax.scatter(x4, y4, z4, c='m')
 
 	# rotate north +pi/2
 	A5 = np.zeros((3,3),dtype=np.int8)
@@ -178,13 +178,13 @@ def init_geom(pn, ne, make_image, expand_sphere):
 			z5[ii] = A5[2,1]*y4[ii]
 			ii = ii + 1
 
-	if make_image:
-		ax.scatter(x5, y5, z5, c='y')
+	#if make_image:
+	#	ax.scatter(x5, y5, z5, c='y')
 
-		ax.set_xlabel('x')
-		ax.set_ylabel('y')
-		ax.set_zlabel('z')
-		plt.show()
+	#	ax.set_xlabel('x')
+	#	ax.set_ylabel('y')
+	#	ax.set_zlabel('z')
+	#	plt.show()
 
 	xg = np.zeros(6*nx*nx+2,dtype=np.float64)
 	yg = np.zeros(6*nx*nx+2,dtype=np.float64)
@@ -251,20 +251,20 @@ def init_geom(pn, ne, make_image, expand_sphere):
 			yg[ii] = re*np.cos(phi)*np.sin(theta)
 			zg[ii] = re*np.sin(phi)
 
-	if make_image:
-		fig = plt.figure()
-		ax = Axes3D(fig)
-		ax.scatter(xg[0*nx*nx:1*nx*nx],yg[0*nx*nx:1*nx*nx],zg[0*nx*nx:1*nx*nx],c='g')
-		ax.scatter(xg[1*nx*nx:2*nx*nx],yg[1*nx*nx:2*nx*nx],zg[1*nx*nx:2*nx*nx],c='r')
-		ax.scatter(xg[2*nx*nx:3*nx*nx],yg[2*nx*nx:3*nx*nx],zg[2*nx*nx:3*nx*nx],c='b')
-		ax.scatter(xg[3*nx*nx:4*nx*nx],yg[3*nx*nx:4*nx*nx],zg[3*nx*nx:4*nx*nx],c='c')
-		ax.scatter(xg[4*nx*nx:5*nx*nx],yg[4*nx*nx:5*nx*nx],zg[4*nx*nx:5*nx*nx],c='m')
-		ax.scatter(xg[5*nx*nx:6*nx*nx],yg[5*nx*nx:6*nx*nx],zg[5*nx*nx:6*nx*nx],c='y')
-		ax.scatter(xg[6*nx*nx+0],yg[6*nx*nx+0],zg[6*nx*nx+0],c='g',marker='s')
-		ax.scatter(xg[6*nx*nx+1],yg[6*nx*nx+1],zg[6*nx*nx+1],c='r',marker='s')
-		ax.set_xlabel('x')
-		ax.set_ylabel('y')
-		ax.set_zlabel('z')
-		plt.show()
+	#if make_image:
+	#	fig = plt.figure()
+	#	ax = Axes3D(fig)
+	#	ax.scatter(xg[0*nx*nx:1*nx*nx],yg[0*nx*nx:1*nx*nx],zg[0*nx*nx:1*nx*nx],c='g')
+	#	ax.scatter(xg[1*nx*nx:2*nx*nx],yg[1*nx*nx:2*nx*nx],zg[1*nx*nx:2*nx*nx],c='r')
+	#	ax.scatter(xg[2*nx*nx:3*nx*nx],yg[2*nx*nx:3*nx*nx],zg[2*nx*nx:3*nx*nx],c='b')
+	#	ax.scatter(xg[3*nx*nx:4*nx*nx],yg[3*nx*nx:4*nx*nx],zg[3*nx*nx:4*nx*nx],c='c')
+	#	ax.scatter(xg[4*nx*nx:5*nx*nx],yg[4*nx*nx:5*nx*nx],zg[4*nx*nx:5*nx*nx],c='m')
+	#	ax.scatter(xg[5*nx*nx:6*nx*nx],yg[5*nx*nx:6*nx*nx],zg[5*nx*nx:6*nx*nx],c='y')
+	#	ax.scatter(xg[6*nx*nx+0],yg[6*nx*nx+0],zg[6*nx*nx+0],c='g',marker='s')
+	#	ax.scatter(xg[6*nx*nx+1],yg[6*nx*nx+1],zg[6*nx*nx+1],c='r',marker='s')
+	#	ax.set_xlabel('x')
+	#	ax.set_ylabel('y')
+	#	ax.set_zlabel('z')
+	#	plt.show()
 
 	return xg, yg, zg

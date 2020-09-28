@@ -50,14 +50,17 @@ Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 
 void Umat::assemble(int lev, double scale, bool vert_scale) {
     //MatCopy(_M, M, SAME_NONZERO_PATTERN);
-    MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
+
+    /*MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  _M, MAT_FINAL_ASSEMBLY);
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
     MatCopy(_M, M, DIFFERENT_NONZERO_PATTERN);
     MatScale(M, 1.0/geom->thick[lev][0]);
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);*/
+
+    _assemble(lev, scale, vert_scale);
 }
 
 void Umat::_assemble(int lev, double scale, bool vert_scale) {
@@ -124,26 +127,26 @@ void Umat::_assemble(int lev, double scale, bool vert_scale) {
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
-            //MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
-            MatSetValues(_M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //MatSetValues(_M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            //MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
-            MatSetValues(_M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //MatSetValues(_M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            //MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
-            MatSetValues(_M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //MatSetValues(_M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
-            //MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
-            MatSetValues(_M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //MatSetValues(_M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
         }
     }
-    //MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    //MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(_M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyEnd(_M, MAT_FINAL_ASSEMBLY);
 
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
@@ -322,14 +325,16 @@ Wmat::Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 }
 
 void Wmat::assemble(int lev, double scale, bool vert_scale) {
-    MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
+    /*MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  _M, MAT_FINAL_ASSEMBLY);
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
     MatCopy(_M, M, DIFFERENT_NONZERO_PATTERN);
     MatScale(M, 1.0/geom->thick[lev][0]);
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);*/
+
+    _assemble(lev, scale, vert_scale);
 }
 
 void Wmat::_assemble(int lev, double scale, bool vert_scale) {
@@ -369,15 +374,15 @@ void Wmat::_assemble(int lev, double scale, bool vert_scale) {
 
             Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
-            //MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
-            MatSetValues(_M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+            //MatSetValues(_M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
         }
     }
 
-    //MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    //MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(_M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyEnd(_M, MAT_FINAL_ASSEMBLY);
 
     Free2D(Q->nDofsI, Qaa);
     Free2D(W->nDofsJ, Wt);

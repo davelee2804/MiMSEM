@@ -1362,7 +1362,7 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
         max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
 
         rho_j->VertToHoriz();
-        horiz->advection_rhs(velx1, velx2, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, u1l, u2l, /*step%10==0*/0);
+        horiz->advection_rhs(velx1, velx2, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, u1l, u2l, /*step%10==0*/false);
 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
