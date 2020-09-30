@@ -19,7 +19,7 @@ using namespace std;
 // m: quadrature point order
 M1x_j_xy_i::M1x_j_xy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii, jj;
-    int mi, nj, nn, np1, mp1;
+    int mi, nj, nn, np1;
     double li, ei;
 
     node = _node;
@@ -48,7 +48,6 @@ M1x_j_xy_i::M1x_j_xy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
 }
 
 M1x_j_xy_i::~M1x_j_xy_i() {
-    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -63,7 +62,7 @@ M1x_j_xy_i::~M1x_j_xy_i() {
 // m: quadrature point order
 M1y_j_xy_i::M1y_j_xy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
     int ii, jj;
-    int mi, nj, nn, np1, mp1;
+    int mi, nj, nn, np1;
     double li, ei;
 
     node = _node;
@@ -92,7 +91,6 @@ M1y_j_xy_i::M1y_j_xy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
 }
 
 M1y_j_xy_i::~M1y_j_xy_i() {
-    int mp1 = node->q->n + 1;
     int ii;
 
     for(ii = 0; ii < mp1*mp1; ii++) {
@@ -106,7 +104,7 @@ M1y_j_xy_i::~M1y_j_xy_i() {
 // n: basis function order
 // m: quadrature point order
 M2_j_xy_i::M2_j_xy_i(LagrangeEdge* _edge) {
-    int ii, jj, nn, mp1, mi, nj;
+    int ii, jj, nn, mi, nj;
     double ei, ej;
 
     edge = _edge;
@@ -133,9 +131,8 @@ M2_j_xy_i::M2_j_xy_i(LagrangeEdge* _edge) {
 }
 
 M2_j_xy_i::~M2_j_xy_i() {
-    int ii, mp1, mi;
+    int ii, mi;
 
-    mp1 = edge->l->q->n + 1;
     mi = mp1*mp1;
 
     for(ii = 0; ii < mi; ii++) {
@@ -147,7 +144,7 @@ M2_j_xy_i::~M2_j_xy_i() {
 // 0 form basis function terms (j) evaluated at the
 // quadrature points (i)
 M0_j_xy_i::M0_j_xy_i(LagrangeNode* _node) {
-    int ii, jj, np1, mp1, mi, nj;
+    int ii, jj, np1, mi, nj;
     double li, lj;
 
     node = _node;
@@ -174,9 +171,8 @@ M0_j_xy_i::M0_j_xy_i(LagrangeNode* _node) {
 }
 
 M0_j_xy_i::~M0_j_xy_i() {
-    int ii, mp1, mi;
+    int ii, mi;
 
-    mp1 = node->q->n + 1;
     mi = mp1*mp1;
 
     for(ii = 0; ii < mi; ii++) {
@@ -187,7 +183,7 @@ M0_j_xy_i::~M0_j_xy_i() {
 
 // Quadrature weights diagonal matrix
 Wii::Wii(GaussLobatto* _quad, Geom* _geom) {
-    int ii, jj, mp1, mi;
+    int ii, jj, mi;
 
     quad = _quad;
     geom = _geom;
@@ -213,9 +209,8 @@ Wii::Wii(GaussLobatto* _quad, Geom* _geom) {
 }
 
 void Wii::assemble() {
-    int ii, mp1, mi;
+    int ii, mi;
 
-    mp1 = quad->n + 1;
     mi = mp1*mp1;
 
     for(ii = 0; ii < mi; ii++) {
@@ -224,9 +219,8 @@ void Wii::assemble() {
 }
 
 Wii::~Wii() {
-    int ii, mp1, mi;
+    int ii, mi;
 
-    mp1 = quad->n + 1;
     mi = mp1*mp1;
 
     for(ii = 0; ii < mi; ii++) {

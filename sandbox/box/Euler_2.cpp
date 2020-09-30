@@ -965,6 +965,8 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     }
 
     k2i_z = vert->k2i_z;
+    k2i = vert->horiz->k2i;
+    i2k = i2k_z = 0.0;
 
     if(!rank) {
         sprintf(filename, "output/energetics.dat");

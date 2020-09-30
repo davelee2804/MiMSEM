@@ -15,6 +15,7 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
+#include "HorizSolve.h"
 #include "VertSolve.h"
 #include "Euler_2.h"
 
@@ -206,7 +207,7 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (hours): \t" << step*dt/60.0/60.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->Trapazoidal(velx, velz, rho, rt, exner, dump);
+        pe->Strang(velx, velz, rho, rt, exner, dump);
     }
 
     delete pe;

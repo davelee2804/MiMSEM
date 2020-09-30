@@ -2,6 +2,7 @@ class M1x_j_xy_i {
     public:
         M1x_j_xy_i(LagrangeNode* _node, LagrangeEdge* _edge);
         ~M1x_j_xy_i();
+        int mp1;
         int nDofsI;
         int nDofsJ;
         double** A;
@@ -13,6 +14,7 @@ class M1y_j_xy_i {
     public:
         M1y_j_xy_i(LagrangeNode* _node, LagrangeEdge* _edge);
         ~M1y_j_xy_i();
+        int mp1;
         int nDofsI;
         int nDofsJ;
         double** A;
@@ -24,6 +26,7 @@ class M2_j_xy_i {
     public:
         M2_j_xy_i(LagrangeEdge* _edge);
         ~M2_j_xy_i();
+        int mp1;
         int nDofsI;
         int nDofsJ;
         double** A;
@@ -34,6 +37,7 @@ class M0_j_xy_i {
     public:
         M0_j_xy_i(LagrangeNode* _node);
         ~M0_j_xy_i();
+        int mp1;
         int nDofsI;
         int nDofsJ;
         double** A;
@@ -44,6 +48,7 @@ class Wii {
     public:
         Wii(GaussLobatto* _quad, Geom* _geom);
         ~Wii();
+        int mp1;
         int nDofsI;
         int nDofsJ;
         double** J;

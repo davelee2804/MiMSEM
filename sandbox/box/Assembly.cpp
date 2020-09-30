@@ -2880,12 +2880,12 @@ void Uvec::assemble_wxu(int lev, double scale, Vec vel, Vec vort) {
 }
 
 Uvec::~Uvec() {
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+
     delete U;
     delete V;
     delete Q;
-
-    Free2D(U->nDofsJ, Ut);
-    Free2D(U->nDofsJ, Vt);
 
     VecDestroy(&vl);
     VecDestroy(&vg);
@@ -2995,8 +2995,8 @@ void Wvec::assemble_K(int lev, double scale, bool vert_scale, Vec vel1, Vec vel2
 }
 
 Wvec::~Wvec() {
+    Free2D(W->nDofsJ, Wt);
     delete W;
     delete Q;
-    Free2D(W->nDofsJ, Wt);
     VecDestroy(&vg);
 }
