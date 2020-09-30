@@ -122,9 +122,9 @@ VertOps::~VertOps() {
     Free2D(W->nDofsJ, WtQW_2);
     Free2D(W->nDofsJ, WtQW_3);
 
-    delete quad;
-    delete node;
     delete edge;
+    delete node;
+    delete quad;
 
     delete Q;
     delete W;

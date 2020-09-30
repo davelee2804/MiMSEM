@@ -211,6 +211,30 @@ VertSolve::~VertSolve() {
     delete theta_h;
     delete exner_h;
     delete horiz;
+
+    if(G_rt) {
+        MatDestroy(&VAB);
+        MatDestroy(&pc_V0_invV0_rt_DT);
+        MatDestroy(&pc_V0_invV0_rt);
+        MatDestroy(&pc_V0_invDTV1);
+        MatDestroy(&pc_VB_rt_invVB_pi);
+        MatDestroy(&pc_DTV1);
+        MatDestroy(&pc_DV0_invV0_rt);
+        MatDestroy(&_V0_invV0_rt);
+        MatDestroy(&G_pi_N_pi_inv);
+        MatDestroy(&Q_rt_rho_M_rho_inv);
+        MatDestroy(&Q_rt_rho);
+        MatDestroy(&D_rt_M_u_inv);
+        MatDestroy(&D_rt);
+        MatDestroy(&D_rho);
+        MatDestroy(&N_pi_inv);
+        MatDestroy(&N_rt);
+        MatDestroy(&M_rt);
+        MatDestroy(&M_u_inv);
+        MatDestroy(&M_rho_inv);
+        MatDestroy(&G_pi);
+        MatDestroy(&G_rt);
+    }
 }
 
 double VertSolve::MaxNorm(Vec dx, Vec x, double max_norm) {

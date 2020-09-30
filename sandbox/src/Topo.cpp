@@ -295,9 +295,9 @@ int* Topo::elInds2_g(int ex, int ey) {
     int kk;
     int offset = pi*n2;
 
-    inds2_g = elInds2_l(ex, ey);
+    inds2_l = elInds2_l(ex, ey);
     for(kk = 0; kk < elOrd*elOrd; kk++) {
-        inds2_g[kk] += offset;
+        inds2_g[kk] = inds2_l[kk] + offset;
     }
 
     return inds2_g;

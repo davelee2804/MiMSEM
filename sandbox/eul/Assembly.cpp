@@ -51,14 +51,14 @@ Umat::Umat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 void Umat::assemble(int lev, double scale, bool vert_scale) {
     //MatCopy(_M, M, SAME_NONZERO_PATTERN);
 
-    /*MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  _M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
-    MatCopy(_M, M, DIFFERENT_NONZERO_PATTERN);
-    MatScale(M, 1.0/geom->thick[lev][0]);
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);*/
+    //MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyEnd(  _M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+    //MatCopy(_M, M, DIFFERENT_NONZERO_PATTERN);
+    //MatScale(M, 1.0/geom->thick[lev][0]);
+    //MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
 
     _assemble(lev, scale, vert_scale);
 }
@@ -297,7 +297,7 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
 Umat::~Umat() {
     MatDestroy(&M);
     if(MT) MatDestroy(&MT);
-    //MatDestroy(&_M);
+    MatDestroy(&_M);
 }
 
 // 2 form mass matrix
@@ -325,14 +325,14 @@ Wmat::Wmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 }
 
 void Wmat::assemble(int lev, double scale, bool vert_scale) {
-    /*MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  _M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
-    MatCopy(_M, M, DIFFERENT_NONZERO_PATTERN);
-    MatScale(M, 1.0/geom->thick[lev][0]);
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);*/
+    //MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyEnd(  _M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+    //MatCopy(_M, M, DIFFERENT_NONZERO_PATTERN);
+    //MatScale(M, 1.0/geom->thick[lev][0]);
+    //MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    //MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
 
     _assemble(lev, scale, vert_scale);
 }
@@ -3175,12 +3175,12 @@ void Uvec::assemble_wxu(int lev, double scale, Vec vel, Vec vort) {
 }
 
 Uvec::~Uvec() {
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+
     delete U;
     delete V;
     delete Q;
-
-    Free2D(U->nDofsJ, Ut);
-    Free2D(U->nDofsJ, Vt);
 
     VecDestroy(&vl);
     VecDestroy(&vg);
@@ -3290,8 +3290,8 @@ void Wvec::assemble_K(int lev, double scale, bool vert_scale, Vec vel1, Vec vel2
 }
 
 Wvec::~Wvec() {
+    Free2D(W->nDofsJ, Wt);
     delete W;
     delete Q;
-    Free2D(W->nDofsJ, Wt);
     VecDestroy(&vg);
 }
