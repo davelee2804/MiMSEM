@@ -28,7 +28,6 @@
 #define P0 100000.0
 #define SCALE 1.0e+8
 //#define RAYLEIGH (1.0e-3)
-//#define VISC 1
 //#define NEW_EOS 1
 
 using namespace std;
@@ -568,17 +567,6 @@ void VertSolve::assemble_residual(int ex, int ey, Vec theta, Vec Pi,
     VecAXPY(fw, 0.5*dt*RAYLEIGH, _tmpA1);
     MatMult(vo->VA, velz1, _tmpA1);
     VecAXPY(fw, 0.5*dt*RAYLEIGH, _tmpA1);
-#endif
-
-    // add the laplacian viscosity
-#ifdef VISC
-    VecZeroEntries(_tmpA1);
-    VecAXPY(_tmpA1, 0.5*dt*visc, velz1);
-    VecAXPY(_tmpA1, 0.5*dt*visc, velz2);
-    MatMult(vo->V10, _tmpA1, _tmpB1);
-    MatMult(vo->VB, _tmpB1, _tmpB2);
-    MatMult(vo->V01, _tmpB2, _tmpA1);
-    VecAXPY(fw, -1.0, _tmpA1);
 #endif
 }
 
@@ -1278,10 +1266,8 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
     L2Vecs* rho_h = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* rt_h = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
-    L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
-    L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
     Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F_z, G_z, dF_z, dG_z, d_theta;
     L2Vecs* dFx = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* dGx = new L2Vecs(geom->nk, topo, geom);
@@ -1438,10 +1424,8 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
     delete rho_j;
     delete rt_j;
     delete exner_j;
-    delete exner_h;
     delete theta_i;
     delete theta_j;
-    delete theta_h;
     delete velz_h;
     delete rho_h;
     delete rt_h;

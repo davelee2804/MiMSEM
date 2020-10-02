@@ -28,7 +28,6 @@
 #define CV 717.5
 #define P0 100000.0
 #define SCALE 1.0e+8
-#define WITH_UDWDX
 
 using namespace std;
 
@@ -154,11 +153,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
         VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul[ii]);
         VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul_prev[ii]);
     }
-#ifdef WITH_UDWDX
     uuz = new L2Vecs(geom->nk-1, topo, geom);
-#else
-    uuz = NULL;
-#endif
 
     // initialise the single column mass matrices and solvers
     n2 = topo->elOrd*topo->elOrd;
@@ -325,9 +320,7 @@ Euler::~Euler() {
     delete[] uz;
     delete[] uzl;
     delete[] uzl_prev;
-#ifdef WITH_UDWDX
     delete uuz;
-#endif
 
     MatDestroy(&VA);
     MatDestroy(&VB);
@@ -1297,7 +1290,7 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     rt_0->CopyFromHoriz(rt);       rt_0->HorizToVert();
     exner_0->CopyFromHoriz(exner); exner_0->HorizToVert();
 
-    //AssembleVertMomVort(velz_0);
+    AssembleVertMomVort(velz_0);
 
     if(firstStep) {
         vert->diagTheta2(rho_0->vz, rt_0->vz, vert->theta_h->vz);
@@ -1343,7 +1336,6 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     exner_h->CopyFromHoriz(exner_0->vh);
 
     vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, uuz, velx_0, velx, ul_prev, ul, M2->Mo, EtoF, ksp1o, Rz);
-    //vert->solve_schur(velz_h, rho_h, rt_h, exner_h, uuz, M2->Mo, EtoF, ksp1o, F_rho_h, F_rt_h, ul, Rz);
 
     // 3.  Explicit horiztonal solve
     if(!rank) cout << "horiztonal step (3).................." << endl;
