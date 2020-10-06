@@ -155,6 +155,13 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     }
     uuz = new L2Vecs(geom->nk-1, topo, geom);
 
+    u_curr = new Vec[geom->nk];
+    u_prev = new Vec[geom->nk];
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_curr[ii]);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_prev[ii]);
+    }
+
     // initialise the single column mass matrices and solvers
     n2 = topo->elOrd*topo->elOrd;
 
@@ -321,6 +328,13 @@ Euler::~Euler() {
     delete[] uzl;
     delete[] uzl_prev;
     delete uuz;
+
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecDestroy(&u_curr[ii]);
+        VecDestroy(&u_prev[ii]);
+    }
+    delete[] u_curr;
+    delete[] u_prev;
 
     MatDestroy(&VA);
     MatDestroy(&VB);
@@ -1307,6 +1321,9 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
 
     for(int kk = 0; kk < geom->nk; kk++) {
         VecCopy(ul[kk], ul_prev[kk]);
+
+        VecCopy(u_curr[kk], u_prev[kk]);
+        VecCopy(velx_0[kk], u_curr[kk]);
     }
 
     // 1.  Explicit horizontal momentum solve (predictor)
@@ -1319,9 +1336,13 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
         vert->horiz->momentum_rhs(kk, theta_0->vh, uzl, uzl, velz_0->vh, velz_0->vh, exner_0->vh[kk],
                                   velx[kk], velx[kk], ul[kk], ul[kk], Fu_0[kk]);
 
-        MatMult(M1->M, velx_0[kk], bu);
-
-        VecAXPY(bu, -dt, Fu_0[kk]);
+        if(firstStep) {
+            MatMult(M1->M, velx_0[kk], bu);
+            VecAXPY(bu, -dt, Fu_0[kk]);
+        } else {
+            MatMult(M1->M, u_prev[kk], bu);
+            VecAXPY(bu, -2.0*dt, Fu_0[kk]);
+        }
         KSPSolve(ksp1, bu, velx[kk]);
 
         VecScatterBegin(topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);

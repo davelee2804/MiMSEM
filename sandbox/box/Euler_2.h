@@ -41,6 +41,8 @@ class Euler {
         Vec* uzl_prev;
         Vec* ul;
         Vec* ul_prev;
+        Vec* u_curr;
+        Vec* u_prev;
         L2Vecs* uuz;             // u.dudz + v.dvdz vorticity velocity product
         Mat VA;
         Mat VB;
