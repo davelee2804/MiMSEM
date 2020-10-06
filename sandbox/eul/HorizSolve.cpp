@@ -457,7 +457,7 @@ void HorizSolve::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
 }
 
 void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi, 
-                              Vec velx1, Vec velx2, Vec uil, Vec ujl, Vec rho1, Vec rho2, Vec fu)
+                              Vec velx1, Vec velx2, Vec uil, Vec ujl, Vec rho1, Vec rho2, Vec fu, Vec* Fz)
 {
     double k2i_l;
     Vec Phi, dPi, utmp, d2u, d4u;
@@ -564,12 +564,16 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
         VecAXPY(dudz_h, 0.5, dudz1[level-1]);
         VecAXPY(dudz_h, 0.5, dudz2[level-1]);
 
-        VecZeroEntries(velz_h);
-        VecAXPY(velz_h, 0.5, velz1[level-1]);
-        VecAXPY(velz_h, 0.5, velz2[level-1]);
-
         Rh->assemble(dudz_h, SCALE);
-        MatMult(Rh->M, velz_h, dp);
+        if(Fz) {
+            MatMult(Rh->M, Fz[level-1], dp);
+        } else {
+            VecZeroEntries(velz_h);
+            VecAXPY(velz_h, 0.5, velz1[level-1]);
+            VecAXPY(velz_h, 0.5, velz2[level-1]);
+
+            MatMult(Rh->M, velz_h, dp);
+        }
         VecAXPY(fu, 0.5, dp);
     }
     if(level < geom->nk-1) {
@@ -577,12 +581,16 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
         VecAXPY(dudz_h, 0.5, dudz1[level+0]);
         VecAXPY(dudz_h, 0.5, dudz2[level+0]);
 
-        VecZeroEntries(velz_h);
-        VecAXPY(velz_h, 0.5, velz1[level+0]);
-        VecAXPY(velz_h, 0.5, velz2[level+0]);
-
         Rh->assemble(dudz_h, SCALE);
-        MatMult(Rh->M, velz_h, dp);
+        if(Fz) {
+            MatMult(Rh->M, Fz[level+0], dp);
+        } else {
+            VecZeroEntries(velz_h);
+            VecAXPY(velz_h, 0.5, velz1[level+0]);
+            VecAXPY(velz_h, 0.5, velz2[level+0]);
+
+            MatMult(Rh->M, velz_h, dp);
+        }
         VecAXPY(fu, 0.5, dp);
     }
 

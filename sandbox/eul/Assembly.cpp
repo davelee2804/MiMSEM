@@ -1379,46 +1379,42 @@ Ut_mat::Ut_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     l = _l;
     e = _e;
 
-    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+    Q = new Wii(l->q, geom);
+    U = new M1x_j_xy_i(l, e);
+    V = new M1y_j_xy_i(l, e);
+    Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    UtQUflat = new double[U->nDofsJ*U->nDofsJ];
+
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
-
-    delete U;
 }
 
 void Ut_mat::assemble(int lev, double scale) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_0;
-    Wii* Q = new Wii(l->q, geom);
-    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
-    M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
     double det, **J;
-    double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
-    double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
-    double** UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
-
-    MatZeroEntries(M);
 
     mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
-    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
-    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
-
+    MatZeroEntries(M);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -1465,7 +1461,68 @@ void Ut_mat::assemble(int lev, double scale) {
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+}
 
+void Ut_mat::assemble_h(int lev, double scale, Vec rho) {
+    int ex, ey, ei, ii, mp1, mp12;
+    int *inds_x, *inds_y;
+    double det, **J, hi;
+    PetscScalar* rArray;
+
+    mp1 = l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    MatZeroEntries(M);
+    VecGetArray(rho, &rArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                // horiztonal velocity is piecewise constant in the vertical, cancels with
+                // vertical metric term from the density
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &hi);
+
+                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+            }
+
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Vt, Qab, VtQba);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
+
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQaa, U->A, UtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, V->A, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, U->A, VtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+        }
+    }
+    VecGetArray(rho, &rArray);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+}
+
+Ut_mat::~Ut_mat() {
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
     Free2D(U->nDofsJ, UtQaa);
@@ -1483,9 +1540,7 @@ void Ut_mat::assemble(int lev, double scale) {
     delete Q;
     delete U;
     delete V;
-}
 
-Ut_mat::~Ut_mat() {
     MatDestroy(&M);
 }
 

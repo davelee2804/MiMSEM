@@ -206,8 +206,26 @@ class Ut_mat {
         Geom* geom;
         LagrangeNode* l;
         LagrangeEdge* e;
+        Wii* Q;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        double** Ut;
+        double** Vt;
+        double** UtQaa;
+        double** UtQab;
+        double** VtQba;
+        double** VtQbb;
+        double** UtQU;
+        double** UtQV;
+        double** VtQU;
+        double** VtQV;
+        double** Qaa;
+        double** Qab;
+        double** Qbb;
+        double* UtQUflat;
         Mat M;
         void assemble(int lev, double scale);
+        void assemble_h(int lev, double scale, Vec rho);
 };
 
 class UtQWmat {

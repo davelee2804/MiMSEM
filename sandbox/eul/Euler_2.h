@@ -43,6 +43,8 @@ class Euler {
         Vec* uzl_prev;
         Vec* ul;
         Vec* ul_prev;
+        Vec* u_curr;
+        Vec* u_prev;
         L2Vecs* uuz;             // u.dudz + v.dvdz vorticity velocity product
         Mat VA;
         Mat VB;
@@ -86,5 +88,7 @@ class Euler {
         void DiagExner(Vec* rtz, L2Vecs* exner);
 
         void HorizVort(Vec* velx);
+        void HorizPotVort(Vec* velx, Vec* rho);
         void AssembleVertMomVort(L2Vecs* velz);
+        void VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz);
 };
