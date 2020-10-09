@@ -105,7 +105,7 @@ double HorizSolve::viscosity() {
     double dx = sqrt(ae/topo->nDofs0G);
     double del4 = 0.072*pow(dx,3.2);
 
-del4 *= 2.0;
+//del4 *= 2.0;
     return -sqrt(del4);
 }
 

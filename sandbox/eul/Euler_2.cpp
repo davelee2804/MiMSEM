@@ -1586,7 +1586,8 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     if(!rank) cout << "horiztonal step (1).................." << endl;
     diagTheta(rho_0->vz, rt_0->vz, theta_0->vz);
     theta_0->VertToHoriz();
-    HorizVort(velx);
+    //HorizVort(velx);
+    HorizPotVort(velx, rho);
     if(firstStep) for(int kk = 0; kk < geom->nk-1; kk++) VecCopy(uzl[kk], uzl_prev[kk]);
     VertMassFlux(velz_0, velz_0, rho_0, rho_0, Fz);
     for(int kk = 0; kk < geom->nk; kk++) {
@@ -1628,7 +1629,8 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     if(!rank) cout << "horiztonal step (3).................." << endl;
     diagTheta(rho_h->vz, rt_h->vz, theta_0->vz); // TODO: remove 
     theta_0->VertToHoriz();                      // these lines?
-    HorizVort(velx);
+    //HorizVort(velx);
+    HorizPotVort(velx, rho_h->vh);
     VertMassFlux(velz_0, velz_h, rho_0, rho_h, Fz);
     for(int kk = 0; kk < geom->nk; kk++) {
         vert->horiz->momentum_rhs(kk, vert->theta_h->vh, uzl, uzl_prev, velz_h->vh, velz_0->vh, vert->exner_h->vh[kk],
