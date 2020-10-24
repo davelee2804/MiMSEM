@@ -32,6 +32,11 @@ class VertOps {
         double* rho_q;
         double* rho_e;
 
+        double** Qaa;
+        double** Qab;
+        double** Qba;
+        double** Qbb;
+
         Mat V01;      // vertical gradient operator
         Mat V10;      // vertical divergence operator
         Mat V10_full; // vertical divergence operator with non-homogeneous bcs
@@ -89,6 +94,9 @@ class VertOps {
         void AssembleLinearWithRho2_up(int ex, int ey, Vec rho, Mat A, double dt, Vec* uhl);
         void AssembleLinCon2_up(int ex, int ey, Mat AB, double dt, Vec* uhl);
         void AssembleConLinWithRho(int ex, int ey, Mat BA, Vec rho);
+        // vertical upwinding of potential temperature diagnosis
+        void AssembleLinCon_up(int ex, int ey, Mat AB, Vec wz, double dt);
+        void AssembleLinearWithRho_up(int ex, int ey, Vec rho, Mat A, Vec velz, double dt);
 
         // new eos
         void Assemble_EOS_Residual_new(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs);
