@@ -88,6 +88,8 @@ VertSolve::VertSolve(Topo* _topo, Geom* _geom, double _dt) {
     theta_h = new L2Vecs(geom->nk+1, topo, geom);
     exner_h = new L2Vecs(geom->nk, topo, geom);
     horiz = new HorizSolve(topo, geom, dt);
+
+    step = 0;
 }
 
 void VertSolve::initGZ() {
@@ -247,6 +249,7 @@ double VertSolve::MaxNorm(Vec dx, Vec x, double max_norm) {
 }
 
 void VertSolve::solve_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i) {
+#if 0
     bool done = false;
     int ex, ey, elOrd2, itt = 0;
     int nDofsTotal = (4*geom->nk - 1)*vo->n2;
@@ -438,6 +441,7 @@ void VertSolve::solve_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
     VecDestroy(&dx);
     MatDestroy(&PC_coupled);
     KSPDestroy(&ksp_coupled);
+#endif
 }
 
 void VertSolve::diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec _F) {
@@ -492,7 +496,7 @@ void VertSolve::diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi) {
 }
 
 /* All vectors, rho, rt and theta are VERTICAL vectors */
-void VertSolve::diagTheta2(Vec* rho, Vec* rt, Vec* theta) {
+void VertSolve::diagTheta2(Vec* rho, Vec* rt, Vec* theta, Vec* velz) {
     int ex, ey, n2, ei;
     Vec frt;
     PC pc;
@@ -513,10 +517,12 @@ void VertSolve::diagTheta2(Vec* rho, Vec* rt, Vec* theta) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
 
-            vo->AssembleLinCon2(ex, ey, vo->VAB2);
+            //vo->AssembleLinCon2(ex, ey, vo->VAB2);
+            vo->AssembleLinCon_up(ex, ey, vo->VAB2, velz[ei], dt);
             MatMult(vo->VAB2, rt[ei], frt);
 
-            vo->AssembleLinearWithRho2(ex, ey, rho[ei], vo->VA2);
+            //vo->AssembleLinearWithRho2(ex, ey, rho[ei], vo->VA2);
+            vo->AssembleLinearWithRho_up(ex, ey, rho[ei], vo->VA2, velz[ei], dt);
             KSPSolve(kspColA2, frt, theta[ei]);
         }
     }
@@ -1056,6 +1062,7 @@ L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i,
 L2Vecs* udwdx, Mat M2, E21mat* EtoF, KSP ksp_x,
 L2Vecs* F_rho_o, L2Vecs* F_rt_o, Vec* ul, WtQdUdz_mat* Rz)
 {
+#if 0
     bool done = false;
     int ex, ey, elOrd2, itt = 0;
     double norm_x, max_norm_w, max_norm_exner, max_norm_rho, max_norm_rt;
@@ -1251,6 +1258,7 @@ L2Vecs* F_rho_o, L2Vecs* F_rt_o, Vec* ul, WtQdUdz_mat* Rz)
     VecDestroy(&h_tmp_2);
 
     delete uuz_j;
+#endif
 }
 
 void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
@@ -1272,6 +1280,8 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
     L2Vecs* dFx = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* dGx = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* uuz_j = new L2Vecs(geom->nk-1, topo, geom);
+
+    step++;
 
     elOrd2 = topo->elOrd*topo->elOrd;
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_w);
@@ -1299,7 +1309,7 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
     exner_j->CopyFromVert(exner_i->vz);
 
     // diagnose the potential temperature
-    diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz);
+    diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz, velz_i->vz);
     theta_i->VertToHoriz();
     theta_h->CopyFromVert(theta_i->vz);
     theta_h->VertToHoriz();
@@ -1381,7 +1391,7 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
             VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
         }
 
-        diagTheta2(rho_j->vz, rt_j->vz, theta_j->vz);
+        diagTheta2(rho_j->vz, rt_j->vz, theta_j->vz, velz_j->vz);
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             VecZeroEntries(theta_h->vz[ii]);
             VecAXPY(theta_h->vz[ii], 0.5, theta_j->vz[ii]);

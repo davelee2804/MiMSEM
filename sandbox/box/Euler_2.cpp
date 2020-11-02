@@ -540,7 +540,7 @@ void Euler::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
 }
 
 /* All vectors, rho, rt and theta are VERTICAL vectors */
-void Euler::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
+void Euler::diagTheta(Vec* rho, Vec* rt, Vec* theta, Vec* velz) {
     int ex, ey, n2, ei;
     Vec frt;
 
@@ -552,10 +552,12 @@ void Euler::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
 
-            vert->vo->AssembleLinCon2(ex, ey, vert->vo->VAB2);
+            //vert->vo->AssembleLinCon2(ex, ey, vert->vo->VAB2);
+            vert->vo->AssembleLinCon_up(ex, ey, vert->vo->VAB2, velz[ei], dt);
             MatMult(vert->vo->VAB2, rt[ei], frt);
 
-            vert->vo->AssembleLinearWithRho2(ex, ey, rho[ei], vert->vo->VA2);
+            //vert->vo->AssembleLinearWithRho2(ex, ey, rho[ei], vert->vo->VA2);
+            vert->vo->AssembleLinearWithRho_up(ex, ey, rho[ei], vert->vo->VA2, velz[ei], dt);
             KSPSolve(kspColA2, frt, theta[ei]);
         }
     }
@@ -629,6 +631,7 @@ void Euler::laplacian(Vec ui, Vec* ddu) {
 
 // rho and rt are local vectors, and exner is a global vector
 void Euler::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft, Vec* velz) {
+#if 0
     int kk;
     L2Vecs* theta = new L2Vecs(geom->nk+1, topo, geom);
     Vec* Flux;
@@ -670,6 +673,7 @@ void Euler::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Ve
         VecDestroy(&Flux[kk]);
     }
     delete[] Flux;
+#endif
 }
 
 void Euler::init0(Vec* q, ICfunc3D* func) {
@@ -880,15 +884,15 @@ double Euler::int2(Vec ug) {
     return global;
 }
 
-void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
+void Euler::diagnostics(Vec* velx, Vec* velz, L2Vecs* rho, Vec* rt, Vec* exner, L2Vecs* theta) {
     char filename[80];
     ofstream file;
-    int kk, ex, ey, ei, n2;
-    double keh, kev, pe, ie, k2p, p2k, mass;
+    int kk, ex, ey, ei, n2, mp12, ii;
+    double keh, kev, pe, ie, k2p, p2k, mass, entropy, tq[99], lz;
     double dot, loc1, loc2, loc3;
     Vec hu, M2Pi, w2, gRho, gi, zi;
     Mat BA;
-    L2Vecs* l2_rho = new L2Vecs(geom->nk, topo, geom);
+    PetscScalar* tArray;
 
     n2 = topo->elOrd*topo->elOrd;
 
@@ -906,12 +910,9 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     MatSetSizes(BA, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(BA, 2*n2, PETSC_NULL);
 
-    l2_rho->CopyFromHoriz(rho);
-    l2_rho->HorizToVert();
-
     // horiztonal kinetic energy
     for(kk = 0; kk < geom->nk; kk++) {
-        F->assemble(l2_rho->vh[kk], kk, true, SCALE);
+        F->assemble(rho->vh[kk], kk, true, SCALE);
         MatMult(F->M, velx[kk], hu);
         VecScale(hu, 1.0/SCALE);
         VecDot(hu, velx[kk], &dot);
@@ -927,10 +928,10 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
             vert->vo->AssembleConLinWithW(ex, ey, velz[ei], BA);
             MatMult(BA, velz[ei], w2);
             VecScale(w2, 1.0/SCALE);
-            VecDot(l2_rho->vz[ei], w2, &dot);
+            VecDot(rho->vz[ei], w2, &dot);
             loc1 += 0.5*dot;
 
-            vert->vo->AssembleLinearWithRT(ex, ey, l2_rho->vz[ei], VA, true);
+            vert->vo->AssembleLinearWithRT(ex, ey, rho->vz[ei], VA, true);
             MatMult(VA, velz[ei], zi);
             vert->vo->AssembleLinearInv(ex, ey, VA);
             MatMult(VA, zi, gi);
@@ -959,7 +960,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            VecDot(zv[ei], l2_rho->vz[ei], &dot);
+            VecDot(zv[ei], rho->vz[ei], &dot);
             loc1 += dot/SCALE;
         }
     }
@@ -968,12 +969,32 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     // mass
     mass = 0.0;
     for(kk = 0; kk < geom->nk; kk++) {
-        mass += int2(rho[kk]);
+        mass += int2(rho->vh[kk]);
     }
 
     k2i_z = vert->k2i_z;
     k2i = vert->horiz->k2i;
     i2k = i2k_z = 0.0;
+
+    // entropy
+    loc1 = 0.0;
+    mp12 = (quad->n+1)*(quad->n+1);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            VecGetArray(theta->vz[ei], &tArray);
+            for(kk = 0; kk < geom->nk+1; kk++) {
+                Ax_b(mp12, n2, vert->vo->W->A, &tArray[kk*n2], tq);
+                lz = (kk == 0 || kk == geom->nk) ? 0.5*geom->thick[0][0] : geom->thick[0][0];
+                for(ii = 0; ii < mp12; ii++) {
+                    loc1 += lz * vert->vo->Q->A[ii][ii] * log( tq[ii] );
+                }
+            }
+            VecRestoreArray(theta->vz[ei], &tArray);
+        }
+    }
+    MPI_Allreduce(&loc1, &entropy, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    entropy *= CP;
 
     if(!rank) {
         sprintf(filename, "output/energetics.dat");
@@ -990,6 +1011,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
         file << k2i_z << "\t";
         file << i2k_z << "\t";
         file << mass << "\t";
+        file << entropy << "\t";
         file << endl;
         file.close();
     }
@@ -1001,7 +1023,6 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     VecDestroy(&gi);
     VecDestroy(&zi);
     MatDestroy(&BA);
-    delete l2_rho;
 }
 
 void Euler::DiagExner(Vec* rtz, L2Vecs* exner) {
@@ -1042,6 +1063,7 @@ void DestroyHorizVecs(Vec* vecs, Geom* geom) {
 }
 
 void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
+#if 0
     char    fieldname[100];
     Vec     wi, bu, xu;
     Vec*    Fu_0    = CreateHorizVecs(topo, geom);
@@ -1210,7 +1232,7 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     rt_h->CopyToHoriz(rt);
     exner_h->CopyToHoriz(exner);
 
-    diagnostics(velx, velz, rho, rt, exner);
+    diagnostics(velx, velz, rho_h, rt, exner);
 
     // write output
     if(save) {
@@ -1278,6 +1300,7 @@ void Euler::Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, boo
     delete exner_h;
     delete F_rho_h;
     delete F_rt_h;
+#endif
 }
 
 void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
@@ -1307,7 +1330,7 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     AssembleVertMomVort(velz_0);
 
     if(firstStep) {
-        vert->diagTheta2(rho_0->vz, rt_0->vz, vert->theta_h->vz);
+        vert->diagTheta2(rho_0->vz, rt_0->vz, vert->theta_h->vz, velz_0->vz);
         vert->theta_h->VertToHoriz();
         for(int kk = 0; kk < geom->nk; kk++) {
             VecScatterBegin(topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
@@ -1328,7 +1351,7 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
 
     // 1.  Explicit horizontal momentum solve (predictor)
     if(!rank) cout << "horiztonal step (1).................." << endl;
-    diagTheta(rho_0->vz, rt_0->vz, theta_0->vz);
+    diagTheta(rho_0->vz, rt_0->vz, theta_0->vz, velz_0->vz);
     theta_0->VertToHoriz();
     HorizVort(velx);
     if(firstStep) for(int kk = 0; kk < geom->nk-1; kk++) VecCopy(uzl[kk], uzl_prev[kk]);
@@ -1360,8 +1383,8 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
 
     // 3.  Explicit horiztonal solve
     if(!rank) cout << "horiztonal step (3).................." << endl;
-    diagTheta(rho_h->vz, rt_h->vz, theta_0->vz);
-    theta_0->VertToHoriz();
+    //diagTheta(rho_h->vz, rt_h->vz, theta_0->vz, velz_h->vz);
+    //theta_0->VertToHoriz();
     HorizVort(velx);
     for(int kk = 0; kk < geom->nk; kk++) {
         vert->horiz->momentum_rhs(kk, vert->theta_h->vh, uzl, uzl_prev, velz_h->vh, velz_0->vh, vert->exner_h->vh[kk],
@@ -1382,14 +1405,14 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     rt_h->CopyToHoriz(rt);
     exner_h->CopyToHoriz(exner);
 
-    diagnostics(velx, velz, rho, rt, exner);
+    diagnostics(velx, velz, rho_h, rt, exner, theta_0);
 
     // write output
     if(save) {
         step++;
 
         L2Vecs* l2Theta = new L2Vecs(geom->nk+1, topo, geom);
-        diagTheta(rho_h->vz, rt_h->vz, l2Theta->vz);
+        diagTheta(rho_h->vz, rt_h->vz, l2Theta->vz, velz_h->vz);
         l2Theta->VertToHoriz();
         for(int kk = 0; kk < geom->nk+1; kk++) {
             sprintf(fieldname, "theta");

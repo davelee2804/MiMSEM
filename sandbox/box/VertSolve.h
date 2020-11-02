@@ -7,6 +7,7 @@ class VertSolve {
         double dt;
         double visc;
         int rank;
+        int step;
         double k2i_z;
         GaussLobatto* quad;
         LagrangeNode* node;
@@ -23,7 +24,7 @@ class VertSolve {
         void initGZ();
         void viscosity();
 
-        void diagTheta2(Vec* rho, Vec* rt, Vec* theta);
+        void diagTheta2(Vec* rho, Vec* rt, Vec* theta, Vec* velz);
         void diagExner(int ex, int ey, Vec rt, Vec pi);
 
         void diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec _F);

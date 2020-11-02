@@ -71,7 +71,7 @@ class Euler {
         void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu, Vec Flux, Vec uzb, Vec uzt, Vec velz_b, Vec velz_t);
         void thetaBCVec(int ex, int ey, Mat A, Vec* bTheta);
-        void diagTheta(Vec* rho, Vec* rt, Vec* theta);
+        void diagTheta(Vec* rho, Vec* rt, Vec* theta, Vec* velz);
         void AssembleKEVecs(Vec* velx);
         void init0(Vec* q, ICfunc3D* func);
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
@@ -83,7 +83,7 @@ class Euler {
         void Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
         double int2(Vec ug);
-        void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
+        void diagnostics(Vec* velx, Vec* velz, L2Vecs* rho, Vec* rt, Vec* exner, L2Vecs* theta);
 
         void DiagExner(Vec* rtz, L2Vecs* exner);
 
