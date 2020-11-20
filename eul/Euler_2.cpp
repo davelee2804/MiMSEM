@@ -1627,8 +1627,8 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
 
     // 3.  Explicit horiztonal solve
     if(!rank) cout << "horiztonal step (3).................." << endl;
-    diagTheta(rho_h->vz, rt_h->vz, theta_0->vz); // TODO: remove 
-    theta_0->VertToHoriz();                      // these lines?
+    //diagTheta(rho_h->vz, rt_h->vz, theta_0->vz); // TODO: remove 
+    //theta_0->VertToHoriz();                      // these lines?
     //HorizVort(velx);
     HorizPotVort(velx, rho_h->vh);
     VertMassFlux(velz_0, velz_h, rho_0, rho_h, Fz);

@@ -274,7 +274,7 @@ int main(int argc, char** argv) {
     int startStep = atoi(argv[1]);
     double dt = 60.0;
     int nSteps = 12*24*60;
-    int dumpEvery = 720; //dump evert 12 hours
+    int dumpEvery = 1440; //dump evert 24 hours
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -348,7 +348,6 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        //pe->Trapazoidal(velx, velz, rho, rt, exner, dump);
         pe->Strang(velx, velz, rho, rt, exner, dump);
     }
 
