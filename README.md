@@ -36,4 +36,4 @@ Optional stabilisation terms include:
 ## Picture Gallery ##
 Baroclinic instability on the sphere, day 11
 
-| ![](https://github.com/davelee2804/images/blob/master/euler_sphere/exner_000_0044_nh.pdf) | ![](https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0044_nh.pdf) | ![](https://github.com/davelee2804/images/blob/master/euler_sphere/vorticity_004_0044_nh.pdf) |
+<img src="https://github.com/davelee2804/images/blob/master/euler_sphere/exner_000_0044_nh.png" height="225" width="300"> <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0044_nh.png" height="225" width="300"> <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/vorticity_004_0044_nh.png" height="225" width="300">
