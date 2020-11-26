@@ -1,14 +1,33 @@
 # MiMSEM
-Mixed Mimetic Spectral Element Model 
+A parallel framework for solving geophysical flow problems using mixed mimetic spectral elements.
 
-This reposotory houses a sandbox test code for the mixed mimetic spectral element model
+Includes solvers (and test configurations) for:
+* The 2D advection equation (explicit time integration)
+  * solid body rotation (on the sphere)
+  * deformational flow (on the sphere)
+* The rotating shallow water equations (semi-implicit time integration)
+  * Wilkinson2 steady flow (on the sphere)
+  * Rossby-Haurwitz wave (on the sphere)
+  * Barotropic instability (Galewsky) (on the sphere)
+* The 3D compressible Euler equations (horizontally explicit/vertically implicit time integration)
+  * Baroclinic instability (on the sphere)
+  * Non-hydrostatic gravity wave (on the sphere)
+  * Warm bubble (doubly periodic planar)
 
-Equation set: Rotating shallow water
-Domain: 2D doubly periodic
-Language: Python
+Supports geometric configurations for:
+* Doubly periodic box
+* Cubed-sphere
 
-The model demonstrates conservation of:
-- volume (exact, pointwise) 
-- vorticity (weak form)
-- energy (weak form, to truncation error in time)
-- potential enstrophy (weak form, to truncation error in time, subject to exact spatial integration)
+Optional stabilisation terms include:
+* Biharmonic viscosity
+* Energetically consistent variational upwinding
+
+## How to run the baroclinic instability test case on the sphere ##
+0. Install the dependencies (MPI and PETSc)
+1. Clone the repository
+2. Run the set up script: `./scr/Setup.py <polynomial_degree> <number_of_elements_per_dimension> <number_of_processors>`
+   * `polynomial_degree` is the polynomial order of the $L^2$ basis functions in the horizontal
+   * `number_of_elements_per_dimension` is the number of elements in each dimension on each of the six faces of the cubed sphere
+   * `number_of_processors` is the number of cores to run the code on. Note that this must be 6*n*n for integer n, ie: 6, 24, 54, etc, and `number_of_elements_per_dimension` must fit evenly into n
+3. Build the code: `cd eul/; make mimsem`
+4. Run the code: `mpirun -np <number_of_processors> ./mimsem <start_dump>`, where `0` indicates starting from the analytic initial condition rather than a start dump 
