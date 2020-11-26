@@ -31,7 +31,7 @@ Optional stabilisation terms include:
    * `number_of_processors` is the number of cores to run the code on. Note that this must be 6*n*n for integer n, ie: 6, 24, 54, etc, and `number_of_elements_per_dimension` must fit evenly into n
 3. Build the code: `cd eul/; make mimsem`
 4. Run the code: `mpirun -np <number_of_processors> ./mimsem <start_dump>`, where `0` indicates starting from the analytic initial condition rather than a start dump 
-5. Plot an image: ``
+5. Plot an image: `../scr/WriteImage_NorthHemi.py output/<filename> <plot_contours> <vertical_level> <dump_time>
 
 ## Picture Gallery ##
 <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/exner_000_0036_nh.png" height="225" width="300"><img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0036_nh.png" height="225" width="300"><img src="https://github.com/davelee2804/images/blob/master/euler_sphere/vorticity_004_0036_nh.png" height="225" width="300">
@@ -49,3 +49,19 @@ Optional stabilisation terms include:
 <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0025_up.png" height="240" width="320"><img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0050_up.png" height="240" width="320">
 
 <sub>Potential temperature for the 3D rising bubble test case in planar geometry at times 200s (left) and 400s (right)</sub>
+
+## References ##
+Lee, D and Palha, A (2020) [Exact spatial and temporal balance of energy exchanges within a horizontally explicit/vertically implicit non-hydrostatic atmosphere](https://arxiv.org/pdf/2011.07861.pdf) arXiv:2011.07861
+
+Lee, D (2021) [An energetically balanced, quasi-Newton integrator for non-hydrostatic vertical atmospheric dynamics](https://www.sciencedirect.com/science/article/pii/S0021999120307622) J. Comp. Phys. 109988
+
+Lee, D (2020) [Petrov-Galerkin flux upwinding for mixed mimetic spectral elements, and itsapplication to geophysical flow problems](https://arxiv.org/pdf/2004.13225.pdf) arXiv:2004.13225
+
+Lee, D and Palha. A (2020) [A mixed mimetic spectral element model of the 3D compressible Euler equations on the cubed sphere](https://www.sciencedirect.com/science/article/pii/S0021999119306989) J. Comp. Phys. 401 108993
+
+Lee, D and Palha, A (2018) [A mixed mimetic spectral element model of the rotating shallow water equations on the cubed sphere](https://www.sciencedirect.com/science/article/pii/S0021999118305734) J. Comp. Phys. 375 240-262
+
+Lee, D, Palha, A and Gerritsma, M (2018) [Discrete conservation properties for shallow water flows using mixed mimetic spectral elements](https://www.sciencedirect.com/science/article/pii/S0021999117309166) J. Comp. Phys. 357 282-304
+
+## Comments? Questions? Like to Contribute? ##
+Email Dave Lee at davelee2804@gmail.com
