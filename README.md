@@ -1,5 +1,5 @@
 # MiMSEM
-A parallel framework for solving geophysical flow problems using mixed mimetic spectral elements. The code is based on spatial and temporal discretisations that preserve the exact balance of energy exchanges.
+A parallel framework for solving geophysical flow problems at both planetary and non-hydrostatic scales using mixed mimetic spectral elements. The code is based on spatial and temporal discretisations that preserve the exact balance of energy exchanges.
 
 Includes solvers (and test configurations) for:
 * The 2D advection equation with explicit time integration
