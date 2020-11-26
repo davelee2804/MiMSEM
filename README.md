@@ -1,5 +1,5 @@
 # MiMSEM
-A parallel framework for solving geophysical flow problems at both planetary and non-hydrostatic scales using mixed mimetic spectral elements. The code is based on spatial and temporal discretisations that preserve the exact balance of energy exchanges.
+A parallel framework for solving geophysical flow problems at both planetary and non-hydrostatic scales using mixed mimetic spectral elements. The code is based on spatial and temporal discretisations that preserve the exact balance of energy exchanges for an improved representation of dynamical processes.
 
 Includes solvers (and test configurations) for:
 * The 2D advection equation with explicit time integration
@@ -26,12 +26,12 @@ Optional stabilisation terms include:
 0. Install the dependencies (C++, Python3, MPI, PETSc)
 1. Clone the repository
 2. Run the set up script: `./scr/Setup.py <polynomial_degree> <number_of_elements_per_dimension> <number_of_processors>` where
-   * `polynomial_degree` is the polynomial order of the $L^2$ basis functions in the horizontal
+   * `polynomial_degree` is the polynomial order of the ![](https://render.githubusercontent.com/render/math?math=L^2) basis functions in the horizontal
    * `number_of_elements_per_dimension` is the number of elements in each dimension on each of the six faces of the cubed sphere
-   * `number_of_processors` is the number of cores to run the code on. Note that this must be 6*n*n for integer n, ie: 6, 24, 54, etc, and `number_of_elements_per_dimension` must fit evenly into n
+   * `number_of_processors` is the number of cores to run the code on. Note that this must be  ![](https://render.githubusercontent.com/render/math?math=6n^2) for integer _n_, ie: 6, 24, 54, etc, and `number_of_elements_per_dimension` must fit evenly into _n_
 3. Build the code: `cd eul/; make mimsem`
 4. Run the code: `mpirun -np <number_of_processors> ./mimsem <start_dump>`, where `0` indicates starting from the analytic initial condition rather than a start dump 
-5. Plot an image: `../scr/WriteImage_NorthHemi.py output/<filename> <plot_contours> <vertical_level> <dump_time>
+5. Plot an image: `../scr/WriteImage_NorthHemi.py output/<filename> <plot_contours> <vertical_level> <dump_time>`
 
 ## Picture Gallery ##
 <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/exner_000_0036_nh.png" height="225" width="300"><img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0036_nh.png" height="225" width="300"><img src="https://github.com/davelee2804/images/blob/master/euler_sphere/vorticity_004_0036_nh.png" height="225" width="300">
