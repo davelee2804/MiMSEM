@@ -34,8 +34,8 @@ Optional stabilisation terms include:
 5. Plot an image: ``
 
 ## Picture Gallery ##
-Baroclinic instability on the sphere, day 9: surface level Exner pressure, and potential temperature and vertical voricity component at z=1.5km
-<img src="https://github.com/davelee2804/images/blob/master/euler_sphere/exner_000_0036_nh.png" height="210" width="280"> <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0036_nh.png" height="210" width="280"> <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/vorticity_004_0036_nh.png" height="210" width="280">
+<img src="https://github.com/davelee2804/images/blob/master/euler_sphere/exner_000_0036_nh.png" height="210" width="280"><img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0036_nh.png" height="210" width="280"><img src="https://github.com/davelee2804/images/blob/master/euler_sphere/vorticity_004_0036_nh.png" height="210" width="280">
+<sub>Baroclinic instability on the sphere, day 9: surface level Exner pressure, and potential temperature and vertical voricity component at z=1.5km</sub>
 
-Baroclinic instability on the sphere, day 11: surface level Exner pressure, and potential temperature and vertical voricity component at z=1.5km
-<img src="https://github.com/davelee2804/images/blob/master/euler_sphere/exner_000_0044_nh.png" height="210" width=280"> <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0044_nh.png" height="210" width="280"> <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/vorticity_004_0044_nh.png" height="210" width="280">
+<img src="https://github.com/davelee2804/images/blob/master/euler_sphere/exner_000_0044_nh.png" height="210" width="280"><img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0044_nh.png" height="210" width="280"><img src="https://github.com/davelee2804/images/blob/master/euler_sphere/vorticity_004_0044_nh.png" height="210" width="280">
+<sub>Baroclinic instability on the sphere, day 11: surface level Exner pressure, and potential temperature and vertical voricity component at z=1.5km</sub>
