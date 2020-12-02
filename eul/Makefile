@@ -27,7 +27,7 @@ OBJS = LinAlg.o \
        UMJS14.o
 
 mimsem: ${OBJS}
-	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
+	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} -lblas ${CXXFLAGS}
 
 UMJS14.o: UMJS14.cpp Euler_2.o VertSolve.o HorizSolve.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c UMJS14.cpp ${CXXFLAGS}

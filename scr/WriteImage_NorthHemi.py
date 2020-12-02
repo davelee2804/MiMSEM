@@ -14,23 +14,25 @@ print('writing image')
 xg, yg, zg = init_geom(pn,ne,False,False)
 print('...done')
 
-filename = sys.argv[1]
-do_contours = int(sys.argv[2])
-level = int(sys.argv[3])
-step = int(sys.argv[4])
-print('file to read ' + filename)
+path = sys.argv[1]
+filename = sys.argv[2]
+do_contours = int(sys.argv[3])
+level = int(sys.argv[4])
+step = int(sys.argv[5])
 
 #delete text lines
-f = open(filename + '.dat','r')
+full_name = path + '/' + filename + '_%.3u'%level + '_%.4u'%step + '.dat'
+print('reading file: ' + full_name)
+f = open(full_name,'r')
 lines = f.readlines()
 f.close()
-f = open(filename + '.dat','w')
+f = open(full_name,'w')
 for line in lines:
 	if line[0] != ' ' and line[0] != 'V' and line[0] != 'P':
 		f.write(line)
 f.close()
 
-w=np.loadtxt(filename + '.dat')
+w=np.loadtxt(full_name)
 
 xlen = xg.shape[0]
 print(xlen)
@@ -56,15 +58,7 @@ plt.xticks([])
 plt.yticks([])
 plt.tricontourf(triang, W[:jj], 100)
 
-#plt.triplot(triang)
-if filename[11:15] == 'pres':
-	plt.colorbar(orientation='vertical',ticks=1000.0*np.array([9.0,9.2,9.4,9.6,9.8,10.0]))
-	tc=plt.tricontour(triang,W[:jj],1000.0*np.array([9.0,9.2,9.4,9.6,9.8,10.0]),colors='k')
-elif filename[11:15] == 'vort':
-	plt.colorbar(orientation='vertical',format='%.1e',ticks=1.0e-5*np.array([-12,-8,-4,0,+4,+8,+12]))
-	tc=plt.tricontour(triang,W[:jj],1.0e-5*np.array([-12,-10,-8,-6,-4,-2,0,+2,+4,+6,+8,+10,+12]),colors='k')
-else:
-	plt.colorbar(orientation='vertical')
+plt.colorbar(orientation='vertical')
 
 if do_contours:
 	tmp = W[:jj]
@@ -77,8 +71,28 @@ if do_contours:
 plt.savefig(filename + '_nh.pdf')
 plt.show()
 
-theta_b_file = './output/theta_' + '%.3d'%level + '_' + '%.4d'%step + '.dat'
-theta_t_file = './output/theta_' + '%.3d'%(level+1) + '_' + '%.4d'%step + '.dat'
+theta_b_file = path + '/theta_' + '%.3u'%level + '_%.4u'%step + '.dat'
+theta_t_file = path + '/theta_' + '%.3u'%(level+1) + '_%.4u'%step + '.dat'
+print('potential temperature at bottom of level: ' + theta_b_file)
+print('potential temperature at top of level:    ' + theta_t_file)
+
+f = open(theta_b_file,'r')
+lines = f.readlines()
+f.close()
+f = open(theta_b_file,'w')
+for line in lines:
+	if line[0] != ' ' and line[0] != 'V' and line[0] != 'P':
+		f.write(line)
+f.close()
+f = open(theta_t_file,'r')
+lines = f.readlines()
+f.close()
+f = open(theta_t_file,'w')
+for line in lines:
+	if line[0] != ' ' and line[0] != 'V' and line[0] != 'P':
+		f.write(line)
+f.close()
+
 theta_b = np.loadtxt(theta_b_file)
 theta_t = np.loadtxt(theta_t_file)
 theta = 0.5*(theta_b + theta_t)

@@ -70,20 +70,19 @@ void Umat::_assemble(int lev, double scale, bool vert_scale) {
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
     double det, **J;
-    double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
-    double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
-    double** UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
+    double* Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    double* Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    double* UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* Qaa = new double[Q->nDofsI];
+    double* Qab = new double[Q->nDofsI];
+    double* Qbb = new double[Q->nDofsI];
 
     MatZeroEntries(M);
 
@@ -101,15 +100,15 @@ void Umat::_assemble(int lev, double scale, bool vert_scale) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
-                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii]*(scale/det);
+                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii]*(scale/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
                 if(vert_scale) {
-                    Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                    Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                    Qbb[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                    Qaa[ii] *= geom->thickInv[lev][inds_0[ii]];
+                    Qab[ii] *= geom->thickInv[lev][inds_0[ii]];
+                    Qbb[ii] *= geom->thickInv[lev][inds_0[ii]];
                 }
             }
 
@@ -126,21 +125,17 @@ void Umat::_assemble(int lev, double scale, bool vert_scale) {
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, U->A, VtQU);
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
-            //MatSetValues(_M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
-            //MatSetValues(_M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQV, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
-            //MatSetValues(_M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, VtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
-            //MatSetValues(_M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, VtQV, ADD_VALUES);
         }
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
@@ -158,10 +153,9 @@ void Umat::_assemble(int lev, double scale, bool vert_scale) {
     Free2D(U->nDofsJ, UtQV);
     Free2D(U->nDofsJ, VtQU);
     Free2D(U->nDofsJ, VtQV);
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qab);
-    Free2D(Q->nDofsI, Qbb);
-    delete[] UtQUflat;
+    delete[] Qaa;
+    delete[] Qab;
+    delete[] Qbb;
     delete Q;
     delete U;
     delete V;
@@ -178,20 +172,19 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
     Wii* Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
-    double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
-    double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
-    double** UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
+    double* Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    double* Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    double* UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* Qaa = new double[Q->nDofsI];
+    double* Qab = new double[Q->nDofsI];
+    double* Qbb = new double[Q->nDofsI];
 
     m0 = l->q->n;
     mp1 = l->q->n + 1;
@@ -209,8 +202,8 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
                 J = geom->J[ei][ii];
 
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ug);
-                ug[0] *= 1.0/geom->thick[lev][inds_0[ii]];
-                ug[1] *= 1.0/geom->thick[lev][inds_0[ii]];
+                ug[0] *= geom->thickInv[lev][inds_0[ii]];
+                ug[1] *= geom->thickInv[lev][inds_0[ii]];
 
                 // map velocity to local element coordinates
                 ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
@@ -227,18 +220,18 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
                 }
                 // evaluate the 2 form basis at the upwinded locations
                 for(jj = 0; jj < m0*mp1; jj++) {
-                    Ut[jj][ii] = lx[jj%mp1]*_ey[jj/mp1];
-                    Vt[jj][ii] = _ex[jj%m0]*ly[jj/m0];
+                    Ut[jj*mp12+ii] = lx[jj%mp1]*_ey[jj/mp1];
+                    Vt[jj*mp12+ii] = _ex[jj%m0]*ly[jj/m0];
                 }
 
-                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
-                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii]*(scale/det);
+                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii]*(scale/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qbb[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qaa[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qab[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qbb[ii] *= geom->thickInv[lev][inds_0[ii]];
             }
 
             // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
@@ -255,17 +248,17 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQV, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, VtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, VtQV, ADD_VALUES);
         }
     }
     VecRestoreArray(u1, &u1Array);
@@ -285,10 +278,9 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
     Free2D(U->nDofsJ, UtQV);
     Free2D(U->nDofsJ, VtQU);
     Free2D(U->nDofsJ, VtQV);
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qab);
-    Free2D(Q->nDofsI, Qbb);
-    delete[] UtQUflat;
+    delete[] Qaa;
+    delete[] Qab;
+    delete[] Qbb;
     delete Q;
     delete U;
     delete V;
@@ -342,11 +334,10 @@ void Wmat::_assemble(int lev, double scale, bool vert_scale) {
     double det;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    double* Qaa = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
 
     MatZeroEntries(M);
 
@@ -363,19 +354,18 @@ void Wmat::_assemble(int lev, double scale, bool vert_scale) {
             inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det);
+                Qaa[ii]  = Q->A[ii]*(scale/det);
                 if(vert_scale) {
-                    Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                    Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
                 }
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
-            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
-            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
-            //MatSetValues(_M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQW, ADD_VALUES);
         }
     }
 
@@ -384,13 +374,12 @@ void Wmat::_assemble(int lev, double scale, bool vert_scale) {
     //MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
     //MatAssemblyEnd(_M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(Q->nDofsI, Qaa);
+    delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
     delete W;
     delete Q;
-    delete[] WtQWflat;
 }
 
 Wmat::~Wmat() {
@@ -413,17 +402,15 @@ Uhmat::Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
     VtQU = Alloc2D(V->nDofsJ, V->nDofsJ);
     VtQV = Alloc2D(V->nDofsJ, V->nDofsJ);
-    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qaa = new double[Q->nDofsI];
+    Qab = new double[Q->nDofsI];
+    Qbb = new double[Q->nDofsI];
     Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     Vt = Alloc2D(U->nDofsJ, U->nDofsI);
     UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
     UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
     VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
     VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
-
-    UtQUflat = new double[U->nDofsJ*U->nDofsJ];
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
@@ -458,16 +445,16 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
 
                 // density field is piecewise constant in the vertical
-                if(const_vert) hi *= 1.0/geom->thick[lev][inds_0[ii]];
+                if(const_vert) hi *= geom->thickInv[lev][inds_0[ii]];
 
-                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
-                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii]*(scale/det);
+                Qbb[ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii]*(scale/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qbb[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qaa[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qab[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qbb[ii] *= geom->thickInv[lev][inds_0[ii]];
             }
 
             // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
@@ -484,17 +471,17 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQV, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, VtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, VtQV, ADD_VALUES);
         }
     }
     VecRestoreArray(h2, &h2Array);
@@ -529,8 +516,8 @@ void Uhmat::assemble_up(Vec h2, int lev, double scale, double dt, Vec u1) {
                 J = geom->J[ei][ii];
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &hi);
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ug);
-                ug[0] *= 1.0/geom->thick[lev][inds_0[ii]];
-                ug[1] *= 1.0/geom->thick[lev][inds_0[ii]];
+                ug[0] *= geom->thickInv[lev][inds_0[ii]];
+                ug[1] *= geom->thickInv[lev][inds_0[ii]];
                 // map velocity to local element coordinates
                 ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
                 ul[1] = (-J[1][0]*ug[0] + J[0][0]*ug[1])/det;
@@ -546,18 +533,18 @@ void Uhmat::assemble_up(Vec h2, int lev, double scale, double dt, Vec u1) {
 	        }
                 // evaluate the 2 form basis at the upwinded locations
                 for(jj = 0; jj < m0*mp1; jj++) {
-                    Ut[jj][ii] = lx[jj%mp1]*_ey[jj/mp1];
-                    Vt[jj][ii] = _ex[jj%m0]*ly[jj/m0];
+                    Ut[jj*mp12+ii] = lx[jj%mp1]*_ey[jj/mp1];
+                    Vt[jj*mp12+ii] = _ex[jj%m0]*ly[jj/m0];
                 }
 
-                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
-                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii]*(scale/det);
+                Qbb[ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii]*(scale/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qbb[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qaa[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qab[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qbb[ii] *= geom->thickInv[lev][inds_0[ii]];
             }
 
             // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
@@ -574,17 +561,17 @@ void Uhmat::assemble_up(Vec h2, int lev, double scale, double dt, Vec u1) {
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQV, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, VtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, VtQV, ADD_VALUES);
         }
     }
     VecRestoreArray(h2, &h2Array);
@@ -597,15 +584,13 @@ void Uhmat::assemble_up(Vec h2, int lev, double scale, double dt, Vec u1) {
 }
 
 Uhmat::~Uhmat() {
-    delete[] UtQUflat;
-
     Free2D(U->nDofsJ, UtQU);
     Free2D(U->nDofsJ, UtQV);
     Free2D(V->nDofsJ, VtQU);
     Free2D(V->nDofsJ, VtQV);
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qab);
-    Free2D(Q->nDofsI, Qbb);
+    delete[] Qaa;
+    delete[] Qab;
+    delete[] Qbb;
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
     Free2D(U->nDofsJ, UtQaa);
@@ -654,8 +639,8 @@ void Pvec::assemble(int lev, double scale) {
 
             inds_l = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < np12; ii++) {
-                entries[ii]  = scale*Q->A[ii][ii]*geom->det[ei][ii];
-                entries[ii] *= 1.0/geom->thick[lev][inds_l[ii]];
+                entries[ii]  = scale*Q->A[ii]*geom->det[ei][ii];
+                entries[ii] *= geom->thickInv[lev][inds_l[ii]];
             }
             VecSetValues(vl, np12, inds_l, entries, ADD_VALUES);
         }
@@ -710,11 +695,11 @@ void Phvec::assemble(Vec hl, int lev, double scale) {
 
             inds_l = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < np12; ii++) {
-                entries[ii]  = scale*Q->A[ii][ii]*geom->det[ei][ii];
-                entries[ii] *= 1.0/geom->thick[lev][inds_l[ii]];
+                entries[ii]  = scale*Q->A[ii]*geom->det[ei][ii];
+                entries[ii] *= geom->thickInv[lev][inds_l[ii]];
 
                 geom->interp2_g(ex, ey, ii%np1, ii/np1, hArray, &hi);
-                hi *= 1.0/geom->thick[lev][inds_l[ii]];
+                hi *= geom->thickInv[lev][inds_l[ii]];
                 entries[ii] *= hi;
             }
             VecSetValues(vl, np12, inds_l, entries, ADD_VALUES);
@@ -747,10 +732,9 @@ void WtQmat::assemble() {
     int ex, ey, mp1, mp12, ii, *inds_2, *inds_0;
     M2_j_xy_i* W = new M2_j_xy_i(e);
     Wii* Q = new Wii(e->l->q, geom);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
+    double* Qaa = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n2l, topo->n0l, topo->nDofs2G, topo->nDofs0G);
@@ -766,28 +750,27 @@ void WtQmat::assemble() {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // piecewise constant field in the vertical, so vertical transformation is det/det = 1
             for(ii = 0; ii < mp12; ii++) {
-                Qaa[ii][ii] = Q->A[ii][ii];
+                Qaa[ii] = Q->A[ii];
             }
 
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
-            Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQ);
-            Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQ);
+            //Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
 
             inds_2 = topo->elInds2_g(ex, ey);
             inds_0 = topo->elInds0_g(ex, ey);
 
-            MatSetValues(M, W->nDofsJ, inds_2, Q->nDofsJ, inds_0, WtQflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds_2, Q->nDofsJ, inds_0, WtQ, ADD_VALUES);
         }
     }
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(Q->nDofsI, Qaa);
+    delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
-    delete[] WtQflat;
     delete W;
     delete Q;
 }
@@ -810,10 +793,9 @@ void PtQmat::assemble() {
     int *inds_0;
     M0_j_xy_i* P = new M0_j_xy_i(l);
     Wii* Q = new Wii(l->q, geom);
-    double** Pt = Tran(P->nDofsI, P->nDofsJ, P->A);
-    double** PtQ = Alloc2D(P->nDofsJ, Q->nDofsJ);
-    double* PtQflat = new double[P->nDofsJ*Q->nDofsJ];
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double* Pt = Tran(P->nDofsI, P->nDofsJ, P->A);
+    double* PtQ = Alloc2D(P->nDofsJ, Q->nDofsJ);
+    double* Qaa = new double[Q->nDofsI];
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
@@ -831,13 +813,13 @@ void PtQmat::assemble() {
             // incorportate jacobian tranformation for each element
             // piecewise constant field in the vertical, so vertical transformation is det/det = 1
             for(ii = 0; ii < mp12; ii++) {
-                Qaa[ii][ii] = Q->A[ii][ii]*geom->det[ei][ii];
+                Qaa[ii] = Q->A[ii]*geom->det[ei][ii];
             }
-            Mult_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
-            Flat2D_IP(P->nDofsJ, Q->nDofsJ, PtQ, PtQflat);
+            Mult_FD_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
+            //Flat2D_IP(P->nDofsJ, Q->nDofsJ, PtQ, PtQflat);
 
             inds_0 = topo->elInds0_g(ex, ey);
-            MatSetValues(M, P->nDofsJ, inds_0, Q->nDofsJ, inds_0, PtQflat, ADD_VALUES);
+            MatSetValues(M, P->nDofsJ, inds_0, Q->nDofsJ, inds_0, PtQ, ADD_VALUES);
         }
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
@@ -845,8 +827,7 @@ void PtQmat::assemble() {
 
     Free2D(P->nDofsJ, Pt);
     Free2D(P->nDofsJ, PtQ);
-    Free2D(Q->nDofsI, Qaa);
-    delete[] PtQflat;
+    delete[] Qaa;
     delete P;
     delete Q;
 }
@@ -872,14 +853,13 @@ void UtQmat::assemble() {
     Wii* Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
-    double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
-    double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
-    double** UtQ = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Qba = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double* UtQflat = new double[U->nDofsJ*Q->nDofsJ];
+    double* Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    double* Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    double* UtQ = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* Qaa = new double[Q->nDofsI];
+    double* Qab = new double[Q->nDofsI];
+    double* Qba = new double[Q->nDofsI];
+    double* Qbb = new double[Q->nDofsI];
 
     mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
@@ -898,10 +878,10 @@ void UtQmat::assemble() {
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 J = geom->J[ei][ii];
-                Qaa[ii][ii] = J[0][0]*Q->A[ii][ii];
-                Qab[ii][ii] = J[1][0]*Q->A[ii][ii];
-                Qba[ii][ii] = J[0][1]*Q->A[ii][ii];
-                Qbb[ii][ii] = J[1][1]*Q->A[ii][ii];
+                Qaa[ii] = J[0][0]*Q->A[ii];
+                Qab[ii] = J[1][0]*Q->A[ii];
+                Qba[ii] = J[0][1]*Q->A[ii];
+                Qbb[ii] = J[1][1]*Q->A[ii];
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -916,24 +896,24 @@ void UtQmat::assemble() {
             Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
 
             //
-            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Qaa, UtQ);
-            Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
-            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_0x, UtQflat, ADD_VALUES);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Qaa, UtQ);
+            //Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
+            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_0x, UtQ, ADD_VALUES);
 
             //
-            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Qab, UtQ);
-            Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
-            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_0y, UtQflat, ADD_VALUES);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Qab, UtQ);
+            //Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
+            MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_0y, UtQ, ADD_VALUES);
 
             //
-            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Vt, Qba, UtQ);
-            Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
-            MatSetValues(M, U->nDofsJ, inds_y, Q->nDofsJ, inds_0x, UtQflat, ADD_VALUES);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Vt, Qba, UtQ);
+            //Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
+            MatSetValues(M, U->nDofsJ, inds_y, Q->nDofsJ, inds_0x, UtQ, ADD_VALUES);
 
             //
-            Mult_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Vt, Qbb, UtQ);
-            Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
-            MatSetValues(M, U->nDofsJ, inds_y, Q->nDofsJ, inds_0y, UtQflat, ADD_VALUES);
+            Mult_FD_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Vt, Qbb, UtQ);
+            //Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
+            MatSetValues(M, U->nDofsJ, inds_y, Q->nDofsJ, inds_0y, UtQ, ADD_VALUES);
         }
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
@@ -942,11 +922,10 @@ void UtQmat::assemble() {
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
     Free2D(U->nDofsJ, UtQ);
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qab);
-    Free2D(Q->nDofsI, Qba);
-    Free2D(Q->nDofsI, Qbb);
-    delete[] UtQflat;
+    delete[] Qaa;
+    delete[] Qab;
+    delete[] Qba;
+    delete[] Qbb;
     delete[] inds_0x;
     delete[] inds_0y;
     delete Q;
@@ -970,14 +949,12 @@ WtQUmat::WtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     W = new M2_j_xy_i(e);
     Q = new Wii(l->q, geom);
     Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qaa = new double[Q->nDofsI];
+    Qab = new double[Q->nDofsI];
     WtQaa = Alloc2D(W->nDofsJ, Q->nDofsJ);
     WtQab = Alloc2D(W->nDofsJ, Q->nDofsJ);
     WtQU = Alloc2D(W->nDofsJ, U->nDofsJ);
     WtQV = Alloc2D(W->nDofsJ, V->nDofsJ);
-    WtQUflat = new double[W->nDofsJ*U->nDofsJ];
-    WtQVflat = new double[W->nDofsJ*V->nDofsJ];
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n2l, topo->n1l, topo->nDofs2G, topo->nDofs1G);
@@ -1008,16 +985,16 @@ void WtQUmat::assemble(Vec u1, int lev, double scale) {
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
                 // horiztontal velocity is piecewise constant in the vertical
-                ux[0] *= 1.0/geom->thick[lev][inds_0[ii]];
-                ux[1] *= 1.0/geom->thick[lev][inds_0[ii]];
+                ux[0] *= geom->thickInv[lev][inds_0[ii]];
+                ux[1] *= geom->thickInv[lev][inds_0[ii]];
 
-                Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii]*(scale/det);
 
                 // rescale by the inverse of the vertical determinant (piecewise 
                 // constant in the vertical)
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qaa[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qab[ii] *= geom->thickInv[lev][inds_0[ii]];
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQaa);
@@ -1026,15 +1003,15 @@ void WtQUmat::assemble(Vec u1, int lev, double scale) {
             Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQaa, U->A, WtQU);
             Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQab, V->A, WtQV);
 
-            Flat2D_IP(W->nDofsJ, U->nDofsJ, WtQU, WtQUflat);
-            Flat2D_IP(W->nDofsJ, V->nDofsJ, WtQV, WtQVflat);
+            //Flat2D_IP(W->nDofsJ, U->nDofsJ, WtQU, WtQUflat);
+            //Flat2D_IP(W->nDofsJ, V->nDofsJ, WtQV, WtQVflat);
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
             inds_2 = topo->elInds2_g(ex, ey);
 
-            MatSetValues(M, W->nDofsJ, inds_2, U->nDofsJ, inds_x, WtQUflat, ADD_VALUES);
-            MatSetValues(M, W->nDofsJ, inds_2, V->nDofsJ, inds_y, WtQVflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds_2, U->nDofsJ, inds_x, WtQU, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds_2, V->nDofsJ, inds_y, WtQV, ADD_VALUES);
         }
     }
     VecRestoreArray(u1, &u1Array);
@@ -1045,14 +1022,12 @@ void WtQUmat::assemble(Vec u1, int lev, double scale) {
 
 WtQUmat::~WtQUmat() {
     Free2D(W->nDofsJ, Wt);
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qab);
+    delete[] Qaa;
+    delete[] Qab;
     Free2D(W->nDofsJ, WtQU);
     Free2D(W->nDofsJ, WtQV);
     Free2D(W->nDofsJ, WtQaa);
     Free2D(W->nDofsJ, WtQab);
-    delete[] WtQUflat;
-    delete[] WtQVflat;
     delete U;
     delete V;
     delete W;
@@ -1074,14 +1049,12 @@ RotMat::RotMat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
 
     Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     Vt = Alloc2D(V->nDofsJ, U->nDofsI);
-    Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Qba = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qab = new double[Q->nDofsI];
+    Qba = new double[Q->nDofsI];
     UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
     VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
     UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
     VtQU = Alloc2D(V->nDofsJ, V->nDofsJ);
-
-    UtQUflat = new double[U->nDofsJ*V->nDofsJ];
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
@@ -1117,13 +1090,13 @@ void RotMat::assemble(Vec q0, int lev, double scale) {
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
 
                 // vertical vorticity is piecewise constant in the vertical
-                vort *= 1.0/geom->thick[lev][inds_0[ii]];
+                vort *= geom->thickInv[lev][inds_0[ii]];
 
-                Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qab[ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii]*(scale/det);
+                Qba[ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii]*(scale/det);
 
-                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qba[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qab[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qba[ii] *= geom->thickInv[lev][inds_0[ii]];
             }
 
             Mult_FD_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qab, UtQab);
@@ -1134,11 +1107,11 @@ void RotMat::assemble(Vec q0, int lev, double scale) {
             Mult_IP(U->nDofsJ, U->nDofsJ, U->nDofsI, UtQab, V->A, UtQV);
             Mult_IP(U->nDofsJ, U->nDofsJ, V->nDofsI, VtQba, U->A, VtQU);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQV, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, VtQU, ADD_VALUES);
         }
     }
     VecRestoreArray(q0, &q0Array);
@@ -1150,14 +1123,13 @@ void RotMat::assemble(Vec q0, int lev, double scale) {
 RotMat::~RotMat() {
     Free2D(U->nDofsJ, Ut);
     Free2D(V->nDofsJ, Vt);
-    Free2D(Q->nDofsI, Qab);
-    Free2D(Q->nDofsI, Qba);
+    delete[] Qab;
+    delete[] Qba;
     Free2D(U->nDofsJ, UtQab);
     Free2D(U->nDofsJ, VtQba);
     Free2D(U->nDofsJ, UtQV);
     Free2D(V->nDofsJ, VtQU);
 
-    delete[] UtQUflat;
     delete Q;
     delete U;
     delete V;
@@ -1311,11 +1283,10 @@ void Whmat::assemble(Vec rho, int lev, double scale, bool vert_scale_rho) {
     double det, p;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    double* Qaa = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
     PetscScalar* pArray;
 
     MatZeroEntries(M);
@@ -1338,20 +1309,20 @@ void Whmat::assemble(Vec rho, int lev, double scale, bool vert_scale_rho) {
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &p);
                 // density is piecewise constant in the vertical
                 if(vert_scale_rho) {
-                    p *= 1.0/geom->thick[lev][inds0[ii]];
+                    p *= geom->thickInv[lev][inds0[ii]];
                 }
 
-                Qaa[ii][ii]  = p*Q->A[ii][ii]*(scale/det);
+                Qaa[ii]  = p*Q->A[ii]*(scale/det);
                 // W is piecewise constant in the vertical
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
-            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
-            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQW, ADD_VALUES);
         }
     }
     VecRestoreArray(rho, &pArray);
@@ -1359,13 +1330,12 @@ void Whmat::assemble(Vec rho, int lev, double scale, bool vert_scale_rho) {
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(Q->nDofsI, Qaa);
+    delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
     delete W;
     delete Q;
-    delete[] WtQWflat;
 }
 
 Whmat::~Whmat() {
@@ -1392,10 +1362,9 @@ Ut_mat::Ut_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
     VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
     VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
-    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    UtQUflat = new double[U->nDofsJ*U->nDofsJ];
+    Qaa = new double[Q->nDofsI];
+    Qab = new double[Q->nDofsI];
+    Qbb = new double[Q->nDofsI];
 
     Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
     Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
@@ -1423,14 +1392,14 @@ void Ut_mat::assemble(int lev, double scale) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
-                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii]*(scale/det);
+                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii]*(scale/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                Qaa[ii][ii] *= 0.5*(geom->thick[lev][inds_0[ii]] + geom->thick[lev+1][inds_0[ii]]);
-                Qab[ii][ii] *= 0.5*(geom->thick[lev][inds_0[ii]] + geom->thick[lev+1][inds_0[ii]]);
-                Qbb[ii][ii] *= 0.5*(geom->thick[lev][inds_0[ii]] + geom->thick[lev+1][inds_0[ii]]);
+                Qaa[ii] *= 0.5*(geom->thick[lev][inds_0[ii]] + geom->thick[lev+1][inds_0[ii]]);
+                Qab[ii] *= 0.5*(geom->thick[lev][inds_0[ii]] + geom->thick[lev+1][inds_0[ii]]);
+                Qbb[ii] *= 0.5*(geom->thick[lev][inds_0[ii]] + geom->thick[lev+1][inds_0[ii]]);
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -1446,17 +1415,17 @@ void Ut_mat::assemble(int lev, double scale) {
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, U->A, VtQU);
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQV, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, VtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, VtQV, ADD_VALUES);
         }
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
@@ -1485,9 +1454,9 @@ void Ut_mat::assemble_h(int lev, double scale, Vec rho) {
                 // vertical metric term from the density
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rArray, &hi);
 
-                Qaa[ii][ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii][ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
-                Qbb[ii][ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = hi*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = hi*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii]*(scale/det);
+                Qbb[ii] = hi*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii]*(scale/det);
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -1503,17 +1472,17 @@ void Ut_mat::assemble_h(int lev, double scale, Vec rho) {
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, U->A, VtQU);
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQV, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, VtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, VtQV, ADD_VALUES);
         }
     }
     VecGetArray(rho, &rArray);
@@ -1533,10 +1502,9 @@ Ut_mat::~Ut_mat() {
     Free2D(U->nDofsJ, UtQV);
     Free2D(U->nDofsJ, VtQU);
     Free2D(U->nDofsJ, VtQV);
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qab);
-    Free2D(Q->nDofsI, Qbb);
-    delete[] UtQUflat;
+    delete[] Qaa;
+    delete[] Qab;
+    delete[] Qbb;
     delete Q;
     delete U;
     delete V;
@@ -1557,14 +1525,12 @@ UtQWmat::UtQWmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     Q = new Wii(l->q, geom);
     Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     Vt = Alloc2D(V->nDofsJ, V->nDofsI);
-    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Qba = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qaa = new double[Q->nDofsI];
+    Qba = new double[Q->nDofsI];
     UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
     VtQba = Alloc2D(V->nDofsJ, Q->nDofsJ);
     UtQW = Alloc2D(U->nDofsJ, W->nDofsJ);
     VtQW = Alloc2D(V->nDofsJ, W->nDofsJ);
-    UtQWflat = new double[U->nDofsJ*W->nDofsJ];
-    VtQWflat = new double[V->nDofsJ*W->nDofsJ];
 
     Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
     Tran_IP(V->nDofsI, V->nDofsJ, V->A, Vt);
@@ -1601,8 +1567,8 @@ void UtQWmat::assemble(Vec u1, double scale) {
                 // once we have mapped degrees of freedom from inner orientations
                 // to outer orientations, this transformation is the same as for
                 // the H(div) space, and so the mass matrix is the same in the horizontal
-                Qaa[ii][ii] = (ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qba[ii][ii] = (ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = (ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii]*(scale/det);
+                Qba[ii] = (ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii]*(scale/det);
             }
 
             Mult_FD_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qaa, UtQaa);
@@ -1611,15 +1577,15 @@ void UtQWmat::assemble(Vec u1, double scale) {
             Mult_IP(U->nDofsJ, W->nDofsJ, W->nDofsI, UtQaa, W->A, UtQW);
             Mult_IP(V->nDofsJ, W->nDofsJ, W->nDofsI, VtQba, W->A, VtQW);
 
-            Flat2D_IP(U->nDofsJ, W->nDofsJ, UtQW, UtQWflat);
-            Flat2D_IP(V->nDofsJ, W->nDofsJ, VtQW, VtQWflat);
+            //Flat2D_IP(U->nDofsJ, W->nDofsJ, UtQW, UtQWflat);
+            //Flat2D_IP(V->nDofsJ, W->nDofsJ, VtQW, VtQWflat);
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
             inds_2 = topo->elInds2_g(ex, ey);
 
-            MatSetValues(M, U->nDofsJ, inds_x, W->nDofsJ, inds_2, UtQWflat, ADD_VALUES);
-            MatSetValues(M, V->nDofsJ, inds_y, W->nDofsJ, inds_2, VtQWflat, ADD_VALUES);
+            MatSetValues(M, U->nDofsJ, inds_x, W->nDofsJ, inds_2, UtQW, ADD_VALUES);
+            MatSetValues(M, V->nDofsJ, inds_y, W->nDofsJ, inds_2, VtQW, ADD_VALUES);
         }
     }
     VecRestoreArray(u1, &u1Array);
@@ -1631,14 +1597,12 @@ void UtQWmat::assemble(Vec u1, double scale) {
 UtQWmat::~UtQWmat() {
     Free2D(U->nDofsJ, Ut);
     Free2D(V->nDofsJ, Vt);
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qba);
+    delete[] Qaa;
+    delete[] Qba;
     Free2D(U->nDofsJ, UtQW);
     Free2D(V->nDofsJ, VtQW);
     Free2D(U->nDofsJ, UtQaa);
     Free2D(V->nDofsJ, VtQba);
-    delete[] UtQWflat;
-    delete[] VtQWflat;
     delete U;
     delete V;
     delete W;
@@ -1658,14 +1622,12 @@ WtQdUdz_mat::WtQdUdz_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdg
     W = new M2_j_xy_i(e);
     Q = new Wii(l->q, geom);
     Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qaa = new double[Q->nDofsI];
+    Qab = new double[Q->nDofsI];
     WtQaa = Alloc2D(W->nDofsJ, Q->nDofsJ);
     WtQab = Alloc2D(W->nDofsJ, Q->nDofsJ);
     WtQU = Alloc2D(W->nDofsJ, U->nDofsJ);
     WtQV = Alloc2D(W->nDofsJ, V->nDofsJ);
-    WtQUflat = new double[W->nDofsJ*U->nDofsJ];
-    WtQVflat = new double[W->nDofsJ*V->nDofsJ];
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n2l, topo->n1l, topo->nDofs2G, topo->nDofs1G);
@@ -1710,8 +1672,8 @@ void WtQdUdz_mat::assemble(Vec u1, double scale) {
                 // vertical rescaling of jacobian determinant cancels with scaling of
                 // the H(curl) test function
 
-                Qaa[ii][ii] = (ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii][ii] = (ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = (ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = (ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii]*(scale/det);
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQaa);
@@ -1720,15 +1682,15 @@ void WtQdUdz_mat::assemble(Vec u1, double scale) {
             Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQaa, U->A, WtQU);
             Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQab, V->A, WtQV);
 
-            Flat2D_IP(W->nDofsJ, U->nDofsJ, WtQU, WtQUflat);
-            Flat2D_IP(W->nDofsJ, V->nDofsJ, WtQV, WtQVflat);
+            //Flat2D_IP(W->nDofsJ, U->nDofsJ, WtQU, WtQUflat);
+            //Flat2D_IP(W->nDofsJ, V->nDofsJ, WtQV, WtQVflat);
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
             inds_2 = topo->elInds2_g(ex, ey);
 
-            MatSetValues(M, W->nDofsJ, inds_2, U->nDofsJ, inds_x, WtQUflat, ADD_VALUES);
-            MatSetValues(M, W->nDofsJ, inds_2, V->nDofsJ, inds_y, WtQVflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds_2, U->nDofsJ, inds_x, WtQU, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds_2, V->nDofsJ, inds_y, WtQV, ADD_VALUES);
         }
     }
     VecRestoreArray(u1, &u1Array);
@@ -1739,14 +1701,12 @@ void WtQdUdz_mat::assemble(Vec u1, double scale) {
 
 WtQdUdz_mat::~WtQdUdz_mat() {
     Free2D(W->nDofsJ, Wt);
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qab);
+    delete[] Qaa;
+    delete[] Qab;
     Free2D(W->nDofsJ, WtQU);
     Free2D(W->nDofsJ, WtQV);
     Free2D(W->nDofsJ, WtQaa);
     Free2D(W->nDofsJ, WtQab);
-    delete[] WtQUflat;
-    delete[] WtQVflat;
     delete U;
     delete V;
     delete W;
@@ -1832,7 +1792,7 @@ void EoSvec::assemble(Vec rt, int lev, double scale) {
             for(ii = 0; ii < mp12; ii++) {
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rtArray, &p);
                 // density is piecewise constant in the vertical
-                p *= 1.0/geom->thick[lev][inds0[ii]];
+                p *= geom->thickInv[lev][inds0[ii]];
                 rtq[ii] = fac*pow(p, RD/CV);
                 rtq[ii] *= scale;
             }
@@ -1840,7 +1800,7 @@ void EoSvec::assemble(Vec rt, int lev, double scale) {
             // 2 form metric term cancels with jacobian determinant at quadrature point
             for(ii = 0; ii < W->nDofsJ; ii++) {
                 for(jj = 0; jj < Q->nDofsI; jj++) {
-                    vArray[inds2[ii]] += WtQ[ii][jj]*rtq[jj];
+                    vArray[inds2[ii]] += WtQ[ii*Q->nDofsI+jj]*rtq[jj];
                 }
             }
         }
@@ -1880,8 +1840,8 @@ void EoSvec::assemble_quad(Vec rt1, Vec rt2, int lev, double scale) {
             for(ii = 0; ii < nQuad2; ii++) {
                 geom->interp2_g(ex, ey, ii%nQuad, ii/nQuad, rt1Array, &rtq1);
                 geom->interp2_g(ex, ey, ii%nQuad, ii/nQuad, rt2Array, &rtq2);
-                rtq1 *= 1.0/geom->thick[lev][inds0[ii]];
-                rtq2 *= 1.0/geom->thick[lev][inds0[ii]];
+                rtq1 *= geom->thickInv[lev][inds0[ii]];
+                rtq2 *= geom->thickInv[lev][inds0[ii]];
 
                 GetExponents(0.5*(rtq1+rtq2), &c2[ii], &c1[ii], &c0[ii]);
 
@@ -1894,7 +1854,7 @@ void EoSvec::assemble_quad(Vec rt1, Vec rt2, int lev, double scale) {
             // 2 form metric term cancels with jacobian determinant at quadrature point
             for(ii = 0; ii < W->nDofsJ; ii++) {
                 for(jj = 0; jj < Q->nDofsI; jj++) {
-                    vArray[inds2[ii]] += WtQ[ii][jj]*rtq[jj];
+                    vArray[inds2[ii]] += WtQ[ii*Q->nDofsI+jj]*rtq[jj];
                 }
             }
         }
@@ -1931,9 +1891,8 @@ EoSmat::EoSmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 
     Wt = Alloc2D(W->nDofsJ, W->nDofsI);
     WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qaa = new double[Q->nDofsI];
     WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    WtQWflat = new double[W->nDofsJ*W->nDofsJ];
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n2l, topo->n2l, topo->nDofs2G, topo->nDofs2G);
@@ -1967,16 +1926,16 @@ void EoSmat::assemble(Vec rt, int lev, double scale) {
                 det = geom->det[ei][ii];
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rtArray, &p);
                 // density is piecewise constant in the vertical
-                p *= 1.0/geom->thick[lev][inds0[ii]];
+                p *= geom->thickInv[lev][inds0[ii]];
                 rtq = fac*pow(p, RD/CV-1.0);
                 rtq *= scale;
 
-                Qaa[ii][ii] = rtq * Q->A[ii][ii] / (det * geom->thick[lev][inds0[ii]]);
+                Qaa[ii] = rtq * Q->A[ii] / (det * geom->thick[lev][inds0[ii]]);
             }
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-            MatSetValues(M, W->nDofsJ, inds2, W->nDofsJ, inds2, WtQWflat, ADD_VALUES);
+            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+            MatSetValues(M, W->nDofsJ, inds2, W->nDofsJ, inds2, WtQW, ADD_VALUES);
         }
     }
     VecRestoreArray(rt, &rtArray);
@@ -1989,8 +1948,7 @@ EoSmat::~EoSmat() {
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
-    Free2D(Q->nDofsI, Qaa);
-    delete[] WtQWflat;
+    delete[] Qaa;
 
     delete W;
     delete Q;
@@ -2019,12 +1977,11 @@ void WmatInv::assemble(int lev, double scale) {
     double det;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    double* Qaa = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
 
     MatZeroEntries(M);
 
@@ -2041,31 +1998,30 @@ void WmatInv::assemble(int lev, double scale) {
             inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det);
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii]  = Q->A[ii]*(scale/det);
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
             Inv(WtQW, WtQWinv, W->nDofsJ);
-            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 
-            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWinv, ADD_VALUES);
         }
     }
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(Q->nDofsI, Qaa);
+    delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
     Free2D(W->nDofsJ, WtQWinv);
     delete W;
     delete Q;
-    delete[] WtQWflat;
 }
 
 WmatInv::~WmatInv() {
@@ -2093,12 +2049,11 @@ void WhmatInv::assemble(Vec rho, int lev, double scale) {
     double det, p;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    double* Qaa = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
     PetscScalar* pArray;
 
     MatZeroEntries(M);
@@ -2120,20 +2075,20 @@ void WhmatInv::assemble(Vec rho, int lev, double scale) {
 
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &p);
                 // density is piecewise constant in the vertical
-                p *= 1.0/geom->thick[lev][inds0[ii]];
+                p *= geom->thickInv[lev][inds0[ii]];
 
-                Qaa[ii][ii]  = p*Q->A[ii][ii]*(scale/det);
+                Qaa[ii]  = p*Q->A[ii]*(scale/det);
                 // W is piecewise constant in the vertical
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
             Inv(WtQW, WtQWinv, W->nDofsJ);
-            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 
-            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWinv, ADD_VALUES);
         }
     }
     VecRestoreArray(rho, &pArray);
@@ -2141,14 +2096,13 @@ void WhmatInv::assemble(Vec rho, int lev, double scale) {
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(Q->nDofsI, Qaa);
+    delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
     Free2D(W->nDofsJ, WtQWinv);
     delete W;
     delete Q;
-    delete[] WtQWflat;
 }
 
 WhmatInv::~WhmatInv() {
@@ -2176,14 +2130,13 @@ void N_rt_Inv::assemble(Vec rho, int lev, double scale, bool do_inverse) {
     double det, p;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
-    double** BinvB = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** BBinvB = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* Qaa = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* BinvB = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* BBinvB = Alloc2D(W->nDofsJ, W->nDofsJ);
     PetscScalar* pArray;
 
     MatZeroEntries(M);
@@ -2205,9 +2158,9 @@ void N_rt_Inv::assemble(Vec rho, int lev, double scale, bool do_inverse) {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &p);
-                p *= 1.0/geom->thick[lev][inds0[ii]];
-                Qaa[ii][ii]  = p*Q->A[ii][ii]*(scale/det);
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                p *= geom->thickInv[lev][inds0[ii]];
+                Qaa[ii]  = p*Q->A[ii]*(scale/det);
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -2216,8 +2169,8 @@ void N_rt_Inv::assemble(Vec rho, int lev, double scale, bool do_inverse) {
             // 
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det);
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii]  = Q->A[ii]*(scale/det);
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -2226,13 +2179,15 @@ void N_rt_Inv::assemble(Vec rho, int lev, double scale, bool do_inverse) {
             Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQWinv, WtQW, BinvB);
             Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW, BinvB, BBinvB);
             if(do_inverse) {
-                for(ii = 0; ii < W->nDofsJ; ii++) for(jj = 0; jj < W->nDofsJ; jj++) WtQWinv[ii][jj] = 0.0;
+                for(ii = 0; ii < W->nDofsJ; ii++) for(jj = 0; jj < W->nDofsJ; jj++) WtQWinv[ii*W->nDofsJ+jj] = 0.0;
                 Inv(BBinvB, WtQWinv, W->nDofsJ);
-                Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+                //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+                MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWinv, ADD_VALUES);
             } else {
-                Flat2D_IP(W->nDofsJ, W->nDofsJ, BBinvB, WtQWflat);
+                //Flat2D_IP(W->nDofsJ, W->nDofsJ, BBinvB, WtQWflat);
+                MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, BBinvB, ADD_VALUES);
             }
-            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+            //MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
         }
     }
     VecRestoreArray(rho, &pArray);
@@ -2240,7 +2195,7 @@ void N_rt_Inv::assemble(Vec rho, int lev, double scale, bool do_inverse) {
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(Q->nDofsI, Qaa);
+    delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
@@ -2249,7 +2204,6 @@ void N_rt_Inv::assemble(Vec rho, int lev, double scale, bool do_inverse) {
     Free2D(W->nDofsJ, BBinvB);
     delete W;
     delete Q;
-    delete[] WtQWflat;
 }
 
 N_rt_Inv::~N_rt_Inv() {
@@ -2266,12 +2220,10 @@ PtQUt_mat::PtQUt_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _
     U = new M1x_j_xy_i(l, e);
     V = new M1y_j_xy_i(l, e);
     Q = new Wii(l->q, geom);
-    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qaa = new double[Q->nDofsI];
+    Qab = new double[Q->nDofsI];
     QU = Alloc2D(Q->nDofsJ, U->nDofsJ);
     QV = Alloc2D(Q->nDofsJ, V->nDofsJ);
-    QUflat = new double[Q->nDofsJ*U->nDofsJ];
-    QVflat = new double[Q->nDofsJ*V->nDofsJ];
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n0l, topo->n1l, topo->nDofs0G, topo->nDofs1G);
@@ -2300,30 +2252,30 @@ void PtQUt_mat::assemble(Vec u1, int lev, double scale) {
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
                 // horiztontal velocity is piecewise constant in the vertical
-                ux[0] *= 1.0/geom->thick[lev][inds_0[ii]];
-                ux[1] *= 1.0/geom->thick[lev][inds_0[ii]];
+                ux[0] *= geom->thickInv[lev][inds_0[ii]];
+                ux[1] *= geom->thickInv[lev][inds_0[ii]];
 
-                Qaa[ii][ii] = (-ux[1]*J[0][0] + ux[0]*J[1][0])*Q->A[ii][ii]*scale;
-                Qab[ii][ii] = (-ux[1]*J[0][1] + ux[0]*J[1][1])*Q->A[ii][ii]*scale;
+                Qaa[ii] = (-ux[1]*J[0][0] + ux[0]*J[1][0])*Q->A[ii]*scale;
+                Qab[ii] = (-ux[1]*J[0][1] + ux[0]*J[1][1])*Q->A[ii]*scale;
 
                 // rescale by the inverse of the vertical determinant (piecewise 
                 // constant in the vertical)
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qaa[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qab[ii] *= geom->thickInv[lev][inds_0[ii]];
             }
 
             Mult_DF_IP(Q->nDofsJ, U->nDofsJ, U->nDofsI, Qaa, U->A, QU);
             Mult_DF_IP(Q->nDofsJ, V->nDofsJ, V->nDofsI, Qab, V->A, QV);
 
-            Flat2D_IP(Q->nDofsJ, U->nDofsJ, QU, QUflat);
-            Flat2D_IP(Q->nDofsJ, V->nDofsJ, QV, QVflat);
+            //Flat2D_IP(Q->nDofsJ, U->nDofsJ, QU, QUflat);
+            //Flat2D_IP(Q->nDofsJ, V->nDofsJ, QV, QVflat);
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
             inds_0 = topo->elInds0_g(ex, ey);
 
-            MatSetValues(M, Q->nDofsJ, inds_0, U->nDofsJ, inds_x, QUflat, ADD_VALUES);
-            MatSetValues(M, Q->nDofsJ, inds_0, V->nDofsJ, inds_y, QVflat, ADD_VALUES);
+            MatSetValues(M, Q->nDofsJ, inds_0, U->nDofsJ, inds_x, QU, ADD_VALUES);
+            MatSetValues(M, Q->nDofsJ, inds_0, V->nDofsJ, inds_y, QV, ADD_VALUES);
         }
     }
     VecRestoreArray(u1, &u1Array);
@@ -2333,12 +2285,10 @@ void PtQUt_mat::assemble(Vec u1, int lev, double scale) {
 }
 
 PtQUt_mat::~PtQUt_mat() {
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qab);
+    delete[] Qaa;
+    delete[] Qab;
     Free2D(Q->nDofsJ, QU);
     Free2D(Q->nDofsJ, QV);
-    delete[] QUflat;
-    delete[] QVflat;
     delete U;
     delete V;
     delete Q;
@@ -2355,12 +2305,10 @@ PtQUmat::PtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
     U = new M1x_j_xy_i(l, e);
     V = new M1y_j_xy_i(l, e);
     Q = new Wii(l->q, geom);
-    Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Qaa = new double[Q->nDofsI];
+    Qab = new double[Q->nDofsI];
     QU = Alloc2D(Q->nDofsJ, U->nDofsJ);
     QV = Alloc2D(Q->nDofsJ, V->nDofsJ);
-    QUflat = new double[Q->nDofsJ*U->nDofsJ];
-    QVflat = new double[Q->nDofsJ*V->nDofsJ];
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n0l, topo->n1l, topo->nDofs0G, topo->nDofs1G);
@@ -2389,30 +2337,30 @@ void PtQUmat::assemble(Vec u1, int lev, double scale) {
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
                 // horiztontal velocity is piecewise constant in the vertical
-                ux[0] *= 1.0/geom->thick[lev][inds_0[ii]];
-                ux[1] *= 1.0/geom->thick[lev][inds_0[ii]];
+                ux[0] *= geom->thickInv[lev][inds_0[ii]];
+                ux[1] *= geom->thickInv[lev][inds_0[ii]];
 
-                Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]*scale;
-                Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]*scale;
+                Qaa[ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii]*scale;
+                Qab[ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii]*scale;
 
                 // rescale by the inverse of the vertical determinant (piecewise 
                 // constant in the vertical)
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii][ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qaa[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qab[ii] *= geom->thickInv[lev][inds_0[ii]];
             }
 
             Mult_DF_IP(Q->nDofsJ, U->nDofsJ, U->nDofsI, Qaa, U->A, QU);
             Mult_DF_IP(Q->nDofsJ, V->nDofsJ, V->nDofsI, Qab, V->A, QV);
 
-            Flat2D_IP(Q->nDofsJ, U->nDofsJ, QU, QUflat);
-            Flat2D_IP(Q->nDofsJ, V->nDofsJ, QV, QVflat);
+            //Flat2D_IP(Q->nDofsJ, U->nDofsJ, QU, QUflat);
+            //Flat2D_IP(Q->nDofsJ, V->nDofsJ, QV, QVflat);
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
             inds_0 = topo->elInds0_g(ex, ey);
 
-            MatSetValues(M, Q->nDofsJ, inds_0, U->nDofsJ, inds_x, QUflat, ADD_VALUES);
-            MatSetValues(M, Q->nDofsJ, inds_0, V->nDofsJ, inds_y, QVflat, ADD_VALUES);
+            MatSetValues(M, Q->nDofsJ, inds_0, U->nDofsJ, inds_x, QU, ADD_VALUES);
+            MatSetValues(M, Q->nDofsJ, inds_0, V->nDofsJ, inds_y, QV, ADD_VALUES);
         }
     }
     VecRestoreArray(u1, &u1Array);
@@ -2422,12 +2370,10 @@ void PtQUmat::assemble(Vec u1, int lev, double scale) {
 }
 
 PtQUmat::~PtQUmat() {
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qab);
+    delete[] Qaa;
+    delete[] Qab;
     Free2D(Q->nDofsJ, QU);
     Free2D(Q->nDofsJ, QV);
-    delete[] QUflat;
-    delete[] QVflat;
     delete U;
     delete V;
     delete Q;
@@ -2453,10 +2399,9 @@ void WtQPmat::assemble(int lev, double scale) {
     int ex, ey, mp1, mp12, ii, *inds, *inds0;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
+    double* Qaa = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
 
     MatZeroEntries(M);
 
@@ -2471,28 +2416,27 @@ void WtQPmat::assemble(int lev, double scale) {
 
             inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
-                Qaa[ii][ii]  = Q->A[ii][ii]*scale;
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii]  = Q->A[ii]*scale;
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
             inds0 = topo->elInds0_g(ex, ey);
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
 
-            Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
+            //Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
 
-            MatSetValues(M, W->nDofsJ, inds, Q->nDofsJ, inds0, WtQflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds, Q->nDofsJ, inds0, WtQ, ADD_VALUES);
         }
     }
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 
-    Free2D(Q->nDofsI, Qaa);
+    delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     delete W;
     delete Q;
-    delete[] WtQflat;
 }
 
 WtQPmat::~WtQPmat() {
@@ -2520,14 +2464,13 @@ void N_RTmat::assemble(int lev, double scale, Vec rt, Vec pi) {
     double fac = (P0/RD);
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQW_2 = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQW_3 = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    double* Qaa = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQW_2 = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQW_3 = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
     PetscScalar *rtArray, *piArray;
 
     MatZeroEntries(M);
@@ -2551,8 +2494,8 @@ void N_RTmat::assemble(int lev, double scale, Vec rt, Vec pi) {
             for(ii = 0; ii < mp12; ii++) {
                 rt_i = pi_i = 0.0;
                 for(jj = 0; jj < n2; jj++) {
-                    rt_i += W->A[ii][jj]*rtArray[inds2_l[jj]];
-                    pi_i += W->A[ii][jj]*piArray[inds2_l[jj]];
+                    rt_i += W->A[ii*n2+jj]*rtArray[inds2_l[jj]];
+                    pi_i += W->A[ii*n2+jj]*piArray[inds2_l[jj]];
                 }
                 det = geom->det[ei][ii];
                 rt_i *= 1.0/(det*geom->thick[lev][inds0[ii]]);
@@ -2560,16 +2503,16 @@ void N_RTmat::assemble(int lev, double scale, Vec rt, Vec pi) {
 
                 rt_q[ii] = rt_i*rt_i;
 
-                Qaa[ii][ii]  = pow(pi_i/CP, CV/CP) * Q->A[ii][ii] * (scale/det);
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii]  = pow(pi_i/CP, CV/CP) * Q->A[ii] * (scale/det);
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW_2); // (pi/cp)^{c_v/R}
 
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Qaa[ii][ii]  = rt_q[ii] * Q->A[ii][ii]*(scale/det);
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii]  = rt_q[ii] * Q->A[ii]*(scale/det);
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -2577,8 +2520,8 @@ void N_RTmat::assemble(int lev, double scale, Vec rt, Vec pi) {
 
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det);
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii]  = Q->A[ii]*(scale/det);
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);   // M_2
@@ -2586,10 +2529,11 @@ void N_RTmat::assemble(int lev, double scale, Vec rt, Vec pi) {
             Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW, WtQWinv, WtQW_3);
             Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW_3, WtQW_2, WtQW);
 
-            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-            for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] *= fac;
+            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
+            //for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] *= fac;
+            for(ii = 0; ii < n2*n2; ii++) WtQW[ii] *= fac;
 
-            MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQWflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQW, ADD_VALUES);
         }
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
@@ -2598,7 +2542,7 @@ void N_RTmat::assemble(int lev, double scale, Vec rt, Vec pi) {
     VecRestoreArray(rt, &rtArray);
     VecRestoreArray(pi, &piArray);
 
-    Free2D(Q->nDofsI, Qaa);
+    delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
@@ -2607,7 +2551,6 @@ void N_RTmat::assemble(int lev, double scale, Vec rt, Vec pi) {
     Free2D(W->nDofsJ, WtQWinv);
     delete W;
     delete Q;
-    delete[] WtQWflat;
 }
 
 N_RTmat::~N_RTmat() {
@@ -2635,14 +2578,13 @@ void N_PiInv_mat::assemble(int lev, double scale, Vec rt, Vec pi) {
     double fac = -1.0*(RD/P0)*(RD/CV)*pow(CP, CV/RD);
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQW_2 = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQW_3 = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    double* Qaa = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQW_2 = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQW_3 = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
     PetscScalar *rtArray, *piArray;
 
     MatZeroEntries(M);
@@ -2666,8 +2608,8 @@ void N_PiInv_mat::assemble(int lev, double scale, Vec rt, Vec pi) {
             for(ii = 0; ii < mp12; ii++) {
                 rt_i = pi_i = 0.0;
                 for(jj = 0; jj < n2; jj++) {
-                    rt_i += W->A[ii][jj]*rtArray[inds2_l[jj]];
-                    pi_i += W->A[ii][jj]*piArray[inds2_l[jj]];
+                    rt_i += W->A[ii*n2+jj]*rtArray[inds2_l[jj]];
+                    pi_i += W->A[ii*n2+jj]*piArray[inds2_l[jj]];
                 }
                 det = geom->det[ei][ii];
                 rt_i *= 1.0/(det*geom->thick[lev][inds0[ii]]);
@@ -2675,16 +2617,16 @@ void N_PiInv_mat::assemble(int lev, double scale, Vec rt, Vec pi) {
 
                 rt_q[ii] = rt_i;
 
-                Qaa[ii][ii]  = pow(pi_i, (CV-RD)/RD) * Q->A[ii][ii] * (scale/det);
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii]  = pow(pi_i, (CV-RD)/RD) * Q->A[ii] * (scale/det);
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW_2); // pi^{(c_v-R)/R}
 
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Qaa[ii][ii]  = rt_q[ii] * Q->A[ii][ii]*(scale/det);
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii]  = rt_q[ii] * Q->A[ii]*(scale/det);
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -2692,8 +2634,8 @@ void N_PiInv_mat::assemble(int lev, double scale, Vec rt, Vec pi) {
 
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Qaa[ii][ii]  = Q->A[ii][ii]*(scale/det);
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii]  = Q->A[ii]*(scale/det);
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);   // M_2
@@ -2702,10 +2644,11 @@ void N_PiInv_mat::assemble(int lev, double scale, Vec rt, Vec pi) {
             Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW_3, WtQW_2, WtQW);
             Inv(WtQW, WtQWinv, n2);
 
-            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
-            for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] *= fac;
+            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+            //for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] *= fac;
+            for(ii = 0; ii < n2*n2; ii++) WtQWinv[ii] *= fac;
 
-            MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQWflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQWinv, ADD_VALUES);
         }
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
@@ -2714,7 +2657,7 @@ void N_PiInv_mat::assemble(int lev, double scale, Vec rt, Vec pi) {
     VecRestoreArray(rt, &rtArray);
     VecRestoreArray(pi, &piArray);
 
-    Free2D(Q->nDofsI, Qaa);
+    delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
@@ -2723,7 +2666,6 @@ void N_PiInv_mat::assemble(int lev, double scale, Vec rt, Vec pi) {
     Free2D(W->nDofsJ, WtQWinv);
     delete W;
     delete Q;
-    delete[] WtQWflat;
 }
 
 N_PiInv_mat::~N_PiInv_mat() {
@@ -2750,12 +2692,11 @@ void N_RT2_mat::assemble(int lev, double scale, Vec rt) {
     double det, rt_i;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
-    double** WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double** WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
-    double* WtQWflat = new double[W->nDofsJ*W->nDofsJ];
+    double* Qaa = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
     PetscScalar *rtArray;
 
     MatZeroEntries(M);
@@ -2778,21 +2719,21 @@ void N_RT2_mat::assemble(int lev, double scale, Vec rt) {
             for(ii = 0; ii < mp12; ii++) {
                 rt_i = 0.0;
                 for(jj = 0; jj < n2; jj++) {
-                    rt_i += W->A[ii][jj]*rtArray[inds2_l[jj]];
+                    rt_i += W->A[ii*n2+jj]*rtArray[inds2_l[jj]];
                 }
                 det = geom->det[ei][ii];
                 rt_i *= 1.0/(det*geom->thick[lev][inds0[ii]]);
 
-                Qaa[ii][ii]  = rt_i * rt_i * Q->A[ii][ii] * (scale/det);
-                Qaa[ii][ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                Qaa[ii]  = rt_i * rt_i * Q->A[ii] * (scale/det);
+                Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
             }
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
             Inv(WtQW, WtQWinv, n2);
-            Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
+            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 
-            MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQWflat, ADD_VALUES);
+            MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQWinv, ADD_VALUES);
         }
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
@@ -2800,14 +2741,13 @@ void N_RT2_mat::assemble(int lev, double scale, Vec rt) {
 
     VecRestoreArray(rt, &rtArray);
 
-    Free2D(Q->nDofsI, Qaa);
+    delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
     Free2D(W->nDofsJ, WtQWinv);
     delete W;
     delete Q;
-    delete[] WtQWflat;
 }
 
 N_RT2_mat::~N_RT2_mat() {
@@ -2889,20 +2829,19 @@ void Umat_ray::assemble(int lev, double scale, double dt, Vec exner_k, Vec exner
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
     double det, **J, k_v;
-    double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
-    double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
-    double** UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
-    double** UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Qab = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Qbb = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double* UtQUflat = new double[U->nDofsJ*U->nDofsJ];
+    double* Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    double* Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    double* UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* Qaa = new double[Q->nDofsI];
+    double* Qab = new double[Q->nDofsI];
+    double* Qbb = new double[Q->nDofsI];
     double _e, _es;
     PetscScalar *eArray, *esArray;
 
@@ -2925,23 +2864,23 @@ void Umat_ray::assemble(int lev, double scale, double dt, Vec exner_k, Vec exner
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii][ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii][ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
-                Qbb[ii][ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii]*(scale/det);
+                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii]*(scale/det);
 
                 //sigma_b = _compute_sigma(geom->s[inds_0[ii]][1], geom->levs[lev+0][inds_0[ii]]);
                 //sigma_t = _compute_sigma(geom->s[inds_0[ii]][1], geom->levs[lev+1][inds_0[ii]]);
                 //k_v = 0.5*dt*K_F*(sigma_b + sigma_t);
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, eArray, &_e);
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, esArray, &_es);
-                _e /= geom->thick[lev][inds_0[ii]];
-                _es /= geom->thick[0][inds_0[ii]];
+                _e *= geom->thickInv[lev][inds_0[ii]];
+                _es *= geom->thickInv[0][inds_0[ii]];
                 k_v = compute_k_v(_e, _es);
                 k_v *= dt;
 
-                Qaa[ii][ii] *= k_v/geom->thick[lev][inds_0[ii]];
-                Qab[ii][ii] *= k_v/geom->thick[lev][inds_0[ii]];
-                Qbb[ii][ii] *= k_v/geom->thick[lev][inds_0[ii]];
+                Qaa[ii] *= k_v*geom->thickInv[lev][inds_0[ii]];
+                Qab[ii] *= k_v*geom->thickInv[lev][inds_0[ii]];
+                Qbb[ii] *= k_v*geom->thickInv[lev][inds_0[ii]];
             }
 
             inds_x = topo->elInds1x_g(ex, ey);
@@ -2957,17 +2896,17 @@ void Umat_ray::assemble(int lev, double scale, double dt, Vec exner_k, Vec exner
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, U->A, VtQU);
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQV, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, VtQU, ADD_VALUES);
 
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, VtQV, ADD_VALUES);
         }
     }
 
@@ -2987,10 +2926,9 @@ void Umat_ray::assemble(int lev, double scale, double dt, Vec exner_k, Vec exner
     Free2D(U->nDofsJ, UtQV);
     Free2D(U->nDofsJ, VtQU);
     Free2D(U->nDofsJ, VtQV);
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(Q->nDofsI, Qab);
-    Free2D(Q->nDofsI, Qbb);
-    delete[] UtQUflat;
+    delete[] Qaa;
+    delete[] Qab;
+    delete[] Qbb;
     delete Q;
     delete U;
     delete V;
@@ -3044,14 +2982,14 @@ void Uvec::assemble(int lev, double scale, bool vert_scale, Vec vel) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
-                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii]*(scale/det);
+                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii]*(scale/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                Qaa[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qbb[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qaa[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qab[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qbb[ii] *= geom->thickInv[lev][inds_0[ii]];
                 Qba[ii]  = Qab[ii];
 
                 // multiply by the velocity vector
@@ -3119,20 +3057,20 @@ void Uvec::assemble_hu(int lev, double scale, bool vert_scale, Vec vel, Vec rho)
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]*(scale/det);
-                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii]*(scale/det);
+                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii]*(scale/det);
 
                 // horiztonal velocity is piecewise constant in the vertical
-                Qaa[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qab[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
-                Qbb[ii] *= 1.0/geom->thick[lev][inds_0[ii]];
+                Qaa[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qab[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qbb[ii] *= geom->thickInv[lev][inds_0[ii]];
                 Qba[ii]  = Qab[ii];
 
                 // multiply by the velocity vector
                 geom->interp1_l(ex, ey, ii%mp1, ii/mp1, velArray, _u);
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rhoArray, &_r);
-                if(vert_scale) _r *= 1.0/geom->thick[lev][inds_0[ii]];
+                if(vert_scale) _r *= geom->thickInv[lev][inds_0[ii]];
 
                 Qaa[ii] *= (_u[0] * _r);
                 Qba[ii] *= (_u[0] * _r);
@@ -3200,14 +3138,14 @@ void Uvec::assemble_wxu(int lev, double scale, Vec vel, Vec vort) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, vortArray, &_q);
-                _q *= 1.0/geom->thick[lev][inds_0[ii]];
+                _q *= geom->thickInv[lev][inds_0[ii]];
                 geom->interp1_l(ex, ey, ii%mp1, ii/mp1, velArray, _u);
 
-                Qab[ii] = (-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qba[ii] = (+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]*(scale/det);
+                Qab[ii] = (-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii]*(scale/det);
+                Qba[ii] = (+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii]*(scale/det);
 
-                Qab[ii] *= (_q*_u[1])/geom->thick[lev][inds_0[ii]];
-                Qba[ii] *= (_q*_u[0])/geom->thick[lev][inds_0[ii]];
+                Qab[ii] *= (_q*_u[1])*geom->thickInv[lev][inds_0[ii]];
+                Qba[ii] *= (_q*_u[0])*geom->thickInv[lev][inds_0[ii]];
             }
 
             Ax_b(U->nDofsJ, Q->nDofsI, Ut, Qab, rhs);
@@ -3275,9 +3213,9 @@ void Wvec::assemble(int lev, double scale, bool vert_scale, Vec rho) {
             inds0 = topo->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                Qaa[ii]  = Q->A[ii][ii]*(scale/det);
+                Qaa[ii]  = Q->A[ii]*(scale/det);
                 if(vert_scale) {
-                    Qaa[ii] *= 1.0/geom->thick[lev][inds0[ii]];
+                    Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
                 }
                 geom->interp2_l(ex, ey, ii%mp1, ii/mp1, rhoArray, &_r);
                 Qaa[ii] *= _r;
@@ -3320,16 +3258,16 @@ void Wvec::assemble_K(int lev, double scale, bool vert_scale, Vec vel1, Vec vel2
                 geom->interp1_l(ex, ey, ii%mp1, ii/mp1, vel1Array, _uxl);
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, vel2Array, _uxg);
                 // horiztontal velocity is piecewise constant in the vertical
-                _uxg[0] *= 1.0/geom->thick[lev][inds_0[ii]];
-                _uxg[1] *= 1.0/geom->thick[lev][inds_0[ii]];
+                _uxg[0] *= geom->thickInv[lev][inds_0[ii]];
+                _uxg[1] *= geom->thickInv[lev][inds_0[ii]];
 
-                Qaa[ii] = 0.5*(_uxg[0]*J[0][0] + _uxg[1]*J[1][0])*Q->A[ii][ii]*(scale/det);
-                Qab[ii] = 0.5*(_uxg[0]*J[0][1] + _uxg[1]*J[1][1])*Q->A[ii][ii]*(scale/det);
+                Qaa[ii] = 0.5*(_uxg[0]*J[0][0] + _uxg[1]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = 0.5*(_uxg[0]*J[0][1] + _uxg[1]*J[1][1])*Q->A[ii]*(scale/det);
 
                 // rescale by the inverse of the vertical determinant (piecewise 
                 // constant in the vertical)
-                Qaa[ii] *= (_uxl[0]/geom->thick[lev][inds_0[ii]]);
-                Qab[ii] *= (_uxl[1]/geom->thick[lev][inds_0[ii]]);
+                Qaa[ii] *= (_uxl[0]*geom->thickInv[lev][inds_0[ii]]);
+                Qab[ii] *= (_uxl[1]*geom->thickInv[lev][inds_0[ii]]);
             }
 
             Ax_b(W->nDofsJ, Q->nDofsI, Wt, Qaa, rhs_a);

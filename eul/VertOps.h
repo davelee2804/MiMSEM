@@ -15,22 +15,17 @@ class VertOps {
 
         Wii* Q;
         M2_j_xy_i* W;
-        double** Q0;
-        double** QT;
-        double** QB;
-        double** Wt;
-        double** WtQ;
-        double** WtQW;
-        double** WtQWinv;
+        double* Q0;
+        double* QT;
+        double* QB;
+        double* Wt;
+        double* WtQ;
+        double* WtQW;
+        double* WtQWinv;
         double* WtQWflat;
 
-        double** WtQW_2;
-        double** WtQW_3;
-
-        double** A3;
-        double** A3inv;
-        double* rho_q;
-        double* rho_e;
+        double* WtQW_2;
+        double* WtQW_3;
 
         Mat V01;      // vertical gradient operator
         Mat V10;      // vertical divergence operator
@@ -63,14 +58,10 @@ class VertOps {
         void AssembleConstInv(int ex, int ey, Mat B);
         void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs, double factor, double exponent);
         void AssembleLinConWithTheta(int ex, int ey, Mat AB, Vec theta);
-        void AssembleLinConWithRho(int ex, int ey, Mat AB, Vec rho);
         void AssembleConLin(int ex, int ey, Mat BA);
-        void AssembleConstEoS(int ex, int ey, Vec rt, Mat B);
         void AssembleLinCon2(int ex, int ey, Mat AB);                // for the diagnosis of theta without boundary conditions
         void AssembleConLin2(int ex, int ey, Mat BA);
         void AssembleLinearWithRho2(int ex, int ey, Vec rho, Mat A); // for the diagnosis of theta without boundary conditions
-        void AssembleConstWithThetaInv(int ex, int ey, Vec theta, Mat B); // for the boussinesque term in the vertical preconditioner
-        void AssembleLinearWithBousInv(int ex, int ey, Vec bous, bool add_I, Mat A);  // for the boussinesque term in the theta preconditioner
         void AssembleConstWithEOS(int ex, int ey, Vec rt, Mat B);
         void AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B);
         void Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs);
@@ -82,13 +73,11 @@ class VertOps {
         void AssembleConstWithThetaExp(int ex, int ey, Vec theta, double exponent, Mat B);
         void AssembleConstWithRhoExp(int ex, int ey, Vec rho, double exponent, Mat B);
         void AssembleLinearWithW(int ex, int ey, Vec velz, Mat A);
-        void AssembleLinearWithRho_up(int ex, int ey, Vec rho, Vec vel, Mat A);
         void AssembleLinearWithRayleighInv(int ex, int ey, double dt_fric, Mat A);
         void AssembleLinearWithThetaInv(int ex, int ey, Vec theta, Mat A);
         void AssembleConstWithRhoInv2(int ex, int ey, Vec theta, Mat B);
         void AssembleLinearWithRho2_up(int ex, int ey, Vec rho, Mat A, double dt, Vec* uhl);
         void AssembleLinCon2_up(int ex, int ey, Mat AB, double dt, Vec* uhl);
-        void AssembleConLinWithRho(int ex, int ey, Mat BA, Vec rho);
         void AssembleTempForcing_HS(int ex, int ey, Vec exner, Vec theta, Vec rho, Vec vec);
 
         // new eos

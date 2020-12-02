@@ -1,12 +1,15 @@
 #include <cmath>
 #include <iostream>
 
+#include <cblas.h>
+
 #include "LinAlg.h"
 
 using namespace std;
 
 // Allocate 2D array
-double** Alloc2D(int ni, int nj) {
+double* Alloc2D(int ni, int nj) {
+/*
     int ii, jj;
     double** A;
 
@@ -19,20 +22,26 @@ double** Alloc2D(int ni, int nj) {
     }
 
     return A;
+*/
+    return new double[ni*nj];
 }
 
 // Free 2D array
-void Free2D(int ni, double** A) {
+void Free2D(int ni, double* A) {
+/*
     int ii;
 
     for(ii = 0; ii < ni; ii++) {
         delete[] A[ii];
     }
     delete[] A;
+*/
+    delete[] A;
 }
 
 // Flatten a 2D array into a 1D array
-double* Flat2D(int ni, int nj, double** A) {
+double* Flat2D(int ni, int nj, double* A) {
+/*
     int ii, jj, kk;
     double* Aflat = new double[ni*nj];
 
@@ -45,19 +54,11 @@ double* Flat2D(int ni, int nj, double** A) {
     }
 
     return Aflat;
-}
-
-// Flatten a 2D array into a 1D array supplied
-void Flat2D_IP(int ni, int nj, double** A, double* Aflat) {
-    int ii, jj, kk;
-
-    kk = 0;
-    for(ii = 0; ii < ni; ii++) {
-        for(jj = 0; jj < nj; jj++) {
-            Aflat[kk] = A[ii][jj];
-            kk++;
-        }
-    }
+*/
+    int ii;
+    double* Aflat = new double[ni*nj];
+    for(ii = 0; ii < ni*nj; ii++) Aflat[ii] = A[ii];
+    return Aflat;
 }
 
 // Multiply two matrices into a thrid (allocated)
@@ -83,7 +84,8 @@ double** Mult(int ni, int nj, int nk, double** A, double** B) {
 }
 
 // Multiply two matrices into a third (supplied)
-void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
+void Mult_IP(int ni, int nj, int nk, double* A, double* B, double* C) {
+/*
     int ii, jj, kk;
 
     for(ii = 0; ii < ni; ii++) {
@@ -94,43 +96,51 @@ void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
             }
         }
     }
+*/
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, ni, nj, nk, 1.0, A, nk, B, nj, 0.0, C, nj);
 }
 
 // Multiply diagonal by full matrix
-void Mult_DF_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
+void Mult_DF_IP(int ni, int nj, int nk, double* A, double* B, double* C) {
     int ii, jj;
 
     for(ii = 0; ii < ni; ii++) {
         for(jj = 0; jj < nj; jj++) {
-            C[ii][jj] = A[ii][ii]*B[ii][jj];
+            C[ii*nj+jj] = A[ii]*B[ii*nj+jj];
         }
     }
 }
 
 // Multiply full by diagonal matrix
-void Mult_FD_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
+void Mult_FD_IP(int ni, int nj, int nk, double* A, double* B, double* C) {
+/*
     int ii, jj;
 
     for(ii = 0; ii < ni; ii++) {
         for(jj = 0; jj < nj; jj++) {
-            C[ii][jj] = A[ii][jj]*B[jj][jj];
+            C[ii][jj] = A[ii][jj]*B[jj];
+        }
+    }
+*/
+    int ii, jj;
+
+    for(ii = 0; ii < ni; ii++) {
+        for(jj = 0; jj < nj; jj++) {
+            C[ii*nj+jj] = A[ii*nj+jj]*B[jj];
         }
     }
 }
 
 // Matrix transpose into a new matrix
-double** Tran(int ni, int nj, double** A) {
+double* Tran(int ni, int nj, double* A) {
     int ii, jj;
-    double** B;
+    double* B;
 
-    B = new double*[nj];
-    for(jj = 0; jj < nj; jj++) {
-        B[jj] = new double[ni];
-    }
+    B = new double[ni*nj];
 
     for(ii = 0; ii < ni; ii++) {
         for(jj = 0; jj < nj; jj++) {
-            B[jj][ii] = A[ii][jj];
+            B[jj*ni+ii] = A[ii*nj+jj];
         }
     }
 
@@ -138,31 +148,58 @@ double** Tran(int ni, int nj, double** A) {
 }
 
 // Matrix transpose into a supplied matrix
-void Tran_IP(int ni, int nj, double** A, double** B) {
+void Tran_IP(int ni, int nj, double* A, double* B) {
     int ii, jj;
 
     for(ii = 0; ii < ni; ii++) {
         for(jj = 0; jj < nj; jj++) {
-            B[jj][ii] = A[ii][jj];
+            B[jj*ni+ii] = A[ii*nj+jj];
         }
     }
 }
 
 // Matrix vector multiplication
-void Ax_b(int ni, int nj, double** A, double* x, double* b) {
+void Ax_b(int ni, int nj, double* A, double* x, double* b) {
     int ii, jj;
 
     for(ii = 0; ii < ni; ii++) {
         b[ii] = 0.0;
         for(jj = 0; jj < nj; jj++) {
-            b[ii] += A[ii][jj]*x[jj];
+            b[ii] += A[ii*nj+jj]*x[jj];
         }
     }
 }
 
+extern "C" {
+    // LU decomoposition of a general matrix
+    void dgetrf_(int* M, int *N, double* A, int* lda, int* IPIV, int* INFO);
+
+    // generate inverse of a matrix given its LU decomposition
+    void dgetri_(int* N, double* A, int* lda, int* IPIV, double* WORK, int* lwork, int* INFO);
+}
+
 #define SWAP(a,b) {temp=(a);(a)=(b);(b)=temp;}
 // Matrix inverse into supplied matrix
-int Inv( double** A, double** Ainv, int n ) {
+int Inv( double* A, double* Ainv, int n ) {
+    int i;
+    double _A[200];
+    int ierr;
+    int ipiv[99];
+    int lwork = 200;
+    double work[200];
+
+    for(i = 0; i < n*n; i++) {
+        _A[i] = A[i];
+    }
+
+    dgetrf_(&n, &n, _A, &n, ipiv, &ierr);
+    dgetri_(&n, _A, &n, ipiv, work, &lwork, &ierr);
+
+    for(i = 0; i < n*n; i++) {
+        Ainv[i] = _A[i];
+    }
+    return ierr;
+/*
     int error = 0;
     int *indxc, *indxr, *ipiv;
     int i, j, k, l, irow = 0, icol = 0, ll;
@@ -225,106 +262,5 @@ int Inv( double** A, double** Ainv, int n ) {
     delete[] indxc; delete[] indxr; delete[] ipiv;
 
     return error;
-}
-
-double Determinant(double **a,int n)
-{
-   int i,j,j1,j2;
-   double det = 0;
-   double **m = 0;
-
-   if (n < 1) { /* Error */
-
-   } else if (n == 1) { /* Shouldn't get used */
-      det = a[0][0];
-   } else if (n == 2) {
-      det = a[0][0] * a[1][1] - a[1][0] * a[0][1];
-   } else {
-      det = 0;
-      for (j1=0;j1<n;j1++) {
-         m = new double*[n-1];
-         for (i=0;i<n-1;i++)
-            m[i] = new double[n-1];
-         for (i=1;i<n;i++) {
-            j2 = 0;
-            for (j=0;j<n;j++) {
-               if (j == j1)
-                  continue;
-               m[i-1][j2] = a[i][j];
-               j2++;
-            }
-         }
-         det += pow(-1.0,j1+2.0) * a[0][j1] * Determinant(m,n-1);
-         for (i=0;i<n-1;i++)
-            delete[] m[i];
-         delete[] m;
-      }
-   }
-   return(det);
-}
-
-void CoFactor(double **a,int n,double **b)
-{
-   int i,j,ii,jj,i1,j1;
-   double det;
-   double **c;
-
-   c = new double*[n-1];
-   for (i=0;i<n-1;i++)
-     c[i] = new double[n-1];
-
-   for (j=0;j<n;j++) {
-      for (i=0;i<n;i++) {
-
-         /* Form the adjoint a_ij */
-         i1 = 0;
-         for (ii=0;ii<n;ii++) {
-            if (ii == i)
-               continue;
-            j1 = 0;
-            for (jj=0;jj<n;jj++) {
-               if (jj == j)
-                  continue;
-               c[i1][j1] = a[ii][jj];
-               j1++;
-            }
-            i1++;
-         }
-
-         /* Calculate the determinate */
-         det = Determinant(c,n-1);
-
-         /* Fill in the elements of the cofactor */
-         b[i][j] = pow(-1.0,i+j+2.0) * det;
-      }
-   }
-   for (i=0;i<n-1;i++)
-      delete[] c[i];
-   delete[] c;
-}
-
-void Transpose(double **a,int n)
-{
-   int i,j;
-   double tmp;
-
-   for (i=1;i<n;i++) {
-      for (j=0;j<i;j++) {
-         tmp = a[i][j];
-         a[i][j] = a[j][i];
-        a[j][i] = tmp;
-      }
-   }
-}
-
-void Inverse(double** A, double** Ainv, int n) {
-   int ii, jj;
-   double det = Determinant(A,n);
-
-   CoFactor(A,n,Ainv);
-   Transpose(Ainv,n);
-
-   for(ii = 0; ii < n; ii++)
-      for(jj = 0; jj < n; jj++)
-         Ainv[ii][jj] /= det;
+*/
 }

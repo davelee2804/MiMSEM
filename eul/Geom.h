@@ -15,6 +15,10 @@ class Geom {
         double* topog;  // topography
         double** levs;  // vertical levels at each quadrature point
         double** thick; // layer thickness
+        double** thickInv; // layer thickness inverse
+        double* WA;
+        double* UA;
+        double* VA;
         Topo* topo;
         GaussLobatto* quad;
         LagrangeNode* node;

@@ -27,6 +27,8 @@ Geom::Geom(Topo* _topo, int _nk) {
     char filename[100];
     string line;
     double value;
+    int mp1, np1, mi, nj, nn;
+    double li, ei, ej;
 
     pi   = _topo->pi;
     topo = _topo;
@@ -97,13 +99,50 @@ Geom::Geom(Topo* _topo, int _nk) {
         levs[ii] = new double[topo->n0];
     }
     thick = new double*[nk];
+    thickInv = new double*[nk];
     for(ii = 0; ii < nk; ii++) {
         thick[ii] = new double[topo->n0];
+        thickInv[ii] = new double[topo->n0];
+    }
+
+    mp1 = quad->n+1;
+    np1 = node->n+1;
+    nn = node->n;
+    mi = mp1*mp1;
+    nj = np1*nn;
+    UA = new double[edge->n*np1*mi];
+    for(jj = 0; jj < nj; jj++) {
+        for(ii = 0; ii < mi; ii++) {
+            li = node->ljxi[ii%mp1][jj%np1];
+            ei = edge->ejxi[ii/mp1][jj/np1];
+            UA[ii*nj+jj] = li*ei;
+        }
+    }
+    VA = new double[edge->n*np1*mi];
+    for(jj = 0; jj < nj; jj++) {
+        for(ii = 0; ii < mi; ii++) {
+            li = node->ljxi[ii/mp1][jj/nn];
+            ei = edge->ejxi[ii%mp1][jj%nn];
+            VA[ii*nj+jj] = ei*li;
+        }
+    }
+    nj = nn*nn;
+    WA = new double[edge->n*edge->n*mi];
+    for(jj = 0; jj < nj; jj++) {
+        for(ii = 0; ii < mi; ii++) {
+            ei = edge->ejxi[ii%mp1][jj%nn];
+            ej = edge->ejxi[ii/mp1][jj/nn];
+            WA[ii*nj+jj] = ei*ej;
+        }
     }
 }
 
 Geom::~Geom() {
     int ii, jj;
+
+    delete[] WA;
+    delete[] UA;
+    delete[] VA;
 
     for(ii = 0; ii < nl; ii++) {
         delete[] x[ii];
@@ -136,8 +175,10 @@ Geom::~Geom() {
     delete[] levs;
     for(ii = 0; ii < nk; ii++) {
         delete[] thick[ii];
+        delete[] thickInv[ii];
     }
     delete[] thick;
+    delete[] thickInv;
 }
 
 // Local to global Jacobian mapping
@@ -239,7 +280,7 @@ void Geom::interp0(int ex, int ey, int px, int py, double* vec, double* val) {
 }
 
 void Geom::interp1_l(int ex, int ey, int px, int py, double* vec, double* val) {
-    int jj, nn, np1, n2;
+    int jj, nn, np1, n2, pxy;
     int *inds1x, *inds1y;
 
     inds1x = topo->elInds1x_l(ex, ey);
@@ -251,22 +292,27 @@ void Geom::interp1_l(int ex, int ey, int px, int py, double* vec, double* val) {
 
     val[0] = 0.0;
     val[1] = 0.0;
+    pxy = py*(quad->n+1)+px;
     for(jj = 0; jj < n2; jj++) {
-        val[0] += vec[inds1x[jj]]*node->ljxi[px][jj%np1]*edge->ejxi[py][jj/np1];
-        val[1] += vec[inds1y[jj]]*edge->ejxi[px][jj%nn]*node->ljxi[py][jj/nn];
+        //val[0] += vec[inds1x[jj]]*node->ljxi[px][jj%np1]*edge->ejxi[py][jj/np1];
+        //val[1] += vec[inds1y[jj]]*edge->ejxi[px][jj%nn]*node->ljxi[py][jj/nn];
+        val[0] += vec[inds1x[jj]]*UA[pxy*n2+jj];
+        val[1] += vec[inds1y[jj]]*VA[pxy*n2+jj];
     }
 }
 
 void Geom::interp2_l(int ex, int ey, int px, int py, double* vec, double* val) {
-    int jj, nn, n2;
+    int jj, nn, n2, pxy;
     int* inds2 = topo->elInds2_l(ex, ey);
 
     nn = topo->elOrd;
     n2 = nn*nn;
+    pxy = py*(quad->n+1)+px;
 
     val[0] = 0.0;
     for(jj = 0; jj < n2; jj++) {
-        val[0] += vec[inds2[jj]]*edge->ejxi[px][jj%nn]*edge->ejxi[py][jj/nn];
+        //val[0] += vec[inds2[jj]]*edge->ejxi[px][jj%nn]*edge->ejxi[py][jj/nn];
+        val[0] += vec[inds2[jj]]*WA[pxy*n2+jj];
     }
 }
 
@@ -487,10 +533,10 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
 
                 // assume piecewise constant in the vertical, so rescale by
                 // the vertical determinant inverse
-/*
                 if(vert_scale) {
                     val *= 1.0/thick[lev][inds0[ii]];
                 }
+/*
                 if(ii == 0 || ii == mp1-1 || ii == (mp1-1)*mp1 || ii == mp1*mp1-1) {
                     fac = 0.25;
                 } else if(ii/mp1 == 0 || ii/mp1 == mp1-1 || ii%mp1 == 0 || ii%mp1 == mp1-1) {
@@ -662,6 +708,7 @@ void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
     for(ii = 0; ii < nk; ii++) {
         for(jj = 0; jj < topo->n0; jj++) {
             thick[ii][jj] = levs[ii+1][jj] - levs[ii][jj];
+            thickInv[ii][jj] = 1.0/thick[ii][jj];
         }
     }
 }

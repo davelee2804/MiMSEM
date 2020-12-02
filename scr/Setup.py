@@ -12,6 +12,20 @@ pn = int(sys.argv[1])
 ne = int(sys.argv[2])
 n_procs = int(sys.argv[3])
 
+def isqrt(n):
+	x = n
+	y = (x + 1) // 2
+	while y < x:
+		x = y
+		y = (x + n // x) // 2
+	return x
+
+n_procs_per_face = n_procs//6
+n_procs_per_dim = isqrt(n_procs_per_face)
+if ne%n_procs_per_dim != 0:
+	print('ERROR! number of elements per dimension per face ' + str(ne) + ' must fit evenly into the number of processors per dimension per face ' + str(n_procs_per_dim))
+	os.abort()
+
 path = '../eul/'
 
 try:
@@ -51,4 +65,3 @@ for pi in np.arange(n_procs):
 
 os.popen('cd ../eul; ln -s ../src/Basis.* .')
 os.popen('cd ../eul; ln -s ../src/Topo.* .')
-os.popen('cd ../eul; ln -s ../src/ElMats.* .')

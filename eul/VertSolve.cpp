@@ -100,9 +100,9 @@ void VertSolve::initGZ() {
     Wii* Q = new Wii(node->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(edge);
     double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
-    double** Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Wt = Alloc2D(W->nDofsJ, W->nDofsI);
-    double** WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* Q0 = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     Vec gz;
     Mat GRAD, BQ;
     PetscScalar* zArray;
@@ -127,13 +127,13 @@ void VertSolve::initGZ() {
             MatZeroEntries(BQ);
             for(kk = 0; kk < geom->nk; kk++) {
                 for(ii = 0; ii < mp12; ii++) {
-                    Q0[ii][ii]  = Q->A[ii][ii]*SCALE;
+                    Q0[ii]  = Q->A[ii]*SCALE;
                     // for linear field we multiply by the vertical jacobian determinant when
                     // integrating, and do no other trasformations for the basis functions
-                    Q0[ii][ii] *= 0.5;
+                    Q0[ii] *= 0.5;
                 }
                 Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-                Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
+                //Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
 
                 for(ii = 0; ii < W->nDofsJ; ii++) {
                     inds2k[ii] = ii + kk*W->nDofsJ;
@@ -143,12 +143,12 @@ void VertSolve::initGZ() {
                 for(ii = 0; ii < mp12; ii++) {
                     inds0k[ii] = ii + (kk+0)*mp12;
                 }
-                MatSetValues(BQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQflat, ADD_VALUES);
+                MatSetValues(BQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQ, ADD_VALUES);
                 // assemble the second basis function
                 for(ii = 0; ii < mp12; ii++) {
                     inds0k[ii] = ii + (kk+1)*mp12;
                 }
-                MatSetValues(BQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQflat, ADD_VALUES);
+                MatSetValues(BQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQ, ADD_VALUES);
             }
             MatAssemblyBegin(BQ, MAT_FINAL_ASSEMBLY);
             MatAssemblyEnd(BQ, MAT_FINAL_ASSEMBLY);
@@ -176,7 +176,7 @@ void VertSolve::initGZ() {
     MatDestroy(&GRAD);
     MatDestroy(&BQ);
     delete[] WtQflat;
-    Free2D(Q->nDofsI, Q0);
+    delete[] Q0;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     delete W;
@@ -1386,7 +1386,7 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
         max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
 
         rho_j->VertToHoriz();
-        horiz->advection_rhs(velx1, velx2, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, u1l, u2l, /*step%10==0*/false);
+        horiz->advection_rhs(velx1, velx2, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, u1l, u2l, /*step%10==0*/true);
 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;

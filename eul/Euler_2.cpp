@@ -169,7 +169,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
 
     Q = new Wii(node->q, geom);
     W = new M2_j_xy_i(edge);
-    Q0 = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    Q0 = new double[Q->nDofsI];
     Wt = Alloc2D(W->nDofsJ, W->nDofsI);
     WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
 
@@ -265,13 +265,13 @@ void Euler::initGZ() {
             MatZeroEntries(BQ);
             for(kk = 0; kk < geom->nk; kk++) {
                 for(ii = 0; ii < mp12; ii++) {
-                    Q0[ii][ii]  = Q->A[ii][ii]*SCALE;
+                    Q0[ii]  = Q->A[ii]*SCALE;
                     // for linear field we multiply by the vertical jacobian determinant when
                     // integrating, and do no other trasformations for the basis functions
-                    Q0[ii][ii] *= 0.5;
+                    Q0[ii] *= 0.5;
                 }
                 Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-                Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
+                //Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
 
                 for(ii = 0; ii < W->nDofsJ; ii++) {
                     inds2k[ii] = ii + kk*W->nDofsJ;
@@ -281,12 +281,12 @@ void Euler::initGZ() {
                 for(ii = 0; ii < mp12; ii++) {
                     inds0k[ii] = ii + (kk+0)*mp12;
                 }
-                MatSetValues(BQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQflat, ADD_VALUES);
+                MatSetValues(BQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQ, ADD_VALUES);
                 // assemble the second basis function
                 for(ii = 0; ii < mp12; ii++) {
                     inds0k[ii] = ii + (kk+1)*mp12;
                 }
-                MatSetValues(BQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQflat, ADD_VALUES);
+                MatSetValues(BQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQ, ADD_VALUES);
             }
             MatAssemblyBegin(BQ, MAT_FINAL_ASSEMBLY);
             MatAssemblyEnd(BQ, MAT_FINAL_ASSEMBLY);
@@ -315,7 +315,7 @@ void Euler::initGZ() {
 Euler::~Euler() {
     int ii;
 
-    Free2D(Q->nDofsI, Q0);
+    delete[] Q0;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     delete Q;

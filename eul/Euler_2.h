@@ -56,9 +56,9 @@ class Euler {
 
         Wii* Q;
         M2_j_xy_i* W;
-        double** Q0;
-        double** Wt;
-        double** WtQ;
+        double* Q0;
+        double* Wt;
+        double* WtQ;
 
         double viscosity();
         void coriolis();
