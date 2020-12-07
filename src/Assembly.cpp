@@ -1239,6 +1239,64 @@ void P_up_mat::assemble(Vec ul, double dt) {
     MatAssemblyEnd(  I, MAT_FINAL_ASSEMBLY);
 }
 
+void P_up_mat::assemble_h(Vec ul, Vec hl, double dt) {
+    int ex, ey, ei, mp1, mp12, ii, *inds;
+    double ux[2], lx[99], ly[99], det, **J, ux2[2], hx;
+    PetscScalar *uArray, *hArray;
+    GaussLobatto* quad = node->q;
+
+    ux2[0] = ux2[1] = 0.0;
+
+    mp1 = node->q->n + 1;
+    mp12 = mp1*mp1;
+
+    MatZeroEntries(M);
+    MatZeroEntries(I);
+
+    VecGetArray(hl, &hArray);
+    if(ul) VecGetArray(ul, &uArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                if(ul) {
+                    geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, ux);
+                    ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
+                    ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
+                }
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &hx);
+
+                for(int jj = 0; jj < mp1; jj++) {
+                    lx[jj] = node->eval_q(quad->x[ii%mp1] - dt*ux2[0], jj);
+                    ly[jj] = node->eval_q(quad->x[ii/mp1] - dt*ux2[1], jj);
+                }
+                for(int jj = 0; jj < mp12; jj++) {
+                    QP[ii][jj]  = hx * det * Q->A[ii][ii] * lx[jj%mp1] * ly[jj/mp1];
+                    QPI[ii][jj] = lx[jj%mp1] * ly[jj/mp1];
+                }
+            }
+
+            inds = topo->elInds0_g(ex, ey);
+
+            Flat2D_IP(Q->nDofsJ, Q->nDofsJ, QP, QPflat);
+            MatSetValues(M, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, ADD_VALUES);
+
+            Flat2D_IP(Q->nDofsJ, Q->nDofsJ, QPI, QPflat);
+            MatSetValues(I, Q->nDofsJ, inds, Q->nDofsJ, inds, QPflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(hl, &hArray);
+    if(ul) VecRestoreArray(ul, &uArray);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(I, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  I, MAT_FINAL_ASSEMBLY);
+}
+
 P_up_mat::~P_up_mat() {
     MatDestroy(&M);
     MatDestroy(&I);

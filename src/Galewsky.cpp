@@ -81,13 +81,13 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 300.0;//40.0;
+    double dt = 120.0;//40.0;
     double vort_0, mass_0, ener_0;
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 10*24*12;//7200*3;
-    int dumpEvery = 1*12;//6*30*3;
+    int nSteps = 10*24*30;//7200*3;
+    int dumpEvery = 24*30;//1*12;//6*30*3;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;

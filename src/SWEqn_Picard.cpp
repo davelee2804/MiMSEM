@@ -23,7 +23,7 @@
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
 //#define W2_ALPHA (0.25*M_PI)
-//#define UP_VORT
+#define UP_VORT
 
 using namespace std;
 
@@ -142,6 +142,8 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     KSPSetOptionsPrefix(ksp_p, "p_up_");
     KSPSetFromOptions(ksp_p);
 #endif
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl);
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -238,17 +240,7 @@ void SWEqn::curl_up(Vec u, Vec *w) {
 
 // dH/du = hu = F
 void SWEqn::diagnose_F(Vec* F) {
-    Vec hu, b/*, hil, hjl*/;
-
-/*
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hil);
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hjl);
-
-    VecScatterBegin(topo->gtol_2, hi, hil, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, hi, hil, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterBegin(topo->gtol_2, hj, hjl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_2, hj, hjl, INSERT_VALUES, SCATTER_FORWARD);
-*/
+    Vec hu, b;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, F);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &hu);
@@ -257,7 +249,6 @@ void SWEqn::diagnose_F(Vec* F) {
     VecZeroEntries(hu);
 
     // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
-//    M1h->assemble(hil);
     M1h->assemble(hi);
 
     MatMult(M1h->M, ui, b);
@@ -266,7 +257,6 @@ void SWEqn::diagnose_F(Vec* F) {
     MatMult(M1h->M, uj, b);
     VecAXPY(hu, 1.0/6.0, b);
 
-//    M1h->assemble(hjl);
     M1h->assemble(hj);
 
     MatMult(M1h->M, ui, b);
@@ -280,23 +270,21 @@ void SWEqn::diagnose_F(Vec* F) {
 
     VecDestroy(&hu);
     VecDestroy(&b);
-//    VecDestroy(&hil);
-//    VecDestroy(&hjl);
 }
 
 // dH/dh = (1/2)u^2 + gh = \Phi
 // note: \Phi is in integral form here
 //          \int_{\Omega} \gamma_h,\Phi_h d\Omega
 void SWEqn::diagnose_Phi(Vec* Phi) {
-    Vec uil, ujl, b;
+    Vec /*uil, ujl,*/ b;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl);
 
-    VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    //VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    //VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    //VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    //VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &b);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Phi);
@@ -328,8 +316,8 @@ void SWEqn::diagnose_Phi(Vec* Phi) {
         VecAXPY(*Phi, grav, b);
     }
 
-    VecDestroy(&uil);
-    VecDestroy(&ujl);
+    //VecDestroy(&uil);
+    //VecDestroy(&ujl);
     VecDestroy(&b);
 }
 
@@ -384,6 +372,40 @@ void SWEqn::diagnose_wxu(Vec* wxu) {
     VecDestroy(&uh);
 }
 
+void SWEqn::diagnose_q(Vec* qi, Vec* qj) {
+    Vec rhs, tmp;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &rhs);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &tmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, qi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, qj);
+
+    // first time level
+    VecPointwiseMult(rhs, m0->vg, fg);
+    MatMult(E01M1, ui, tmp);
+    VecAXPY(rhs, 1.0, tmp);
+#ifdef UP_VORT
+    P_up->assemble_h(uil, hi, dt);
+#else
+    P_up->assemble_h(NULL, hi, dt);
+#endif
+    KSPSolve(ksp_p, rhs, *qi);
+
+    // second time level
+    VecPointwiseMult(rhs, m0->vg, fg);
+    MatMult(E01M1, uj, tmp);
+    VecAXPY(rhs, 1.0, tmp);
+#ifdef UP_VORT
+    P_up->assemble_h(ujl, hj, dt);
+#else
+    P_up->assemble_h(NULL, hj, dt);
+#endif
+    KSPSolve(ksp_p, rhs, *qj);
+
+    VecDestroy(&rhs);
+    VecDestroy(&tmp);
+}
+
 void SWEqn::laplacian(Vec u, Vec* ddu) {
     Vec Du, Cu, RCu, GDu, MDu, dMDu;
 
@@ -431,14 +453,12 @@ void SWEqn::unpack(Vec x, Vec u, Vec h) {
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1 + topo->n2, &xl);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
-//    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
 
     VecScatterBegin(gtol_x, x, xl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  gtol_x, x, xl, INSERT_VALUES, SCATTER_FORWARD);
 
     VecGetArray(xl, &xArray);
     VecGetArray(ul, &uArray);
-//    VecGetArray(hl, &hArray);
     VecGetArray(h, &hArray);
     for(ii = 0; ii < topo->n1; ii++) {
         uArray[ii] = xArray[ii];
@@ -448,17 +468,13 @@ void SWEqn::unpack(Vec x, Vec u, Vec h) {
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
-//    VecRestoreArray(hl, &hArray);
     VecRestoreArray(h, &hArray);
 
     VecScatterBegin(topo->gtol_1, ul, u, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(  topo->gtol_1, ul, u, INSERT_VALUES, SCATTER_REVERSE);
-//    VecScatterBegin(topo->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
-//    VecScatterEnd(  topo->gtol_2, hl, h, INSERT_VALUES, SCATTER_REVERSE);
 
     VecDestroy(&xl);
     VecDestroy(&ul);
-//    VecDestroy(&hl);
 }
 
 void SWEqn::repack(Vec x, Vec u, Vec h) {
@@ -468,15 +484,11 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1 + topo->n2, &xl);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
-//    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
     VecScatterBegin(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
-//    VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
-//    VecScatterEnd(  topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
 
     VecGetArray(xl, &xArray);
     VecGetArray(ul, &uArray);
-//    VecGetArray(hl, &hArray);
     VecGetArray(h, &hArray);
     for(ii = 0; ii < topo->n1; ii++) {
         xArray[ii] = uArray[ii];
@@ -486,7 +498,6 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
     }
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
-//    VecRestoreArray(hl, &hArray);
     VecRestoreArray(h, &hArray);
 
     VecScatterBegin(gtol_x, xl, x, INSERT_VALUES, SCATTER_REVERSE);
@@ -494,11 +505,10 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 
     VecDestroy(&xl);
     VecDestroy(&ul);
-//    VecDestroy(&hl);
 }
 
 void SWEqn::assemble_residual(Vec x, Vec f) {
-    Vec F, Phi, wxu, fu, fh, utmp, htmp1, htmp2, d2u, d4u, fs;
+    Vec F, Phi, fu, fh, utmp, htmp1, htmp2, d2u, d4u, fs, qi, qj, ql;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
@@ -506,20 +516,52 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp1);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp2);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &fs);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
 
     VecZeroEntries(fu);
     VecZeroEntries(fh);
 
     unpack(x, uj, hj);
 
+    VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+
     // assemble in the skew-symmetric parts of the vector
     diagnose_F(&F);
     diagnose_Phi(&Phi);
-    diagnose_wxu(&wxu);
+    //diagnose_wxu(&wxu);
 
     // momentum terms
     MatMult(EtoF->E12, Phi, fu);
-    VecAXPY(fu, 1.0, wxu);
+    //VecAXPY(fu, 1.0, wxu);
+
+    // upwinded convective term
+    diagnose_q(&qi, &qj);
+
+    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, uil, dt);
+    MatMult(R_up->M, F, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, F, utmp);
+#endif
+    VecAXPY(fu, 0.5, utmp);
+
+    VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, ujl, dt);
+    MatMult(R_up->M, F, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, F, utmp);
+#endif
+    VecAXPY(fu, 0.5, utmp);
+    //
 
     // continuity term
     MatMult(EtoF->E21, F, htmp1);
@@ -562,11 +604,116 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecDestroy(&htmp2);
     VecDestroy(&F);
     VecDestroy(&Phi);
-    VecDestroy(&wxu);
+    //VecDestroy(&wxu);
     VecDestroy(&fs);
+    VecDestroy(&qi);
+    VecDestroy(&qj);
+    VecDestroy(&ql);
 }
 
 void SWEqn::assemble_operator(double dt) {
+    int n2 = (topo->elOrd+1)*(topo->elOrd+1);
+    int mm, mi, mf, ri, ci, dof_proc;
+    int nCols;
+    const int *cols;
+    const double* vals;
+    int cols2[9999];
+    double H_mean = 1.0e+4;
+    Vec fl;
+    Mat Muh, Mhu;
+
+    if(A) return;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl);
+    VecScatterBegin(topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
+
+    MatCreate(MPI_COMM_WORLD, &A);
+    MatSetSizes(A, topo->n1l+topo->n2l, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, topo->nDofs1G+topo->nDofs2G);
+    MatSetType(A, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(A, 16*n2, PETSC_NULL, 16*n2, PETSC_NULL);
+
+    R->assemble(fl);
+    MatAXPY(M1->M, 0.5*dt, R->M, DIFFERENT_NONZERO_PATTERN);
+    MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+
+    MatGetOwnershipRange(M1->M, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(M1->M, mm, &nCols, &cols, &vals);
+        dof_proc = mm / topo->n1l;
+        ri = dof_proc * (topo->n1l + topo->n2l) + mm % topo->n1l;
+        for(ci = 0; ci < nCols; ci++) {
+            dof_proc = cols[ci] / topo->n1l;
+            cols2[ci] = dof_proc * (topo->n1l + topo->n2l) + cols[ci] % topo->n1l;
+        }
+        MatSetValues(A, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(M1->M, mm, &nCols, &cols, &vals);
+    }
+    MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+
+    // [u,h] block
+    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Muh);
+    MatScale(Muh, 0.5*dt*grav);
+    MatAssemblyBegin(Muh, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Muh, MAT_FINAL_ASSEMBLY);
+
+    MatGetOwnershipRange(Muh, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(Muh, mm, &nCols, &cols, &vals);
+        dof_proc = mm / topo->n1l;
+        ri = dof_proc * (topo->n1l + topo->n2l) + mm % topo->n1l;
+        for(ci = 0; ci < nCols; ci++) {
+            dof_proc = cols[ci] / topo->n2l;
+            cols2[ci] = dof_proc * (topo->n1l + topo->n2l) + cols[ci] % topo->n2l + topo->n1l;
+        }
+        MatSetValues(A, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(Muh, mm, &nCols, &cols, &vals);
+    }
+
+    // [h,u] block
+    MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mhu);
+    MatScale(Mhu, 0.5*dt*H_mean);
+    MatAssemblyBegin(Mhu, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Mhu, MAT_FINAL_ASSEMBLY);
+
+    MatGetOwnershipRange(Mhu, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(Mhu, mm, &nCols, &cols, &vals);
+        dof_proc = mm / topo->n2l;
+        ri = dof_proc * (topo->n1l + topo->n2l) + mm % topo->n2l + topo->n1l;
+        for(ci = 0; ci < nCols; ci++) {
+            dof_proc = cols[ci] / topo->n1l;
+            cols2[ci] = dof_proc * (topo->n1l + topo->n2l) + cols[ci] % topo->n1l;
+        }
+        MatSetValues(A, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(Mhu, mm, &nCols, &cols, &vals);
+    }
+
+    // [h,h] block
+    MatGetOwnershipRange(M2->M, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(M2->M, mm, &nCols, &cols, &vals);
+        dof_proc = mm / topo->n2l;
+        ri = dof_proc * (topo->n1l + topo->n2l) + mm % topo->n2l + topo->n1l;
+        for(ci = 0; ci < nCols; ci++) {
+            dof_proc = cols[ci] / topo->n2l;
+            cols2[ci] = dof_proc * (topo->n1l + topo->n2l) + cols[ci] % topo->n2l + topo->n1l;
+        }
+        MatSetValues(A, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(M2->M, mm, &nCols, &cols, &vals);
+    }
+
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  A, MAT_FINAL_ASSEMBLY);
+
+    VecDestroy(&fl);
+    MatDestroy(&Muh);
+    MatDestroy(&Mhu);
+
+    M1->assemble();
+/*
     int n2 = (topo->elOrd+1)*(topo->elOrd+1);
     int mm, mi, mf, ri, ci, dof_proc;
     int nCols;
@@ -684,6 +831,7 @@ void SWEqn::assemble_operator(double dt) {
     MatDestroy(&Muh);
     MatDestroy(&Mhu);
     MatDestroy(&Mhh);
+*/
 }
 
 void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
@@ -771,6 +919,8 @@ SWEqn::~SWEqn() {
     VecDestroy(&hi);
     VecDestroy(&uj);
     VecDestroy(&hj);
+    VecDestroy(&uil);
+    VecDestroy(&ujl);
     if(topog) VecDestroy(&topog);
     if(A) MatDestroy(&A);
 

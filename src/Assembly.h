@@ -194,6 +194,7 @@ class P_up_mat {
         Mat M;
         Mat I;
         void assemble(Vec ul, double dt);
+        void assemble_h(Vec ul, Vec hl, double dt);
 };
 
 class RotMat_up {
