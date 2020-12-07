@@ -15,12 +15,12 @@ Includes solvers (and test configurations) for:
   * Warm bubble (doubly periodic planar)
 
 Supports geometric configurations for:
-* Doubly periodic box
-* Cubed-sphere
+* Doubly periodic box (3D)
+* Cubed-sphere (2D/3D)
 
 Optional stabilisation terms include:
-* Biharmonic viscosity
-* Energetically consistent variational upwinding
+* Biharmonic viscosity for horizontal momentum and temperature equations
+* Energetically consistent variational upwinding for potential vorticity (in the horizontal) and potential temperature (in the vertical)
 
 ## How to run the baroclinic instability test case on the sphere ##
 0. Install the dependencies (C++, Python3, OpenBLAS, MPI, PETSc)
@@ -28,7 +28,7 @@ Optional stabilisation terms include:
 2. Run the set up script: `./scr/Setup.py <polynomial_degree> <number_of_elements_per_dimension> <number_of_processors>` where
    * `polynomial_degree` is the polynomial order of the ![](https://render.githubusercontent.com/render/math?math=L^2) basis functions in the horizontal
    * `number_of_elements_per_dimension` is the number of elements in each dimension on each of the six faces of the cubed sphere
-   * `number_of_processors` is the number of cores to run the code on. Note that this must be  ![](https://render.githubusercontent.com/render/math?math=6n^2) for integer _n_, ie: 6, 24, 54, etc, and `number_of_elements_per_dimension` must fit evenly into _n_
+   * `number_of_processors` is the number of cores to run the code on. Note that this must be  ![](https://render.githubusercontent.com/render/math?math=6n^2) for integer _n_, ie: 6, 24, 54, 96, etc, and `number_of_elements_per_dimension` must fit evenly into _n_
 3. Build the code: `cd eul/; make mimsem`
 4. Run the code: `mpirun -np <number_of_processors> ./mimsem <start_dump>`, where `0` indicates starting from the analytic initial condition rather than a start dump 
 5. Plot an image: `../scr/WriteImage_NorthHemi.py <file_path> <field_name> <plot_contours> <vertical_level> <dump_time>`
