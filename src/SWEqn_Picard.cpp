@@ -276,15 +276,10 @@ void SWEqn::diagnose_F(Vec* F) {
 // note: \Phi is in integral form here
 //          \int_{\Omega} \gamma_h,\Phi_h d\Omega
 void SWEqn::diagnose_Phi(Vec* Phi) {
-    Vec /*uil, ujl,*/ b;
+    Vec b;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl);
-
-    //VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
-    //VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
-    //VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
-    //VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    //VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
+    //VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &b);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Phi);
@@ -316,8 +311,6 @@ void SWEqn::diagnose_Phi(Vec* Phi) {
         VecAXPY(*Phi, grav, b);
     }
 
-    //VecDestroy(&uil);
-    //VecDestroy(&ujl);
     VecDestroy(&b);
 }
 
@@ -531,11 +524,9 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     // assemble in the skew-symmetric parts of the vector
     diagnose_F(&F);
     diagnose_Phi(&Phi);
-    //diagnose_wxu(&wxu);
 
     // momentum terms
     MatMult(EtoF->E12, Phi, fu);
-    //VecAXPY(fu, 1.0, wxu);
 
     // upwinded convective term
     diagnose_q(&qi, &qj);
@@ -604,7 +595,6 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecDestroy(&htmp2);
     VecDestroy(&F);
     VecDestroy(&Phi);
-    //VecDestroy(&wxu);
     VecDestroy(&fs);
     VecDestroy(&qi);
     VecDestroy(&qj);
