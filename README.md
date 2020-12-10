@@ -42,6 +42,10 @@ Optional stabilisation terms include:
 
 <sub>Baroclinic instability on the sphere, day 11: surface level Exner pressure, and potential temperature and vertical voricity component at z=1.5km</sub>
 
+<img src="https://github.com/davelee2804/images/blob/master/held_suarez/exner_000_0040.png" height="300" width="270"><img src="https://github.com/davelee2804/images/blob/master/held_suarez/theta_003_0040.png" height="300" width="270"><img src="https://github.com/davelee2804/images/blob/master/held_suarez/vorticity_004_0040.png" height="300" width="270">
+
+<sub>Global simulation with Held-Suarez forcing at day 40, surface level Exner pressure, potential temperature at z = 2.36km and vertical vorticity component at z = 3.14km</sub>
+
 <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/vort_day7.png" height="450" width="600">
 
 <sub>Vorticity field at day 7 for the Galewsky rotating shallow water on the sphere test case without dissipation. Top: exect energy conserving scheme, Bottom: evergetically consistent variational upwinding of potential vorticity</sub>
