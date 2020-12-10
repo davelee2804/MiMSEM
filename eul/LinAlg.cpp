@@ -168,6 +168,9 @@ void Ax_b(int ni, int nj, double* A, double* x, double* b) {
             b[ii] += A[ii*nj+jj]*x[jj];
         }
     }
+/*
+    cblas_dgemv(CblasRowMajor, CblasNoTrans, ni, nj, 1.0, A, ni, x, 1, 0.0, b, 1);
+*/
 }
 
 extern "C" {

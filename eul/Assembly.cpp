@@ -3032,7 +3032,7 @@ void Uvec::assemble(int lev, double scale, bool vert_scale, Vec vel) {
     VecScatterEnd(  topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
 }
 
-void Uvec::assemble_hu(int lev, double scale, bool vert_scale, Vec vel, Vec rho) {
+void Uvec::assemble_hu(int lev, double scale, Vec vel, Vec rho, bool zero_and_scatter, double fac) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y, *inds_0;
     double det, **J;
@@ -3042,8 +3042,10 @@ void Uvec::assemble_hu(int lev, double scale, bool vert_scale, Vec vel, Vec rho)
     mp1 = node->q->n + 1;
     mp12 = mp1*mp1;
 
-    VecZeroEntries(vl);
-    VecZeroEntries(vg);
+    if(zero_and_scatter) {
+        VecZeroEntries(vl);
+        VecZeroEntries(vg);
+    }
 
     VecGetArray(vl, &vArray);
     VecGetArray(vel, &velArray);
@@ -3070,7 +3072,8 @@ void Uvec::assemble_hu(int lev, double scale, bool vert_scale, Vec vel, Vec rho)
                 // multiply by the velocity vector
                 geom->interp1_l(ex, ey, ii%mp1, ii/mp1, velArray, _u);
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rhoArray, &_r);
-                if(vert_scale) _r *= geom->thickInv[lev][inds_0[ii]];
+                _r *= geom->thickInv[lev][inds_0[ii]];
+                _r *= fac;
 
                 Qaa[ii] *= (_u[0] * _r);
                 Qba[ii] *= (_u[0] * _r);
@@ -3106,8 +3109,10 @@ void Uvec::assemble_hu(int lev, double scale, bool vert_scale, Vec vel, Vec rho)
     VecRestoreArray(vel, &velArray);
     VecRestoreArray(rho, &rhoArray);
 
-    VecScatterBegin(topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    if(zero_and_scatter) {
+        VecScatterBegin(topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(  topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
+    }
 }
 
 void Uvec::assemble_wxu(int lev, double scale, Vec vel, Vec vort) {
@@ -3232,7 +3237,7 @@ void Wvec::assemble(int lev, double scale, bool vert_scale, Vec rho) {
     VecRestoreArray(rho, &rhoArray);
 }
 
-void Wvec::assemble_K(int lev, double scale, bool vert_scale, Vec vel1, Vec vel2) {
+void Wvec::assemble_K(int lev, double scale, Vec vel1, Vec vel2) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_2, *inds_0;
     double det, **J, _uxg[2], _uxl[2], Qaa[99], Qab[99], rhs_a[99], rhs_b[99];

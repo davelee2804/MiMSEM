@@ -462,7 +462,7 @@ class Uvec {
         double* Ut;
         double* Vt;
         void assemble(int lev, double scale, bool vert_scale, Vec vel);
-        void assemble_hu(int lev, double scale, bool vert_scale, Vec vel, Vec rho);
+        void assemble_hu(int lev, double scale, Vec vel, Vec rho, bool zero_and_scatter, double fac);
         void assemble_wxu(int lev, double scale, Vec vel, Vec vort);
 };
 
@@ -478,5 +478,5 @@ class Wvec {
         Wii* Q;
         double* Wt;
         void assemble(int lev, double scale, bool vert_scale, Vec rho);
-        void assemble_K(int lev, double scale, bool vert_scale, Vec vel1, Vec vel2);
+        void assemble_K(int lev, double scale, Vec vel1, Vec vel2);
 };
