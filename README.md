@@ -18,9 +18,10 @@ Supports geometric configurations for:
 * Doubly periodic box (3D)
 * Cubed-sphere (2D/3D)
 
-Optional stabilisation terms include:
+Optional stabilisation/forcing terms include:
 * Biharmonic viscosity for horizontal momentum and temperature equations
 * Energetically consistent variational upwinding for potential vorticity (in the horizontal) and potential temperature (in the vertical)
+* Held-Suarez forcing of temperature and lower atmosphere Rayleigh friction
 
 ## How to run the baroclinic instability test case on the sphere ##
 0. Install the dependencies (C++, Python3, OpenBLAS, MPI, PETSc)
@@ -59,7 +60,7 @@ Lee, D and Palha, A (2020) [Exact spatial and temporal balance of energy exchang
 
 Lee, D (2021) [An energetically balanced, quasi-Newton integrator for non-hydrostatic vertical atmospheric dynamics](https://www.sciencedirect.com/science/article/pii/S0021999120307622) _J. Comp. Phys._ 109988
 
-Lee, D (2020) [Petrov-Galerkin flux upwinding for mixed mimetic spectral elements, and itsapplication to geophysical flow problems](https://arxiv.org/pdf/2004.13225.pdf) arXiv:2004.13225
+Lee, D (2020) [Petrov-Galerkin flux upwinding for mixed mimetic spectral elements, and its application to geophysical flow problems](https://arxiv.org/pdf/2004.13225.pdf) arXiv:2004.13225
 
 Lee, D and Palha. A (2020) [A mixed mimetic spectral element model of the 3D compressible Euler equations on the cubed sphere](https://www.sciencedirect.com/science/article/pii/S0021999119306989) _J. Comp. Phys._ 401 108993
 
