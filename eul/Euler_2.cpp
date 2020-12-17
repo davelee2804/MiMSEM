@@ -43,6 +43,7 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     geom = _geom;
 
     do_visc = true;
+    hs_forcing = false;
     del2 = viscosity();
     step = 0;
     firstStep = true;
@@ -1586,7 +1587,6 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     if(!rank) cout << "horiztonal step (1).................." << endl;
     diagTheta(rho_0->vz, rt_0->vz, theta_0->vz);
     theta_0->VertToHoriz();
-    //HorizVort(velx);
     HorizPotVort(velx, rho);
     if(firstStep) for(int kk = 0; kk < geom->nk-1; kk++) VecCopy(uzl[kk], uzl_prev[kk]);
     VertMassFlux(velz_0, velz_0, rho_0, rho_0, Fz);
@@ -1599,16 +1599,22 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
         if(firstStep) {
             MatMult(M1->M, velx_0[kk], bu);
             VecAXPY(bu, -dt, Fu_0[kk]);
-            //M1ray->assemble(kk, SCALE, dt, exner_0->vh[kk], exner_0->vh[0]);
+            if(hs_forcing) {
+                M1ray->assemble(kk, SCALE, dt, exner_0->vh[kk], exner_0->vh[0]);
+            }
         } else {
             MatMult(M1->M, u_prev[kk], bu);
             VecAXPY(bu, -2.0*dt, Fu_0[kk]);
-            //M1ray->assemble(kk, SCALE, 2.0*dt, exner_0->vh[kk], exner_0->vh[0]);
+            if(hs_forcing) {
+                M1ray->assemble(kk, SCALE, 2.0*dt, exner_0->vh[kk], exner_0->vh[0]);
+            }
         }
         // add the boundary layer friction
-        //MatAXPY(M1->M, 1.0, M1ray->M, DIFFERENT_NONZERO_PATTERN);
-        //MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
-        //MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+        if(hs_forcing) {
+            MatAXPY(M1->M, 1.0, M1ray->M, DIFFERENT_NONZERO_PATTERN);
+            MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+            MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+        }
 
         KSPSolve(ksp1, bu, velx[kk]);
 
@@ -1623,13 +1629,10 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     rt_h->CopyFromHoriz(rt_0->vh);
     exner_h->CopyFromHoriz(exner_0->vh);
 
-    vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, NULL, velx_0, velx, ul_prev, ul, false);
+    vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, NULL, velx_0, velx, ul_prev, ul, hs_forcing);
 
     // 3.  Explicit horiztonal solve
     if(!rank) cout << "horiztonal step (3).................." << endl;
-    //diagTheta(rho_h->vz, rt_h->vz, theta_0->vz); // TODO: remove 
-    //theta_0->VertToHoriz();                      // these lines?
-    //HorizVort(velx);
     HorizPotVort(velx, rho_h->vh);
     VertMassFlux(velz_0, velz_h, rho_0, rho_h, Fz);
     for(int kk = 0; kk < geom->nk; kk++) {
@@ -1640,10 +1643,12 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
         MatMult(M1->M, velx_0[kk], bu);
 
         // add the boundary layer friction
-        //M1ray->assemble(kk, SCALE, dt, exner_h->vh[kk], exner_h->vh[0]);
-        //MatAXPY(M1->M, 1.0, M1ray->M, DIFFERENT_NONZERO_PATTERN);
-        //MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
-        //MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+        if(hs_forcing) {
+            M1ray->assemble(kk, SCALE, dt, exner_h->vh[kk], exner_h->vh[0]);
+            MatAXPY(M1->M, 1.0, M1ray->M, DIFFERENT_NONZERO_PATTERN);
+            MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+            MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+        }
 
         VecAXPY(bu, -dt, Fu_0[kk]);
         KSPSolve(ksp1, bu, velx[kk]);

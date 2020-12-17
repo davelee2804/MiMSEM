@@ -157,7 +157,7 @@ double u_pert(double* x, int ki) {
     if(fabs(gc - 0.0           ) < 1.0e-4) return 0.0;
     if(fabs(gc - RAD_EARTH*M_PI) < 1.0e-4) return 0.0;
 
-    if(gc > D0) return 0.0;
+//    if(gc > D0) return 0.0;
 
     return -16.0*VP*zt/(3.0*sqrt(3.0))*ct*ct*ct*st*fac/sin(gc/RAD_EARTH);
 }
@@ -174,7 +174,7 @@ double v_pert(double* x, int ki) {
     if(fabs(gc - 0.0           ) < 1.0e-4) return 0.0;
     if(fabs(gc - RAD_EARTH*M_PI) < 1.0e-4) return 0.0;
 
-    if(gc > D0) return 0.0;
+//    if(gc > D0) return 0.0;
 
     return +16.0*VP*zt/(3.0*sqrt(3.0))*ct*ct*ct*st*fac/sin(gc/RAD_EARTH);
 }
@@ -272,15 +272,14 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 60.0;
-    int nSteps = 12*24*30;
-    int dumpEvery = 720; //dump evert 12 hours
+    double dt = 120.0;
+    int nSteps = 100*24*30;
+    int dumpEvery = 2*24*30; //dump evert 12 hours
     ofstream file;
     Topo* topo;
     Geom* geom;
     Euler* pe;
     Vec *velx, *velz, *rho, *rt, *exner;
-    L2Vecs* theta_eq;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
 
@@ -296,6 +295,7 @@ int main(int argc, char** argv) {
 
     pe   = new Euler(topo, geom, dt);
     pe->step = startStep;
+    pe->hs_forcing = true;
 
     n2 = topo->nElsX*topo->nElsX;
 
@@ -313,22 +313,6 @@ int main(int argc, char** argv) {
     for(ii = 0; ii < n2; ii++) {
         VecCreateSeq(MPI_COMM_SELF, (NK-1)*topo->elOrd*topo->elOrd, &velz[ii]);
         VecZeroEntries(velz[ii]);
-    }
-
-    // diagnose equilibrium theta
-    theta_eq = new L2Vecs(NK+1, topo, geom);
-    {
-        L2Vecs* l2_rho = new L2Vecs(NK, topo, geom);
-        L2Vecs* l2_rt  = new L2Vecs(NK, topo, geom);
-        pe->init2(l2_rho->vh, rho_init);
-        pe->init2(l2_rt->vh,  rt_init );
-        l2_rho->HorizToVert();
-        l2_rt->HorizToVert();
-        // diagnose theta
-        pe->vert->diagTheta2(l2_rho->vz, l2_rt->vz, theta_eq->vz);
-        theta_eq->VertToHoriz();
-        delete l2_rho;
-        delete l2_rt;
     }
 
     if(startStep == 0) {
@@ -365,7 +349,7 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->Strang(velx, velz, rho, rt, exner, dump, theta_eq->vz);
+        pe->Strang(velx, velz, rho, rt, exner, dump);
     }
 
     delete pe;
@@ -386,7 +370,6 @@ int main(int argc, char** argv) {
     delete[] exner;
     delete[] rt;
     delete[] velz;
-    delete theta_eq;
 
     PetscFinalize();
 

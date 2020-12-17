@@ -7,6 +7,7 @@ class Euler {
         double dt;
         double del2;
         bool do_visc;
+        bool hs_forcing;
         int rank;
         int step;
         GaussLobatto* quad;

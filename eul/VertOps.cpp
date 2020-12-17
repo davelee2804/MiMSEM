@@ -2020,8 +2020,7 @@ void VertOps::AssembleTempForcing_HS(int ex, int ey, Vec exner, Vec theta, Vec r
     int mp1    = quad->n + 1;
     int mp12   = mp1*mp1;
     int* inds0 = topo->elInds0_l(ex, ey);
-    double _e[99], _r[99], _tb[99], _tt[99], _es[99], k_t[99], gamma, det;
-    //double ps[99], phb[99], pht[99], ktt[99], ktb[99], rh[99];
+    double _e[99], _r[99], _tb[99], _tt[99], _es[99], k_t[99], det;
     PetscScalar *eArray, *tArray, *rArray, *vArray;
 
     VecZeroEntries(vec);
@@ -2037,18 +2036,17 @@ void VertOps::AssembleTempForcing_HS(int ex, int ey, Vec exner, Vec theta, Vec r
 
             _e[ii] = _tb[ii] = _tt[ii] = _r[ii] = _es[ii] = 0.0;
             for(int ll = 0; ll < n2; ll++) {
-                gamma = geom->edge->ejxi[ii%mp1][ll%topo->elOrd]*geom->edge->ejxi[ii/mp1][ll/topo->elOrd];
-                _e[ii]  += eArray[kk*n2+ll]*gamma;
-                _tb[ii] += tArray[(kk+0)*n2+ll]*gamma;
-                _tt[ii] += tArray[(kk+1)*n2+ll]*gamma;
-                _r[ii]  += rArray[kk*n2+ll]*gamma;
-                _es[ii] += eArray[ll]*gamma;
+                _e[ii]  += eArray[kk*n2+ll]*W->A[ii*n2+ll];
+                _tb[ii] += tArray[(kk+0)*n2+ll]*W->A[ii*n2+ll];
+                _tt[ii] += tArray[(kk+1)*n2+ll]*W->A[ii*n2+ll];
+                _r[ii]  += rArray[kk*n2+ll]*W->A[ii*n2+ll];
+                _es[ii] += eArray[ll]*W->A[ii*n2+ll];
             }
-            _e[ii]  *= (det*geom->thickInv[kk][inds0[ii]]);
+            _e[ii]  /= (det*geom->thick[kk][inds0[ii]]);
             _tb[ii] /= (det);
             _tt[ii] /= (det);
-            _r[ii]  *= (det*geom->thickInv[kk][inds0[ii]]);
-            _es[ii] *= (det*geom->thickInv[0][inds0[ii]]);
+            _r[ii]  /= (det*geom->thick[kk][inds0[ii]]);
+            _es[ii] /= (det*geom->thick[0][inds0[ii]]);
 
             k_t[ii] = compute_k_T(geom->s[inds0[ii]][1], _e[ii], _es[ii], 0.5*(_tb[ii] + _tt[ii]));
         }
