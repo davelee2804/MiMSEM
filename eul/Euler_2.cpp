@@ -1732,24 +1732,42 @@ void Euler::VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho
 
 void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
     HorizSolve* horiz = vert->horiz;
+    L2Vecs* velz_h  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_h   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_h    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
+
+    velz_h->CopyFromVert(velz);    velz_h->VertToHoriz();
+    rho_h->CopyFromHoriz(rho);     rho_h->HorizToVert();
+    rt_h->CopyFromHoriz(rt);       rt_h->HorizToVert();
+    exner_h->CopyFromHoriz(exner); exner_h->HorizToVert();
+
     // 1. Vertical half step
     horiz->dt = vert->dt = 0.5*dt;
-    //vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, NULL, velx_0, velx, ul_prev, ul, hs_forcing);
+    vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, NULL, NULL, NULL, NULL, NULL, hs_forcing);
 
     // 2. Horiztonal full step
     horiz->dt = vert->dt = 1.0*dt;
+    horiz->solve_schur(velx, velz_h, rho_h, rt_h, exner_h);
 
     // 3. Vertical half step
     horiz->dt = vert->dt = 0.5*dt;
-    //vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, NULL, velx_0, velx, ul_prev, ul, hs_forcing);
+    vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, NULL, NULL, NULL, NULL, NULL, hs_forcing);
+
+    // update input vectors
+    velz_h->CopyToVert(velz);
+    rho_h->CopyToHoriz(rho);
+    rt_h->CopyToHoriz(rt);
+    exner_h->CopyToHoriz(exner);
 
     diagnostics(velx, velz, rho, rt, exner);
 
     // write output
     if(save) {
-/*
         step++;
 
+        Vec wi;
+        char fieldname[100];
         L2Vecs* l2Theta = new L2Vecs(geom->nk+1, topo, geom);
         diagTheta(rho_h->vz, rt_h->vz, l2Theta->vz);
         l2Theta->VertToHoriz();
@@ -1777,6 +1795,10 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
         }
         sprintf(fieldname, "velocity_z");
         geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
-*/
     }
+
+    delete velz_h;
+    delete rho_h;
+    delete rt_h;
+    delete exner_h;
 }
