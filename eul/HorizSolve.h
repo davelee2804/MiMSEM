@@ -75,8 +75,8 @@ class HorizSolve {
         Mat G_pi_C_pi_inv;
         Mat Q_rt_rho_M_rho_inv;
         Mat D_M_u_inv;
-        Mat _D;
-        Mat _G;
+        Mat DIV;
+        Mat GRAD;
         Mat _PCx;
         KSP ksp_rt;
         KSP ksp_u;

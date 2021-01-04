@@ -95,11 +95,20 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fk[ii]);
     }
 
+    // for the implicit solve
+    MatCreate(MPI_COMM_WORLD, &M1_inv);
+    MatSetSizes(M1_inv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(M1_inv, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M1_inv, 1, PETSC_NULL, 1, PETSC_NULL);
+    MatZeroEntries(M1_inv);
+
     T = new Whmat(topo, geom, edge);
     M2inv = new WmatInv(topo, geom, edge);
     M2_rho_inv = new WhmatInv(topo, geom, edge);
     N2_rt = new N_rt_Inv(topo, geom, edge);
     N2_pi_inv = new N_rt_Inv(topo, geom, edge);
+    G_rt = NULL;
+    DIV = GRAD = NULL;
     kspColA2 = NULL;
 }
 
@@ -194,6 +203,9 @@ HorizSolve::~HorizSolve() {
     delete M2inv;
     delete M2_rho_inv;
     if(kspColA2) KSPDestroy(&kspColA2);
+    MatDestroy(&M1_inv);
+    //if(DIV)  MatDestroy(&DIV);
+    //if(GRAD) MatDestroy(&GRAD);
 
     delete edge;
     delete node;
@@ -702,7 +714,7 @@ void HorizSolve::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
 
         for(lev = 0; lev < geom->nk; lev++) {
             // velocity residual
-            assemble_residual(lev, theta_h->vh, dudz_i->vh, dudz_j->vh, velz_i->vh, velz_j->vh, exner_h->vh[lev], 
+            assemble_residual(lev, theta_h->vh, dudz_i->vl, dudz_j->vl, velz_i->vh, velz_j->vh, exner_h->vh[lev], 
                               velx_i->vh[lev], velx_j->vh[lev], rho_i->vh[lev], rho_j->vh[lev], fu, _F, _G, velx_i->vl[lev], velx_j->vl[lev], grad_pi);
             M2->assemble(lev, SCALE, true);
 
@@ -741,7 +753,7 @@ void HorizSolve::solve_schur(Vec* velx, L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* r
             }
 
             // delta updates  - velx is a global vector, while theta and exner are local vectors
-            solve_schur_level(lev, theta_h->vh, velx_j->vh[lev], velx_j->vh[lev], rho_j->vh[lev], rt_j->vh[lev], exner_j->vh[lev], 
+            solve_schur_level(lev, theta_h->vh, velx_j->vl[lev], velx_j->vh[lev], rho_j->vh[lev], rt_j->vh[lev], exner_j->vh[lev], 
                               fu, frho, frt, F_exner->vh[lev], du, drho, drt, dexner, grad_pi);
 
             VecAXPY(velx_j->vh[lev], 1.0, du);
@@ -904,15 +916,31 @@ void HorizSolve::solve_schur_level(int lev, Vec* theta, Vec velx_l, Vec velx_g, 
 
     // assemble the secondary operators
     MatMatMult(Q_rt_rho, M2inv->M, reuse, PETSC_DEFAULT, &Q_rt_rho_M_rho_inv);
-    MatMatMult(Q_rt_rho_M_rho_inv, D_rho, reuse, PETSC_DEFAULT, &_D);
-    MatAYPX(_D, -1.0, D_rt, DIFFERENT_NONZERO_PATTERN);
+//    if(!DIV) {
+        MatProductCreate(Q_rt_rho_M_rho_inv, D_rho, PETSC_NULL, &DIV);
+        MatProductSetType(DIV, MATPRODUCT_AB);
+        MatProductSetAlgorithm(DIV, "default");
+        MatProductSetFill(DIV, PETSC_DEFAULT);
+        MatProductSetFromOptions(DIV);
+        MatProductSymbolic(DIV);
+//    }
+    MatMatMult(Q_rt_rho_M_rho_inv, D_rho, MAT_REUSE_MATRIX, PETSC_DEFAULT, &DIV);
+    MatAYPX(DIV, -1.0, D_rt, DIFFERENT_NONZERO_PATTERN);
 
     MatMatMult(G_pi, N2_pi_inv->M, reuse, PETSC_DEFAULT, &G_pi_C_pi_inv);
-    MatMatMult(G_pi_C_pi_inv, N2_rt->M, reuse, PETSC_DEFAULT, &_G);
-    MatAYPX(_G, -1.0, G_rt, DIFFERENT_NONZERO_PATTERN);
+//    if(!GRAD) {
+        MatProductCreate(G_pi_C_pi_inv, N2_rt->M, PETSC_NULL, &GRAD);
+        MatProductSetType(GRAD, MATPRODUCT_AB);
+        MatProductSetAlgorithm(GRAD, "default");
+        MatProductSetFill(GRAD, PETSC_DEFAULT);
+        MatProductSetFromOptions(GRAD);
+        MatProductSymbolic(GRAD);
+//    }
+    MatMatMult(G_pi_C_pi_inv, N2_rt->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &GRAD);
+    MatAYPX(GRAD, -1.0, G_rt, DIFFERENT_NONZERO_PATTERN);
 
-    MatMatMult(_D, M_u_inv, reuse, PETSC_DEFAULT, &D_M_u_inv);
-    MatMatMult(D_M_u_inv, _G, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
+    MatMatMult(DIV, M_u_inv, reuse, PETSC_DEFAULT, &D_M_u_inv);
+    MatMatMult(D_M_u_inv, GRAD, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &_PCx);
     MatAYPX(_PCx, -1.0, M2->M, DIFFERENT_NONZERO_PATTERN);
 
     // assign the linear solvers
@@ -956,7 +984,7 @@ void HorizSolve::solve_schur_level(int lev, Vec* theta, Vec velx_l, Vec velx_g, 
     MatMult(N2_pi_inv->M, F_pi, d_pi);
     VecScale(d_pi, -1.0);
 
-    MatMult(_G, d_rt, tmp_u);
+    MatMult(GRAD, d_rt, tmp_u);
     VecAXPY(tmp_u, +1.0, F_u);
     VecScale(tmp_u, -1.0);
     KSPSolve(ksp_u, tmp_u, d_u);
@@ -972,6 +1000,8 @@ void HorizSolve::solve_schur_level(int lev, Vec* theta, Vec velx_l, Vec velx_g, 
     MatDestroy(&_PCx);
     KSPDestroy(&ksp_rt);
     KSPDestroy(&ksp_u);
+MatDestroy(&DIV);
+MatDestroy(&GRAD);
 }
 
 void HorizSolve::coriolisMatInv(Mat A, Mat* Ainv, MatReuse reuse) {

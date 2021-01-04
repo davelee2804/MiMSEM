@@ -1737,20 +1737,25 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     L2Vecs* rt_h    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
 
+    horiz->vo = vert->vo;
+
     velz_h->CopyFromVert(velz);    velz_h->VertToHoriz();
     rho_h->CopyFromHoriz(rho);     rho_h->HorizToVert();
     rt_h->CopyFromHoriz(rt);       rt_h->HorizToVert();
     exner_h->CopyFromHoriz(exner); exner_h->HorizToVert();
 
     // 1. Vertical half step
+    if(!rank) cout << "(1) Vertical half step........\n";
     horiz->dt = vert->dt = 0.5*dt;
     vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, NULL, NULL, NULL, NULL, NULL, hs_forcing);
 
     // 2. Horiztonal full step
+    if(!rank) cout << "(2) Horizontal half step......\n";
     horiz->dt = vert->dt = 1.0*dt;
     horiz->solve_schur(velx, velz_h, rho_h, rt_h, exner_h);
 
     // 3. Vertical half step
+    if(!rank) cout << "(3) Vertical half step........\n";
     horiz->dt = vert->dt = 0.5*dt;
     vert->solve_schur_2(velz_h, rho_h, rt_h, exner_h, NULL, NULL, NULL, NULL, NULL, hs_forcing);
 
