@@ -969,9 +969,9 @@ void HorizSolve::solve_schur_level(int lev, Vec* theta, Vec velx_l, Vec velx_g, 
 
     // update the residuals
     MatMult(G_pi_C_pi_inv, F_pi, tmp_u);
-    VecAYPX(F_u, -1.0, tmp_u);                  // F_{u}'
+    VecAXPY(F_u, -1.0, tmp_u);                  // F_{u}'
     MatMult(Q_rt_rho_M_rho_inv, F_rho, tmp_h);
-    VecAYPX(F_rt, -1.0, tmp_h);                 // F_{rt}'
+    VecAXPY(F_rt, -1.0, tmp_h);                 // F_{rt}'
 
     MatMult(D_M_u_inv, F_u, tmp_h);
     VecAXPY(tmp_h, -1.0, F_rt);
