@@ -1465,7 +1465,7 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
         itt++;
 
         if(max_norm_exner < 1.0e-12 && max_norm_rho < 1.0e-12 && max_norm_rt < 1.0e-12) done = true;
-        if(!rank) cout << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
+        if(!rank) cout << "\t" << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
                                  "\t|d_w|/|w|: "          << max_norm_w     <<
                                  "\t|d_rho|/|rho|: "      << max_norm_rho   <<
                                  "\t|d_rt|/|rt|: "        << max_norm_rt    << endl;
@@ -1488,6 +1488,166 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
     delete rho_j;
     delete rt_j;
     delete exner_j;
+    delete theta_i;
+    delete theta_j;
+    delete velz_h;
+    delete rho_h;
+    delete rt_h;
+    delete dFx;
+    delete dGx;
+    VecDestroy(&F_w);
+    VecDestroy(&F_rho);
+    VecDestroy(&F_rt);
+    VecDestroy(&F_exner);
+    VecDestroy(&d_w);
+    VecDestroy(&d_rho);
+    VecDestroy(&d_rt);
+    VecDestroy(&d_exner);
+    VecDestroy(&F_z);
+    VecDestroy(&G_z);
+    VecDestroy(&dF_z);
+    VecDestroy(&dG_z);
+    VecDestroy(&d_theta);
+}
+
+// incorportate the horizontal divergence terms into the solve
+// include initial state and a first guess for the final state
+void VertSolve::solve_schur_3(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
+                              L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing,
+                              L2Vecs* velz_j, L2Vecs* rho_j, L2Vecs* rt_j, L2Vecs* exner_j) {
+    bool done = false;
+    int ex, ey, elOrd2, itt = 0;
+    double norm_x, max_norm_w, max_norm_exner, max_norm_rho, max_norm_rt;
+    L2Vecs* velz_h = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
+    Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F_z, G_z, dF_z, dG_z, d_theta;
+    L2Vecs* dFx = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* dGx = new L2Vecs(geom->nk, topo, geom);
+
+    elOrd2 = topo->elOrd*topo->elOrd;
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_w);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_rho);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_rt);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_exner);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &d_w);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &d_rho);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &d_rt);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &d_exner);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*elOrd2, &d_theta);
+
+    // diagnose the potential temperature
+    diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz);
+    theta_i->VertToHoriz();
+
+    velz_h->CopyFromVert(velz_i->vz);
+    rho_h->CopyFromVert(rho_i->vz);
+    rt_h->CopyFromVert(rt_i->vz);
+
+    do {
+        k2i_z = 0.0;
+        max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
+
+        rho_j->VertToHoriz();
+        horiz->advection_rhs(velx1, velx2, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, u1l, u2l, false);
+
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            ex = ii%topo->nElsX;
+            ey = ii/topo->nElsX;
+
+            // assemble the residual vectors
+            assemble_residual(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
+                              rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z);
+
+            if(udwdx) VecAXPY(F_w, dt, udwdx->vz[ii]);
+            vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
+            vo->AssembleConst(ex, ey, vo->VB);
+            MatMult(vo->V10, F_z, dF_z);
+            MatMult(vo->V10, G_z, dG_z);
+            VecAYPX(dF_z, dt, rho_j->vz[ii]);
+            VecAYPX(dG_z, dt, rt_j->vz[ii]);
+            VecAXPY(dF_z, -1.0, rho_i->vz[ii]);
+            VecAXPY(dG_z, -1.0, rt_i->vz[ii] );
+
+            // add the horizontal forcing
+            VecAXPY(dF_z, dt, dFx->vz[ii]);
+            VecAXPY(dG_z, dt, dGx->vz[ii]);
+
+            MatMult(vo->VB, dF_z, F_rho);
+            MatMult(vo->VB, dG_z, F_rt);
+
+            if(hs_forcing) {
+                vo->AssembleTempForcing_HS(ex, ey, exner_h->vz[ii], theta_h->vz[ii], rho_h->vz[ii], dG_z);
+                VecAXPY(F_rt, dt, dG_z);
+            }
+
+            solve_schur_column_3(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], exner_h->vz[ii], 
+                               F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, itt);
+
+            VecAXPY(velz_j->vz[ii],  1.0, d_w);
+            VecAXPY(rho_j->vz[ii],   1.0, d_rho);
+            VecAXPY(rt_j->vz[ii],    1.0, d_rt);
+            VecAXPY(exner_j->vz[ii], 1.0, d_exner);
+
+            max_norm_exner = MaxNorm(d_exner, exner_j->vz[ii], max_norm_exner);
+            max_norm_w     = MaxNorm(d_w,     velz_j->vz[ii],  max_norm_w    );
+            max_norm_rho   = MaxNorm(d_rho,   rho_j->vz[ii],   max_norm_rho  );
+            max_norm_rt    = MaxNorm(d_rt,    rt_j->vz[ii],    max_norm_rt   );
+
+            VecZeroEntries(exner_h->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_j->vz[ii]);
+
+            VecZeroEntries(velz_h->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_i->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_j->vz[ii]);
+
+            VecZeroEntries(rho_h->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_i->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_j->vz[ii]);
+
+            VecZeroEntries(rt_h->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_i->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
+        }
+
+        diagTheta2(rho_j->vz, rt_j->vz, theta_j->vz);
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            VecZeroEntries(theta_h->vz[ii]);
+            VecAXPY(theta_h->vz[ii], 0.5, theta_j->vz[ii]);
+            VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
+        }
+        theta_h->VertToHoriz();
+        theta_j->VertToHoriz();
+
+        MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_exner = norm_x;
+        MPI_Allreduce(&max_norm_w,     &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w     = norm_x;
+        MPI_Allreduce(&max_norm_rho,   &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rho   = norm_x;
+        MPI_Allreduce(&max_norm_rt,    &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rt    = norm_x;
+
+        itt++;
+
+        if(max_norm_exner < 1.0e-12 && max_norm_rho < 1.0e-12 && max_norm_rt < 1.0e-12) done = true;
+        if(!rank) cout << "\t" << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
+                                 "\t|d_w|/|w|: "          << max_norm_w     <<
+                                 "\t|d_rho|/|rho|: "      << max_norm_rho   <<
+                                 "\t|d_rt|/|rt|: "        << max_norm_rt    << endl;
+    } while(!done);
+
+    velz_j->VertToHoriz();
+    rho_j->VertToHoriz();
+    rt_j->VertToHoriz();
+    exner_j->VertToHoriz();
+
+    theta_h->VertToHoriz();
+    exner_h->VertToHoriz();
+
     delete theta_i;
     delete theta_j;
     delete velz_h;
