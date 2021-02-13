@@ -58,7 +58,7 @@ Optional stabilisation/forcing terms include:
 ## References ##
 Lee, D and Palha, A (2020) [Exact spatial and temporal balance of energy exchanges within a horizontally explicit/vertically implicit non-hydrostatic atmosphere](https://arxiv.org/pdf/2011.07861.pdf) arXiv:2011.07861
 
-Lee, D (2021) [An energetically balanced, quasi-Newton integrator for non-hydrostatic vertical atmospheric dynamics](https://www.sciencedirect.com/science/article/pii/S0021999120307622) _J. Comp. Phys._ 109988
+Lee, D (2021) [An energetically balanced, quasi-Newton integrator for non-hydrostatic vertical atmospheric dynamics](https://www.sciencedirect.com/science/article/pii/S0021999120307622) _J. Comp. Phys._ 429 109988
 
 Lee, D (2020) [Petrov-Galerkin flux upwinding for mixed mimetic spectral elements, and its application to geophysical flow problems](https://arxiv.org/pdf/2004.13225.pdf) arXiv:2004.13225
 
