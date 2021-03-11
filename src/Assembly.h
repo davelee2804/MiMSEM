@@ -183,6 +183,7 @@ class Whmat {
         Mat M;
         void assemble(Vec h2);
         void assemble_inverse(Vec h2);
+        void assemble_0(Vec s0);
 };
 
 class P_up_mat {

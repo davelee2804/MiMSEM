@@ -503,9 +503,17 @@ void ThermalShallowWater::assemble_residual(Vec fu, Vec fh, Vec fs) {
 }
 
 void ThermalShallowWater::solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Vec ds) {
+    int size;
     MatReuse reuse = (!G_s) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
-    Vec wg, wl;
+    Vec wg, wl, fs_prime, htmp, utmp;
+    PC pc;
+    KSP ksp_helm, ksp_vel;
 
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fs_prime);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &wg);
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
 
@@ -542,13 +550,67 @@ void ThermalShallowWater::solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Ve
     K->assemble(ujl); // 0.5 factor included here
     MatMatMult(K->M, EtoF->E12, reuse, PETSC_DEFAULT, &KDT);
     MatMatMult(KDT, M2->Minv, reuse, PETSC_DEFAULT, &KDTM2inv);
-    //M1h->assemble_0(sjl);
-    //MatMatMult(KDTM2inv, M1h->M, reuse, PETSC_DEFAULT, &Q);
+    M1h->assemble_0(sjl);
+    MatMatMult(KDTM2inv, M1h->M, reuse, PETSC_DEFAULT, &Q);
     MatScale(Q, dt);
 
+    // step 1. remove the density from the system
+    MatMatMult(Q, M2->Minv, reuse, PETSC_DEFAULT, &QM2inv);
+    MatMatMult(QM2inv, D_h, reuse, PETSC_DEFAULT, &D_s_prime);
+    MatAYPX(D_s_prime, -1.0, D_s, DIFFERENT_NONZERO_PATTERN);
+
+    MatMult(QM2inv, fh, fs_prime);
+    VecAYPX(fs_prime, -1.0, fs);
+
+    // step 2. schur complement for buoyancy
+    coriolisMatInv(R->M, &Rinv, reuse);
+    MatMatMult(D_s_prime, Rinv, reuse, PETSC_DEFAULT, &DsRinv);
+    MatMatMult(DsRinv, G_s, reuse, PETSC_DEFAULT, &HELM);
+    MatAYPX(HELM, -1.0, M2->M, DIFFERENT_NONZERO_PATTERN);
+
+    MatMult(DsRinv, fu, htmp);
+    VecAXPY(htmp, -1.0, fs_prime);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp_helm);
+    KSPSetOperators(ksp_helm, HELM, HELM);
+    KSPSetTolerances(ksp_helm, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp_helm, KSPGMRES);
+    KSPGetPC(ksp_helm, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp_helm, "tsw_");
+    KSPSetFromOptions(ksp_helm);
+    KSPSolve(ksp_helm, htmp, ds);
+    KSPDestroy(&ksp_helm);
+
+    // back out the velocity
+    MatMult(G_s, ds, utmp);
+    VecAXPY(utmp, +1.0, fu);
+    VecScale(utmp, -1.0);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp_vel);
+    KSPSetOperators(ksp_vel, R->M, R->M);
+    KSPSetTolerances(ksp_vel, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp_vel, KSPGMRES);
+    KSPGetPC(ksp_vel, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp_vel, "tsw_vel_");
+    KSPSetFromOptions(ksp_vel);
+    KSPSolve(ksp_vel, utmp, du);
+    KSPDestroy(&ksp_vel);
+
+    // ...and the density
+    MatMult(D_h, du, htmp);
+    VecAXPY(htmp, +1.0, fh);
+    VecScale(htmp, -1.0);
+    MatMult(M2->Minv, htmp, dh);
 
     VecDestroy(&wl);
     VecDestroy(&wg);
+    VecDestroy(&fs_prime);
+    VecDestroy(&htmp);
+    VecDestroy(&utmp);
 }
 
 void ThermalShallowWater::solve(Vec un, Vec hn, Vec sn, double _dt, bool save) {
@@ -1160,3 +1222,65 @@ void ThermalShallowWater::writeConservation(double time, Vec u, Vec h, double ma
     }
     VecDestroy(&wi);
 } 
+
+void ThermalShallowWater::coriolisMatInv(Mat A, Mat* Ainv, MatReuse reuse) {
+    int mi, mf, ci, nCols1, nCols2;
+    const int *cols1, *cols2;
+    const double *vals1;
+    const double *vals2;
+    double D[2][2], Dinv[2][2], detInv;
+    double valsInv[4];
+    int rows[2];
+
+    D[0][0] = D[0][1] = D[1][0] = D[1][1] = 0.0;
+
+    if(reuse == MAT_INITIAL_MATRIX) {
+        MatCreate(MPI_COMM_WORLD, Ainv);
+        MatSetSizes(*Ainv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+        MatSetType(*Ainv, MATMPIAIJ);
+        MatMPIAIJSetPreallocation(*Ainv, 2, PETSC_NULL, 2, PETSC_NULL);
+    }
+    MatZeroEntries(*Ainv);
+
+    MatGetOwnershipRange(A, &mi, &mf);
+    for(int mm = mi; mm < mf; mm += 2) {
+        rows[0] = mm+0;
+        rows[1] = mm+1;
+
+        MatGetRow(A, mm+0, &nCols1, &cols1, &vals1);
+        for(ci = 0; ci < nCols1; ci++) {
+            if(cols1[ci] == mm+0) {
+                D[0][0] = vals1[ci+0];
+                D[0][1] = vals1[ci+1];
+                break;
+            }
+        }
+        MatRestoreRow(A, mm+0, &nCols1, &cols1, &vals1);
+
+        MatGetRow(A, mm+1, &nCols2, &cols2, &vals2);
+        for(ci = 0; ci < nCols2; ci++) {
+            if(cols2[ci] == mm+1) {
+                D[1][0] = vals2[ci-1];
+                D[1][1] = vals2[ci+0];
+                break;
+            }
+        }
+        MatRestoreRow(A, mm+1, &nCols2, &cols2, &vals2);
+
+        detInv = 1.0/(D[0][0]*D[1][1] - D[0][1]*D[1][0]);
+
+        Dinv[0][0] = +detInv*D[1][1];
+        Dinv[1][1] = +detInv*D[0][0];
+        Dinv[0][1] = -detInv*D[0][1];
+        Dinv[1][0] = -detInv*D[1][0];
+
+        valsInv[0] = Dinv[0][0];
+        valsInv[1] = Dinv[0][1];
+        valsInv[2] = Dinv[1][0];
+        valsInv[3] = Dinv[1][1];
+
+        MatSetValues(*Ainv, 2, rows, 2, rows, valsInv, INSERT_VALUES);
+    }
+    MatAssemblyBegin(*Ainv, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  *Ainv, MAT_FINAL_ASSEMBLY);
+}

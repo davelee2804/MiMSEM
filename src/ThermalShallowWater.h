@@ -34,6 +34,11 @@ class ThermalShallowWater {
         Mat M2DM1inv;
         Mat KDT;
         Mat KDTM2inv;
+        Mat QM2inv;
+        Mat D_s_prime;
+        Mat Rinv;
+        Mat DsRinv;
+        Mat HELM;
         Vec fg;            // coriolis vector (global)
         Mat E01M1;
         Mat E12M2;
@@ -73,6 +78,7 @@ class ThermalShallowWater {
         double int2(Vec u);
         double intE(Vec u, Vec h);
         void laplacian(Vec u, Vec* ddu);
+        void coriolisMatInv(Mat A, Mat* Ainv, MatReuse reuse);
         void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0);
         void assemble_residual(Vec fu, Vec fh, Vec fs);
         void solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Vec ds);
