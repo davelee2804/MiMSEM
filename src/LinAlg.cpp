@@ -195,3 +195,67 @@ bool ArcInt(double rad, double* ai, double* af, double* bi, double* bf, double* 
 
     return false;
 }
+
+// Matrix inverse into supplied matrix
+int Inv( double** A, double** Ainv, int n ) {
+    int error = 0;
+    int *indxc, *indxr, *ipiv;
+    int i, j, k, l, irow = 0, icol = 0, ll;
+    double big, dum, pivinv, temp;
+
+    indxc = new int[n]; indxr = new int[n]; ipiv  = new int[n];
+
+    for( i = 0; i < n*n; i++ ) { Ainv[i/n][i%n] = A[i/n][i%n]; }
+    for( j = 0; j< n; j++ ) { ipiv[j] = 0; }
+    for( i = 0; i < n; i++ ) {
+        big = 0.0;
+        for( j = 0; j < n; j++ ) {
+            if( ipiv[j] != 1 ) {
+                for( k = 0; k < n; k++ ) {
+                    if( ipiv[k] == 0 ) {
+                        if( fabs(Ainv[j][k]) >= big ) {
+                            big = fabs(Ainv[j][k]);
+                            irow = j;
+                            icol = k;
+                        }
+                    }
+                    else if( ipiv[k] > 1 ) { error = 1; }
+                }
+            }
+        }
+        ++(ipiv[icol]);
+        if( irow != icol ) {
+            for( l = 0; l < n; l++ ) {
+                temp = Ainv[irow][l];
+                Ainv[irow][l] = Ainv[icol][l];
+                Ainv[icol][l] = temp;
+            }
+        }
+        indxr[i] = irow;
+        indxc[i] = icol;
+        if( fabs(Ainv[icol][icol]) < 1.0e-12 ) { error = 2; }
+        pivinv = 1.0/Ainv[icol][icol];
+        Ainv[icol][icol] = 1.0;
+        for( l = 0; l < n; l++ ) { Ainv[icol][l] *= pivinv; }
+        for( ll = 0; ll < n; ll++ ) {
+            if( ll != icol ) {
+                dum = Ainv[ll][icol];
+                Ainv[ll][icol] = 0.0;
+                for( l = 0; l < n; l++ ) { Ainv[ll][l] -= Ainv[icol][l]*dum; }
+            }
+        }
+    }
+
+    for( l = n-1; l >= 0; l-- ) {
+        if( indxr[l] != indxc[l] ) {
+            for( k = 0; k < n; k++ ) {
+                temp = Ainv[k][indxr[l]];
+                Ainv[k][indxr[l]] = Ainv[k][indxc[l]];
+                Ainv[k][indxc[l]] = temp;
+            }
+        }
+    }
+    delete[] indxc; delete[] indxr; delete[] ipiv;
+
+    return error;
+}

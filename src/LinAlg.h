@@ -7,3 +7,4 @@ void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C);
 double** Tran(int ni, int nj, double** A);
 void Tran_IP(int ni, int nj, double** A, double** B);
 bool ArcInt(double rad, double* ai, double* af, double* bi, double* bf, double* xo);
+int Inv( double** A, double** Ainv, int n );

@@ -19,7 +19,9 @@ class Wmat {
         Geom* geom;
         LagrangeEdge* e;
         Mat M;
+        Mat Minv;
         void assemble();
+        void assemble_inverse();
 };
 
 class Uhmat {
@@ -49,6 +51,8 @@ class Uhmat {
         LagrangeEdge* e;
         Mat M;
         void assemble(Vec h2);
+        void assemble_0(Vec s0);
+        void assemble_0_up(Vec si, Vec ui, Vec sj, Vec uj, double dt);
 };
 
 class Pvec {
@@ -178,6 +182,7 @@ class Whmat {
         LagrangeEdge* e;
         Mat M;
         void assemble(Vec h2);
+        void assemble_inverse(Vec h2);
 };
 
 class P_up_mat {
@@ -219,6 +224,7 @@ class RotMat_up {
         M1y_j_xy_i* V;
         Wii* Q;
         void assemble(Vec q0, Vec ul, double dt);
+        void assemble_2ndOrd(Vec qi, Vec ui, Vec qj, Vec uj, double dt);
 };
 
 class U0mat {
