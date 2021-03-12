@@ -453,6 +453,14 @@ void ThermalShallowWater::assemble_residual(Vec fu, Vec fh, Vec fs) {
     MatTranspose(M1h->M, reuse, &M1sT);
     VecAXPY(fu, 1.0, utmp1);
 
+    // buoyancy gradient term
+    VecCopy(si, htmp1);
+    VecAXPY(htmp1, 1.0, sj);
+    VecScale(htmp1, 0.5);
+    MatMult(M2->M, htmp1, htmp2);
+    MatMult(EtoF->E12, htmp2, utmp1);
+    VecAXPY(fu, 1.0, utmp1);
+
     VecScale(fu, dt);
     VecCopy(uj, utmp1);
     VecAXPY(utmp1, -1.0, ui);
@@ -542,16 +550,16 @@ void ThermalShallowWater::solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Ve
     MatScale(D_h, 0.5*dt);
 
     // D_s: s\nabla\cdot
-    M1h->assemble(sj);
-    MatMatMult(M1h->M, EtoF->E21, reuse, PETSC_DEFAULT, &D_s);
+    M2h->assemble(sj);
+    MatMatMult(M2h->M, EtoF->E21, reuse, PETSC_DEFAULT, &D_s);
     MatScale(D_s, 0.5*dt);
 
     // Q  : u\cdot\nabla _s (_s = s/h)
     K->assemble(ujl); // 0.5 factor included here
     MatMatMult(K->M, EtoF->E12, reuse, PETSC_DEFAULT, &KDT);
     MatMatMult(KDT, M2->Minv, reuse, PETSC_DEFAULT, &KDTM2inv);
-    M1h->assemble_0(sjl);
-    MatMatMult(KDTM2inv, M1h->M, reuse, PETSC_DEFAULT, &Q);
+    M2h->assemble_0(sjl);
+    MatMatMult(KDTM2inv, M2h->M, reuse, PETSC_DEFAULT, &Q);
     MatScale(Q, dt);
 
     // step 1. remove the density from the system

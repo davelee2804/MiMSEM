@@ -337,12 +337,11 @@ void Wmat::assemble_inverse() {
 
             Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 
-            MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
+            MatSetValues(Minv, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
         }
     }
-
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(Minv, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(Minv, MAT_FINAL_ASSEMBLY);
 
     Free2D(Q->nDofsI, Qaa);
     Free2D(W->nDofsJ, Wt);
@@ -1408,7 +1407,7 @@ void Whmat::assemble_inverse(Vec h2) {
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
             Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-            Inv(WtQW, WtQWinv, W->nDofsI);
+            Inv(WtQW, WtQWinv, W->nDofsJ);
 
             Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 
