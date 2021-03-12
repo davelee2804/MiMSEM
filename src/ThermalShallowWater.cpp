@@ -615,45 +615,53 @@ void ThermalShallowWater::solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Ve
 
 void ThermalShallowWater::solve(Vec un, Vec hn, Vec sn, double _dt, bool save) {
     int it = 0;
-    double norm = 1.0e+9, norm_dx, norm_x;
-    Vec x, f, dx;
-    //KSP kspA;
+    double norm_tmp, norm_u, norm_h, norm_s;
+    Vec fu, fh, fs, du, dh, ds;
 
     dt = _dt;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &x);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &f);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &dx);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fs);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &ds);
 
     // solution vector
     VecCopy(un, ui);
     VecCopy(hn, hi);
+    VecCopy(sn, si);
     VecCopy(un, uj);
     VecCopy(hn, hj);
-
-    VecCopy(un, uj);
-    VecCopy(hn, hj);
-
-    //KSPCreate(MPI_COMM_WORLD, &kspA);
-    //KSPSetOperators(kspA, A, A);
-    //KSPSetTolerances(kspA, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    //KSPSetOptionsPrefix(kspA, "A_");
-    //KSPSetFromOptions(kspA);
+    VecCopy(sn, sj);
 
     do {
-        //assemble_residual(x, f);
-        //VecScale(f, -1.0);
-        //KSPSolve(kspA, f, dx);
-        VecAXPY(x, +1.0, dx);
-        VecNorm(x, NORM_2, &norm_x);
-        VecNorm(dx, NORM_2, &norm_dx);
-        norm = norm_dx/norm_x;
+        assemble_residual(fu, fh, fs);
+        solve_schur(fu, fh, fs, du, dh, ds);
+        VecAXPY(uj, 1.0, du);
+        VecAXPY(hj, 1.0, dh);
+        VecAXPY(sj, 1.0, ds);
+
+        VecNorm(du, NORM_2, &norm_u);
+        VecNorm(uj, NORM_2, &norm_tmp);
+        norm_u /= norm_tmp;
+
+        VecNorm(dh, NORM_2, &norm_h);
+        VecNorm(hj, NORM_2, &norm_tmp);
+        norm_h /= norm_tmp;
+
+        VecNorm(ds, NORM_2, &norm_s);
+        VecNorm(sj, NORM_2, &norm_tmp);
+        norm_s /= norm_tmp;
+
         if(!rank) {
             cout << scientific;
-            cout << it << "\t|x|: " << norm_x << "\t|dx|: " << norm_dx << "\t|dx|/|x|: " << norm << endl; 
+            cout << it << "\t|du|/|u|: " << norm_u << "\t|dh|/|h|: " << norm_h << "\t|ds|/|s|: " << norm_s << endl; 
         }
         it++;
-    } while(norm > 1.0e-14);
+
+        if(it == 100) { cout << "ERROR! iteration count\n"; abort(); };
+    } while(norm_u > 1.0e-12 && norm_h > 1.0e-12 && norm_s > 1.0e-12);
 
     if(save) {
         Vec wi;
@@ -668,14 +676,21 @@ void ThermalShallowWater::solve(Vec un, Vec hn, Vec sn, double _dt, bool save) {
         geom->write1(un, fieldname, step);
         sprintf(fieldname, "pressure");
         geom->write2(hn, fieldname, step);
+        sprintf(fieldname, "buoyancy");
+        geom->write2(sn, fieldname, step);
 
         VecDestroy(&wi);
     }
+    VecCopy(uj, un);
+    VecCopy(hj, hn);
+    VecCopy(sj, sn);
 
-    VecDestroy(&x);
-    VecDestroy(&f);
-    VecDestroy(&dx);
-    //KSPDestroy(&kspA);
+    VecDestroy(&fu);
+    VecDestroy(&fh);
+    VecDestroy(&fs);
+    VecDestroy(&du);
+    VecDestroy(&dh);
+    VecDestroy(&ds);
 }
 
 ThermalShallowWater::~ThermalShallowWater() {
