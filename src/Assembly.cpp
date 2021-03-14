@@ -333,7 +333,7 @@ void Wmat::assemble_inverse() {
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
             Mult_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQWinv);
+            Inv(WtQW, WtQWinv, W->nDofsJ);
 
             Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 

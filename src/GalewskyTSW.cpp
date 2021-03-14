@@ -116,8 +116,8 @@ int main(int argc, char** argv) {
         sw->init1(ui, u_init, v_init);
         sw->init2(hi, h_init);
         sw->init2(si, h_init);
-        VecScale(hi, 0.5*GRAVITY);
-        VecScale(si, 0.5*GRAVITY);
+        VecScale(hi, GRAVITY);
+        VecScale(si, GRAVITY);
 
         sprintf(fieldname,"velocity");
         geom->write1(ui,fieldname,0);
