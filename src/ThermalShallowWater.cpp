@@ -118,7 +118,7 @@ ThermalShallowWater::ThermalShallowWater(Topo* _topo, Geom* _geom) {
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &sil);
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &sjl);
 
-    G_s = M1sT = NULL;
+    KTM2inv = G_s = M1sT = NULL;
 
     MatCreate(MPI_COMM_WORLD, &M1inv);
     MatSetSizes(M1inv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
@@ -512,7 +512,7 @@ void ThermalShallowWater::assemble_residual(Vec fu, Vec fh, Vec fs) {
 
 void ThermalShallowWater::solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Vec ds) {
     int size;
-    MatReuse reuse = (!G_s) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    MatReuse reuse = (!KTM2inv) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     Vec wg, wl, fs_prime, htmp, utmp;
     PC pc;
     KSP ksp_helm, ksp_vel;
@@ -538,7 +538,7 @@ void ThermalShallowWater::solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Ve
     MatTranspose(K->M, reuse, &KT);
     M2h->assemble_inverse(hj);
     MatMatMult(KT, M2h->M, reuse, PETSC_DEFAULT, &KTM2inv);
-    MatMatMult(KTM2inv, M2->M, reuse, PETSC_DEFAULT, &G_s);
+    MatMatMult(KTM2inv, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &G_s);
     MatAXPY(G_s, 0.5, E12M2, DIFFERENT_NONZERO_PATTERN);
     MatScale(G_s, 0.5*dt);
     
@@ -546,7 +546,7 @@ void ThermalShallowWater::solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Ve
     MatMatMult(M2->M, EtoF->E21, reuse, PETSC_DEFAULT, &M2D);
     MatMatMult(M2D, M1inv, reuse, PETSC_DEFAULT, &M2DM1inv);
     M1h->assemble(hj);
-    MatMatMult(M2DM1inv, M1h->M, reuse, PETSC_DEFAULT, &D_h);
+    MatMatMult(M2DM1inv, M1h->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &D_h);
     MatScale(D_h, 0.5*dt);
 
     // D_s: s\nabla\cdot
@@ -564,7 +564,7 @@ void ThermalShallowWater::solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Ve
 
     // step 1. remove the density from the system
     MatMatMult(Q, M2->Minv, reuse, PETSC_DEFAULT, &QM2inv);
-    MatMatMult(QM2inv, D_h, reuse, PETSC_DEFAULT, &D_s_prime);
+    MatMatMult(QM2inv, D_h, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &D_s_prime);
     MatAYPX(D_s_prime, -1.0, D_s, DIFFERENT_NONZERO_PATTERN);
 
     MatMult(QM2inv, fh, fs_prime);
@@ -573,7 +573,7 @@ void ThermalShallowWater::solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Ve
     // step 2. schur complement for buoyancy
     coriolisMatInv(R->M, &Rinv, reuse);
     MatMatMult(D_s_prime, Rinv, reuse, PETSC_DEFAULT, &DsRinv);
-    MatMatMult(DsRinv, G_s, reuse, PETSC_DEFAULT, &HELM);
+    MatMatMult(DsRinv, G_s, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &HELM);
     MatAYPX(HELM, -1.0, M2->M, DIFFERENT_NONZERO_PATTERN);
 
     MatMult(DsRinv, fu, htmp);
@@ -619,6 +619,10 @@ void ThermalShallowWater::solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Ve
     VecDestroy(&fs_prime);
     VecDestroy(&htmp);
     VecDestroy(&utmp);
+    MatDestroy(&G_s);
+    MatDestroy(&D_h);
+    MatDestroy(&D_s_prime);
+    MatDestroy(&HELM);
 }
 
 void ThermalShallowWater::solve(Vec un, Vec hn, Vec sn, double _dt, bool save) {
@@ -1175,26 +1179,20 @@ double ThermalShallowWater::int2(Vec ug) {
     return global;
 }
 
-double ThermalShallowWater::intE(Vec ug, Vec hg) {
+double ThermalShallowWater::intE() {
     int ex, ey, ei, ii, mp1, mp12;
-    double det, hq, local, global;
+    double det, hq, sq, local, global;
     double uq[2];
-    PetscScalar *array_1, *array_2;
-    Vec ul, hl;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
-    VecScatterBegin(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
+    PetscScalar *uArray, *hArray, *sArray;
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
     local = 0.0;
 
-    VecGetArray(ul, &array_1);
-    VecGetArray(hg, &array_2);
+    VecGetArray(ujl, &uArray);
+    VecGetArray(hj, &hArray);
+    VecGetArray(sj, &sArray);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -1202,20 +1200,19 @@ double ThermalShallowWater::intE(Vec ug, Vec hg) {
 
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, uq);
-                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, &hq);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &hq);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, sArray, &sq);
 
-                local += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(grav*hq*hq + 0.5*hq*(uq[0]*uq[0] + uq[1]*uq[1]));
+                local += det*quad->w[ii%mp1]*quad->w[ii/mp1]*(0.5*sq*hq + 0.5*hq*(uq[0]*uq[0] + uq[1]*uq[1]));
             }
         }
     }
-    VecRestoreArray(ul, &array_1);
-    VecRestoreArray(hg, &array_2);
+    VecRestoreArray(ujl, &uArray);
+    VecRestoreArray(hj, &hArray);
+    VecRestoreArray(sj, &sArray);
 
     MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-    VecDestroy(&ul);
-    VecDestroy(&hl);
 
     return global;
 }
@@ -1230,7 +1227,7 @@ void ThermalShallowWater::writeConservation(double time, Vec u, Vec h, double ma
 
     mass = int2(h);
     vort = int0(wi);
-    ener = intE(u, h);
+    ener = intE();
 
     if(!rank) {
         cout << "conservation of mass:      " << (mass - mass0)/mass0 << endl;

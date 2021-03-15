@@ -76,7 +76,7 @@ class ThermalShallowWater {
         void err2(Vec u, ICfunc* fu, double* norms);
         double int0(Vec u);
         double int2(Vec u);
-        double intE(Vec u, Vec h);
+        double intE();
         void laplacian(Vec u, Vec* ddu);
         void coriolisMatInv(Mat A, Mat* Ainv, MatReuse reuse);
         void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0);

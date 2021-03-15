@@ -145,7 +145,12 @@ int main(int argc, char** argv) {
     sw->curl(ui, &wi, false);
     vort_0 = sw->int0(wi);
     mass_0 = sw->int2(hi);
-    ener_0 = sw->intE(ui, hi);
+    VecCopy(ui, sw->uj);
+    VecScatterBegin(topo->gtol_1, sw->uj, sw->ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, sw->uj, sw->ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecCopy(hi, sw->hj);
+    VecCopy(si, sw->sj);
+    ener_0 = sw->intE();
     VecDestroy(&wi);
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
