@@ -323,18 +323,18 @@ void ThermalShallowWater::diagnose_s(Vec* _si, Vec* _sj) {
     // first time level
     MatMult(WQT, si, rhs);
 #ifdef UP_VORT
-    P_up->assemble_h(uil, hi, dt);
+    P_up->assemble_h(uil, hi, -dt);
 #else
-    P_up->assemble_h(NULL, hi, dt);
+    P_up->assemble_h(NULL, hi, -dt);
 #endif
     KSPSolve(ksp_p, rhs, *_si);
 
     // second time level
     MatMult(WQT, sj, rhs);
 #ifdef UP_VORT
-    P_up->assemble_h(ujl, hj, dt);
+    P_up->assemble_h(ujl, hj, -dt);
 #else
-    P_up->assemble_h(NULL, hj, dt);
+    P_up->assemble_h(NULL, hj, -dt);
 #endif
     KSPSolve(ksp_p, rhs, *_sj);
 
@@ -443,22 +443,14 @@ void ThermalShallowWater::assemble_residual(Vec fu, Vec fh, Vec fs) {
     VecScatterBegin(topo->gtol_0, _sj, sjl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, _sj, sjl, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    M1h->assemble_0_up(sil, uil, sjl, ujl, dt);
+    M1h->assemble_0_up(sil, uil, sjl, ujl, -dt);
 #else    
     VecAXPY(sil, 1.0, sjl);
     VecScale(sil, 0.5);
-    M1h->assemble_0(ql);
+    M1h->assemble_0(sil);
 #endif
     MatMult(M1h->M, utmp2, utmp1);
     MatTranspose(M1h->M, reuse, &M1sT);
-    VecAXPY(fu, 1.0, utmp1);
-
-    // buoyancy gradient term
-    VecCopy(si, htmp1);
-    VecAXPY(htmp1, 1.0, sj);
-    VecScale(htmp1, 0.5);
-    MatMult(M2->M, htmp1, htmp2);
-    MatMult(EtoF->E12, htmp2, utmp1);
     VecAXPY(fu, 1.0, utmp1);
 
     VecScale(fu, dt);
