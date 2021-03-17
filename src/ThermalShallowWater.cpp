@@ -150,7 +150,7 @@ void ThermalShallowWater::coriolis() {
     int ii;
     PtQmat* PtQ = new PtQmat(topo, geom, node);
     PetscScalar *fArray;
-    Vec fl, fxl, fxg, PtQfxg;
+    Vec fxl, fxg, PtQfxg;
 
     // initialise the coriolis vector (local and global)
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl);
@@ -180,9 +180,12 @@ void ThermalShallowWater::coriolis() {
     MatMult(PtQ->M, fxg, PtQfxg);
     // diagonal mass matrix as vector
     VecPointwiseDivide(fg, PtQfxg, m0->vg);
+
+    VecZeroEntries(fl);
+    VecScatterBegin(topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
     
     delete PtQ;
-    VecDestroy(&fl);
     VecDestroy(&fxl);
     VecDestroy(&fxg);
     VecDestroy(&PtQfxg);
@@ -271,10 +274,10 @@ void ThermalShallowWater::diagnose_Phi(Vec* Phi) {
 
     // gh terms
     MatMult(M2->M, si, b);
-    VecAXPY(*Phi, 1.0/4.0, b);
+    VecAXPY(*Phi, grav/4.0, b);
 
     MatMult(M2->M, sj, b);
-    VecAXPY(*Phi, 1.0/4.0, b);
+    VecAXPY(*Phi, grav/4.0, b);
 
     VecDestroy(&b);
 }
@@ -451,7 +454,7 @@ void ThermalShallowWater::assemble_residual(Vec fu, Vec fh, Vec fs) {
 #endif
     MatMult(M1h->M, utmp2, utmp1);
     MatTranspose(M1h->M, reuse, &M1sT);
-    VecAXPY(fu, 1.0, utmp1);
+    VecAXPY(fu, grav, utmp1);
 
     VecScale(fu, dt);
     VecCopy(uj, utmp1);
@@ -710,6 +713,7 @@ ThermalShallowWater::~ThermalShallowWater() {
     MatDestroy(&KT);
     MatDestroy(&M1inv);
     VecDestroy(&fg);
+    VecDestroy(&fl);
     VecDestroy(&ui);
     VecDestroy(&hi);
     VecDestroy(&si);

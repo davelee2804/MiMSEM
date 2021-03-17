@@ -40,6 +40,7 @@ class ThermalShallowWater {
         Mat DsRinv;
         Mat HELM;
         Vec fg;            // coriolis vector (global)
+        Vec fl;            // coriolis vector (global)
         Mat E01M1;
         Mat E12M2;
         Mat G_s;

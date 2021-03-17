@@ -73,6 +73,7 @@ double h_init(double* x) {
         f = 2.0*omega*sin(phiPrime);
         h -= RAD_SPHERE*u*(f + tan(phiPrime)*u/RAD_SPHERE)*dphi/grav;
     }
+    //h *= GRAVITY;
 
     h += hHat*cos(phi)*exp(-1.0*(lambda/alpha)*(lambda/alpha))*exp(-1.0*((phi2 - phi)/beta)*((phi2 - phi)/beta));
 
@@ -116,8 +117,6 @@ int main(int argc, char** argv) {
         sw->init1(ui, u_init, v_init);
         sw->init2(hi, h_init);
         sw->init2(si, h_init);
-        VecScale(hi, GRAVITY);
-        VecScale(si, GRAVITY);
 
         sprintf(fieldname,"velocity");
         geom->write1(ui,fieldname,0);
