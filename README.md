@@ -60,7 +60,7 @@ Lee, D and Palha, A (2020) [Exact spatial and temporal balance of energy exchang
 
 Lee, D (2021) [An energetically balanced, quasi-Newton integrator for non-hydrostatic vertical atmospheric dynamics](https://www.sciencedirect.com/science/article/pii/S0021999120307622) _J. Comp. Phys._ 429 109988
 
-Lee, D (2021) [Petrov-Galerkin flux upwinding for mixed mimetic spectral elements, and its application to geophysical flow problems](https://www.sciencedirect.com/science/article/pii/S0898122121000651) Comput. Math. Appl. 89 68--77
+Lee, D (2021) [Petrov-Galerkin flux upwinding for mixed mimetic spectral elements, and its application to geophysical flow problems](https://www.sciencedirect.com/science/article/pii/S0898122121000651) Comput. Math. Appl. 89 68-77
 
 Lee, D and Palha. A (2020) [A mixed mimetic spectral element model of the 3D compressible Euler equations on the cubed sphere](https://www.sciencedirect.com/science/article/pii/S0021999119306989) _J. Comp. Phys._ 401 108993
 
