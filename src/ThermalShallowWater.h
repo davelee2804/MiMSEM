@@ -85,4 +85,6 @@ class ThermalShallowWater {
         void solve_schur(Vec fu, Vec fh, Vec fs, Vec du, Vec dh, Vec ds);
         void solve(Vec u, Vec h, Vec s, double _dt, bool save);
         double viscosity();
+        void assemble_rhs(Vec u, Vec h, Vec s, Vec fu, Vec fh, Vec fs);
+        void solve_rk3(Vec un, Vec hn, Vec sn, double _dt, bool save);
 };

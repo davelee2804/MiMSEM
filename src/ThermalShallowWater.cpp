@@ -1300,3 +1300,172 @@ void ThermalShallowWater::coriolisMatInv(Mat A, Mat* Ainv, MatReuse reuse) {
     MatAssemblyBegin(*Ainv, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  *Ainv, MAT_FINAL_ASSEMBLY);
 }
+
+void ThermalShallowWater::assemble_rhs(Vec u, Vec h, Vec s, Vec fu, Vec fh, Vec fs) {
+    MatReuse reuse = (!M1sT) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    Vec qtmp1, qtmp2, utmp1, utmp2, htmp1, htmp2, d2u, d4u, qil, _si, F;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &qtmp1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &qtmp2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp2);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &qil);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &_si);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &F);
+
+    VecZeroEntries(fu);
+    VecZeroEntries(fh);
+    VecZeroEntries(fs);
+
+    VecScatterBegin(topo->gtol_1, u, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, u, uil, INSERT_VALUES, SCATTER_FORWARD);
+
+    // assemble in the skew-symmetric parts of the vector
+    //diagnose_F(&F);
+    M1h->assemble(h);
+    MatMult(M1h->M, u, utmp1);
+    KSPSolve(ksp, utmp1, F);
+
+    //diagnose_Phi(&Phi);
+    K->assemble(uil);
+    MatMult(K->M, u, htmp1);
+    MatMult(M2->M, s, htmp2);
+    VecAXPY(htmp1, 0.5*grav, htmp2);
+
+    // momentum terms
+    //MatMult(EtoF->E12, Phi, fu);
+    MatMult(EtoF->E12, htmp2, fu);
+
+    // upwinded convective and buoyancy terms
+    //diagnose_q(&qi, &qj);
+    VecPointwiseMult(qtmp1, m0->vg, fg);
+    MatMult(E01M1, u, qtmp2);
+    VecAXPY(qtmp1, 1.0, qtmp2);
+#ifdef UP_VORT
+    P_up->assemble_h(uil, h, dt);
+#else
+    P_up->assemble_h(NULL, h, dt);
+#endif
+    KSPSolve(ksp_p, qtmp1, qtmp2);
+    //diagnose_s(&_si, &_sj);
+    MatMult(WQT, s, qtmp1);
+#ifdef UP_VORT
+    P_up->assemble_h(uil, h, -dt);
+#else
+    P_up->assemble_h(NULL, h, -dt);
+#endif
+    KSPSolve(ksp_p, qtmp1, _si);
+
+    VecScatterBegin(topo->gtol_0, qtmp2, qil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qtmp2, qil, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble_2ndOrd(qil, uil, qil, uil, dt);
+    MatMult(R_up->M, F, utmp1);
+#else
+    R->assemble(qil);
+    MatMult(R->M, F, utmp1);
+#endif
+    VecAXPY(fu, 1.0, utmp1);
+
+    // pressure gradient term
+    MatMult(M2->M, h, htmp2);
+    MatMult(EtoF->E12, htmp2, utmp1);
+    KSPSolve(ksp, utmp1, utmp2);
+
+    VecScatterBegin(topo->gtol_0, _si, sil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, _si, sil, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    M1h->assemble_0_up(sil, uil, sil, uil, -dt);
+#else    
+    M1h->assemble_0(sil);
+#endif
+    MatMult(M1h->M, utmp2, utmp1);
+    MatTranspose(M1h->M, reuse, &M1sT);
+    VecAXPY(fu, 0.5*grav, utmp1);
+
+    if(do_visc) {
+        laplacian(u, &d2u);
+        laplacian(d2u, &d4u);
+        MatMult(M1->M, d4u, d2u);
+        VecAXPY(fu, 1.0, d2u);
+        VecDestroy(&d2u);
+        VecDestroy(&d4u);
+    }
+
+    // continuity equation
+    MatMult(EtoF->E21, F, htmp1);
+    MatMult(M2->M, htmp1, fh);
+
+    // buoyancy equation
+    MatMult(M1sT, F, utmp1);
+    KSPSolve(ksp, utmp1, utmp2); // temperature flux
+    MatMult(EtoF->E21, utmp2, htmp1);
+    MatMult(M2->M, htmp1, fs);
+
+    // clean up
+    VecDestroy(&qtmp1);
+    VecDestroy(&qtmp2);
+    VecDestroy(&utmp1);
+    VecDestroy(&utmp2);
+    VecDestroy(&htmp1);
+    VecDestroy(&htmp2);
+    VecDestroy(&qil);
+    VecDestroy(&_si);
+    VecDestroy(&F);
+}
+
+void ThermalShallowWater::solve_rk3(Vec un, Vec hn, Vec sn, double _dt, bool save) {
+    Vec fu1, fu2, fu3, fh1, fh2, fh3, fs1, fs2, fs3;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu3);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh3);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fs1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fs2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fs3);
+
+    assemble_rhs(un, hn, sn, fu1, fh1, fs1);
+    VecCopy(un, ui);
+    VecCopy(hn, hi);
+    VecCopy(sn, si);
+    VecAXPY(ui, -_dt, fu1);
+    VecAXPY(hi, -_dt, fh1);
+    VecAXPY(si, -_dt, fs1);
+    
+    assemble_rhs(ui, hi, si, fu2, fh2, fs2);
+    VecCopy(un, uj);
+    VecCopy(hn, hj);
+    VecCopy(sn, sj);
+    VecAXPY(uj, -0.5*_dt, fu1);
+    VecAXPY(hj, -0.5*_dt, fh1);
+    VecAXPY(sj, -0.5*_dt, fs1);
+    VecAXPY(uj, -0.5*_dt, fu2);
+    VecAXPY(hj, -0.5*_dt, fh2);
+    VecAXPY(sj, -0.5*_dt, fs2);
+
+    assemble_rhs(uj, hj, sj, fu3, fh3, fs3);
+    VecAXPY(un, -(1.0/6.0)*_dt, fu1);
+    VecAXPY(hn, -(1.0/6.0)*_dt, fh1);
+    VecAXPY(sn, -(1.0/6.0)*_dt, fs1);
+    VecAXPY(un, -(4.0/6.0)*_dt, fu2);
+    VecAXPY(hn, -(4.0/6.0)*_dt, fh2);
+    VecAXPY(sn, -(4.0/6.0)*_dt, fs2);
+    VecAXPY(un, -(1.0/6.0)*_dt, fu3);
+    VecAXPY(hn, -(1.0/6.0)*_dt, fh3);
+    VecAXPY(sn, -(1.0/6.0)*_dt, fs3);
+
+    VecDestroy(&fu1);
+    VecDestroy(&fu2);
+    VecDestroy(&fu3);
+    VecDestroy(&fh1);
+    VecDestroy(&fh2);
+    VecDestroy(&fh3);
+    VecDestroy(&fs1);
+    VecDestroy(&fs2);
+    VecDestroy(&fs3);
+}
