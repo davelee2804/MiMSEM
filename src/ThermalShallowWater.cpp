@@ -1441,23 +1441,42 @@ void ThermalShallowWater::solve_rk3(Vec un, Vec hn, Vec sn, double _dt, bool sav
     VecCopy(un, uj);
     VecCopy(hn, hj);
     VecCopy(sn, sj);
-    VecAXPY(uj, -0.5*_dt, fu1);
-    VecAXPY(hj, -0.5*_dt, fh1);
-    VecAXPY(sj, -0.5*_dt, fs1);
-    VecAXPY(uj, -0.5*_dt, fu2);
-    VecAXPY(hj, -0.5*_dt, fh2);
-    VecAXPY(sj, -0.5*_dt, fs2);
+    VecAXPY(uj, -0.25*_dt, fu1);
+    VecAXPY(hj, -0.25*_dt, fh1);
+    VecAXPY(sj, -0.25*_dt, fs1);
+    VecAXPY(uj, -0.25*_dt, fu2);
+    VecAXPY(hj, -0.25*_dt, fh2);
+    VecAXPY(sj, -0.25*_dt, fs2);
 
     assemble_rhs(uj, hj, sj, fu3, fh3, fs3);
     VecAXPY(un, -(1.0/6.0)*_dt, fu1);
     VecAXPY(hn, -(1.0/6.0)*_dt, fh1);
     VecAXPY(sn, -(1.0/6.0)*_dt, fs1);
-    VecAXPY(un, -(4.0/6.0)*_dt, fu2);
-    VecAXPY(hn, -(4.0/6.0)*_dt, fh2);
-    VecAXPY(sn, -(4.0/6.0)*_dt, fs2);
-    VecAXPY(un, -(1.0/6.0)*_dt, fu3);
-    VecAXPY(hn, -(1.0/6.0)*_dt, fh3);
-    VecAXPY(sn, -(1.0/6.0)*_dt, fs3);
+    VecAXPY(un, -(1.0/6.0)*_dt, fu2);
+    VecAXPY(hn, -(1.0/6.0)*_dt, fh2);
+    VecAXPY(sn, -(1.0/6.0)*_dt, fs2);
+    VecAXPY(un, -(4.0/6.0)*_dt, fu3);
+    VecAXPY(hn, -(4.0/6.0)*_dt, fh3);
+    VecAXPY(sn, -(4.0/6.0)*_dt, fs3);
+
+    if(save) {
+        Vec wi;
+        char fieldname[20];
+
+        step++;
+        curl(un, &wi, false);
+
+        sprintf(fieldname, "vorticity");
+        geom->write0(wi, fieldname, step);
+        sprintf(fieldname, "velocity");
+        geom->write1(un, fieldname, step);
+        sprintf(fieldname, "pressure");
+        geom->write2(hn, fieldname, step);
+        sprintf(fieldname, "buoyancy");
+        geom->write2(sn, fieldname, step);
+
+        VecDestroy(&wi);
+    }
 
     VecDestroy(&fu1);
     VecDestroy(&fu2);
