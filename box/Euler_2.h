@@ -89,4 +89,6 @@ class Euler {
 
         void HorizVort(Vec* velx);
         void AssembleVertMomVort(L2Vecs* velz);
+        void HorizPotVort(Vec* velx, Vec* rho);
+        void VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz);
 };

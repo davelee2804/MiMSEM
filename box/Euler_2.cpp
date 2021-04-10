@@ -553,11 +553,11 @@ void Euler::diagTheta(Vec* rho, Vec* rt, Vec* theta, Vec* velz) {
             ei = ey*topo->nElsX + ex;
 
             //vert->vo->AssembleLinCon2(ex, ey, vert->vo->VAB2);
-            vert->vo->AssembleLinCon_up(ex, ey, vert->vo->VAB2, velz[ei], dt);
+            vert->vo->AssembleLinCon_up(ex, ey, vert->vo->VAB2, velz[ei], 0.25*dt);
             MatMult(vert->vo->VAB2, rt[ei], frt);
 
             //vert->vo->AssembleLinearWithRho2(ex, ey, rho[ei], vert->vo->VA2);
-            vert->vo->AssembleLinearWithRho_up(ex, ey, rho[ei], vert->vo->VA2, velz[ei], dt);
+            vert->vo->AssembleLinearWithRho_up(ex, ey, rho[ei], vert->vo->VA2, velz[ei], 0.25*dt);
             KSPSolve(kspColA2, frt, theta[ei]);
         }
     }
@@ -1317,8 +1317,15 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     L2Vecs* rt_h    = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* theta_0 = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* Fz      = new L2Vecs(geom->nk-1, topo, geom);
+    Vec*    dwdx1   = new Vec[geom->nk-1];
+    Vec*    dwdx2   = new Vec[geom->nk-1];
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+    for(int kk = 0; kk < geom->nk-1; kk++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &dwdx1[kk]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &dwdx2[kk]);
+    }
 
     // 0.  Copy initial fields
     for(int kk = 0; kk < geom->nk; kk++) VecCopy(velx[kk], velx_0[kk]);
@@ -1353,11 +1360,14 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     if(!rank) cout << "horiztonal step (1).................." << endl;
     diagTheta(rho_0->vz, rt_0->vz, theta_0->vz, velz_0->vz);
     theta_0->VertToHoriz();
-    HorizVort(velx);
+    //HorizVort(velx);
+    HorizPotVort(velx, rho);
+    vert->horiz->diagVertVort(velz_0->vh, rho, dwdx1);
     if(firstStep) for(int kk = 0; kk < geom->nk-1; kk++) VecCopy(uzl[kk], uzl_prev[kk]);
+    VertMassFlux(velz_0, velz_0, rho_0, rho_0, Fz);
     for(int kk = 0; kk < geom->nk; kk++) {
         vert->horiz->momentum_rhs(kk, theta_0->vh, uzl, uzl, velz_0->vh, velz_0->vh, exner_0->vh[kk],
-                                  velx[kk], velx[kk], ul[kk], ul[kk], Fu_0[kk]);
+                                  velx[kk], velx[kk], ul[kk], ul[kk], Fu_0[kk], Fz->vh, dwdx1, dwdx1);
 
         if(firstStep) {
             MatMult(M1->M, velx_0[kk], bu);
@@ -1385,10 +1395,13 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     if(!rank) cout << "horiztonal step (3).................." << endl;
     //diagTheta(rho_h->vz, rt_h->vz, theta_0->vz, velz_h->vz);
     //theta_0->VertToHoriz();
-    HorizVort(velx);
+    //HorizVort(velx);
+    HorizPotVort(velx, rho_h->vh);
+    VertMassFlux(velz_0, velz_h, rho_0, rho_h, Fz);
+    vert->horiz->diagVertVort(velz_h->vh, rho_h->vh, dwdx2);
     for(int kk = 0; kk < geom->nk; kk++) {
         vert->horiz->momentum_rhs(kk, vert->theta_h->vh, uzl, uzl_prev, velz_h->vh, velz_0->vh, vert->exner_h->vh[kk],
-                                  velx_0[kk], velx[kk], ul[kk], ul_prev[kk], Fu_0[kk]);
+                                  velx_0[kk], velx[kk], ul[kk], ul_prev[kk], Fu_0[kk], Fz->vh, dwdx1, dwdx2);
 
         MatMult(M1->M, velx_0[kk], bu);
 
@@ -1454,6 +1467,13 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     delete rt_h;
     delete exner_h;
     delete theta_0;
+    delete Fz;
+    for(int kk = 0; kk < geom->nk-1; kk++) {
+        VecDestroy(&dwdx1[kk]);
+        VecDestroy(&dwdx2[kk]);
+    }
+    delete[] dwdx1;
+    delete[] dwdx2;
 }
 
 // compute the vorticity components dudz, dvdz
@@ -1538,4 +1558,71 @@ void Euler::AssembleVertMomVort(L2Vecs* velz) {
     VecDestroy(&tmp);
     VecDestroy(&tmp1);
     VecDestroy(&dwdx);
+}
+
+void Euler::HorizPotVort(Vec* velx, Vec* rho) {
+    int ii, size;
+    Vec* Mu = new Vec[geom->nk];
+    Vec  du, rho_h;
+    PC pc;
+    KSP ksp1_t;
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp1_t);
+    // TODO: assemble M1t with density as 0.5(\rho_t + rho_b)
+    KSPSetOperators(ksp1_t, M1t->M, M1t->M);
+    KSPSetTolerances(ksp1_t, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp1_t, KSPGMRES);
+    KSPGetPC(ksp1_t, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp1_t, "ksp1_t_");
+    KSPSetFromOptions(ksp1_t);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rho_h);
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu[ii]);
+        //M1->assemble(ii, SCALE, true);
+        MatMult(M1->M, velx[ii], Mu[ii]);
+    }
+
+    for(ii = 0; ii < geom->nk-1; ii++) {
+        VecZeroEntries(du);
+        VecAXPY(du, +1.0, Mu[ii+1]);
+        VecAXPY(du, -1.0, Mu[ii+0]);
+
+        VecZeroEntries(rho_h);
+        VecAXPY(rho_h, 0.5, rho[ii+0]);
+        VecAXPY(rho_h, 0.5, rho[ii+1]);
+        M1t->assemble_h(ii, SCALE, rho_h);
+
+        KSPSolve(ksp1_t, du, uz[ii]);
+        VecScatterBegin(topo->gtol_1, uz[ii], uzl[ii], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, uz[ii], uzl[ii], INSERT_VALUES, SCATTER_FORWARD);
+    }
+
+    VecDestroy(&du);
+    VecDestroy(&rho_h);
+    for(ii = 0; ii < geom->nk; ii++) {
+        VecDestroy(&Mu[ii]);
+    }
+    delete[] Mu;
+    KSPDestroy(&ksp1_t);
+}
+
+void Euler::VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz) {
+    int ex, ey;
+
+    rho1->HorizToVert();
+    rho2->HorizToVert();
+
+    for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        ex = ii%topo->nElsX;
+        ey = ii/topo->nElsX;
+
+        vert->diagnose_F_z(ex, ey, velz1->vz[ii], velz2->vz[ii], rho1->vz[ii], rho2->vz[ii], Fz->vz[ii]);
+    }
+    Fz->VertToHoriz();
 }

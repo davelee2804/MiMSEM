@@ -21,7 +21,7 @@
 
 using namespace std;
 
-#define NK 5
+#define NK 150
 #define ZTOP 1500.0
 #define GRAVITY 9.80616
 #define CP 1004.5
@@ -132,9 +132,9 @@ int main(int argc, char** argv) {
     //double dt = 0.01;
     //int nSteps = 400*100; // 1 hour
     //int dumpEvery = 200;//100;
-    double dt = 0.02;
-    int nSteps = 2;//400*50; // 1 hour
-    int dumpEvery = 1;//400;//100;
+    double dt = 0.01;
+    int nSteps = 400*100; // 1 hour
+    int dumpEvery = 800;//100;
     ofstream file;
     Topo* topo;
     Geom* geom;
@@ -156,6 +156,9 @@ int main(int argc, char** argv) {
     pe->step = startStep;
 
     n2 = topo->nElsX*topo->nElsX;
+
+    pe->do_visc = false;
+    pe->vert->horiz->do_visc = false;
 
     velx  = new Vec[NK];
     rho   = new Vec[NK];
@@ -207,8 +210,8 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (hours): \t" << step*dt/60.0/60.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->Trapazoidal(velx, velz, rho, rt, exner, dump);
-        //pe->Strang(velx, velz, rho, rt, exner, dump);
+        //pe->Trapazoidal(velx, velz, rho, rt, exner, dump);
+        pe->Strang(velx, velz, rho, rt, exner, dump);
     }
 
     delete pe;

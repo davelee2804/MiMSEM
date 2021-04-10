@@ -206,8 +206,8 @@ class Ut_mat {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
-    private:
         void assemble(int lev, double scale);
+        void assemble_h(int lev, double scale, Vec rho);
 };
 
 class UtQWmat {

@@ -518,11 +518,11 @@ void VertSolve::diagTheta2(Vec* rho, Vec* rt, Vec* theta, Vec* velz) {
             ei = ey*topo->nElsX + ex;
 
             //vo->AssembleLinCon2(ex, ey, vo->VAB2);
-            vo->AssembleLinCon_up(ex, ey, vo->VAB2, velz[ei], dt);
+            vo->AssembleLinCon_up(ex, ey, vo->VAB2, velz[ei], 0.25*dt);
             MatMult(vo->VAB2, rt[ei], frt);
 
             //vo->AssembleLinearWithRho2(ex, ey, rho[ei], vo->VA2);
-            vo->AssembleLinearWithRho_up(ex, ey, rho[ei], vo->VA2, velz[ei], dt);
+            vo->AssembleLinearWithRho_up(ex, ey, rho[ei], vo->VA2, velz[ei], 0.25*dt);
             KSPSolve(kspColA2, frt, theta[ei]);
         }
     }
