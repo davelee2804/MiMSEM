@@ -1554,3 +1554,179 @@ void SWEqn::solve_explicit(Vec un, Vec hn, double _dt, bool save) {
     VecDestroy(&F1);
     VecDestroy(&F2);
 }
+
+void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
+    int size;
+    Vec Fi, Fj, Phi, qi, qj, ql, ul, utmp, htmp, fu, up;
+    Mat KT, KTD;
+    KSP ksp_f;
+    PC pc;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Phi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &up);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fj);
+
+    // 1. compute provisional velocity
+    VecCopy(un, ui);
+    VecCopy(un, uj);
+    VecCopy(hn, hi);
+    VecCopy(hn, hj);
+    VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+
+    // F^n
+    //M1h->assemble(hi);
+    //MatMult(M1h->M, ui, utmp);
+    K->assemble(uil);
+    MatTranspose(K->M, MAT_INITIAL_MATRIX, &KT);
+    MatMult(KT, hi, utmp);
+    VecScale(utmp, 2.0);
+    KSPSolve(ksp, utmp, Fi);
+
+    // Phi^n
+    K->assemble(uil);
+    MatMult(K->M, ui, htmp);
+    MatMult(M2->M, hi, Phi);
+    VecAYPX(Phi, grav, htmp);
+    MatMult(EtoF->E12, Phi, fu);
+
+    // q^n
+    diagnose_q(&qi, &qj);
+
+    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, uil, _dt);
+    MatMult(R_up->M, Fi, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, Fi, utmp);
+#endif
+    VecAXPY(fu, 1.0, utmp);
+
+    MatMult(M1->M, ui, utmp);
+    VecAYPX(fu, -_dt, utmp);
+    KSPSolve(ksp, fu, up);
+
+    VecScatterBegin(topo->gtol_1, up, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, up, ujl, INSERT_VALUES, SCATTER_FORWARD);
+
+    // 2. compute the semi-implict pressure advection 
+    //M1h->assemble(hi);
+    //MatMult(M1h->M, ui, fu);
+    //MatMult(M1h->M, up, utmp);
+    //VecAYPX(fu, 2.0, utmp);
+    //VecScale(fu, 1.0/6.0);
+    MatMult(KT, hi, utmp);
+    K->assemble(ujl);
+    MatTranspose(K->M, MAT_REUSE_MATRIX, &KT);
+    MatMult(KT, hi, fu);
+    VecAYPX(fu, 2.0, utmp);
+    VecScale(fu, 1.0/3.0);
+    KSPSolve(ksp, fu, Fi);
+
+    VecZeroEntries(ul);
+    VecAYPX(ul, 1.0/3.0, uil);
+    VecAYPX(ul, 2.0/3.0, ujl);
+    K->assemble(ul);
+    //MatTranspose(K->M, MAT_INITIAL_MATRIX, &KT);
+    MatTranspose(K->M, MAT_REUSE_MATRIX, &KT);
+    MatMatMult(KT, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &KTD);
+
+    MatMult(KTD, Fi, fu);
+    MatMult(KT, hi, utmp);
+    VecAYPX(fu, -_dt, utmp);
+    MatAYPX(KTD, _dt, M1->M, DIFFERENT_NONZERO_PATTERN);
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    KSPCreate(MPI_COMM_WORLD, &ksp_f);
+    KSPSetOperators(ksp_f, KTD, KTD);
+    KSPSetTolerances(ksp_f, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp_f, KSPGMRES);
+    KSPGetPC(ksp_f, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp_f, "adv_f_");
+    KSPSetFromOptions(ksp_f);
+    KSPSolve(ksp_f, fu, Fj);
+
+    VecAXPY(Fj, 1.0, Fi);
+    MatMult(EtoF->E21, Fj, hj);
+    VecAYPX(hj, -_dt, hi);
+
+    // 3. compute final velocity
+    VecDestroy(&Phi);
+    VecDestroy(&qi);
+    VecDestroy(&qj);
+    diagnose_Phi(&Phi);
+    diagnose_q(&qi, &qj);
+
+    MatMult(EtoF->E12, Phi, fu);
+
+    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, uil, _dt);
+    MatMult(R_up->M, Fj, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, Fj, utmp);
+#endif
+    VecAXPY(fu, 0.5, utmp);
+
+    VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, ujl, _dt);
+    MatMult(R_up->M, Fj, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, Fj, utmp);
+#endif
+    VecAXPY(fu, 0.5, utmp);
+
+    MatMult(M1->M, ui, utmp);
+    VecAYPX(fu, -_dt, utmp);
+    KSPSolve(ksp, fu, uj);
+
+    VecCopy(uj, un);
+    VecCopy(hj, hn);
+
+    if(save) {
+        Vec wi;
+        char fieldname[20];
+
+        step++;
+        curl(un, &wi);
+
+        sprintf(fieldname, "vorticity");
+        geom->write0(wi, fieldname, step);
+        sprintf(fieldname, "velocity");
+        geom->write1(un, fieldname, step);
+        sprintf(fieldname, "pressure");
+        geom->write2(hn, fieldname, step);
+
+        VecDestroy(&wi);
+    }
+
+    VecDestroy(&qi);
+    VecDestroy(&qj);
+    VecDestroy(&ql);
+    VecDestroy(&ul);
+    VecDestroy(&Phi);
+    VecDestroy(&htmp);
+    VecDestroy(&Fi);
+    VecDestroy(&Fj);
+    VecDestroy(&fu);
+    VecDestroy(&utmp);
+    VecDestroy(&up);
+    MatDestroy(&KT);
+    MatDestroy(&KTD);
+    KSPDestroy(&ksp_f);
+}

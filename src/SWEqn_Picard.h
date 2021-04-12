@@ -63,6 +63,7 @@ class SWEqn {
         void assemble_operator(double dt);
         void solve(Vec u, Vec h, double _dt, bool save);
         void solve_explicit(Vec u, Vec h, double _dt, bool save);
+        void solve_imex(Vec un, Vec hn, double _dt, bool save);
         double viscosity();
         void unpack(Vec x, Vec u, Vec h);
         void repack(Vec x, Vec u, Vec h);
