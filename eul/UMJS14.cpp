@@ -295,6 +295,7 @@ int main(int argc, char** argv) {
 
     pe   = new Euler(topo, geom, dt);
     pe->step = startStep;
+    //pe->vert->horiz->do_visc = false;
 
     n2 = topo->nElsX*topo->nElsX;
 

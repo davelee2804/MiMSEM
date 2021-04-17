@@ -1551,8 +1551,14 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* theta_0 = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* Fz      = new L2Vecs(geom->nk-1, topo, geom);
+    Vec*    dwdx1   = new Vec[geom->nk-1];
+    Vec*    dwdx2   = new Vec[geom->nk-1];
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+    for(int kk = 0; kk < geom->nk-1; kk++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &dwdx1[kk]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &dwdx2[kk]);
+    }
 
     // 0.  Copy initial fields
     for(int kk = 0; kk < geom->nk; kk++) VecCopy(velx[kk], velx_0[kk]);
@@ -1588,11 +1594,13 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     diagTheta(rho_0->vz, rt_0->vz, theta_0->vz);
     theta_0->VertToHoriz();
     HorizPotVort(velx, rho);
+    vert->horiz->diagVertVort(velz_0->vh, rho_0->vh, dwdx1);
     if(firstStep) for(int kk = 0; kk < geom->nk-1; kk++) VecCopy(uzl[kk], uzl_prev[kk]);
     VertMassFlux(velz_0, velz_0, rho_0, rho_0, Fz);
     for(int kk = 0; kk < geom->nk; kk++) {
         vert->horiz->momentum_rhs(kk, theta_0->vh, uzl, uzl, velz_0->vh, velz_0->vh, exner_0->vh[kk],
-                                  velx[kk], velx[kk], ul[kk], ul[kk], rho_0->vh[kk], rho_0->vh[kk], Fu_0[kk], Fz->vh);
+                                  velx[kk], velx[kk], ul[kk], ul[kk], rho_0->vh[kk], rho_0->vh[kk], Fu_0[kk], Fz->vh, dwdx1, dwdx1);
+                                  //velx[kk], velx[kk], ul[kk], ul[kk], rho_0->vh[kk], rho_0->vh[kk], Fu_0[kk], Fz->vh, dwdx1, dwdx2);
 
         M1->assemble(kk, SCALE, true);
 
@@ -1634,10 +1642,11 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     // 3.  Explicit horiztonal solve
     if(!rank) cout << "horiztonal step (3).................." << endl;
     HorizPotVort(velx, rho_h->vh);
+    vert->horiz->diagVertVort(velz_h->vh, rho_h->vh, dwdx2);
     VertMassFlux(velz_0, velz_h, rho_0, rho_h, Fz);
     for(int kk = 0; kk < geom->nk; kk++) {
         vert->horiz->momentum_rhs(kk, vert->theta_h->vh, uzl, uzl_prev, velz_h->vh, velz_0->vh, vert->exner_h->vh[kk],
-                                  velx_0[kk], velx[kk], ul[kk], ul_prev[kk], rho_0->vh[kk], rho_h->vh[kk], Fu_0[kk], Fz->vh);
+                                  velx_0[kk], velx[kk], ul[kk], ul_prev[kk], rho_0->vh[kk], rho_h->vh[kk], Fu_0[kk], Fz->vh, dwdx1, dwdx2);
 
         M1->assemble(kk, SCALE, true);
         MatMult(M1->M, velx_0[kk], bu);
@@ -1713,9 +1722,16 @@ void Euler::Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sav
     delete exner_h;
     delete theta_0;
     delete Fz;
+    for(int kk = 0; kk < geom->nk-1; kk++) {
+        VecDestroy(&dwdx1[kk]);
+        VecDestroy(&dwdx2[kk]);
+    }
+    delete[] dwdx1;
+    delete[] dwdx2;
 }
 
 void Euler::Iterative(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
+#if 0
     char    fieldname[100];
     bool    done    = false;
     int     itt     = 0;
@@ -1873,6 +1889,7 @@ void Euler::Iterative(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool 
     delete exner_j;
     delete theta_0;
     delete Fz;
+#endif
 }
 
 void Euler::VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz) {

@@ -1,7 +1,7 @@
 #include <cmath>
 #include <iostream>
 
-#include <cblas.h>
+//#include <cblas.h>
 
 #include "LinAlg.h"
 
@@ -85,19 +85,19 @@ double** Mult(int ni, int nj, int nk, double** A, double** B) {
 
 // Multiply two matrices into a third (supplied)
 void Mult_IP(int ni, int nj, int nk, double* A, double* B, double* C) {
-/*
     int ii, jj, kk;
 
     for(ii = 0; ii < ni; ii++) {
         for(jj = 0; jj < nj; jj++) {
-            C[ii][jj] = 0.0;
+            C[ii*nj+jj] = 0.0;
             for(kk = 0; kk < nk; kk++) {
-                C[ii][jj] += A[ii][kk]*B[kk][jj];
+                C[ii*nj+jj] += A[ii*nk+kk]*B[kk*nj+jj];
             }
         }
     }
-*/
+/*
     cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, ni, nj, nk, 1.0, A, nk, B, nj, 0.0, C, nj);
+*/
 }
 
 // Multiply diagonal by full matrix
@@ -184,6 +184,7 @@ extern "C" {
 #define SWAP(a,b) {temp=(a);(a)=(b);(b)=temp;}
 // Matrix inverse into supplied matrix
 int Inv( double* A, double* Ainv, int n ) {
+/*
     int i;
     double _A[200];
     int ierr;
@@ -202,7 +203,7 @@ int Inv( double* A, double* Ainv, int n ) {
         Ainv[i] = _A[i];
     }
     return ierr;
-/*
+*/
     int error = 0;
     int *indxc, *indxr, *ipiv;
     int i, j, k, l, irow = 0, icol = 0, ll;
@@ -210,7 +211,7 @@ int Inv( double* A, double* Ainv, int n ) {
 
     indxc = new int[n]; indxr = new int[n]; ipiv  = new int[n];
 
-    for( i = 0; i < n*n; i++ ) { Ainv[i/n][i%n] = A[i/n][i%n]; }
+    for( i = 0; i < n*n; i++ ) { Ainv[i] = A[i]; }
     for( j = 0; j< n; j++ ) { ipiv[j] = 0; }
     for( i = 0; i < n; i++ ) {
         big = 0.0;
@@ -218,8 +219,8 @@ int Inv( double* A, double* Ainv, int n ) {
             if( ipiv[j] != 1 ) {
                 for( k = 0; k < n; k++ ) {
                     if( ipiv[k] == 0 ) {
-                        if( fabs(Ainv[j][k]) >= big ) {
-                            big = fabs(Ainv[j][k]);
+                        if( fabs(Ainv[j*n+k]) >= big ) {
+                            big = fabs(Ainv[j*n+k]);
                             irow = j;
                             icol = k;
                         }
@@ -232,22 +233,22 @@ int Inv( double* A, double* Ainv, int n ) {
         if( irow != icol ) {
             for( l = 0; l < n; l++ ) {
                 //SWAP( Ainv[irow][l], Ainv[icol][l] );
-                temp = Ainv[irow][l];
-                Ainv[irow][l] = Ainv[icol][l];
-                Ainv[icol][l] = temp;
+                temp = Ainv[irow*n+l];
+                Ainv[irow*n+l] = Ainv[icol*n+l];
+                Ainv[icol*n+l] = temp;
             }
         }
         indxr[i] = irow;
         indxc[i] = icol;
-        if( fabs(Ainv[icol][icol]) < 1.0e-12 ) { error = 2; }
-        pivinv = 1.0/Ainv[icol][icol];
-        Ainv[icol][icol] = 1.0;
-        for( l = 0; l < n; l++ ) { Ainv[icol][l] *= pivinv; }
+        if( fabs(Ainv[icol*n+icol]) < 1.0e-12 ) { error = 2; }
+        pivinv = 1.0/Ainv[icol*n+icol];
+        Ainv[icol*n+icol] = 1.0;
+        for( l = 0; l < n; l++ ) { Ainv[icol*n+l] *= pivinv; }
         for( ll = 0; ll < n; ll++ ) {
             if( ll != icol ) {
-                dum = Ainv[ll][icol];
-                Ainv[ll][icol] = 0.0;
-                for( l = 0; l < n; l++ ) { Ainv[ll][l] -= Ainv[icol][l]*dum; }
+                dum = Ainv[ll*n+icol];
+                Ainv[ll*n+icol] = 0.0;
+                for( l = 0; l < n; l++ ) { Ainv[ll*n+l] -= Ainv[icol*n+l]*dum; }
             }
         }
     }
@@ -256,14 +257,13 @@ int Inv( double* A, double* Ainv, int n ) {
         if( indxr[l] != indxc[l] ) {
             for( k = 0; k < n; k++ ) {
                 //SWAP( Ainv[k][indxr[l]], Ainv[k][indxc[l]] );
-                temp = Ainv[k][indxr[l]];
-                Ainv[k][indxr[l]] = Ainv[k][indxc[l]];
-                Ainv[k][indxc[l]] = temp;
+                temp = Ainv[k*n+indxr[l]];
+                Ainv[k*n+indxr[l]] = Ainv[k*n+indxc[l]];
+                Ainv[k*n+indxc[l]] = temp;
             }
         }
     }
     delete[] indxc; delete[] indxr; delete[] ipiv;
 
     return error;
-*/
 }
