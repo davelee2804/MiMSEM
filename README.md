@@ -53,7 +53,7 @@ Optional stabilisation/forcing terms include:
 
 <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0025_up.png" height="240" width="320"><img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0050_up.png" height="240" width="320">
 
-<sub>Potential temperature for the 3D rising bubble test case in planar geometry with energetically consistent variational upwinding at times 200s (left) and 400s (right)</sub>
+<sub>Potential temperature for the 3D rising bubble test case in planar geometry without dissipation and with energetically consistent variational upwinding at times 200s (left) and 400s (right)</sub>
 
 ## References ##
 Lee, D and Palha, A (2020) [Exact spatial and temporal balance of energy exchanges within a horizontally explicit/vertically implicit non-hydrostatic atmosphere](https://arxiv.org/pdf/2011.07861.pdf) arXiv:2011.07861
