@@ -17,19 +17,22 @@ class SWEqn {
         Topo* topo;
         Geom* geom;
         Pvec* m0;
+        Pmat* M0;
         Umat* M1;
         Wmat* M2;
         E10mat* NtoE;
         E21mat* EtoF;
         RotMat* R;
         Uhmat* M1h;
+        Phmat* M0h;
         WtQUmat* K;
         Vec fg;            // coriolis vector (global)
         Vec topog;
         Mat E01M1;
         Mat E12M2;
-        U0mat* M1_pc;
         KSP ksp;           // 1 form mass matrix linear solver
+        KSP ksp0;          // 0 form mass matrix linear solver
+        KSP ksp0h;         // 0 form mass matrix linear solver
         VecScatter gtol_x;
         Vec ui;
         Vec hi;

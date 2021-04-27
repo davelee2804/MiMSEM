@@ -99,11 +99,18 @@ GaussLobatto::~GaussLobatto() {
 
 LagrangeNode::LagrangeNode(int _n, GaussLobatto* _q) {
     int ii, jj;
+    GaussLobatto* q_tmp = new GaussLobatto(_n);
+//int rank;
+//MPI_Comm_rank(MPI_COMM_WORLD,&rank);
 
     n = _n;
     q = _q;
 
     a = new double[n+1];
+    x = new double[n+1];
+    for(ii = 0; ii <= n; ii++) {
+        x[ii] = q_tmp->x[ii];
+    }
 
     // evaluate the coefficients
     for(ii = 0; ii <= n; ii++) {
@@ -119,7 +126,9 @@ LagrangeNode::LagrangeNode(int _n, GaussLobatto* _q) {
     for(ii = 0; ii <= q->n; ii++) {
         ljxi[ii] = new double[n+1];
         for(jj = 0; jj <= n; jj++) {
-            ljxi[ii][jj] = eval(q->x[ii], jj);
+            //ljxi[ii][jj] = eval(q->x[ii], jj);
+            ljxi[ii][jj] = eval_q(q->x[ii], jj);
+//if(!rank)cout<<ii<<"\t"<<jj<<"\t"<<q->x[ii]<<"\t"<<ljxi[ii][jj]<<endl;
         }
     }
 
@@ -128,15 +137,19 @@ LagrangeNode::LagrangeNode(int _n, GaussLobatto* _q) {
     for(ii = 0; ii <= n; ii++) {
         ljxi_t[ii] = new double[q->n+1];
         for(jj = 0; jj <= q->n; jj++) {
-            ljxi_t[ii][jj] = eval(q->x[jj], ii);
+            //ljxi_t[ii][jj] = eval(q->x[jj], ii);
+            ljxi_t[ii][jj] = eval_q(q->x[jj], ii);
         }
     }
+
+    delete q_tmp;
 }
 
 LagrangeNode::~LagrangeNode() {
     int ii;
 
     delete[] a;
+    delete[] x;
 
     for(ii = 0; ii <= q->n; ii++) {
         delete[] ljxi[ii];
@@ -149,29 +162,29 @@ LagrangeNode::~LagrangeNode() {
     delete[] ljxi_t;
 }
 
-double LagrangeNode::eval(double x, int i) {
+double LagrangeNode::eval(double _x, int i) {
     int jj;
     double p = 1.0;
 
     for(jj = 0; jj <= n; jj++) {
         if(jj == i) continue;
-        p *= x - q->x[jj];
+        p *= _x - q->x[jj];
     }
 
     return a[i]*p;
 }
 
 // evaluate at arbitrary location (not necessarily gll node)
-double LagrangeNode::eval_q(double x, int i) {
+double LagrangeNode::eval_q(double _x, int i) {
     double y = 1.0;
     for(int jj = 0; jj <= n; jj++) {
         if(jj == i) continue;
-        y *= (x - q->x[jj])/(q->x[i] - q->x[jj]);
+        y *= (_x - x[jj])/(x[i] - x[jj]);
     }
     return y;
 }
 
-double LagrangeNode::evalDeriv(double x, int ii) {
+double LagrangeNode::evalDeriv(double _x, int ii) {
     int jj, kk;
     double aa, bb;
 
@@ -185,10 +198,10 @@ double LagrangeNode::evalDeriv(double x, int ii) {
             if(kk == ii) continue;
             if(kk == jj) continue;
 
-            aa *= (x - q->x[kk])/(q->x[ii] - q->x[kk]);
+            aa *= (_x - x[kk])/(x[ii] - x[kk]);
         }
 
-        bb += aa/(q->x[ii] - q->x[jj]);
+        bb += aa/(x[ii] - x[jj]);
     }
 
     return bb;
@@ -202,7 +215,7 @@ void LagrangeNode::test() {
     if(!rank) {
         for(ii = 0; ii <= n; ii++) {
             for(jj = 0; jj <= n; jj++) {
-                cout << eval(q->x[ii],jj) << "\t";
+                cout << eval(x[ii],jj) << "\t";
             }
             cout << endl;
         }
@@ -210,7 +223,7 @@ void LagrangeNode::test() {
 
         for(ii = 0; ii <= n; ii++) {
             for(jj = 0; jj <= n; jj++) {
-                cout << evalDeriv(q->x[ii],jj) << "\t";
+                cout << evalDeriv(x[ii],jj) << "\t";
             }
             cout << endl;
         }

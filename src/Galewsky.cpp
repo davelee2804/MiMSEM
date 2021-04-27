@@ -81,13 +81,13 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 120.0;//40.0;
+    double dt = 300.0;//40.0;
     double vort_0, mass_0, ener_0;
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 10*24*30;//7200*3;
-    int dumpEvery = 24*30;//1*12;//6*30*3;
+    int nSteps = 2;//10*24*30;//7200*3;
+    int dumpEvery = 2;//24*30;//1*12;//6*30*3;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
@@ -134,6 +134,9 @@ int main(int argc, char** argv) {
     vort_0 = sw->int0(wi);
     mass_0 = sw->int2(hi);
     ener_0 = sw->intE(ui, hi);
+    if(!rank) {
+        cout << "w0: " << vort_0 << "\tm0: " << mass_0 << "\tE0: " << ener_0 << endl;
+    }
     VecDestroy(&wi);
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
@@ -142,9 +145,9 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         sw->solve(ui, hi, dt, dump);
-        if(dump) {
+        //if(dump) {
             sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
-        }
+        //}
     }
 
     delete sw;

@@ -22,6 +22,28 @@ class Wmat {
         void assemble();
 };
 
+class Pmat {
+    public:
+        Pmat(Topo* _topo, Geom* _geom, LagrangeNode* _node);
+        ~Pmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* node;
+        Mat M;
+        void assemble();
+};
+
+class Phmat {
+    public:
+        Phmat(Topo* _topo, Geom* _geom, LagrangeNode* _node);
+        ~Phmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* node;
+        Mat M;
+        void assemble(Vec h2);
+};
+
 class Uhmat {
     public:
         Uhmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);

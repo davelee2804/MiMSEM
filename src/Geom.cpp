@@ -21,16 +21,36 @@ using std::string;
 //#define RAD_SPHERE 1.0
 
 Geom::Geom(Topo* _topo) {
-    int ii, jj;
+    int ii, jj, quad_ord, n_procs;
     ifstream file;
     char filename[100];
     string line;
     double value;
+    Vec vl, vg;
 
     topo = _topo;
     pi = topo->pi;
 
-    quad = new GaussLobatto(topo->elOrd);
+    sprintf(filename, "input/grid_res_quad.txt");
+    file.open(filename);
+    std::getline(file, line);
+    quad_ord = atoi(line.c_str());
+    cout << "quadrature order: " << quad_ord << endl; 
+    std::getline(file, line);
+    nDofsX = atoi(line.c_str());
+    file.close();
+
+    sprintf(filename, "input/local_sizes_quad_%.4u.txt", pi);
+    file.open(filename);
+    std::getline(file, line);
+    n0l = atoi(line.c_str());
+    file.close();
+
+    MPI_Comm_size(MPI_COMM_WORLD, &n_procs);
+    nDofsX *= quad_ord;
+    nDofs0G = n_procs*nDofsX*nDofsX + 2;
+
+    quad = new GaussLobatto(quad_ord);
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
 
@@ -65,10 +85,31 @@ Geom::Geom(Topo* _topo) {
         }
         s[ii][0] = atan2(x[ii][1],x[ii][0]);
         s[ii][1] = asin(x[ii][2]/RAD_SPHERE);
-        //cout << ii << "\t" << x[ii][0] << "\t" << x[ii][1] << "\t" << x[ii][2] << endl;
         ii++;
     }
     file.close();
+
+    // topology of the quadrature points
+    sprintf(filename, "input/quads_%.4u.txt", pi);
+    file.open(filename);
+    n0 = 0;
+    while (std::getline(file, line))
+        ++n0;
+    file.close();
+
+    loc0 = new int[n0];
+    topo->loadObjs(filename, loc0);
+
+    ISCreateGeneral(MPI_COMM_WORLD, n0, loc0, PETSC_COPY_VALUES, &is_g_0);
+    ISCreateStride(MPI_COMM_SELF, n0, 0, 1, &is_l_0);
+    VecCreateSeq(MPI_COMM_SELF, n0, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, n0l, nDofs0G, &vg);
+    VecScatterCreate(vg, is_g_0, vl, is_l_0, &gtol_0);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+
+    inds0_l = new int[(quad->n+1)*(quad->n+1)];
+    inds0_g = new int[(quad->n+1)*(quad->n+1)];
 
     // update the global coordinates within each element for consistency with the local 
     // coordinates as defined by the Jacobian mapping
@@ -91,6 +132,14 @@ Geom::Geom(Topo* _topo) {
 
 Geom::~Geom() {
     int ii, jj;
+
+    ISDestroy(&is_l_0);
+    ISDestroy(&is_g_0);
+    VecScatterDestroy(&gtol_0);
+
+    delete[] loc0;
+    delete[] inds0_l;
+    delete[] inds0_g;
 
     for(ii = 0; ii < nl; ii++) {
         delete[] x[ii];
@@ -122,7 +171,7 @@ Geom::~Geom() {
 //    Geosci. Model Dev. 7 2803 - 2816
 void Geom::jacobian(int ex, int ey, int px, int py, double** jac) {
     int ii, jj, kk, mp1 = quad->n + 1;
-    int* inds_0 = topo->elInds0_l(ex, ey);
+    int* inds_0 = elInds0_l(ex, ey);
     double* c1 = x[inds_0[0]];
     double* c2 = x[inds_0[mp1-1]];
     double* c3 = x[inds_0[mp1*mp1-1]];
@@ -200,18 +249,22 @@ double Geom::jacDet(int ex, int ey, int px, int py, double** jac) {
     jacobian(ex, ey, px, py, jac);
 
     return (jac[0][0]*jac[1][1] - jac[0][1]*jac[1][0]);
-    //return fabs(jac[0][0]*jac[1][1] - jac[0][1]*jac[1][0]);
 }
 
 void Geom::interp0(int ex, int ey, int px, int py, double* vec, double* val) {
-    int jj, mp1;
+    int jj, np1, np12;
     int* inds0 = topo->elInds0_l(ex, ey);
 
-    mp1 = quad->n + 1;
-    jj = py*mp1 + px;
+    np1 = topo->elOrd + 1;
+    np12 = np1*np1;
+    //jj = py*mp1 + px;
 
     // assumes diagonal mass matrix for 0 forms
-    val[0] = vec[inds0[jj]];
+    //val[0] = vec[inds0[jj]];
+    val[0] = 0.0;
+    for(jj = 0; jj < np12; jj++) {
+        val[0] += vec[inds0[jj]]*node->ljxi[px][jj%np1]*node->ljxi[py][jj/np1];
+    }
 }
 
 void Geom::interp1_l(int ex, int ey, int px, int py, double* vec, double* val) {
@@ -271,8 +324,9 @@ void Geom::interp2_g(int ex, int ey, int px, int py, double* vec, double* val) {
 }
 
 void Geom::write0(Vec q, char* fieldname, int tstep) {
-    int ex, ey, ii, jj, mp1, mp12;
+    int ex, ey, ii, mp1, mp12;
     int* inds0;
+    double val;
     char filename[100];
     PetscScalar *qArray, *qxArray;
     Vec ql, qxl, qxg;
@@ -286,25 +340,26 @@ void Geom::write0(Vec q, char* fieldname, int tstep) {
     VecScatterBegin(topo->gtol_0, q, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_0, q, ql, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &qxl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &qxg);
+    VecCreateSeq(MPI_COMM_SELF, n0, &qxl);
+    VecCreateMPI(MPI_COMM_WORLD, n0l, nDofs0G, &qxg);
 
     VecGetArray(ql, &qArray);
     VecGetArray(qxl, &qxArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = elInds0_l(ex, ey);
+            // loop over quadrature points
             for(ii = 0; ii < mp12; ii++) {
-                jj = inds0[ii];
-                qxArray[jj] = qArray[jj];
+                interp0(ex, ey, ii%mp1, ii/mp1, qArray, &val);
+                qxArray[inds0[ii]] = val;
             }
         }
     }
     VecRestoreArray(ql, &qArray);
     VecRestoreArray(qxl, &qxArray);
 
-    VecScatterBegin(topo->gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
 
 #ifdef WITH_HDF5
     sprintf(filename, "output/%s_%.4u.h5", fieldname, tstep);
@@ -338,16 +393,16 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     VecScatterBegin(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &uxl);
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &vxl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &uxg);
+    VecCreateSeq(MPI_COMM_SELF, n0, &uxl);
+    VecCreateSeq(MPI_COMM_SELF, n0, &vxl);
+    VecCreateMPI(MPI_COMM_WORLD, n0l, nDofs0G, &uxg);
 
     VecGetArray(ul, &uArray);
     VecGetArray(uxl, &uxArray);
     VecGetArray(vxl, &vxArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = elInds0_l(ex, ey);
 
             // loop over quadrature points
             for(ii = 0; ii < mp12; ii++) {
@@ -371,8 +426,8 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecZeroEntries(uxg);
-    VecScatterBegin(topo->gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
     VecView(uxg, viewer);
     PetscViewerDestroy(&viewer);
 
@@ -385,8 +440,8 @@ void Geom::write1(Vec u, char* fieldname, int tstep) {
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecZeroEntries(uxg);
-    VecScatterBegin(topo->gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
     VecView(uxg, viewer);
     PetscViewerDestroy(&viewer);
 
@@ -416,20 +471,17 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     mp12 = mp1*mp1;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
-//    VecScatterBegin(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
-//    VecScatterEnd(topo->gtol_2, h, hl, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &hxl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &hxg);
+    VecCreateSeq(MPI_COMM_SELF, n0, &hxl);
+    VecCreateMPI(MPI_COMM_WORLD, n0l, nDofs0G, &hxg);
     VecZeroEntries(hxg);
 
-//    VecGetArray(hl, &hArray);
     VecGetArray(h, &hArray);
     VecGetArray(hxl, &hxArray);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = elInds0_l(ex, ey);
 
             // loop over quadrature points
             for(ii = 0; ii < mp12; ii++) {
@@ -439,12 +491,11 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
             }
         }
     }
-//    VecRestoreArray(hl, &hArray);
     VecRestoreArray(h, &hArray);
     VecRestoreArray(hxl, &hxArray);
 
-    VecScatterBegin(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
 
 #ifdef WITH_HDF5
     sprintf(filename, "output/%s_%.4u.h5", fieldname, tstep);
@@ -481,7 +532,7 @@ void Geom::updateGlobalCoords() {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = elInds0_l(ex, ey);
 
             c1 = x[inds0[0]];
             c2 = x[inds0[mp1-1]];
@@ -528,4 +579,32 @@ void Geom::initJacobians() {
             }
         }
     }
+}
+
+int* Geom::elInds0_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < quad->n + 1;  iy++) {
+        for(ix = 0; ix < quad->n + 1; ix++) {
+            inds0_l[kk] = (ey*quad->n + iy)*(nDofsX + 1) + ex*quad->n + ix;
+            kk++;
+        }
+    }
+
+    return inds0_l;
+}
+
+int* Geom::elInds0_g(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < quad->n + 1; iy++) {
+        for(ix = 0; ix < quad->n + 1; ix++) {
+            inds0_g[kk] = loc0[(ey*quad->n + iy)*(nDofsX + 1) + ex*quad->n + ix];
+            kk++;
+        }
+    }
+
+    return inds0_g;
 }

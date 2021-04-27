@@ -23,7 +23,7 @@
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
 //#define W2_ALPHA (0.25*M_PI)
-#define UP_VORT
+//#define UP_VORT
 
 using namespace std;
 
@@ -47,12 +47,13 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     do_visc = true;
     step = 0;
 
-    quad = new GaussLobatto(topo->elOrd);
+    quad = new GaussLobatto(geom->quad->n);
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
 
     // 0 form lumped mass matrix (vector)
-    m0 = new Pvec(topo, geom, node);
+    //m0 = new Pvec(topo, geom, node);
+    M0 = new Pmat(topo, geom, node);
 
     // 1 form mass matrix
     M1 = new Umat(topo, geom, node, edge);
@@ -74,20 +75,14 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     // mass flux operator
     M1h = new Uhmat(topo, geom, node, edge);
 
+    M0h = new Phmat(topo, geom, node);
+
     // kinetic energy operator
     K = new WtQUmat(topo, geom, node, edge);
-
-    // coriolis vector (projected onto 0 forms)
-    coriolis();
-
-    A = NULL;
-
-    M1_pc = new U0mat(topo, geom, node, edge);
 
     // initialize the linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M1->M, M1->M);
-    //KSPSetOperators(ksp, M1->M, M1_pc->M);
     KSPSetTolerances(ksp, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp, KSPGMRES);
     KSPGetPC(ksp, &pc);
@@ -95,6 +90,31 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp, "sw_");
     KSPSetFromOptions(ksp);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp0);
+    KSPSetOperators(ksp0, M0->M, M0->M);
+    KSPSetTolerances(ksp0, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp0, KSPGMRES);
+    KSPGetPC(ksp0, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp0, "ksp_0_");
+    KSPSetFromOptions(ksp0);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp0h);
+    KSPSetOperators(ksp0h, M0h->M, M0h->M);
+    KSPSetTolerances(ksp0h, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp0h, KSPGMRES);
+    KSPGetPC(ksp0h, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp0h, "ksp_0_");
+    KSPSetFromOptions(ksp0h);
+
+    // coriolis vector (projected onto 0 forms)
+    coriolis();
+
+    A = NULL;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
@@ -108,9 +128,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     }
     for(ii = 0; ii < topo->n2; ii++) {
         jj = ii + topo->n1;
-        //dof_proc = topo->loc2[ii] / topo->n2l;
-        //loc[jj] = dof_proc * (topo->n1l + topo->n2l) + topo->loc2[ii] % topo->n2l + topo->n1l;
-        loc[jj] = rank*(topo->n1l + topo->n2l) + ii + topo->n1l;//220720
+        loc[jj] = rank*(topo->n1l + topo->n2l) + ii + topo->n1l;
     }
 
     ISCreateStride(MPI_COMM_SELF, topo->n1+topo->n2, 0, 1, &is_l);
@@ -129,7 +147,6 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     topog = NULL;
 
-#ifdef UP_VORT
     P_up = new P_up_mat(topo, geom, node);
     R_up = new RotMat_up(topo, geom, node, edge);
     KSPCreate(MPI_COMM_WORLD, &ksp_p);
@@ -141,7 +158,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
     KSPSetOptionsPrefix(ksp_p, "p_up_");
     KSPSetFromOptions(ksp_p);
-#endif
+
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl);
 }
@@ -158,21 +175,22 @@ double SWEqn::viscosity() {
 // project coriolis term onto 0 forms
 // assumes diagonal 0 form mass matrix
 void SWEqn::coriolis() {
-    int ii;
+    int ii, size;
     PtQmat* PtQ = new PtQmat(topo, geom, node);
     PetscScalar *fArray;
-    Vec fl, fxl, fxg, PtQfxg;
+    Vec fxl, fxg, PtQfxg;
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     // initialise the coriolis vector (local and global)
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fg);
 
     // evaluate the coriolis term at nodes
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fxl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fxg);
+    VecCreateSeq(MPI_COMM_SELF, geom->n0, &fxl);
+    VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &fxg);
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
-    for(ii = 0; ii < topo->n0; ii++) {
+    for(ii = 0; ii < geom->n0; ii++) {
 #ifdef W2_ALPHA
         fArray[ii] = 2.0*omega*( -cos(geom->s[ii][0])*cos(geom->s[ii][1])*sin(W2_ALPHA) + sin(geom->s[ii][1])*cos(W2_ALPHA) );
 #else
@@ -182,25 +200,24 @@ void SWEqn::coriolis() {
     VecRestoreArray(fxl, &fArray);
 
     // scatter array to global vector
-    VecScatterBegin(topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(geom->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  geom->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
 
     // project vector onto 0 forms
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PtQfxg);
     VecZeroEntries(PtQfxg);
     MatMult(PtQ->M, fxg, PtQfxg);
     // diagonal mass matrix as vector
-    VecPointwiseDivide(fg, PtQfxg, m0->vg);
+    //VecPointwiseDivide(fg, PtQfxg, m0->vg);
+    KSPSolve(ksp0, PtQfxg, fg);
     
     delete PtQ;
-    VecDestroy(&fl);
     VecDestroy(&fxl);
     VecDestroy(&fxg);
     VecDestroy(&PtQfxg);
 }
 
 // derive vorticity (global vector) as \omega = curl u
-// assumes diagonal 0 form mass matrix
 void SWEqn::curl(Vec u, Vec *w) {
     Vec du;
 
@@ -210,7 +227,8 @@ void SWEqn::curl(Vec u, Vec *w) {
     VecZeroEntries(du);
     MatMult(E01M1, u, du);
     // diagonal mass matrix as vector
-    VecPointwiseDivide(*w, du, m0->vg);
+    //VecPointwiseDivide(*w, du, m0->vg);
+    KSPSolve(ksp0, du, *w);
 
     VecDestroy(&du);
 }
@@ -365,6 +383,7 @@ void SWEqn::diagnose_wxu(Vec* wxu) {
     VecDestroy(&uh);
 }
 
+// TODO: upwind!
 void SWEqn::diagnose_q(Vec* qi, Vec* qj) {
     Vec rhs, tmp;
 
@@ -374,26 +393,32 @@ void SWEqn::diagnose_q(Vec* qi, Vec* qj) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, qj);
 
     // first time level
-    VecPointwiseMult(rhs, m0->vg, fg);
+    //VecPointwiseMult(rhs, m0->vg, fg);
+    MatMult(M0->M, fg, rhs);
     MatMult(E01M1, ui, tmp);
     VecAXPY(rhs, 1.0, tmp);
-#ifdef UP_VORT
-    P_up->assemble_h(uil, hi, dt);
-#else
-    P_up->assemble_h(NULL, hi, dt);
-#endif
-    KSPSolve(ksp_p, rhs, *qi);
+//#ifdef UP_VORT
+//    P_up->assemble_h(uil, hi, dt);
+//#else
+//    P_up->assemble_h(NULL, hi, dt);
+//#endif
+//    KSPSolve(ksp_p, rhs, *qi);
+    M0h->assemble(hi);
+    KSPSolve(ksp0h, rhs, *qi);
 
     // second time level
-    VecPointwiseMult(rhs, m0->vg, fg);
+    //VecPointwiseMult(rhs, m0->vg, fg);
+    MatMult(M0->M, fg, rhs);
     MatMult(E01M1, uj, tmp);
     VecAXPY(rhs, 1.0, tmp);
-#ifdef UP_VORT
-    P_up->assemble_h(ujl, hj, dt);
-#else
-    P_up->assemble_h(NULL, hj, dt);
-#endif
-    KSPSolve(ksp_p, rhs, *qj);
+//#ifdef UP_VORT
+//    P_up->assemble_h(ujl, hj, dt);
+//#else
+//    P_up->assemble_h(NULL, hj, dt);
+//#endif
+//    KSPSolve(ksp_p, rhs, *qj);
+    M0h->assemble(hj);
+    KSPSolve(ksp0h, rhs, *qj);
 
     VecDestroy(&rhs);
     VecDestroy(&tmp);
@@ -901,6 +926,8 @@ SWEqn::~SWEqn() {
     KSPDestroy(&ksp_p);
 #endif
     KSPDestroy(&ksp);
+    KSPDestroy(&ksp0);
+    KSPDestroy(&ksp0h);
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);
     VecDestroy(&fg);
@@ -914,7 +941,8 @@ SWEqn::~SWEqn() {
     if(topog) VecDestroy(&topog);
     if(A) MatDestroy(&A);
 
-    delete m0;
+    //delete m0;
+    delete M0;
     delete M1;
     delete M2;
 
@@ -923,9 +951,8 @@ SWEqn::~SWEqn() {
 
     delete R;
     delete M1h;
+    delete M0h;
     delete K;
-
-    delete M1_pc;
 
     delete edge;
     delete node;
@@ -942,26 +969,27 @@ void SWEqn::init0(Vec q, ICfunc* func) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateSeq(MPI_COMM_SELF, geom->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &bg);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PQb);
     VecZeroEntries(bg);
 
     VecGetArray(bl, &bArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 bArray[inds0[ii]] = func(geom->x[inds0[ii]]);
             }
         }
     }
     VecRestoreArray(bl, &bArray);
-    VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(geom->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  geom->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
     MatMult(PQ->M, bg, PQb);
-    VecPointwiseDivide(q, PQb, m0->vg);
+    //VecPointwiseDivide(q, PQb, m0->vg);
+    KSPSolve(ksp0, PQb, q);
 
     VecDestroy(&bl);
     VecDestroy(&bg);
@@ -981,15 +1009,15 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    VecCreateSeq(MPI_COMM_SELF, 2*topo->n0, &bl);
-    VecCreateMPI(MPI_COMM_WORLD, 2*topo->n0l, 2*topo->nDofs0G, &bg);
+    VecCreateSeq(MPI_COMM_SELF, 2*geom->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, 2*geom->n0l, 2*geom->nDofs0G, &bg);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &UQb);
     VecZeroEntries(bg);
 
     VecGetArray(bl, &bArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 bArray[2*inds0[ii]+0] = func_x(geom->x[inds0[ii]]);
                 bArray[2*inds0[ii]+1] = func_y(geom->x[inds0[ii]]);
@@ -999,13 +1027,13 @@ void SWEqn::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
     VecRestoreArray(bl, &bArray);
 
     // create a new vec scatter object to handle vector quantity on nodes
-    loc02 = new int[2*topo->n0];
-    for(ii = 0; ii < topo->n0; ii++) {
-        loc02[2*ii+0] = 2*topo->loc0[ii]+0;
-        loc02[2*ii+1] = 2*topo->loc0[ii]+1;
+    loc02 = new int[2*geom->n0];
+    for(ii = 0; ii < geom->n0; ii++) {
+        loc02[2*ii+0] = 2*geom->loc0[ii]+0;
+        loc02[2*ii+1] = 2*geom->loc0[ii]+1;
     }
-    ISCreateStride(MPI_COMM_WORLD, 2*topo->n0, 0, 1, &isl);
-    ISCreateGeneral(MPI_COMM_WORLD, 2*topo->n0, loc02, PETSC_COPY_VALUES, &isg);
+    ISCreateStride(MPI_COMM_WORLD, 2*geom->n0, 0, 1, &isl);
+    ISCreateGeneral(MPI_COMM_WORLD, 2*geom->n0, loc02, PETSC_COPY_VALUES, &isg);
     VecScatterCreate(bg, isg, bl, isl, &scat);
     VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
@@ -1034,8 +1062,8 @@ void SWEqn::init2(Vec h, ICfunc* func) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateSeq(MPI_COMM_SELF, geom->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &bg);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
     VecZeroEntries(bg);
 
@@ -1043,15 +1071,15 @@ void SWEqn::init2(Vec h, ICfunc* func) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 bArray[inds0[ii]] = func(geom->x[inds0[ii]]);
             }
         }
     }
     VecRestoreArray(bl, &bArray);
-    VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(geom->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(geom->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
     MatMult(WQ->M, bg, WQb);
 
@@ -1168,8 +1196,6 @@ void SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
     VecScatterEnd(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     MatMult(EtoF->E21, ug, dug);
-//    VecScatterBegin(topo->gtol_2, dug, dul, INSERT_VALUES, SCATTER_FORWARD);
-//    VecScatterEnd(topo->gtol_2, dug, dul, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
@@ -1179,7 +1205,6 @@ void SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
     local_i[0] = local_i[1] = 0.0;
 
     VecGetArray(ul, &array_1);
-//    VecGetArray(dul, &array_2);
     VecGetArray(dug, &array_2);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -1218,7 +1243,6 @@ void SWEqn::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
         }
     }
     VecRestoreArray(ul, &array_1);
-//    VecRestoreArray(dul, &array_2);
     VecRestoreArray(dug, &array_2);
 
     MPI_Allreduce(local_1, global_1, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -1244,8 +1268,6 @@ void SWEqn::err2(Vec ug, ICfunc* fu, double* norms) {
     Vec ul;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &ul);
-//    VecScatterBegin(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
-//    VecScatterEnd(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
@@ -1254,7 +1276,6 @@ void SWEqn::err2(Vec ug, ICfunc* fu, double* norms) {
     local_2[0] = local_2[1] = 0.0;
     local_i[0] = local_i[1] = 0.0;
 
-//    VecGetArray(ul, &array_2);
     VecGetArray(ug, &array_2);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -1285,7 +1306,6 @@ if(fabs(geom->s[inds0[ii]][1]) > 0.45*M_PI) continue;
             }
         }
     }
-//    VecRestoreArray(ul, &array_2);
     VecRestoreArray(ug, &array_2);
 
     MPI_Allreduce(local_1, global_1, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -1344,15 +1364,12 @@ double SWEqn::int2(Vec ug) {
     Vec ul;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &ul);
-//    VecScatterBegin(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
-//    VecScatterEnd(topo->gtol_2, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
     local = 0.0;
 
-//    VecGetArray(ul, &array_2);
     VecGetArray(ug, &array_2);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -1367,7 +1384,6 @@ double SWEqn::int2(Vec ug) {
             }
         }
     }
-//    VecRestoreArray(ul, &array_2);
     VecRestoreArray(ug, &array_2);
 
     MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -1389,8 +1405,6 @@ double SWEqn::intE(Vec ug, Vec hg) {
     VecScatterEnd(topo->gtol_1, ug, ul, INSERT_VALUES, SCATTER_FORWARD);
 
     VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
-//    VecScatterBegin(topo->gtol_2, hg, hl, INSERT_VALUES, SCATTER_FORWARD);
-//    VecScatterEnd(topo->gtol_2, hg, hl, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
@@ -1398,7 +1412,6 @@ double SWEqn::intE(Vec ug, Vec hg) {
     local = 0.0;
 
     VecGetArray(ul, &array_1);
-//    VecGetArray(hl, &array_2);
     VecGetArray(hg, &array_2);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -1415,7 +1428,6 @@ double SWEqn::intE(Vec ug, Vec hg) {
         }
     }
     VecRestoreArray(ul, &array_1);
-//    VecRestoreArray(hl, &array_2);
     VecRestoreArray(hg, &array_2);
 
     MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
