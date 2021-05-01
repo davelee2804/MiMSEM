@@ -86,8 +86,8 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 2;//10*24*30;//7200*3;
-    int dumpEvery = 2;//24*30;//1*12;//6*30*3;
+    int nSteps = 10;//10*24*30;//7200*3;
+    int dumpEvery = 5;//24*30;//1*12;//6*30*3;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;

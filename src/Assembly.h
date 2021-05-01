@@ -42,6 +42,7 @@ class Phmat {
         LagrangeNode* node;
         Mat M;
         void assemble(Vec h2);
+        void assemble_up(Vec ul, Vec hl, double dt);
 };
 
 class Uhmat {

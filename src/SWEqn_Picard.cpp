@@ -23,7 +23,7 @@
 #define RAD_SPHERE 6371220.0
 //#define RAD_SPHERE 1.0
 //#define W2_ALPHA (0.25*M_PI)
-//#define UP_VORT
+#define UP_VORT
 
 using namespace std;
 
@@ -71,6 +71,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     // rotational operator
     R = new RotMat(topo, geom, node, edge);
+    R_up = new RotMat_up(topo, geom, node, edge);
 
     // mass flux operator
     M1h = new Uhmat(topo, geom, node, edge);
@@ -147,18 +148,6 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     topog = NULL;
 
-    P_up = new P_up_mat(topo, geom, node);
-    R_up = new RotMat_up(topo, geom, node, edge);
-    KSPCreate(MPI_COMM_WORLD, &ksp_p);
-    KSPSetOperators(ksp_p, P_up->M, P_up->M);
-    KSPSetTolerances(ksp_p, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp_p, KSPGMRES);
-    KSPGetPC(ksp_p, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
-    KSPSetOptionsPrefix(ksp_p, "p_up_");
-    KSPSetFromOptions(ksp_p);
-
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl);
 }
@@ -231,29 +220,6 @@ void SWEqn::curl(Vec u, Vec *w) {
     KSPSolve(ksp0, du, *w);
 
     VecDestroy(&du);
-}
-
-// upwinded trial function for the vorticity
-void SWEqn::curl_up(Vec u, Vec *w) {
-#ifdef UP_VORT
-    Vec du, ul;
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &du);
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
-
-    VecScatterBegin(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
-
-    MatMult(E01M1, u, du);
-    P_up->assemble(ul, dt);
-    KSPSolve(ksp_p, du, *w);
-
-    VecDestroy(&du);
-    VecDestroy(&ul);
-#else
-    curl(u, w);
-#endif
 }
 
 // dH/du = hu = F
@@ -332,57 +298,6 @@ void SWEqn::diagnose_Phi(Vec* Phi) {
     VecDestroy(&b);
 }
 
-void SWEqn::diagnose_wxu(Vec* wxu) {
-    Vec wi, wj, wl, uh;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, wxu);
-    VecZeroEntries(*wxu);
-
-#ifdef UP_VORT
-    Vec ul;
-
-    VecZeroEntries(uh);
-    VecAXPY(uh, 0.5, ui);
-    VecAXPY(uh, 0.5, uj);
-    curl_up(uh, &wi);
-    VecAXPY(wi, 1.0, fg);
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
-
-    VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterBegin(topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_1, uh, ul, INSERT_VALUES, SCATTER_FORWARD);
-    R_up->assemble(wl, ul, dt);
-    MatMult(R_up->M, uh, *wxu);
-
-    VecDestroy(&ul);
-#else
-    curl(ui, &wi);
-    curl(uj, &wj);
-
-    VecAXPY(wi, 1.0, wj);
-    VecAYPX(wi, 0.5, fg);
-
-    VecScatterBegin(topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, wi, wl, INSERT_VALUES, SCATTER_FORWARD);
-
-    VecZeroEntries(uh);
-    VecAXPY(uh, 0.5, ui);
-    VecAXPY(uh, 0.5, uj);
-
-    R->assemble(wl);
-    MatMult(R->M, uh, *wxu);
-#endif
-
-    VecDestroy(&wi);
-    VecDestroy(&wj);
-    VecDestroy(&wl);
-    VecDestroy(&uh);
-}
-
 // TODO: upwind!
 void SWEqn::diagnose_q(Vec* qi, Vec* qj) {
     Vec rhs, tmp;
@@ -393,31 +308,25 @@ void SWEqn::diagnose_q(Vec* qi, Vec* qj) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, qj);
 
     // first time level
-    //VecPointwiseMult(rhs, m0->vg, fg);
     MatMult(M0->M, fg, rhs);
     MatMult(E01M1, ui, tmp);
     VecAXPY(rhs, 1.0, tmp);
-//#ifdef UP_VORT
-//    P_up->assemble_h(uil, hi, dt);
-//#else
-//    P_up->assemble_h(NULL, hi, dt);
-//#endif
-//    KSPSolve(ksp_p, rhs, *qi);
+#ifdef UP_VORT
+    M0h->assemble_up(uil, hi, dt);
+#else
     M0h->assemble(hi);
+#endif
     KSPSolve(ksp0h, rhs, *qi);
 
     // second time level
-    //VecPointwiseMult(rhs, m0->vg, fg);
     MatMult(M0->M, fg, rhs);
     MatMult(E01M1, uj, tmp);
     VecAXPY(rhs, 1.0, tmp);
-//#ifdef UP_VORT
-//    P_up->assemble_h(ujl, hj, dt);
-//#else
-//    P_up->assemble_h(NULL, hj, dt);
-//#endif
-//    KSPSolve(ksp_p, rhs, *qj);
+#ifdef UP_VORT
+    M0h->assemble_up(ujl, hj, dt);
+#else
     M0h->assemble(hj);
+#endif
     KSPSolve(ksp0h, rhs, *qj);
 
     VecDestroy(&rhs);
@@ -921,10 +830,6 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
 }
 
 SWEqn::~SWEqn() {
-#ifdef UP_VORT
-    delete P_up;
-    KSPDestroy(&ksp_p);
-#endif
     KSPDestroy(&ksp);
     KSPDestroy(&ksp0);
     KSPDestroy(&ksp0h);
@@ -1463,109 +1368,6 @@ void SWEqn::writeConservation(double time, Vec u, Vec h, double mass0, double vo
     }
     VecDestroy(&wi);
 } 
-
-void SWEqn::solve_explicit(Vec un, Vec hn, double _dt, bool save) {
-    Vec F1, F2, Phi1, Phi2, wxu1, wxu2, bu, tu, uh, hh, d2u, d4u;
-
-    dt = _dt;
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hh);
-
-    // first step
-    VecCopy(un, ui);
-    VecCopy(un, uj);
-    VecCopy(hn, hi);
-    VecCopy(hn, hj);
-
-    // ...momentum
-    diagnose_wxu(&wxu1);
-    diagnose_Phi(&Phi1);
-    VecZeroEntries(bu);
-    MatMult(M1->M, un, bu);
-    VecAXPY(bu, -dt, wxu1);
-    MatMult(EtoF->E12, Phi1, tu);
-    VecAXPY(bu, -dt, tu);
-    if(do_visc) {
-        laplacian(uj, &d2u);
-        laplacian(d2u, &d4u);
-        MatMult(M1->M, d4u, d2u);
-        VecAXPY(bu, -dt, d2u);
-        VecDestroy(&d2u);
-        VecDestroy(&d4u);
-    }
-    VecZeroEntries(uh);
-    KSPSolve(ksp, bu, uh);
-
-    // ...continuity
-    diagnose_F(&F1);
-    MatMult(EtoF->E21, F1, hh);
-    VecAYPX(hh, -dt, hn);
-
-    // second step
-    VecCopy(uh, ui);
-    VecCopy(uh, uj);
-    VecCopy(hh, hi);
-    VecCopy(hh, hj);
-
-    // ...momentum
-    diagnose_wxu(&wxu2);
-    diagnose_Phi(&Phi2);
-    MatMult(M1->M, un, bu);
-    VecAXPY(bu, -0.5*dt, wxu1);
-    VecAXPY(bu, -0.5*dt, wxu2);
-    MatMult(EtoF->E12, Phi1, tu);
-    VecAXPY(bu, -0.5*dt, tu);
-    MatMult(EtoF->E12, Phi2, tu);
-    VecAXPY(bu, -0.5*dt, tu);
-    if(do_visc) {
-        laplacian(uj, &d2u);
-        laplacian(d2u, &d4u);
-        MatMult(M1->M, d4u, d2u);
-        VecAXPY(bu, -dt, d2u);
-        VecDestroy(&d2u);
-        VecDestroy(&d4u);
-    }
-    VecZeroEntries(un);
-    KSPSolve(ksp, bu, un);
-
-    // ...continuity
-    diagnose_F(&F2);
-    VecAXPY(F2, 1.0, F1);
-    MatMult(EtoF->E21, F2, hh);
-    VecAYPX(hh, -0.5*dt, hn);
-    VecCopy(hh, hn);
-
-    if(save) {
-        Vec wi;
-        char fieldname[20];
-
-        step++;
-        curl(un, &wi);
-
-        sprintf(fieldname, "vorticity");
-        geom->write0(wi, fieldname, step);
-        sprintf(fieldname, "velocity");
-        geom->write1(un, fieldname, step);
-        sprintf(fieldname, "pressure");
-        geom->write2(hn, fieldname, step);
-
-        VecDestroy(&wi);
-    }
-
-    VecDestroy(&bu);
-    VecDestroy(&tu);
-    VecDestroy(&uh);
-    VecDestroy(&Phi1);
-    VecDestroy(&Phi2);
-    VecDestroy(&wxu1);
-    VecDestroy(&wxu2);
-    VecDestroy(&hh);
-    VecDestroy(&F1);
-    VecDestroy(&F2);
-}
 
 void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     int size;

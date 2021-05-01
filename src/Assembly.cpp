@@ -436,6 +436,74 @@ void Phmat::assemble(Vec h2) {
     delete[] PtQPflat;
 }
 
+void Phmat::assemble_up(Vec ul, Vec hl, double dt) {
+    int ex, ey, ei, mp1, mp12, np1, np12, ii, *inds;
+    double ux[2], lx[99], ly[99], det, **J, ux2[2], hx;
+    PetscScalar *uArray, *hArray;
+    GaussLobatto* quad = node->q;
+    Wii* Q = new Wii(node->q, geom);
+    M0_j_xy_i* P = new M0_j_xy_i(node);
+    double** QP = Alloc2D(Q->nDofsI, P->nDofsJ);
+    double** Pt = Alloc2D(P->nDofsJ, P->nDofsI);
+    double** PtQP = Alloc2D(P->nDofsJ, P->nDofsJ);
+    double* PtQPflat = new double[P->nDofsJ*P->nDofsJ];
+
+    ux2[0] = ux2[1] = 0.0;
+
+    np1 = node->n + 1;
+    np12 = np1*np1;
+    mp1 = node->q->n + 1;
+    mp12 = mp1*mp1;
+
+    MatZeroEntries(M);
+
+    Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
+
+    VecGetArray(hl, &hArray);
+    VecGetArray(ul, &uArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            inds = topo->elInds0_g(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, ux);
+                ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
+                ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
+                geom->interp2_l(ex, ey, ii%mp1, ii/mp1, hArray, &hx);
+
+                for(int jj = 0; jj < np1; jj++) {
+                    lx[jj] = node->eval_q(quad->x[ii%mp1] - dt*ux2[0], jj);
+                    ly[jj] = node->eval_q(quad->x[ii/mp1] - dt*ux2[1], jj);
+                }
+                // determinant from the integration and the inverse determinant 
+                // from the density cancel
+                for(int jj = 0; jj < np12; jj++) {
+                    QP[ii][jj]  = hx * Q->A[ii][ii] * lx[jj%np1] * ly[jj/np1];
+                }
+            }
+
+            Mult_IP(P->nDofsJ, P->nDofsJ, Q->nDofsI, Pt, QP, PtQP);
+            Flat2D_IP(P->nDofsJ, P->nDofsJ, PtQP, PtQPflat);
+            MatSetValues(M, P->nDofsJ, inds, P->nDofsJ, inds, PtQPflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(hl, &hArray);
+    VecRestoreArray(ul, &uArray);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(P->nDofsJ, Pt);
+    Free2D(Q->nDofsI, QP);
+    Free2D(P->nDofsJ, PtQP);
+    delete P;
+    delete Q;
+    delete[] PtQPflat;
+}
+
 Phmat::~Phmat() {
     MatDestroy(&M);
 }

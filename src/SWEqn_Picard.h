@@ -41,15 +41,11 @@ class SWEqn {
         Vec uil;
         Vec ujl;
         Mat A;
-        P_up_mat* P_up;
         RotMat_up* R_up;
-        KSP ksp_p;
         void coriolis();
         void curl(Vec u, Vec* w);
-        void curl_up(Vec u, Vec* w);
         void diagnose_F(Vec* F);
         void diagnose_Phi(Vec* Phi);
-        void diagnose_wxu(Vec* wxu);
         void diagnose_q(Vec* qi, Vec* qj);
         void init0(Vec q, ICfunc* func);
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
@@ -65,7 +61,6 @@ class SWEqn {
         void assemble_residual(Vec x, Vec f);
         void assemble_operator(double dt);
         void solve(Vec u, Vec h, double _dt, bool save);
-        void solve_explicit(Vec u, Vec h, double _dt, bool save);
         void solve_imex(Vec un, Vec hn, double _dt, bool save);
         double viscosity();
         void unpack(Vec x, Vec u, Vec h);
