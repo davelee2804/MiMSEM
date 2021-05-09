@@ -24,6 +24,7 @@
 //#define RAD_SPHERE 1.0
 //#define W2_ALPHA (0.25*M_PI)
 #define UP_VORT
+#define H_MEAN 1.0e+4
 
 using namespace std;
 
@@ -116,6 +117,8 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     coriolis();
 
     A = NULL;
+    DM1inv = NULL;
+    ksp_helm = NULL;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
@@ -150,6 +153,8 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl);
+
+    u_prev = NULL;
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -200,6 +205,10 @@ void SWEqn::coriolis() {
     //VecPointwiseDivide(fg, PtQfxg, m0->vg);
     KSPSolve(ksp0, PtQfxg, fg);
     
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl);
+    VecScatterBegin(topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
+
     delete PtQ;
     VecDestroy(&fxl);
     VecDestroy(&fxg);
@@ -542,15 +551,9 @@ void SWEqn::assemble_operator(double dt) {
     const int *cols;
     const double* vals;
     int cols2[9999];
-    double H_mean = 1.0e+4;
-    Vec fl;
     Mat Muh, Mhu;
 
     if(A) return;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl);
-    VecScatterBegin(topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
 
     MatCreate(MPI_COMM_WORLD, &A);
     MatSetSizes(A, topo->n1l+topo->n2l, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, topo->nDofs1G+topo->nDofs2G);
@@ -598,7 +601,7 @@ void SWEqn::assemble_operator(double dt) {
 
     // [h,u] block
     MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mhu);
-    MatScale(Mhu, 0.5*dt*H_mean);
+    MatScale(Mhu, 0.5*dt*H_MEAN);
     MatAssemblyBegin(Mhu, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  Mhu, MAT_FINAL_ASSEMBLY);
 
@@ -644,7 +647,6 @@ void SWEqn::assemble_operator(double dt) {
     const int *cols;
     const double* vals;
     int cols2[9999];
-    double H_mean = 1.0e+4;
     Vec fl;
     Mat Muu, Muh, Mhu, Mhh;
 
@@ -712,7 +714,7 @@ void SWEqn::assemble_operator(double dt) {
 
     // [h,u] block
     MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mhu);
-    MatScale(Mhu, 0.5*dt*H_mean);
+    MatScale(Mhu, 0.5*dt*H_MEAN);
     MatAssemblyBegin(Mhu, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  Mhu, MAT_FINAL_ASSEMBLY);
 
@@ -756,6 +758,70 @@ void SWEqn::assemble_operator(double dt) {
     MatDestroy(&Mhu);
     MatDestroy(&Mhh);
 */
+}
+
+void SWEqn::assemble_operator_schur(double imp_dt) {
+    int size;
+    Mat M1inv;
+    Mat M2D;
+    PC pc;
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    R->assemble(fl);
+    MatAXPY(M1->M, imp_dt, R->M, DIFFERENT_NONZERO_PATTERN);
+    MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+    coriolisMatInv(M1->M, &M1inv);
+    M1->assemble();
+
+    MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
+    MatMatMult(M2D, M1inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &DM1inv);
+    MatMatMult(DM1inv, E12M2, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &A);
+    MatAYPX(A, -imp_dt*imp_dt*grav*H_MEAN, M2->M, DIFFERENT_NONZERO_PATTERN);
+    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  A, MAT_FINAL_ASSEMBLY);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp_helm);
+    KSPSetOperators(ksp_helm, A, A);
+    KSPSetTolerances(ksp_helm, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp_helm, KSPGMRES);
+    KSPGetPC(ksp_helm, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp_helm, "ksp_helm_");
+    KSPSetFromOptions(ksp_helm);
+
+    VecDestroy(&fl);
+    MatDestroy(&M1inv);
+    MatDestroy(&M2D);
+}
+
+void SWEqn::solve_schur(Vec Fu, Vec Fh, Vec _u, Vec _h, double imp_dt) {
+    Vec rhs_h, rhs_u;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &rhs_h);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rhs_u);
+
+    // pressure solve
+    MatMult(DM1inv, Fu, rhs_h);
+    VecAYPX(rhs_h, -imp_dt*H_MEAN, Fh);
+    KSPSolve(ksp_helm, rhs_h, _h);
+
+    // velocity solve
+    MatMult(E12M2, _h, rhs_u);
+    VecAYPX(rhs_u, -imp_dt*grav, Fu);
+
+    R->assemble(fl);
+    MatAXPY(M1->M, imp_dt, R->M, DIFFERENT_NONZERO_PATTERN);
+    MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+
+    KSPSolve(ksp0, rhs_u, _u);
+    M1->assemble();
+
+    VecDestroy(&rhs_h);
+    VecDestroy(&rhs_u);
 }
 
 void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
@@ -836,6 +902,7 @@ SWEqn::~SWEqn() {
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);
     VecDestroy(&fg);
+    VecDestroy(&fl);
     VecScatterDestroy(&gtol_x);
     VecDestroy(&ui);
     VecDestroy(&hi);
@@ -843,8 +910,11 @@ SWEqn::~SWEqn() {
     VecDestroy(&hj);
     VecDestroy(&uil);
     VecDestroy(&ujl);
+    VecDestroy(&u_prev);
     if(topog) VecDestroy(&topog);
     if(A) MatDestroy(&A);
+    if(DM1inv) MatDestroy(&DM1inv);
+    if(ksp_helm) KSPDestroy(&ksp_helm);
 
     //delete m0;
     delete M0;
@@ -1424,9 +1494,19 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
 #endif
     VecAXPY(fu, 1.0, utmp);
 
-    MatMult(M1->M, ui, utmp);
-    VecAYPX(fu, -_dt, utmp);
+    if(u_prev) {
+        MatMult(M1->M, u_prev, utmp);
+        VecAYPX(fu, -2.0*_dt, utmp);
+    } else {
+        MatMult(M1->M, ui, utmp);
+        VecAYPX(fu, -_dt, utmp);
+    }
     KSPSolve(ksp, fu, up);
+
+    if(!u_prev) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_prev);
+    }
+    VecCopy(ui, u_prev);
 
     VecScatterBegin(topo->gtol_1, up, ujl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, up, ujl, INSERT_VALUES, SCATTER_FORWARD);
@@ -1544,3 +1624,242 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     MatDestroy(&KTD);
     KSPDestroy(&ksp_f);
 }
+
+void SWEqn::solve_imex_2(Vec un, Vec hn, double _dt, bool save) {
+    int size;
+    Vec Fi, Fj, Phi, qi, qj, ql, ul, utmp, htmp, fu, fh, up;
+    Mat KT, KTD;
+    KSP ksp_f;
+    PC pc;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Phi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &up);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fj);
+
+    // 1. compute provisional velocity
+    VecCopy(un, ui);
+    VecCopy(un, uj);
+    VecCopy(hn, hi);
+    VecCopy(hn, hj);
+    VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+
+    // 1.1. compute the residuals
+    // F^n
+    K->assemble(uil);
+    MatTranspose(K->M, MAT_INITIAL_MATRIX, &KT);
+    MatMult(KT, hi, utmp);
+    VecScale(utmp, 2.0);
+    KSPSolve(ksp, utmp, Fi);
+
+    // Phi^n
+    K->assemble(uil);
+    MatMult(K->M, ui, htmp);
+    MatMult(M2->M, hi, Phi);
+    VecAYPX(Phi, grav, htmp);
+    MatMult(EtoF->E12, Phi, fu);
+
+    // q^n
+    diagnose_q(&qi, &qj);
+
+    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, uil, _dt);
+    MatMult(R_up->M, Fi, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, Fi, utmp);
+#endif
+    VecAXPY(fu, 1.0, utmp);
+
+    VecScale(fu, _dt);
+
+    MatMult(EtoF->E21, Fi, htmp);
+    MatMult(M2->M, htmp, fh);
+    VecScale(fh, _dt);
+
+    // first order rosenbrock step
+    if(!A) assemble_operator_schur(0.5*_dt);
+    solve_schur(fu, fh, up, htmp, 0.5*_dt);
+    VecAXPY(up, 1.0, ui);
+
+    VecScatterBegin(topo->gtol_1, up, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, up, ujl, INSERT_VALUES, SCATTER_FORWARD);
+
+    // 2. compute the semi-implict pressure advection 
+    MatMult(KT, hi, utmp);
+    K->assemble(ujl);
+    MatTranspose(K->M, MAT_REUSE_MATRIX, &KT);
+    MatMult(KT, hi, fu);
+    VecAYPX(fu, 2.0, utmp);
+    VecScale(fu, 1.0/3.0);
+    KSPSolve(ksp, fu, Fi);
+
+    VecZeroEntries(ul);
+    VecAYPX(ul, 1.0/3.0, uil);
+    VecAYPX(ul, 2.0/3.0, ujl);
+    K->assemble(ul);
+    MatTranspose(K->M, MAT_REUSE_MATRIX, &KT);
+    MatMatMult(KT, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &KTD);
+
+    MatMult(KTD, Fi, fu);
+    MatMult(KT, hi, utmp);
+    VecAYPX(fu, -_dt, utmp);
+    MatAYPX(KTD, _dt, M1->M, DIFFERENT_NONZERO_PATTERN);
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    KSPCreate(MPI_COMM_WORLD, &ksp_f);
+    KSPSetOperators(ksp_f, KTD, KTD);
+    KSPSetTolerances(ksp_f, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp_f, KSPGMRES);
+    KSPGetPC(ksp_f, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp_f, "adv_f_");
+    KSPSetFromOptions(ksp_f);
+    KSPSolve(ksp_f, fu, Fj);
+
+    VecAXPY(Fj, 1.0, Fi);
+    MatMult(EtoF->E21, Fj, hj);
+    VecAYPX(hj, -_dt, hi);
+
+    // 3. compute final velocity
+    VecDestroy(&Phi);
+    VecDestroy(&qi);
+    VecDestroy(&qj);
+    diagnose_Phi(&Phi);
+    diagnose_q(&qi, &qj);
+
+    MatMult(EtoF->E12, Phi, fu);
+
+    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, uil, _dt);
+    MatMult(R_up->M, Fj, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, Fj, utmp);
+#endif
+    VecAXPY(fu, 0.5, utmp);
+
+    VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, ujl, _dt);
+    MatMult(R_up->M, Fj, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, Fj, utmp);
+#endif
+    VecAXPY(fu, 0.5, utmp);
+
+    MatMult(M1->M, ui, utmp);
+    VecAYPX(fu, -_dt, utmp);
+    KSPSolve(ksp, fu, uj);
+
+    VecCopy(uj, un);
+    VecCopy(hj, hn);
+
+    if(save) {
+        Vec wi;
+        char fieldname[20];
+
+        step++;
+        curl(un, &wi);
+
+        sprintf(fieldname, "vorticity");
+        geom->write0(wi, fieldname, step);
+        sprintf(fieldname, "velocity");
+        geom->write1(un, fieldname, step);
+        sprintf(fieldname, "pressure");
+        geom->write2(hn, fieldname, step);
+
+        VecDestroy(&wi);
+    }
+
+    VecDestroy(&qi);
+    VecDestroy(&qj);
+    VecDestroy(&ql);
+    VecDestroy(&ul);
+    VecDestroy(&Phi);
+    VecDestroy(&htmp);
+    VecDestroy(&Fi);
+    VecDestroy(&Fj);
+    VecDestroy(&fu);
+    VecDestroy(&fh);
+    VecDestroy(&utmp);
+    VecDestroy(&up);
+    MatDestroy(&KT);
+    MatDestroy(&KTD);
+    KSPDestroy(&ksp_f);
+}
+
+void SWEqn::coriolisMatInv(Mat A, Mat* Ainv) {
+    int mi, mf, ci, nCols1, nCols2;
+    const int *cols1, *cols2;
+    const double *vals1;
+    const double *vals2;
+    double D[2][2], Dinv[2][2], detInv;
+    double valsInv[4];
+    int rows[2];
+
+    D[0][0] = D[0][1] = D[1][0] = D[1][1] = 0.0;
+
+    MatCreate(MPI_COMM_WORLD, Ainv);
+    MatSetSizes(*Ainv, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(*Ainv, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(*Ainv, 2, PETSC_NULL, 2, PETSC_NULL);
+    MatZeroEntries(*Ainv);
+
+    MatGetOwnershipRange(A, &mi, &mf);
+    for(int mm = mi; mm < mf; mm += 2) {
+        rows[0] = mm+0;
+        rows[1] = mm+1;
+
+        MatGetRow(A, mm+0, &nCols1, &cols1, &vals1);
+        for(ci = 0; ci < nCols1; ci++) {
+            if(cols1[ci] == mm+0) {
+                D[0][0] = vals1[ci+0];
+                D[0][1] = vals1[ci+1];
+                break;
+            }
+        }
+        MatRestoreRow(A, mm+0, &nCols1, &cols1, &vals1);
+
+        MatGetRow(A, mm+1, &nCols2, &cols2, &vals2);
+        for(ci = 0; ci < nCols2; ci++) {
+            if(cols2[ci] == mm+1) {
+                D[1][0] = vals2[ci-1];
+                D[1][1] = vals2[ci+0];
+                break;
+            }
+        }
+        MatRestoreRow(A, mm+1, &nCols2, &cols2, &vals2);
+
+        detInv = 1.0/(D[0][0]*D[1][1] - D[0][1]*D[1][0]);
+
+        Dinv[0][0] = +detInv*D[1][1];
+        Dinv[1][1] = +detInv*D[0][0];
+        Dinv[0][1] = -detInv*D[0][1];
+        Dinv[1][0] = -detInv*D[1][0];
+
+        valsInv[0] = Dinv[0][0];
+        valsInv[1] = Dinv[0][1];
+        valsInv[2] = Dinv[1][0];
+        valsInv[3] = Dinv[1][1];
+
+        MatSetValues(*Ainv, 2, rows, 2, rows, valsInv, INSERT_VALUES);
+    }
+    MatAssemblyBegin(*Ainv, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  *Ainv, MAT_FINAL_ASSEMBLY);
+}
+

@@ -27,12 +27,15 @@ class SWEqn {
         Phmat* M0h;
         WtQUmat* K;
         Vec fg;            // coriolis vector (global)
+        Vec fl;            // coriolis vector (local)
         Vec topog;
         Mat E01M1;
         Mat E12M2;
         KSP ksp;           // 1 form mass matrix linear solver
         KSP ksp0;          // 0 form mass matrix linear solver
         KSP ksp0h;         // 0 form mass matrix linear solver
+        KSP ksp_rot;
+        KSP ksp_helm;
         VecScatter gtol_x;
         Vec ui;
         Vec hi;
@@ -40,7 +43,9 @@ class SWEqn {
         Vec hj;
         Vec uil;
         Vec ujl;
+        Vec u_prev;
         Mat A;
+        Mat DM1inv;
         RotMat_up* R_up;
         void coriolis();
         void curl(Vec u, Vec* w);
@@ -60,9 +65,13 @@ class SWEqn {
         void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0);
         void assemble_residual(Vec x, Vec f);
         void assemble_operator(double dt);
+        void assemble_operator_schur(double dt);
+        void solve_schur(Vec Fu, Vec Fh, Vec _u, Vec _h, double imp_dt);
         void solve(Vec u, Vec h, double _dt, bool save);
         void solve_imex(Vec un, Vec hn, double _dt, bool save);
+        void solve_imex_2(Vec un, Vec hn, double _dt, bool save);
         double viscosity();
         void unpack(Vec x, Vec u, Vec h);
         void repack(Vec x, Vec u, Vec h);
+        void coriolisMatInv(Mat A, Mat* Ainv);
 };
