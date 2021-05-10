@@ -635,7 +635,6 @@ void SWEqn::assemble_operator(double dt) {
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  A, MAT_FINAL_ASSEMBLY);
 
-    VecDestroy(&fl);
     MatDestroy(&Muh);
     MatDestroy(&Mhu);
 
@@ -792,7 +791,6 @@ void SWEqn::assemble_operator_schur(double imp_dt) {
     KSPSetOptionsPrefix(ksp_helm, "ksp_helm_");
     KSPSetFromOptions(ksp_helm);
 
-    VecDestroy(&fl);
     MatDestroy(&M1inv);
     MatDestroy(&M2D);
 }
@@ -817,7 +815,7 @@ void SWEqn::solve_schur(Vec Fu, Vec Fh, Vec _u, Vec _h, double imp_dt) {
     MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
 
-    KSPSolve(ksp0, rhs_u, _u);
+    KSPSolve(ksp, rhs_u, _u);
     M1->assemble();
 
     VecDestroy(&rhs_h);
