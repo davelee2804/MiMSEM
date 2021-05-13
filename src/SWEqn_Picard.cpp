@@ -321,7 +321,7 @@ void SWEqn::diagnose_q(Vec* qi, Vec* qj) {
     MatMult(E01M1, ui, tmp);
     VecAXPY(rhs, 1.0, tmp);
 #ifdef UP_VORT
-    M0h->assemble_up(uil, hi, dt);
+    M0h->assemble_up(uil, hi, 0.25*dt);
 #else
     M0h->assemble(hi);
 #endif
@@ -332,7 +332,7 @@ void SWEqn::diagnose_q(Vec* qi, Vec* qj) {
     MatMult(E01M1, uj, tmp);
     VecAXPY(rhs, 1.0, tmp);
 #ifdef UP_VORT
-    M0h->assemble_up(ujl, hj, dt);
+    M0h->assemble_up(ujl, hj, 0.25*dt);
 #else
     M0h->assemble(hj);
 #endif
@@ -477,7 +477,7 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, uil, dt);
+    R_up->assemble(ql, uil, 0.25*dt);
     MatMult(R_up->M, F, utmp);
 #else
     R->assemble(ql);
@@ -488,7 +488,7 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, ujl, dt);
+    R_up->assemble(ql, ujl, 0.25*dt);
     MatMult(R_up->M, F, utmp);
 #else
     R->assemble(ql);
@@ -1446,6 +1446,8 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     KSP ksp_f;
     PC pc;
 
+    dt = _dt;
+
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Phi);
@@ -1486,7 +1488,7 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, uil, _dt);
+    R_up->assemble(ql, uil, 0.25*_dt);
     MatMult(R_up->M, Fi, utmp);
 #else
     R->assemble(ql);
@@ -1566,7 +1568,7 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, uil, _dt);
+    R_up->assemble(ql, uil, 0.25*_dt);
     MatMult(R_up->M, Fj, utmp);
 #else
     R->assemble(ql);
@@ -1577,7 +1579,7 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, ujl, _dt);
+    R_up->assemble(ql, ujl, 0.25*_dt);
     MatMult(R_up->M, Fj, utmp);
 #else
     R->assemble(ql);
@@ -1632,6 +1634,8 @@ void SWEqn::solve_imex_2(Vec un, Vec hn, double _dt, bool save) {
     KSP ksp_f;
     PC pc;
 
+    dt = _dt;
+
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Phi);
@@ -1672,7 +1676,7 @@ void SWEqn::solve_imex_2(Vec un, Vec hn, double _dt, bool save) {
     VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, uil, _dt);
+    R_up->assemble(ql, uil, 0.25*_dt);
     MatMult(R_up->M, Fi, utmp);
 #else
     R->assemble(ql);
@@ -1743,7 +1747,7 @@ void SWEqn::solve_imex_2(Vec un, Vec hn, double _dt, bool save) {
     VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, uil, _dt);
+    R_up->assemble(ql, uil, 0.25*_dt);
     MatMult(R_up->M, Fj, utmp);
 #else
     R->assemble(ql);
@@ -1754,7 +1758,7 @@ void SWEqn::solve_imex_2(Vec un, Vec hn, double _dt, bool save) {
     VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, ujl, _dt);
+    R_up->assemble(ql, ujl, 0.25*_dt);
     MatMult(R_up->M, Fj, utmp);
 #else
     R->assemble(ql);
