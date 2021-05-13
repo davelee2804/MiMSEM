@@ -81,13 +81,13 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 300.0;//40.0;
+    double dt = 30.0;
     double vort_0, mass_0, ener_0;
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 10;//10*24*30;//7200*3;
-    int dumpEvery = 5;//24*30;//1*12;//6*30*3;
+    int nSteps = 10*24*120;
+    int dumpEvery = 24*120;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
@@ -144,7 +144,9 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        sw->solve(ui, hi, dt, dump);
+        //sw->solve(ui, hi, dt, dump);
+        //sw->solve_imex(ui, hi, dt, dump);
+        sw->solve_imex_2(ui, hi, dt, dump);
         //if(dump) {
             sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
         //}

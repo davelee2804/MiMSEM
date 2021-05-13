@@ -804,11 +804,13 @@ void SWEqn::solve_schur(Vec Fu, Vec Fh, Vec _u, Vec _h, double imp_dt) {
     // pressure solve
     MatMult(DM1inv, Fu, rhs_h);
     VecAYPX(rhs_h, -imp_dt*H_MEAN, Fh);
+    VecScale(rhs_h, -1.0);
     KSPSolve(ksp_helm, rhs_h, _h);
 
     // velocity solve
     MatMult(E12M2, _h, rhs_u);
-    VecAYPX(rhs_u, -imp_dt*grav, Fu);
+    VecAYPX(rhs_u, imp_dt*grav, Fu);
+    VecScale(rhs_u, -1.0);
 
     R->assemble(fl);
     MatAXPY(M1->M, imp_dt, R->M, DIFFERENT_NONZERO_PATTERN);
