@@ -638,6 +638,7 @@ void SWEqn::assemble_operator(double dt) {
     MatDestroy(&Muh);
     MatDestroy(&Mhu);
 
+    MatDestroy(&M1->M);
     M1->assemble();
 /*
     int n2 = (topo->elOrd+1)*(topo->elOrd+1);
@@ -772,6 +773,8 @@ void SWEqn::assemble_operator_schur(double imp_dt) {
     MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
     coriolisMatInv(M1->M, &M1inv);
+
+    MatDestroy(&M1->M);
     M1->assemble();
 
     MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M2D);
@@ -818,6 +821,8 @@ void SWEqn::solve_schur(Vec Fu, Vec Fh, Vec _u, Vec _h, double imp_dt) {
     MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
 
     KSPSolve(ksp, rhs_u, _u);
+
+    MatDestroy(&M1->M);
     M1->assemble();
 
     VecDestroy(&rhs_h);
