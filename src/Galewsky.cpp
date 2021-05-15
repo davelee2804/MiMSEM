@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 10*24*120;
+    int nSteps = 8*24*120;
     int dumpEvery = 24*120;
     Topo* topo;
     Geom* geom;
@@ -145,8 +145,7 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         //sw->solve(ui, hi, dt, dump);
-        //sw->solve_imex(ui, hi, dt, dump);
-        sw->solve_imex_2(ui, hi, dt, dump);
+        sw->solve_imex(ui, hi, dt, dump);
         //if(dump) {
             sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
         //}

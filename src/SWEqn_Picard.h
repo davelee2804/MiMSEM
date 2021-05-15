@@ -51,7 +51,7 @@ class SWEqn {
         void curl(Vec u, Vec* w);
         void diagnose_F(Vec* F);
         void diagnose_Phi(Vec* Phi);
-        void diagnose_q(Vec* qi, Vec* qj);
+        void diagnose_q(double _dt, Vec _ug, Vec _ul, Vec _h, Vec* qi);
         void init0(Vec q, ICfunc* func);
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
         void init2(Vec h, ICfunc* func);
