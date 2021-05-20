@@ -259,7 +259,7 @@ void Euler::initGZ() {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
 
             reuse = (!ei) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
@@ -272,7 +272,6 @@ void Euler::initGZ() {
                     Q0[ii] *= 0.5;
                 }
                 Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-                //Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
 
                 for(ii = 0; ii < W->nDofsJ; ii++) {
                     inds2k[ii] = ii + kk*W->nDofsJ;
@@ -956,18 +955,12 @@ double Euler::int2(Vec ug) {
     int ex, ey, ei, ii, mp1, mp12;
     double det, uq, local, global;
     PetscScalar *array_2;
-    //Vec _ul;
-
-    //VecCreateSeq(MPI_COMM_SELF, topo->n2, &_ul);
-    //VecScatterBegin(topo->gtol_2, ug, _ul, INSERT_VALUES, SCATTER_FORWARD);
-    //VecScatterEnd(topo->gtol_2, ug, _ul, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
     local = 0.0;
 
-    //VecGetArray(_ul, &array_2);
     VecGetArray(ug, &array_2);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -981,12 +974,9 @@ double Euler::int2(Vec ug) {
             }
         }
     }
-    //VecRestoreArray(_ul, &array_2);
     VecRestoreArray(ug, &array_2);
 
     MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-    //VecDestroy(&_ul);
 
     return global;
 }

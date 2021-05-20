@@ -95,7 +95,7 @@ void Umat::_assemble(int lev, double scale, bool vert_scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -196,7 +196,7 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -351,7 +351,7 @@ void Wmat::_assemble(int lev, double scale, bool vert_scale) {
             inds = topo->elInds2_g(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 Qaa[ii]  = Q->A[ii]*(scale/det);
@@ -363,16 +363,12 @@ void Wmat::_assemble(int lev, double scale, bool vert_scale) {
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
-            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-
             MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQW, ADD_VALUES);
         }
     }
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
-    //MatAssemblyBegin(_M, MAT_FINAL_ASSEMBLY);
-    //MatAssemblyEnd(_M, MAT_FINAL_ASSEMBLY);
 
     delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
@@ -438,7 +434,7 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -510,7 +506,7 @@ void Uhmat::assemble_up(Vec h2, int lev, double scale, double dt, Vec u1) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -662,6 +658,67 @@ Pvec::~Pvec() {
     delete Q;
 }
 
+Pmat::Pmat(Topo* _topo, Geom* _geom, LagrangeNode* _node) {
+    topo = _topo;
+    geom = _geom;
+    node = _node;
+
+    Q = new Wii(node->q, geom);
+    P = new M0_j_xy_i(node);
+    Pt = Alloc2D(P->nDofsJ, P->nDofsI);
+    Qaa = new double[Q->nDofsI];
+    PtQ = Alloc2D(P->nDofsJ, Q->nDofsJ);
+    PtQP = Alloc2D(P->nDofsJ, P->nDofsJ);
+
+    Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 4*P->nDofsJ, PETSC_NULL);
+    MatZeroEntries(M);
+}
+
+void Pmat::assemble(int lev, double scale) {
+    int ex, ey, ei, mp1, mp12, ii, *inds;
+    double det;
+
+    mp1 = node->q->n + 1;
+    mp12 = mp1*mp1;
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds = geom->elInds0_g(ex, ey);
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Qaa[ii] = scale*Q->A[ii]*det;
+                Qaa[ii] *= geom->thickInv[lev][inds[ii]];
+            }
+
+            Mult_IP(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Qaa, PtQ);
+            Mult_IP(P->nDofsJ, P->nDofsJ, Q->nDofsJ, PtQ, P->A, PtQP);
+
+            inds = topo->elInds0_g(ex, ey);
+
+            MatSetValues(M, P->nDofsJ, inds, P->nDofsJ, inds, PtQP, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+}
+
+Pmat::~Pmat() {
+    MatDestroy(&M);
+
+    delete[] Qaa;
+    Free2D(P->nDofsJ, Pt);
+    Free2D(P->nDofsJ, PtQ);
+    Free2D(P->nDofsJ, PtQP);
+    delete P;
+    delete Q;
+}
+
 Phvec::Phvec(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
     topo = _topo;
     geom = _geom;
@@ -719,6 +776,75 @@ Phvec::~Phvec() {
     delete Q;
 }
 
+Phmat::Phmat(Topo* _topo, Geom* _geom, LagrangeNode* _node) {
+    topo = _topo;
+    geom = _geom;
+    node = _node;
+
+    Q = new Wii(node->q, geom);
+    P = new M0_j_xy_i(node);
+    Pt = Alloc2D(P->nDofsJ, P->nDofsI);
+    Qaa = new double[Q->nDofsI];
+    PtQ = Alloc2D(P->nDofsJ, Q->nDofsJ);
+    PtQP = Alloc2D(P->nDofsJ, P->nDofsJ);
+
+    Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 4*P->nDofsJ, PETSC_NULL);
+    MatZeroEntries(M);
+}
+
+void Phmat::assemble(Vec hl, int lev, double scale) {
+    int ex, ey, ei, mp1, mp12, ii, *inds;
+    double det, hi;
+    PetscScalar* hArray;
+
+    mp1 = node->q->n + 1;
+    mp12 = mp1*mp1;
+
+    VecGetArray(hl, &hArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds = geom->elInds0_g(ex, ey);
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Qaa[ii] = scale*Q->A[ii]*det;
+                Qaa[ii] *= geom->thickInv[lev][inds[ii]];
+
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &hi);
+                hi *= geom->thickInv[lev][inds[ii]];
+                Qaa[ii] *= hi;
+            }
+
+            Mult_IP(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Qaa, PtQ);
+            Mult_IP(P->nDofsJ, P->nDofsJ, Q->nDofsJ, PtQ, P->A, PtQP);
+
+            inds = topo->elInds0_g(ex, ey);
+
+            MatSetValues(M, P->nDofsJ, inds, P->nDofsJ, inds, PtQP, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    VecRestoreArray(hl, &hArray);
+}
+
+Phmat::~Phmat() {
+    MatDestroy(&M);
+
+    delete[] Qaa;
+    Free2D(P->nDofsJ, Pt);
+    Free2D(P->nDofsJ, PtQ);
+    Free2D(P->nDofsJ, PtQP);
+    delete P;
+    delete Q;
+}
 // Assumes quadrature points and 0 forms are the same (for now)
 WtQmat::WtQmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     topo = _topo;
@@ -756,10 +882,9 @@ void WtQmat::assemble() {
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQ);
-            //Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
 
             inds_2 = topo->elInds2_g(ex, ey);
-            inds_0 = topo->elInds0_g(ex, ey);
+            inds_0 = geom->elInds0_g(ex, ey);
 
             MatSetValues(M, W->nDofsJ, inds_2, Q->nDofsJ, inds_0, WtQ, ADD_VALUES);
         }
@@ -818,7 +943,7 @@ void PtQmat::assemble() {
             Mult_FD_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
             //Flat2D_IP(P->nDofsJ, Q->nDofsJ, PtQ, PtQflat);
 
-            inds_0 = topo->elInds0_g(ex, ey);
+            inds_0 = geom->elInds0_g(ex, ey);
             MatSetValues(M, P->nDofsJ, inds_0, Q->nDofsJ, inds_0, PtQ, ADD_VALUES);
         }
     }
@@ -886,7 +1011,7 @@ void UtQmat::assemble() {
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
-            inds_0 = topo->elInds0_g(ex, ey);
+            inds_0 = geom->elInds0_g(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 inds_0x[ii] = 2*inds_0[ii]+0;
                 inds_0y[ii] = 2*inds_0[ii]+1;
@@ -897,22 +1022,18 @@ void UtQmat::assemble() {
 
             //
             Mult_FD_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Qaa, UtQ);
-            //Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
             MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_0x, UtQ, ADD_VALUES);
 
             //
             Mult_FD_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Ut, Qab, UtQ);
-            //Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
             MatSetValues(M, U->nDofsJ, inds_x, Q->nDofsJ, inds_0y, UtQ, ADD_VALUES);
 
             //
             Mult_FD_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Vt, Qba, UtQ);
-            //Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
             MatSetValues(M, U->nDofsJ, inds_y, Q->nDofsJ, inds_0x, UtQ, ADD_VALUES);
 
             //
             Mult_FD_IP(U->nDofsJ, Q->nDofsJ, U->nDofsI, Vt, Qbb, UtQ);
-            //Flat2D_IP(U->nDofsJ, Q->nDofsJ, UtQ, UtQflat);
             MatSetValues(M, U->nDofsJ, inds_y, Q->nDofsJ, inds_0y, UtQ, ADD_VALUES);
         }
     }
@@ -979,7 +1100,7 @@ void WtQUmat::assemble(Vec u1, int lev, double scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -1083,7 +1204,7 @@ void RotMat::assemble(Vec q0, int lev, double scale) {
             inds_y = topo->elInds1y_g(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -1302,7 +1423,7 @@ void Whmat::assemble(Vec rho, int lev, double scale, bool vert_scale_rho) {
             inds = topo->elInds2_g(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
 
@@ -1387,7 +1508,7 @@ void Ut_mat::assemble(int lev, double scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -1714,42 +1835,6 @@ WtQdUdz_mat::~WtQdUdz_mat() {
     MatDestroy(&M);
 }
 
-void GetExponents(double rt, double* c2, double* c1, double* c0) {
-    if(rt > 387.5625) { *c2 = -7.96223048e-04; *c1 = 1.65075161e+00; *c0 = 5.13774111e+02; return; }
-    if(rt > 375.125)  { *c2 = -8.38520228e-04; *c1 = 1.68353169e+00; *c0 = 5.07423013e+02; return; }
-    if(rt > 362.6875) { *c2 = -8.84581701e-04; *c1 = 1.71808311e+00; *c0 = 5.00943626e+02; return; }
-    if(rt > 350.25)   { *c2 = -9.34887037e-04; *c1 = 1.75456634e+00; *c0 = 4.94328892e+02; return; }
-    if(rt > 337.8125) { *c2 = -9.89996668e-04; *c1 = 1.79316268e+00; *c0 = 4.87571099e+02; return; }
-    if(rt > 325.375)  { *c2 = -1.05056910e-03; *c1 = 1.83407787e+00; *c0 = 4.80661798e+02; return; }
-    if(rt > 312.9375) { *c2 = -1.11738264e-03; *c1 = 1.87754641e+00; *c0 = 4.73591699e+02; return; }
-    if(rt > 300.5)    { *c2 = -1.19136296e-03; *c1 = 1.92383690e+00; *c0 = 4.66350552e+02; return; }
-    if(rt > 288.0625) { *c2 = -1.27361857e-03; *c1 = 1.97325869e+00; *c0 = 4.58927006e+02; return; }
-    if(rt > 275.625)  { *c2 = -1.36548667e-03; *c1 = 2.02617009e+00; *c0 = 4.51308433e+02; return; }
-    if(rt > 263.1875) { *c2 = -1.46859326e-03; *c1 = 2.08298869e+00; *c0 = 4.43480724e+02; return; }
-    if(rt > 250.75)   { *c2 = -1.58493276e-03; *c1 = 2.14420456e+00; *c0 = 4.35428037e+02; return; }
-    if(rt > 238.3125) { *c2 = -1.71697485e-03; *c1 = 2.21039706e+00; *c0 = 4.27132489e+02; return; }
-    if(rt > 225.875)  { *c2 = -1.86780976e-03; *c1 = 2.28225676e+00; *c0 = 4.18573766e+02; return; }
-    if(rt > 213.4375) { *c2 = -2.04134892e-03; *c1 = 2.36061426e+00; *c0 = 4.09728652e+02; return; }
-    if(rt > 201.0)    { *c2 = -2.24260674e-03; *c1 = 2.44647854e+00; *c0 = 4.00570409e+02; return; }
-    if(rt > 188.5625) { *c2 = -2.47810366e-03; *c1 = 2.54108909e+00; *c0 = 3.91067999e+02; return; }
-    if(rt > 176.125)  { *c2 = -2.75645489e-03; *c1 = 2.64598769e+00; *c0 = 3.81185062e+02; return; }
-    if(rt > 163.6875) { *c2 = -3.08925051e-03; *c1 = 2.76311944e+00; *c0 = 3.70878557e+02; return; }
-    if(rt > 151.25)   { *c2 = -3.49240650e-03; *c1 = 2.89497814e+00; *c0 = 3.60096936e+02; return; }
-    if(rt > 138.8125) { *c2 = -3.98830219e-03; *c1 = 3.04482084e+00; *c0 = 3.48777617e+02; return; }
-    if(rt > 126.375)  { *c2 = -4.60928205e-03; *c1 = 3.21699419e+00; *c0 = 3.36843408e+02; return; }
-    if(rt > 113.9375) { *c2 = -5.40363139e-03; *c1 = 3.41744813e+00; *c0 = 3.24197309e+02; return; }
-    if(rt > 101.5)    { *c2 = -6.44627832e-03; *c1 = 3.65457844e+00; *c0 = 3.10714661e+02; return; }
-    if(rt > 89.0625)  { *c2 = -7.85910930e-03; *c1 = 3.94067884e+00; *c0 = 2.96230808e+02; return; }
-    if(rt > 76.625)   { *c2 = -9.85240108e-03; *c1 = 4.29460100e+00; *c0 = 2.80520663e+02; return; }
-    if(rt > 64.1875)  { *c2 = -1.28173420e-02; *c1 = 4.74701804e+00; *c0 = 2.63262534e+02; return; }
-    if(rt > 51.75)    { *c2 = -1.75587611e-02; *c1 = 5.35195125e+00; *c0 = 2.43968196e+02; return; }
-    if(rt > 39.3125)  { *c2 = -2.59852369e-02; *c1 = 6.21581501e+00; *c0 = 2.21829876e+02; return; }
-    if(rt > 26.875)   { *c2 = -4.37279825e-02; *c1 = 7.58779070e+00; *c0 = 1.95315010e+02; return; }
-    if(rt > 14.4375)  { *c2 = -9.54336570e-02; *c1 = 1.02674025e+01; *c0 = 1.60645674e+02; return; }
-    if(rt > 2.0)      { *c2 = -0.53372535;     *c1 = 21.20572392;    *c0 = 94.0817949;     return; }
-                      { *c2 = -0.53372535;     *c1 = 21.20572392;    *c0 = 94.0817949;     return; }
-}
-
 //
 EoSvec::EoSvec(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     topo = _topo;
@@ -1787,7 +1872,7 @@ void EoSvec::assemble(Vec rt, int lev, double scale) {
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q->A, WtQ);
 
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             inds2 = topo->elInds2_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rtArray, &p);
@@ -1806,66 +1891,7 @@ void EoSvec::assemble(Vec rt, int lev, double scale) {
         }
     }
     VecRestoreArray(rt, &rtArray);
-    //VecRestoreArray(vl, &vArray);
     VecRestoreArray(vg, &vArray);
-
-    //VecScatterBegin(topo->gtol_2, vl, vg, INSERT_VALUES, SCATTER_REVERSE);
-    //VecScatterEnd(topo->gtol_2,   vl, vg, INSERT_VALUES, SCATTER_REVERSE);
-}
-
-void EoSvec::assemble_quad(Vec rt1, Vec rt2, int lev, double scale) {
-    int ex, ey, ii, jj;
-    int nQuad  = e->l->q->n + 1;
-    int nQuad2 = nQuad * nQuad;
-    int *inds0, *inds2;
-    double c0[99], c1[99], c2[99], rtq1, rtq2, rtq[99];
-    double third = 1.0/3.0;
-    PetscScalar *rt1Array, *rt2Array, *vArray;
-
-    //VecZeroEntries(vl);
-    VecZeroEntries(vg);
-
-    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-
-    VecGetArray(rt1, &rt1Array);
-    VecGetArray(rt2, &rt2Array);
-    //VecGetArray(vl, &vArray);
-    VecGetArray(vg, &vArray);
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
-            inds2 = topo->elInds2_l(ex, ey);
-
-            // get the average density weighted potential temperature for this element at this level
-            for(ii = 0; ii < nQuad2; ii++) {
-                geom->interp2_g(ex, ey, ii%nQuad, ii/nQuad, rt1Array, &rtq1);
-                geom->interp2_g(ex, ey, ii%nQuad, ii/nQuad, rt2Array, &rtq2);
-                rtq1 *= geom->thickInv[lev][inds0[ii]];
-                rtq2 *= geom->thickInv[lev][inds0[ii]];
-
-                GetExponents(0.5*(rtq1+rtq2), &c2[ii], &c1[ii], &c0[ii]);
-
-                rtq[ii] = c0[ii] + 0.5*c1[ii]*(rtq1 + rtq2) + third*c2[ii]*(rtq1*rtq1 + rtq1*rtq2 + rtq2*rtq2);
-                rtq[ii] *= scale;
-            }
-
-            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q->A, WtQ);
-
-            // 2 form metric term cancels with jacobian determinant at quadrature point
-            for(ii = 0; ii < W->nDofsJ; ii++) {
-                for(jj = 0; jj < Q->nDofsI; jj++) {
-                    vArray[inds2[ii]] += WtQ[ii*Q->nDofsI+jj]*rtq[jj];
-                }
-            }
-        }
-    }
-    VecRestoreArray(rt1, &rt1Array);
-    VecRestoreArray(rt2, &rt2Array);
-    //VecRestoreArray(vl, &vArray);
-    VecRestoreArray(vg, &vArray);
-
-    //VecScatterBegin(topo->gtol_2, vl, vg, INSERT_VALUES, SCATTER_REVERSE);
-    //VecScatterEnd(topo->gtol_2,   vl, vg, INSERT_VALUES, SCATTER_REVERSE);
 }
 
 EoSvec::~EoSvec() {
@@ -1920,7 +1946,7 @@ void EoSmat::assemble(Vec rt, int lev, double scale) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
 
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             inds2 = topo->elInds2_g(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
@@ -1934,7 +1960,6 @@ void EoSmat::assemble(Vec rt, int lev, double scale) {
             }
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
             MatSetValues(M, W->nDofsJ, inds2, W->nDofsJ, inds2, WtQW, ADD_VALUES);
         }
     }
@@ -1995,7 +2020,7 @@ void WmatInv::assemble(int lev, double scale) {
             inds = topo->elInds2_g(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 Qaa[ii]  = Q->A[ii]*(scale/det);
@@ -2006,7 +2031,6 @@ void WmatInv::assemble(int lev, double scale) {
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
             Inv(WtQW, WtQWinv, W->nDofsJ);
-            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 
             MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWinv, ADD_VALUES);
         }
@@ -2069,7 +2093,7 @@ void WhmatInv::assemble(Vec rho, int lev, double scale) {
             inds = topo->elInds2_g(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
 
@@ -2086,7 +2110,6 @@ void WhmatInv::assemble(Vec rho, int lev, double scale) {
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
             Inv(WtQW, WtQWinv, W->nDofsJ);
-            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 
             MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWinv, ADD_VALUES);
         }
@@ -2152,7 +2175,7 @@ void N_rt_Inv::assemble(Vec rho, int lev, double scale, bool do_inverse) {
             inds = topo->elInds2_g(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
 
             // 
             for(ii = 0; ii < mp12; ii++) {
@@ -2247,7 +2270,7 @@ void PtQUt_mat::assemble(Vec u1, int lev, double scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
@@ -2266,9 +2289,6 @@ void PtQUt_mat::assemble(Vec u1, int lev, double scale) {
 
             Mult_DF_IP(Q->nDofsJ, U->nDofsJ, U->nDofsI, Qaa, U->A, QU);
             Mult_DF_IP(Q->nDofsJ, V->nDofsJ, V->nDofsI, Qab, V->A, QV);
-
-            //Flat2D_IP(Q->nDofsJ, U->nDofsJ, QU, QUflat);
-            //Flat2D_IP(Q->nDofsJ, V->nDofsJ, QV, QVflat);
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
@@ -2332,7 +2352,7 @@ void PtQUmat::assemble(Vec u1, int lev, double scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 J = geom->J[ei][ii];
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
@@ -2351,9 +2371,6 @@ void PtQUmat::assemble(Vec u1, int lev, double scale) {
 
             Mult_DF_IP(Q->nDofsJ, U->nDofsJ, U->nDofsI, Qaa, U->A, QU);
             Mult_DF_IP(Q->nDofsJ, V->nDofsJ, V->nDofsI, Qab, V->A, QV);
-
-            //Flat2D_IP(Q->nDofsJ, U->nDofsJ, QU, QUflat);
-            //Flat2D_IP(Q->nDofsJ, V->nDofsJ, QV, QVflat);
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
@@ -2395,6 +2412,7 @@ WtQPmat::WtQPmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     delete W;
 }
 
+// TODO THIS NEEDS A H1 matrix product!!!
 void WtQPmat::assemble(int lev, double scale) {
     int ex, ey, mp1, mp12, ii, *inds, *inds0;
     Wii* Q = new Wii(e->l->q, geom);
@@ -2414,7 +2432,7 @@ void WtQPmat::assemble(int lev, double scale) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds = topo->elInds2_g(ex, ey);
 
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 Qaa[ii]  = Q->A[ii]*scale;
                 Qaa[ii] *= geom->thickInv[lev][inds0[ii]];
@@ -2422,9 +2440,6 @@ void WtQPmat::assemble(int lev, double scale) {
             inds0 = topo->elInds0_g(ex, ey);
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
-
-            //Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
-
             MatSetValues(M, W->nDofsJ, inds, Q->nDofsJ, inds0, WtQ, ADD_VALUES);
         }
     }
@@ -2486,7 +2501,7 @@ void N_RTmat::assemble(int lev, double scale, Vec rt, Vec pi) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0   = topo->elInds0_l(ex, ey);
+            inds0   = geom->elInds0_l(ex, ey);
             inds2_l = topo->elInds2_l(ex, ey);
             inds2_g = topo->elInds2_g(ex, ey);
 
@@ -2529,8 +2544,6 @@ void N_RTmat::assemble(int lev, double scale, Vec rt, Vec pi) {
             Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW, WtQWinv, WtQW_3);
             Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW_3, WtQW_2, WtQW);
 
-            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
-            //for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] *= fac;
             for(ii = 0; ii < n2*n2; ii++) WtQW[ii] *= fac;
 
             MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQW, ADD_VALUES);
@@ -2600,7 +2613,7 @@ void N_PiInv_mat::assemble(int lev, double scale, Vec rt, Vec pi) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0   = topo->elInds0_l(ex, ey);
+            inds0   = geom->elInds0_l(ex, ey);
             inds2_l = topo->elInds2_l(ex, ey);
             inds2_g = topo->elInds2_g(ex, ey);
 
@@ -2644,8 +2657,6 @@ void N_PiInv_mat::assemble(int lev, double scale, Vec rt, Vec pi) {
             Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQW_3, WtQW_2, WtQW);
             Inv(WtQW, WtQWinv, n2);
 
-            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
-            //for(ii = 0; ii < n2*n2; ii++) WtQWflat[ii] *= fac;
             for(ii = 0; ii < n2*n2; ii++) WtQWinv[ii] *= fac;
 
             MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQWinv, ADD_VALUES);
@@ -2711,7 +2722,7 @@ void N_RT2_mat::assemble(int lev, double scale, Vec rt) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0   = topo->elInds0_l(ex, ey);
+            inds0   = geom->elInds0_l(ex, ey);
             inds2_l = topo->elInds2_l(ex, ey);
             inds2_g = topo->elInds2_g(ex, ey);
 
@@ -2731,7 +2742,6 @@ void N_RT2_mat::assemble(int lev, double scale, Vec rt) {
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
 
             Inv(WtQW, WtQWinv, n2);
-            //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 
             MatSetValues(M, W->nDofsJ, inds2_g, W->nDofsJ, inds2_g, WtQWinv, ADD_VALUES);
         }
@@ -2859,7 +2869,7 @@ void Umat_ray::assemble(int lev, double scale, double dt, Vec exner_k, Vec exner
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -2896,16 +2906,9 @@ void Umat_ray::assemble(int lev, double scale, double dt, Vec exner_k, Vec exner
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, U->A, VtQU);
             Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
 
-            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
             MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQU, ADD_VALUES);
-
-            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
             MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQV, ADD_VALUES);
-
-            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
             MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, VtQU, ADD_VALUES);
-
-            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
             MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, VtQV, ADD_VALUES);
         }
     }
@@ -2977,7 +2980,7 @@ void Uvec::assemble(int lev, double scale, bool vert_scale, Vec vel) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -3054,7 +3057,7 @@ void Uvec::assemble_hu(int lev, double scale, Vec vel, Vec rho, bool zero_and_sc
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -3138,7 +3141,7 @@ void Uvec::assemble_wxu(int lev, double scale, Vec vel, Vec vort) {
             inds_y = topo->elInds1y_l(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -3215,7 +3218,7 @@ void Wvec::assemble(int lev, double scale, bool vert_scale, Vec rho) {
             inds = topo->elInds2_l(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 Qaa[ii]  = Q->A[ii]*(scale/det);
@@ -3255,7 +3258,7 @@ void Wvec::assemble_K(int lev, double scale, Vec vel1, Vec vel2) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             inds_2 = topo->elInds2_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];

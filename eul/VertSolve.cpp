@@ -122,7 +122,7 @@ void VertSolve::initGZ() {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
 
             MatZeroEntries(BQ);
             for(kk = 0; kk < geom->nk; kk++) {
