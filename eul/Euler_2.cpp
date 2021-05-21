@@ -56,7 +56,8 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
     edge = new LagrangeEdge(topo->elOrd, node);
 
     // 0 form lumped mass matrix (vector)
-    m0 = new Pvec(topo, geom, node);
+    //m0 = new Pvec(topo, geom, node);
+    M0 = new Pmat(topo, geom, node);
 
     // 1 form mass matrix
     M1 = new Umat(topo, geom, node, edge);
@@ -84,6 +85,16 @@ Euler::Euler(Topo* _topo, Geom* _geom, double _dt) {
 
     // potential temperature projection operator
     T = new Whmat(topo, geom, edge);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp0);
+    KSPSetOperators(ksp0, M0->M, M0->M);
+    KSPSetTolerances(ksp0, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp0, KSPGMRES);
+    KSPGetPC(ksp0, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp0, "ksp_0_");
+    KSPSetFromOptions(ksp0);
 
     // coriolis vector (projected onto 0 forms)
     coriolis();
@@ -225,8 +236,10 @@ void Euler::coriolis() {
     // diagonal mass matrix as vector
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fg[kk]);
-        m0->assemble(kk, 1.0);
-        VecPointwiseDivide(fg[kk], PtQfxg, m0->vg);
+        //m0->assemble(kk, 1.0);
+        //VecPointwiseDivide(fg[kk], PtQfxg, m0->vg);
+        M0->assemble(kk, 1.0);
+        KSPSolve(ksp0, PtQfxg, fg[kk]);
     }
     
     delete PtQ;
@@ -321,6 +334,7 @@ Euler::~Euler() {
     delete Q;
     delete W;
 
+    KSPDestroy(&ksp0);
     KSPDestroy(&ksp1);
     KSPDestroy(&ksp2);
     KSPDestroy(&kspColA2);
@@ -361,7 +375,8 @@ Euler::~Euler() {
     MatDestroy(&VA);
     MatDestroy(&VB);
 
-    delete m0;
+    //delete m0;
+    delete M0;
     delete M1;
     delete M2;
 
@@ -415,7 +430,8 @@ void Euler::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec Fl
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mh);
 
     // assemble the mass matrices for use in the weak form grad, curl and laplacian operators
-    m0->assemble(lev, SCALE);
+    //m0->assemble(lev, SCALE);
+    M0->assemble(lev, SCALE);
     M1->assemble(lev, SCALE, true);
     M2->assemble(lev, SCALE, true);
 
@@ -680,12 +696,14 @@ void Euler::curl(bool assemble, Vec u, Vec* w, int lev, bool add_f) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
 
     if(assemble) {
-        m0->assemble(lev, SCALE);
+        //m0->assemble(lev, SCALE);
+        M0->assemble(lev, SCALE);
         M1->assemble(lev, SCALE, true);
     }
     MatMult(M1->M, u, Mu);
     MatMult(NtoE->E01, Mu, dMu);
-    VecPointwiseDivide(*w, dMu, m0->vg);
+    //VecPointwiseDivide(*w, dMu, m0->vg);
+    KSPSolve(ksp0, dMu, *w);
 
     // add the coliolis term
     if(add_f) {
@@ -799,9 +817,11 @@ void Euler::init0(Vec* q, ICfunc3D* func) {
         VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(  topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
-        m0->assemble(kk, 1.0);
         MatMult(PQ->M, bg, PQb);
-        VecPointwiseDivide(q[kk], PQb, m0->vg);
+        //m0->assemble(kk, 1.0);
+        //VecPointwiseDivide(q[kk], PQb, m0->vg);
+        M0->assemble(kk, 1.0);
+        KSPSolve(ksp0, PQb, q[kk]);
     }
 
     VecDestroy(&bl);

@@ -42,8 +42,10 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     edge = new LagrangeEdge(topo->elOrd, node);
 
     // 0 form lumped mass matrix (vector)
-    m0 = new Pvec(topo, geom, node);
-    m0h = new Phvec(topo, geom, node);
+    //m0 = new Pvec(topo, geom, node);
+    //m0h = new Phvec(topo, geom, node);
+    M0 = new Pmat(topo, geom, node);
+    M0h = new Phmat(topo, geom, node);
 
     // 1 form mass matrix
     M1 = new Umat(topo, geom, node, edge);
@@ -70,6 +72,26 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
 
     m1 = new Uvec(topo, geom, node, edge);
     m2 = new Wvec(topo, geom, edge);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp0);
+    KSPSetOperators(ksp0, M0->M, M0->M);
+    KSPSetTolerances(ksp0, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp0, KSPGMRES);
+    KSPGetPC(ksp0, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp0, "ksp_0_");
+    KSPSetFromOptions(ksp0);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp0h);
+    KSPSetOperators(ksp0h, M0h->M, M0h->M);
+    KSPSetTolerances(ksp0h, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp0h, KSPGMRES);
+    KSPGetPC(ksp0h, &pc);
+    PCSetType(pc, PCBJACOBI);
+    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+    KSPSetOptionsPrefix(ksp0h, "ksp_0_");
+    KSPSetFromOptions(ksp0h);
 
     // coriolis vector (projected onto 0 forms)
     coriolis();
@@ -140,8 +162,10 @@ void HorizSolve::coriolis() {
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl[kk]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fg[kk]);
-        m0->assemble(kk, 1.0);
-        VecPointwiseDivide(fg[kk], PtQfxg, m0->vg);
+        //m0->assemble(kk, 1.0);
+        //VecPointwiseDivide(fg[kk], PtQfxg, m0->vg);
+        M0->assemble(kk, 1.0);
+        KSPSolve(ksp0, PtQfxg, fg[kk]);
         VecZeroEntries(fl[kk]);
         VecScatterBegin(topo->gtol_0, fg[kk], fl[kk], INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(  topo->gtol_0, fg[kk], fl[kk], INSERT_VALUES, SCATTER_FORWARD);
@@ -157,6 +181,8 @@ HorizSolve::~HorizSolve() {
     int ii;
 
     KSPDestroy(&ksp1);
+    KSPDestroy(&ksp0);
+    KSPDestroy(&ksp0h);
 
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&fg[ii]);
@@ -167,8 +193,10 @@ HorizSolve::~HorizSolve() {
     delete[] fl;
     delete[] Fk;
 
-    delete m0;
-    delete m0h;
+    //delete m0;
+    //delete m0h;
+    delete M0;
+    delete M0h;
     delete M1;
     delete M2;
 
@@ -227,14 +255,17 @@ void HorizSolve::curl(bool assemble, Vec u, Vec* w, int lev, bool add_f, Vec ul)
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
 
     if(assemble) {
-        m0->assemble(lev, SCALE);
+        //m0->assemble(lev, SCALE);
+        M0->assemble(lev, SCALE);
         M1->assemble(lev, SCALE, true);
     }
     MatMult(M1->M, u, Mu);
     MatMult(NtoE->E01, Mu, dMu);
     //m1->assemble(lev, SCALE, true, ul);
     //MatMult(NtoE->E01, m1->vg, dMu);
-    VecPointwiseDivide(*w, dMu, m0->vg);
+    //VecPointwiseDivide(*w, dMu, m0->vg);
+    M0->assemble(lev, SCALE);
+    KSPSolve(ksp0, dMu, *w);
 
     // add the coliolis term
     if(add_f) {
@@ -449,47 +480,19 @@ void HorizSolve::diagnose_q(int level, bool do_assemble, Vec rho, Vec vel, Vec* 
     m1->assemble(level, SCALE, true, ul);
     MatMult(NtoE->E01, m1->vg, rhs);
 
-    if(do_assemble) m0->assemble(level, SCALE);
-    VecPointwiseMult(tmp, m0->vg, fg[level]);
+    //if(do_assemble) m0->assemble(level, SCALE);
+    //VecPointwiseMult(tmp, m0->vg, fg[level]);
+    if(do_assemble) M0->assemble(level, SCALE);
+    KSPSolve(ksp0, fg[level], tmp);
     VecAXPY(rhs, 1.0, tmp);
 
-    m0h->assemble(rho, level, SCALE);
-    VecPointwiseDivide(*qi, rhs, m0h->vg);
+    //m0h->assemble(rho, level, SCALE);
+    //VecPointwiseDivide(*qi, rhs, m0h->vg);
+    M0h->assemble(rho, level, SCALE);
+    KSPSolve(ksp0h, rhs, *qi);
 
     VecDestroy(&rhs);
     VecDestroy(&tmp);
-}
-
-void HorizSolve::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
-/*
-    Vec w1, w2, wl, uh;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, wxu);
-
-    // assume the vertex and volume mass matrices have already been assembled
-    // TODO compute once for half step
-    curl(false, u1, &w1, level, true);
-    curl(false, u2, &w2, level, true);
-    VecAXPY(w1, 1.0, w2);
-    VecScale(w1, 0.5);
-
-    VecScatterBegin(topo->gtol_0, w1, wl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, w1, wl, INSERT_VALUES, SCATTER_FORWARD);
-
-    VecZeroEntries(uh);
-    VecAXPY(uh, 0.5, u1);
-    VecAXPY(uh, 0.5, u2);
-
-    R->assemble(wl, level, SCALE);
-    MatMult(R->M, uh, *wxu);
-
-    VecDestroy(&w1);
-    VecDestroy(&w2);
-    VecDestroy(&wl);
-    VecDestroy(&uh);
-*/
 }
 
 void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi, 
@@ -508,7 +511,8 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dudz_h);
 
-    m0->assemble(level, SCALE);
+    //m0->assemble(level, SCALE);
+    M0->assemble(level, SCALE);
     M1->assemble(level, SCALE, true);
     M2->assemble(level, SCALE, true);
 

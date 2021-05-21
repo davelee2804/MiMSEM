@@ -941,7 +941,6 @@ void PtQmat::assemble() {
                 Qaa[ii] = Q->A[ii]*geom->det[ei][ii];
             }
             Mult_FD_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
-            //Flat2D_IP(P->nDofsJ, Q->nDofsJ, PtQ, PtQflat);
 
             inds_0 = geom->elInds0_g(ex, ey);
             MatSetValues(M, P->nDofsJ, inds_0, Q->nDofsJ, inds_0, PtQ, ADD_VALUES);
@@ -1856,7 +1855,6 @@ void EoSvec::assemble(Vec rt, int lev, double scale) {
     double p, rtq[99], fac;
     PetscScalar *rtArray, *vArray;
 
-    //VecZeroEntries(vl);
     VecZeroEntries(vg);
 
     mp1 = e->l->q->n + 1;
@@ -1865,7 +1863,6 @@ void EoSvec::assemble(Vec rt, int lev, double scale) {
     fac = CP*pow(RD/P0, RD/CV);
 
     VecGetArray(rt, &rtArray);
-    //VecGetArray(vl, &vArray);
     VecGetArray(vg, &vArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -2204,13 +2201,10 @@ void N_rt_Inv::assemble(Vec rho, int lev, double scale, bool do_inverse) {
             if(do_inverse) {
                 for(ii = 0; ii < W->nDofsJ; ii++) for(jj = 0; jj < W->nDofsJ; jj++) WtQWinv[ii*W->nDofsJ+jj] = 0.0;
                 Inv(BBinvB, WtQWinv, W->nDofsJ);
-                //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
                 MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWinv, ADD_VALUES);
             } else {
-                //Flat2D_IP(W->nDofsJ, W->nDofsJ, BBinvB, WtQWflat);
                 MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, BBinvB, ADD_VALUES);
             }
-            //MatSetValues(M, W->nDofsJ, inds, W->nDofsJ, inds, WtQWflat, ADD_VALUES);
         }
     }
     VecRestoreArray(rho, &pArray);
@@ -2397,12 +2391,13 @@ PtQUmat::~PtQUmat() {
     MatDestroy(&M);
 }
 
-WtQPmat::WtQPmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
+WtQPmat::WtQPmat(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* _edge) {
     topo = _topo;
     geom = _geom;
-    e = _e;
+    node = _node;
+    edge = _edge;
 
-    M2_j_xy_i* W = new M2_j_xy_i(e);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n2l, topo->n0l, topo->nDofs2G, topo->nDofs0G);
@@ -2412,18 +2407,19 @@ WtQPmat::WtQPmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     delete W;
 }
 
-// TODO THIS NEEDS A H1 matrix product!!!
 void WtQPmat::assemble(int lev, double scale) {
     int ex, ey, mp1, mp12, ii, *inds, *inds0;
-    Wii* Q = new Wii(e->l->q, geom);
-    M2_j_xy_i* W = new M2_j_xy_i(e);
+    Wii* Q = new Wii(node->q, geom);
+    M0_j_xy_i* P = new M0_j_xy_i(node);
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
     double* Qaa = new double[Q->nDofsI];
     double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
     double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQP = Alloc2D(W->nDofsJ, P->nDofsJ);
 
     MatZeroEntries(M);
 
-    mp1 = e->l->q->n + 1;
+    mp1 = node->q->n + 1;
     mp12 = mp1*mp1;
 
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
@@ -2440,7 +2436,8 @@ void WtQPmat::assemble(int lev, double scale) {
             inds0 = topo->elInds0_g(ex, ey);
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
-            MatSetValues(M, W->nDofsJ, inds, Q->nDofsJ, inds0, WtQ, ADD_VALUES);
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, P->nDofsJ, Wt, Qaa, WtQP);
+            MatSetValues(M, W->nDofsJ, inds, P->nDofsJ, inds0, WtQP, ADD_VALUES);
         }
     }
 
@@ -2450,7 +2447,9 @@ void WtQPmat::assemble(int lev, double scale) {
     delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQP);
     delete W;
+    delete P;
     delete Q;
 }
 

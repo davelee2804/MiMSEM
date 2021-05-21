@@ -391,11 +391,12 @@ class PtQUmat {
 
 class WtQPmat {
     public:
-        WtQPmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        WtQPmat(Topo* _topo, Geom* _geom, LagrangeNode* _node, LagrangeEdge* _edge);
         ~WtQPmat();
         Topo* topo;
         Geom* geom;
-        LagrangeEdge* e;
+        LagrangeNode* node;
+        LagrangeEdge* edge;
         Mat M;
         void assemble(int lev, double scale);
 };

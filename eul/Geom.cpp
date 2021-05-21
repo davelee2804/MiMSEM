@@ -135,10 +135,10 @@ Geom::Geom(Topo* _topo, int _nk) {
     initJacobians();
 
     // initialise vertical level arrays
-    topog = new double[topo->n0];
+    topog = new double[n0];
     levs = new double*[nk+1];
     for(ii = 0; ii < nk + 1; ii++) {
-        levs[ii] = new double[topo->n0];
+        levs[ii] = new double[n0];
     }
     thick = new double*[nk];
     thickInv = new double*[nk];
@@ -415,8 +415,8 @@ void Geom::write0(Vec q, char* fieldname, int tstep, int lev) {
     VecScatterBegin(topo->gtol_0, q, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(topo->gtol_0, q, ql, INSERT_VALUES, SCATTER_FORWARD);
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &qxl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &qxg);
+    VecCreateSeq(MPI_COMM_SELF, n0, &qxl);
+    VecCreateMPI(MPI_COMM_WORLD, n0l, nDofs0G, &qxg);
 
     VecGetArray(ql, &qArray);
     VecGetArray(qxl, &qxArray);
@@ -425,7 +425,7 @@ void Geom::write0(Vec q, char* fieldname, int tstep, int lev) {
             inds0 = elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 jj = inds0[ii];
-                qxArray[jj] = qArray[jj];
+                interp0(ex, ey, ii%mp1, ii/mp1, qArray, &qxArray[jj]);
                 // assume piecewise constant in the vertical, so rescale by
                 // the vertical determinant inverse
                 qxArray[jj] *= 1.0/thick[lev][jj];
@@ -551,9 +551,9 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &hxl);
+    VecCreateSeq(MPI_COMM_SELF, n0, &hxl);
     VecZeroEntries(hxl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &hxg);
+    VecCreateMPI(MPI_COMM_WORLD, n0l, topo->nDofs0G, &hxg);
     VecZeroEntries(hxg);
 
     VecGetArray(h, &hArray);
@@ -611,7 +611,6 @@ void Geom::writeVertToHoriz(Vec* vecs, char* fieldname, int tstep, int nv) {
 
     hvecs = new Vec[nv];
     for(kk = 0; kk < nv; kk++) {
-//        VecCreateSeq(MPI_COMM_SELF, topo->n2, &hvecs[kk]);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hvecs[kk]);
         VecZeroEntries(hvecs[kk]);
     }
@@ -635,9 +634,6 @@ void Geom::writeVertToHoriz(Vec* vecs, char* fieldname, int tstep, int nv) {
     }
 
     for(kk = 0; kk < nv; kk++) {
-//        VecZeroEntries(gvec);
-//        VecScatterBegin(topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
-//        VecScatterEnd(  topo->gtol_2, hvecs[kk], gvec, INSERT_VALUES, SCATTER_REVERSE);
         VecCopy(hvecs[kk], gvec);
         write2(gvec, fieldname, tstep, kk, false);
     }
@@ -717,12 +713,12 @@ void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
     double zo;
     double max_height = (fl) ? fl(x[0], nk) : 1.0;//TODO: assumes x[0] is at the sea surface, fix later
 
-    for(ii = 0; ii < topo->n0; ii++) {
+    for(ii = 0; ii < n0; ii++) {
         topog[ii] = ft(x[ii]);
     }
 
     for(ii = 0; ii < nk + 1; ii++) {
-        for(jj = 0; jj < topo->n0; jj++) {
+        for(jj = 0; jj < n0; jj++) {
             zo = fl(x[jj], ii);
             levs[ii][jj] = (max_height - topog[jj])*zo/max_height + topog[jj];
         }

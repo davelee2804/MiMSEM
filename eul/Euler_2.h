@@ -15,7 +15,8 @@ class Euler {
         LagrangeEdge* edge;
         Topo* topo;
         Geom* geom;
-        Pvec* m0;
+        //Pvec* m0;
+        Pmat* M0;
         Umat* M1;
         Wmat* M2;
         E10mat* NtoE;
@@ -49,6 +50,7 @@ class Euler {
         L2Vecs* uuz;             // u.dudz + v.dvdz vorticity velocity product
         Mat VA;
         Mat VB;
+        KSP ksp0;
         KSP ksp1;
         KSP ksp2;
         KSP kspColA2; // for the diagnosis of theta without boundary conditions

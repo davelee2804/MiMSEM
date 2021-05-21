@@ -17,8 +17,8 @@ class HorizSolve {
         Topo* topo;
         Geom* geom;
         VertOps* vo;
-        Pvec* m0;
-        Phvec* m0h;
+        Pmat* M0;
+        Phmat* M0h;
         Umat* M1;
         Wmat* M2;
         E10mat* NtoE;
@@ -35,6 +35,8 @@ class HorizSolve {
         Vec* fl;                 // coriolis vector (local)
         Vec* Fk;
         KSP ksp1;
+        KSP ksp0;
+        KSP ksp0h;
 
         double viscosity();
         void coriolis();
@@ -49,7 +51,6 @@ class HorizSolve {
 
         void diagnose_Phi(int level, Vec u1, Vec u2, Vec u1l, Vec u2l, Vec* velz1, Vec* velz2, Vec* Phi);
         void diagnose_q(int level, bool do_assemble, Vec rho, Vec vel, Vec* qi, Vec ul);
-        void diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu);
         void diagHorizVort(Vec* velx, Vec* dudz);
         void diagVertVort(Vec* velz, Vec* rho, Vec* dwdx);
 
