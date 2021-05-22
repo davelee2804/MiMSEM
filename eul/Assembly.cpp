@@ -688,15 +688,14 @@ void Pmat::assemble(int lev, double scale) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds = geom->elInds0_g(ex, ey);
+            inds = geom->elInds0_l(ex, ey);
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 Qaa[ii] = scale*Q->A[ii]*det;
                 Qaa[ii] *= geom->thickInv[lev][inds[ii]];
             }
-
-            Mult_IP(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Qaa, PtQ);
+            Mult_FD_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
             Mult_IP(P->nDofsJ, P->nDofsJ, Q->nDofsJ, PtQ, P->A, PtQP);
 
             inds = topo->elInds0_g(ex, ey);
@@ -809,7 +808,7 @@ void Phmat::assemble(Vec hl, int lev, double scale) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds = geom->elInds0_g(ex, ey);
+            inds = geom->elInds0_l(ex, ey);
             ei = ey*topo->nElsX + ex;
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
@@ -820,8 +819,7 @@ void Phmat::assemble(Vec hl, int lev, double scale) {
                 hi *= geom->thickInv[lev][inds[ii]];
                 Qaa[ii] *= hi;
             }
-
-            Mult_IP(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Qaa, PtQ);
+            Mult_FD_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
             Mult_IP(P->nDofsJ, P->nDofsJ, Q->nDofsJ, PtQ, P->A, PtQP);
 
             inds = topo->elInds0_g(ex, ey);
@@ -915,7 +913,7 @@ PtQmat::PtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
 
 void PtQmat::assemble() {
     int ex, ey, ei, ii, mp1, mp12;
-    int *inds_0;
+    int *inds_0, *inds_g;
     M0_j_xy_i* P = new M0_j_xy_i(l);
     Wii* Q = new Wii(l->q, geom);
     double* Pt = Tran(P->nDofsI, P->nDofsJ, P->A);
@@ -923,7 +921,7 @@ void PtQmat::assemble() {
     double* Qaa = new double[Q->nDofsI];
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
+    MatSetSizes(M, topo->n0l, geom->n0l, topo->nDofs0G, geom->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 4*P->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
@@ -942,8 +940,9 @@ void PtQmat::assemble() {
             }
             Mult_FD_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
 
-            inds_0 = geom->elInds0_g(ex, ey);
-            MatSetValues(M, P->nDofsJ, inds_0, Q->nDofsJ, inds_0, PtQ, ADD_VALUES);
+            inds_0 = topo->elInds0_g(ex, ey);
+            inds_g = geom->elInds0_g(ex, ey);
+            MatSetValues(M, P->nDofsJ, inds_0, Q->nDofsJ, inds_g, PtQ, ADD_VALUES);
         }
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);

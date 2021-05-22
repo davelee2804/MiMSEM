@@ -26,7 +26,7 @@
 using namespace std;
 
 HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
-    int ii;
+    int ii, size;
     PC pc;
 
     dt = _dt;
@@ -36,6 +36,8 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     do_visc = true;
     del2 = viscosity();
     step = 0;
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -141,8 +143,8 @@ void HorizSolve::coriolis() {
     fl = new Vec[geom->nk];
 
     // evaluate the coriolis term at nodes
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fxl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fxg);
+    VecCreateSeq(MPI_COMM_SELF, geom->n0, &fxl);
+    VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &fxg);
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
     for(ii = 0; ii < topo->n0; ii++) {
@@ -151,8 +153,8 @@ void HorizSolve::coriolis() {
     VecRestoreArray(fxl, &fArray);
 
     // scatter array to global vector
-    VecScatterBegin(topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(geom->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  geom->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
 
     // project vector onto 0 forms
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PtQfxg);

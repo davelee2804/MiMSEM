@@ -209,25 +209,24 @@ void Euler::coriolis() {
     int ii, kk;
     PtQmat* PtQ = new PtQmat(topo, geom, node);
     PetscScalar *fArray;
-    Vec fl, fxl, fxg, PtQfxg;
+    Vec fxl, fxg, PtQfxg;
 
     // initialise the coriolis vector (local and global)
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl);
     fg = new Vec[geom->nk];
 
     // evaluate the coriolis term at nodes
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fxl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fxg);
+    VecCreateSeq(MPI_COMM_SELF, geom->n0, &fxl);
+    VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &fxg);
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
-    for(ii = 0; ii < topo->n0; ii++) {
+    for(ii = 0; ii < geom->n0; ii++) {
         fArray[ii] = 2.0*OMEGA*sin(geom->s[ii][1]);
     }
     VecRestoreArray(fxl, &fArray);
 
     // scatter array to global vector
-    VecScatterBegin(topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(geom->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  geom->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
 
     // project vector onto 0 forms
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PtQfxg);
@@ -243,7 +242,6 @@ void Euler::coriolis() {
     }
     
     delete PtQ;
-    VecDestroy(&fl);
     VecDestroy(&fxl);
     VecDestroy(&fxg);
     VecDestroy(&PtQfxg);

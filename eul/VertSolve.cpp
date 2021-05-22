@@ -133,7 +133,6 @@ void VertSolve::initGZ() {
                     Q0[ii] *= 0.5;
                 }
                 Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-                //Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
 
                 for(ii = 0; ii < W->nDofsJ; ii++) {
                     inds2k[ii] = ii + kk*W->nDofsJ;
