@@ -47,16 +47,16 @@ Optional stabilisation/forcing terms include:
 
 <sub>Global simulation with Held-Suarez forcing at day 40, surface level Exner pressure, potential temperature at z = 2.36km and vertical vorticity component at z = 3.14km</sub>
 
-<img src="https://github.com/davelee2804/images/blob/master/euler_sphere/vort_day7.png" height="450" width="600">
+<img src="https://github.com/davelee2804/images/blob/master/sw_sphere/vorticity_0005_nh.png" height="360" width="270"><img src="https://github.com/davelee2804/images/blob/master/sw_sphere/vorticity_0006_nh.png" height="360" width="270"><img src="https://github.com/davelee2804/images/blob/master/sw_sphere/vorticity_0007_nh.png" height="360" width="270">
 
-<sub>Vorticity field at day 7 for the Galewsky rotating shallow water on the sphere test case without dissipation. Top: exect energy conserving scheme, Bottom: evergetically consistent variational upwinding of potential vorticity</sub>
+<sub>Vorticity field at days 5, 6 and 7 for the Galewsky test case for the rotating shallow water on the sphere using energetically balanced upwinding of potential vorticity and and energetically balanced IMEX time splitting without dissipation.</sub>
 
 <img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0025_up.png" height="240" width="320"><img src="https://github.com/davelee2804/images/blob/master/euler_sphere/theta_0050_up.png" height="240" width="320">
 
 <sub>Potential temperature for the 3D rising bubble test case in planar geometry without dissipation and with energetically consistent variational upwinding at times 200s (left) and 400s (right)</sub>
 
 ## References ##
-Lee, D and Palha, A (2020) [Exact spatial and temporal balance of energy exchanges within a horizontally explicit/vertically implicit non-hydrostatic atmosphere](https://arxiv.org/pdf/2011.07861.pdf) arXiv:2011.07861
+Lee, D and Palha, A (2021) [Exact spatial and temporal balance of energy exchanges within a horizontally explicit/vertically implicit non-hydrostatic atmosphere](https://www.sciencedirect.com/science/article/pii/S0021999121003272) _J. Comp. Phys._ 440 110432
 
 Lee, D (2021) [An energetically balanced, quasi-Newton integrator for non-hydrostatic vertical atmospheric dynamics](https://www.sciencedirect.com/science/article/pii/S0021999120307622) _J. Comp. Phys._ 429 109988
 
