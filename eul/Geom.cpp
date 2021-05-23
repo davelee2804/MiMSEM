@@ -435,8 +435,8 @@ void Geom::write0(Vec q, char* fieldname, int tstep, int lev) {
     VecRestoreArray(ql, &qArray);
     VecRestoreArray(qxl, &qxArray);
 
-    VecScatterBegin(topo->gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  gtol_0, qxl, qxg, INSERT_VALUES, SCATTER_REVERSE);
 
 #ifdef WITH_HDF5
     sprintf(filename, "output/%s_%.3u_%.4u.h5", fieldname, lev, tstep);
@@ -507,8 +507,8 @@ void Geom::write1(Vec u, char* fieldname, int tstep, int lev) {
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecZeroEntries(uxg);
-    VecScatterBegin(topo->gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  gtol_0, uxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
     VecView(uxg, viewer);
     PetscViewerDestroy(&viewer);
 
@@ -521,8 +521,8 @@ void Geom::write1(Vec u, char* fieldname, int tstep, int lev) {
     PetscViewerASCIIOpen(MPI_COMM_WORLD, filename, &viewer);
 #endif
     VecZeroEntries(uxg);
-    VecScatterBegin(topo->gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(topo->gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  gtol_0, vxl, uxg, INSERT_VALUES, SCATTER_REVERSE);
     VecView(uxg, viewer);
     PetscViewerDestroy(&viewer);
 
@@ -553,7 +553,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
 
     VecCreateSeq(MPI_COMM_SELF, n0, &hxl);
     VecZeroEntries(hxl);
-    VecCreateMPI(MPI_COMM_WORLD, n0l, topo->nDofs0G, &hxg);
+    VecCreateMPI(MPI_COMM_WORLD, n0l, nDofs0G, &hxg);
     VecZeroEntries(hxg);
 
     VecGetArray(h, &hArray);
@@ -579,8 +579,8 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
     VecRestoreArray(h, &hArray);
     VecRestoreArray(hxl, &hxArray);
 
-    VecScatterBegin(topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  gtol_0, hxl, hxg, INSERT_VALUES, SCATTER_REVERSE);
 
 #ifdef WITH_HDF5
     sprintf(filename, "output/%s_%.3u_%.4u.h5", fieldname, lev, tstep);

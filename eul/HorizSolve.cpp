@@ -26,7 +26,7 @@
 using namespace std;
 
 HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
-    int ii, size;
+    int ii;
     PC pc;
 
     dt = _dt;
@@ -37,6 +37,7 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
     del2 = viscosity();
     step = 0;
 
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     quad = new GaussLobatto(topo->elOrd);
@@ -97,9 +98,6 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
 
     // coriolis vector (projected onto 0 forms)
     coriolis();
-
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     // initialize the 1 form linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp1);

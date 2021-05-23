@@ -861,7 +861,7 @@ void WtQmat::assemble() {
     double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n2l, topo->n0l, topo->nDofs2G, topo->nDofs0G);
+    MatSetSizes(M, topo->n2l, geom->n0l, topo->nDofs2G, geom->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     //MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
     MatMPIAIJSetPreallocation(M, 8*W->nDofsJ, PETSC_NULL, 8*W->nDofsJ, PETSC_NULL);
@@ -876,7 +876,6 @@ void WtQmat::assemble() {
             for(ii = 0; ii < mp12; ii++) {
                 Qaa[ii] = Q->A[ii];
             }
-
             Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQ);
@@ -990,7 +989,7 @@ void UtQmat::assemble() {
     inds_0y = new int[mp12];
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n1l, 2*topo->n0l, topo->nDofs1G, 2*topo->nDofs0G);
+    MatSetSizes(M, topo->n1l, 2*geom->n0l, topo->nDofs1G, 2*geom->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
