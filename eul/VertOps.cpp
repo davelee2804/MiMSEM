@@ -31,7 +31,7 @@ VertOps::VertOps(Topo* _topo, Geom* _geom) {
     n2 = topo->elOrd*topo->elOrd;
     N2 = (n2 > 1) ? n2 : 4;
 
-    quad = new GaussLobatto(topo->elOrd);
+    quad = new GaussLobatto(geom->quad->n);
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
 
