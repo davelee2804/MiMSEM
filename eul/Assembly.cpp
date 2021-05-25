@@ -1085,7 +1085,7 @@ void WtQUmat::assemble(Vec u1, int lev, double scale) {
     double det, **J, ux[2];
     PetscScalar *u1Array;
 
-    mp1 = l->n + 1;
+    mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
     VecGetArray(u1, &u1Array);
@@ -1119,9 +1119,6 @@ void WtQUmat::assemble(Vec u1, int lev, double scale) {
 
             Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQaa, U->A, WtQU);
             Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQab, V->A, WtQV);
-
-            //Flat2D_IP(W->nDofsJ, U->nDofsJ, WtQU, WtQUflat);
-            //Flat2D_IP(W->nDofsJ, V->nDofsJ, WtQV, WtQVflat);
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
@@ -1185,7 +1182,7 @@ void RotMat::assemble(Vec q0, int lev, double scale) {
     double det, **J, vort;
     PetscScalar* q0Array;
 
-    mp1 = l->n + 1;
+    mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
     VecGetArray(q0, &q0Array);
@@ -1224,10 +1221,7 @@ void RotMat::assemble(Vec q0, int lev, double scale) {
             Mult_IP(U->nDofsJ, U->nDofsJ, U->nDofsI, UtQab, V->A, UtQV);
             Mult_IP(U->nDofsJ, U->nDofsJ, V->nDofsI, VtQba, U->A, VtQU);
 
-            //Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
             MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQV, ADD_VALUES);
-
-            //Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
             MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, VtQU, ADD_VALUES);
         }
     }
@@ -1755,7 +1749,7 @@ void WtQdUdz_mat::assemble(Vec u1, double scale) {
     double det, **J, ux[2];
     PetscScalar *u1Array;
 
-    mp1 = l->n + 1;
+    mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
     VecGetArray(u1, &u1Array);
@@ -1795,9 +1789,6 @@ void WtQdUdz_mat::assemble(Vec u1, double scale) {
 
             Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQaa, U->A, WtQU);
             Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQab, V->A, WtQV);
-
-            //Flat2D_IP(W->nDofsJ, U->nDofsJ, WtQU, WtQUflat);
-            //Flat2D_IP(W->nDofsJ, V->nDofsJ, WtQV, WtQVflat);
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
@@ -2249,7 +2240,7 @@ void PtQUt_mat::assemble(Vec u1, int lev, double scale) {
     double **J, ux[2];
     PetscScalar *u1Array;
 
-    mp1 = l->n + 1;
+    mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
     VecGetArray(u1, &u1Array);
@@ -2331,7 +2322,7 @@ void PtQUmat::assemble(Vec u1, int lev, double scale) {
     double **J, ux[2];
     PetscScalar *u1Array;
 
-    mp1 = l->n + 1;
+    mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
     VecGetArray(u1, &u1Array);
@@ -3118,7 +3109,7 @@ void Uvec::assemble_wxu(int lev, double scale, Vec vel, Vec vort) {
     double _u[2], _q, Qab[99], Qba[99], rhs[99];
     PetscScalar *vortArray, *velArray, *vArray;
 
-    mp1 = node->n + 1;
+    mp1 = node->q->n + 1;
     mp12 = mp1*mp1;
 
     VecZeroEntries(vl);
@@ -3239,7 +3230,7 @@ void Wvec::assemble_K(int lev, double scale, Vec vel1, Vec vel2) {
     double det, **J, _uxg[2], _uxl[2], Qaa[99], Qab[99], rhs_a[99], rhs_b[99];
     PetscScalar *vArray, *vel1Array, *vel2Array;
 
-    mp1 = edge->l->n + 1;
+    mp1 = edge->l->q->n + 1;
     mp12 = mp1*mp1;
 
     VecZeroEntries(vg);
