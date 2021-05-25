@@ -1664,7 +1664,7 @@ void UtQWmat::assemble(Vec u1, double scale) {
     double det, **J, ux[2];
     PetscScalar *u1Array;
 
-    mp1 = l->n + 1;
+    mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
     VecGetArray(u1, &u1Array);
@@ -1693,9 +1693,6 @@ void UtQWmat::assemble(Vec u1, double scale) {
 
             Mult_IP(U->nDofsJ, W->nDofsJ, W->nDofsI, UtQaa, W->A, UtQW);
             Mult_IP(V->nDofsJ, W->nDofsJ, W->nDofsI, VtQba, W->A, VtQW);
-
-            //Flat2D_IP(U->nDofsJ, W->nDofsJ, UtQW, UtQWflat);
-            //Flat2D_IP(V->nDofsJ, W->nDofsJ, VtQW, VtQWflat);
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
