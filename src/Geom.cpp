@@ -463,14 +463,12 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     int *inds0;
     char filename[100];
     double val;
-    Vec hl, hxl, hxg;
+    Vec hxl, hxg;
     PetscScalar *hxArray, *hArray;
     PetscViewer viewer;
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &hl);
 
     VecCreateSeq(MPI_COMM_SELF, n0, &hxl);
     VecCreateMPI(MPI_COMM_WORLD, n0l, nDofs0G, &hxg);
@@ -509,7 +507,6 @@ void Geom::write2(Vec h, char* fieldname, int tstep) {
     PetscViewerDestroy(&viewer);
     VecDestroy(&hxg);
     VecDestroy(&hxl);
-    VecDestroy(&hl);
 
     // also write the vector itself
     sprintf(filename, "output/%s_%.4u.vec", fieldname, tstep);
