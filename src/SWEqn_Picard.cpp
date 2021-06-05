@@ -1432,8 +1432,10 @@ void SWEqn::writeConservation(double time, Vec u, Vec h, double mass0, double vo
 
 void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     int size;
-    double upwind_tau = 120.0;
-    Vec Fi, Fj, Phi, qi, qj, ql, ul, utmp, htmp, fu, up, qxF;
+    double en_con_err, upwind_tau = 120.0;
+    char filename[50];
+    ofstream file;
+    Vec Fi, Fj, Phi, qi, qj, ql, ul, utmp, htmp, fu, up;
     Mat KT, KTD;
     KSP ksp_f;
     PC pc;
@@ -1449,7 +1451,6 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &up);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fj);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &qxF);
 
     // 1. compute provisional velocity
     VecCopy(un, ui);
@@ -1480,12 +1481,12 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
     R_up->assemble(ql, uil, upwind_tau);
-    MatMult(R_up->M, Fi, qxF);
+    MatMult(R_up->M, Fi, utmp);
 #else
     R->assemble(ql);
-    MatMult(R->M, Fi, qxF);
+    MatMult(R->M, Fi, utmp);
 #endif
-    VecAXPY(fu, 1.0, qxF);
+    VecAXPY(fu, 1.0, utmp);
 
     if(u_prev) {
         MatMult(M1->M, u_prev, utmp);
@@ -1550,14 +1551,14 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
 
     MatMult(EtoF->E12, Phi, fu);
 
-//#ifdef UP_VORT
-//    R_up->assemble(ql, uil, upwind_tau);
-//    MatMult(R_up->M, Fj, utmp);
-//#else
-//    R->assemble(qil);
-//    MatMult(R->M, Fj, utmp);
-//#endif
-    VecAXPY(fu, 0.5, qxF);
+#ifdef UP_VORT
+    R_up->assemble(ql, uil, upwind_tau);
+    MatMult(R_up->M, Fj, utmp);
+#else
+    R->assemble(qil);
+    MatMult(R->M, Fj, utmp);
+#endif
+    VecAXPY(fu, 0.5, utmp);
 
     diagnose_q(upwind_tau, uj, ujl, hj, &qj);
     VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
@@ -1595,6 +1596,17 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
         VecDestroy(&wi);
     }
 
+    // write the energy conservation error
+    VecAYPX(up, -1.0, uj);
+    MatMult(M1->M, Fj, utmp);
+    VecDot(Fj, up, &en_con_err);
+    sprintf(filename, "output/conservation_err.dat");
+    if(!rank) {
+        file.open(filename, ios::out | ios::app);
+        file << en_con_err << endl;
+        file.close();
+    }
+
     VecDestroy(&qi);
     VecDestroy(&qj);
     VecDestroy(&ql);
@@ -1606,7 +1618,6 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     VecDestroy(&fu);
     VecDestroy(&utmp);
     VecDestroy(&up);
-    VecDestroy(&qxF);
     MatDestroy(&KT);
     MatDestroy(&KTD);
     KSPDestroy(&ksp_f);
