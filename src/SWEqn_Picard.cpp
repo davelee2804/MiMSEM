@@ -1705,24 +1705,24 @@ void SWEqn::rosenbrock_solve(Vec _ui, Vec _uil, Vec _hi, Vec _uj, Vec _hj) {
     VecAXPY(fh, -2.0, htmp);
     solve_schur(fu, fh, du2, dh2, alpha*dt);
 
+/*
     VecCopy(_ui, _uj);
     VecCopy(_hi, _hj);
     VecAXPY(_uj, 1.5, du1);
     VecAXPY(_hj, 1.5, dh1);
     VecAXPY(_uj, 0.5, du2);
     VecAXPY(_hj, 0.5, dh2);
-/*
+*/
     VecCopy(du1, utmp);
     VecCopy(dh1, htmp);
-    VecAXPY(utmp, -1.0, _ui);
-    VecAXPY(htmp, -1.0, _hi);
+    VecAXPY(utmp, +1.0, _ui);
+    VecAXPY(htmp, +1.0, _hi);
     VecCopy(du2, _uj);
     VecCopy(dh2, _hj);
     VecAXPY(_uj, +3.0, utmp);
     VecAXPY(_hj, +3.0, htmp);
     VecAXPY(_uj, -2.0, _ui);
     VecAXPY(_hj, -2.0, _hi);
-*/
 
     VecDestroy(&_ul);
     VecDestroy(&du1);
@@ -1811,9 +1811,9 @@ void SWEqn::solve_implicit(Vec un, Vec hn, double _dt, bool save) {
         VecDestroy(&wi);
     }
 
+    VecDestroy(&ql);
     VecDestroy(&qi);
     VecDestroy(&qj);
-    VecDestroy(&ql);
     VecDestroy(&_F);
     VecDestroy(&Phi);
     VecDestroy(&utmp);
