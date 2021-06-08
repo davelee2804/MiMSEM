@@ -70,6 +70,7 @@ class SWEqn {
         void solve(Vec u, Vec h, double _dt, bool save);
         void solve_imex(Vec un, Vec hn, double _dt, bool save);
         void solve_implicit(Vec un, Vec hn, double _dt, bool save);
+        void solve_rosenbrock(Vec un, Vec hn, double _dt, bool save);
         void rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh);
         void rosenbrock_solve(Vec _ui, Vec _uil, Vec _hi, Vec _uj, Vec _hj);
         double viscosity();

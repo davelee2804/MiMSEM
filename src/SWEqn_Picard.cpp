@@ -792,14 +792,13 @@ void SWEqn::solve_schur(Vec Fu, Vec Fh, Vec _u, Vec _h, double imp_dt) {
 
     // pressure solve
     MatMult(DM1inv, Fu, rhs_h);
-    VecAYPX(rhs_h, -imp_dt*H_MEAN, Fh);
-    VecScale(rhs_h, -1.0);
+    VecScale(rhs_h, imp_dt*H_MEAN);
+    VecAXPY(rhs_h, 1.0, Fh);
     KSPSolve(ksp_helm, rhs_h, _h);
 
     // velocity solve
     MatMult(E12M2, _h, rhs_u);
-    VecAYPX(rhs_u, imp_dt*grav, Fu);
-    VecScale(rhs_u, -1.0);
+    VecAYPX(rhs_u, -imp_dt*grav, Fu);
 
     R->assemble(fl);
     MatAXPY(M1->M, imp_dt, R->M, DIFFERENT_NONZERO_PATTERN);
@@ -1685,8 +1684,8 @@ void SWEqn::rosenbrock_solve(Vec _ui, Vec _uil, Vec _hi, Vec _uj, Vec _hj) {
     if(!A) assemble_operator_schur(alpha*dt);
 
     rosenbrock_residuals(_ui, _hi, _uil, fu, fh);
-    VecScale(fu, dt);
-    VecScale(fh, dt);
+    VecScale(fu, -1.0*dt);
+    VecScale(fh, -1.0*dt);
     solve_schur(fu, fh, du1, dh1, alpha*dt);
 
     VecCopy(_ui, _uj);
@@ -1698,8 +1697,8 @@ void SWEqn::rosenbrock_solve(Vec _ui, Vec _uil, Vec _hi, Vec _uj, Vec _hj) {
     VecScatterEnd(  topo->gtol_1, _uj, _ul, INSERT_VALUES, SCATTER_FORWARD);
 
     rosenbrock_residuals(_uj, _hj, _ul, fu, fh);
-    VecScale(fu, dt);
-    VecScale(fh, dt);
+    VecScale(fu, -1.0*dt);
+    VecScale(fh, -1.0*dt);
     MatMult(M1->M, du1, utmp);
     MatMult(M2->M, dh1, htmp);
     VecAXPY(fu, -2.0, utmp);
@@ -1712,6 +1711,18 @@ void SWEqn::rosenbrock_solve(Vec _ui, Vec _uil, Vec _hi, Vec _uj, Vec _hj) {
     VecAXPY(_hj, 1.5, dh1);
     VecAXPY(_uj, 0.5, du2);
     VecAXPY(_hj, 0.5, dh2);
+/*
+    VecCopy(du1, utmp);
+    VecCopy(dh1, htmp);
+    VecAXPY(utmp, -1.0, _ui);
+    VecAXPY(htmp, -1.0, _hi);
+    VecCopy(du2, _uj);
+    VecCopy(dh2, _hj);
+    VecAXPY(_uj, +3.0, utmp);
+    VecAXPY(_hj, +3.0, htmp);
+    VecAXPY(_uj, -2.0, _ui);
+    VecAXPY(_hj, -2.0, _hi);
+*/
 
     VecDestroy(&_ul);
     VecDestroy(&du1);
@@ -1808,6 +1819,144 @@ void SWEqn::solve_implicit(Vec un, Vec hn, double _dt, bool save) {
     VecDestroy(&utmp);
     VecDestroy(&fu);
     VecDestroy(&fh);
+}
+
+void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
+    Vec fu, fh, du1, dh1, du2, dh2, utmp, htmp, Phi, _F, qi, qj, ql;
+    double upwind_tau = 120.0;
+    double alpha = 1.0 + 0.5*sqrt(2.0);
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dh1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dh2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
+
+    if(!A) assemble_operator_schur(alpha*dt);
+
+    VecCopy(un, ui);
+    VecCopy(hn, hi);
+    VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+
+    rosenbrock_residuals(ui, hi, uil, fu, fh);
+    VecScale(fu, dt);
+    VecScale(fh, dt);
+    solve_schur(fu, fh, du1, dh1, alpha*dt);
+
+    VecCopy(ui, uj);
+    VecCopy(hi, hj);
+    VecAXPY(uj, 1.0, du1);
+    VecAXPY(hj, 1.0, dh1);
+    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+
+    rosenbrock_residuals(uj, hj, ujl, fu, fh);
+    VecScale(fu, dt);
+    VecScale(fh, dt);
+    MatMult(M1->M, du1, utmp);
+    MatMult(M2->M, dh1, htmp);
+    VecAXPY(fu, -2.0, utmp);
+    VecAXPY(fh, -2.0, htmp);
+    solve_schur(fu, fh, du2, dh2, alpha*dt);
+
+    VecCopy(ui, uj);
+    VecCopy(hi, hj);
+    VecAXPY(uj, 1.5, du1);
+    VecAXPY(hj, 1.5, dh1);
+    VecAXPY(uj, 0.5, du2);
+    VecAXPY(hj, 0.5, dh2);
+
+    // compute the provisional state; tilde{u,h}_2 = {u,h}_2 - 3{u,h}_1 + 2{u,h}_0
+/*
+    VecCopy(du1, utmp);
+    VecCopy(dh1, htmp);
+    VecAXPY(utmp, -1.0, ui);
+    VecAXPY(htmp, -1.0, hi);
+    VecCopy(du2, uj);
+    VecCopy(dh2, hj);
+    VecAXPY(uj, +3.0, utmp);
+    VecAXPY(hj, +3.0, htmp);
+    VecAXPY(uj, -2.0, ui);
+    VecAXPY(hj, -2.0, hi);
+
+    // energetically balanced solve
+    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+
+    diagnose_Phi(&Phi);
+    diagnose_F(&_F);
+    MatMult(EtoF->E12, Phi, fu);
+
+    diagnose_q(upwind_tau, ui, uil, hi, &qi);
+    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, uil, upwind_tau);
+    MatMult(R_up->M, _F, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, _F, utmp);
+#endif
+    VecAXPY(fu, 0.5, utmp);
+
+    diagnose_q(upwind_tau, uj, ujl, hj, &qj);
+    VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, ujl, upwind_tau);
+    MatMult(R_up->M, _F, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, _F, utmp);
+#endif
+    VecAXPY(fu, 0.5, utmp);
+
+    MatMult(M1->M, ui, utmp);
+    VecAYPX(fu, -_dt, utmp);
+    KSPSolve(ksp, fu, uj);
+
+    MatMult(EtoF->E21, _F, hj);
+    VecAYPX(hj, -_dt, hi);
+*/
+
+    VecCopy(uj, un);
+    VecCopy(hj, hn);
+
+    if(save) {
+        Vec wi;
+        char fieldname[20];
+
+        step++;
+        curl(un, &wi);
+
+        sprintf(fieldname, "vorticity");
+        geom->write0(wi, fieldname, step);
+        sprintf(fieldname, "velocity");
+        geom->write1(un, fieldname, step);
+        sprintf(fieldname, "pressure");
+        geom->write2(hn, fieldname, step);
+
+        VecDestroy(&wi);
+    }
+
+    VecDestroy(&du1);
+    VecDestroy(&dh1);
+    VecDestroy(&du2);
+    VecDestroy(&dh2);
+    VecDestroy(&fu);
+    VecDestroy(&fh);
+    VecDestroy(&utmp);
+    VecDestroy(&htmp);
+    //VecDestroy(&Phi);
+    //VecDestroy(&_F);
+    //VecDestroy(&qi);
+    //VecDestroy(&qj);
+    VecDestroy(&ql);
 }
 
 void SWEqn::coriolisMatInv(Mat A, Mat* Ainv) {
