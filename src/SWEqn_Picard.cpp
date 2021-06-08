@@ -1872,11 +1872,10 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecAXPY(hj, 0.5, dh2);
 
     // compute the provisional state; tilde{u,h}_2 = {u,h}_2 - 3{u,h}_1 + 2{u,h}_0
-/*
     VecCopy(du1, utmp);
     VecCopy(dh1, htmp);
-    VecAXPY(utmp, -1.0, ui);
-    VecAXPY(htmp, -1.0, hi);
+    VecAXPY(utmp, +1.0, ui);
+    VecAXPY(htmp, +1.0, hi);
     VecCopy(du2, uj);
     VecCopy(dh2, hj);
     VecAXPY(uj, +3.0, utmp);
@@ -1922,7 +1921,6 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
 
     MatMult(EtoF->E21, _F, hj);
     VecAYPX(hj, -_dt, hi);
-*/
 
     VecCopy(uj, un);
     VecCopy(hj, hn);
