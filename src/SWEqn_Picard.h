@@ -28,7 +28,6 @@ class SWEqn {
         WtQUmat* K;
         Vec fg;            // coriolis vector (global)
         Vec fl;            // coriolis vector (local)
-        Vec topog;
         Mat E01M1;
         Mat E12M2;
         KSP ksp;           // 1 form mass matrix linear solver
@@ -47,6 +46,9 @@ class SWEqn {
         Mat A;
         Mat DM1inv;
         RotMat_up* R_up;
+        Mat Muf;
+        Mat G;
+        Mat D;
         void coriolis();
         void curl(Vec u, Vec* w);
         void diagnose_F(Vec* F);
