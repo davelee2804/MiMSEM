@@ -1821,6 +1821,54 @@ void SWEqn::solve_implicit(Vec un, Vec hn, double _dt, bool save) {
     VecDestroy(&fh);
 }
 
+void SWEqn::rhs_2ndOrd(Vec fu, Vec fh) {
+    double upwind_tau = 120.0;
+    Vec Phi, _F, qi, qj, ql, utmp, htmp;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
+
+    diagnose_Phi(&Phi);
+    diagnose_F(&_F);
+    MatMult(EtoF->E12, Phi, fu);
+
+    diagnose_q(upwind_tau, ui, uil, hi, &qi);
+    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, uil, upwind_tau);
+    MatMult(R_up->M, _F, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, _F, utmp);
+#endif
+    VecAXPY(fu, 0.5, utmp);
+
+    diagnose_q(upwind_tau, uj, ujl, hj, &qj);
+    VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, ujl, upwind_tau);
+    MatMult(R_up->M, _F, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, _F, utmp);
+#endif
+    VecAXPY(fu, 0.5, utmp);
+
+    MatMult(EtoF->E21, _F, htmp);
+    MatMult(M2->M, htmp, fh);
+
+    VecDestroy(&utmp);
+    VecDestroy(&htmp);
+    VecDestroy(&Phi);
+    VecDestroy(&_F);
+    VecDestroy(&qi);
+    VecDestroy(&qj);
+    VecDestroy(&ql);
+}
+
 void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     Vec fu, fh, du1, dh1, du2, dh2, utmp, htmp, Phi, _F, qi, qj, ql;
     double upwind_tau = 120.0;
@@ -1950,10 +1998,10 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecDestroy(&fh);
     VecDestroy(&utmp);
     VecDestroy(&htmp);
-    //VecDestroy(&Phi);
-    //VecDestroy(&_F);
-    //VecDestroy(&qi);
-    //VecDestroy(&qj);
+    VecDestroy(&Phi);
+    VecDestroy(&_F);
+    VecDestroy(&qi);
+    VecDestroy(&qj);
     VecDestroy(&ql);
 }
 
