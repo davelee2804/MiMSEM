@@ -35,6 +35,7 @@ class SWEqn {
         KSP ksp0h;         // 0 form mass matrix linear solver
         KSP ksp_rot;
         KSP ksp_helm;
+        KSP kspA;
         VecScatter gtol_x;
         Vec ui;
         Vec hi;
@@ -44,6 +45,7 @@ class SWEqn {
         Vec ujl;
         Vec u_prev;
         Mat A;
+        Mat B;
         Mat DM1inv;
         RotMat_up* R_up;
         Mat Muf;

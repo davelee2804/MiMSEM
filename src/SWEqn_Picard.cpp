@@ -525,7 +525,7 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecDestroy(&ql);
 }
 
-void SWEqn::assemble_operator(double dt) {
+void SWEqn::assemble_operator(double _dt) {
     int n2 = (topo->elOrd+1)*(topo->elOrd+1);
     int mm, mi, mf, ri, ci, dof_proc;
     int nCols;
@@ -542,7 +542,7 @@ void SWEqn::assemble_operator(double dt) {
     MatMPIAIJSetPreallocation(A, 16*n2, PETSC_NULL, 16*n2, PETSC_NULL);
 
     R->assemble(fl);
-    MatAXPY(M1->M, 0.5*dt, R->M, DIFFERENT_NONZERO_PATTERN);
+    MatAXPY(M1->M, 0.5*_dt, R->M, DIFFERENT_NONZERO_PATTERN);
     MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
 
@@ -563,7 +563,7 @@ void SWEqn::assemble_operator(double dt) {
 
     // [u,h] block
     MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Muh);
-    MatScale(Muh, 0.5*dt*grav);
+    MatScale(Muh, 0.5*_dt*grav);
     MatAssemblyBegin(Muh, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  Muh, MAT_FINAL_ASSEMBLY);
 
@@ -582,7 +582,7 @@ void SWEqn::assemble_operator(double dt) {
 
     // [h,u] block
     MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mhu);
-    MatScale(Mhu, 0.5*dt*H_MEAN);
+    MatScale(Mhu, 0.5*_dt*H_MEAN);
     MatAssemblyBegin(Mhu, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  Mhu, MAT_FINAL_ASSEMBLY);
 
@@ -621,6 +621,77 @@ void SWEqn::assemble_operator(double dt) {
 
     MatDestroy(&M1->M);
     M1->assemble();
+
+    KSPCreate(MPI_COMM_WORLD, &kspA);
+    KSPSetOperators(kspA, A, A);
+    KSPSetTolerances(kspA, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetOptionsPrefix(kspA, "A_");
+    KSPSetFromOptions(kspA);
+
+    MatCreate(MPI_COMM_WORLD, &B);
+    MatSetSizes(B, topo->n1l+topo->n2l, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, topo->nDofs1G+topo->nDofs2G);
+    MatSetType(B, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(B, 16*n2, PETSC_NULL, 16*n2, PETSC_NULL);
+
+    R->assemble(fl);
+    MatScale(R->M, 0.5*_dt);
+    MatGetOwnershipRange(R->M, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(R->M, mm, &nCols, &cols, &vals);
+        dof_proc = mm / topo->n1l;
+        ri = dof_proc * (topo->n1l + topo->n2l) + mm % topo->n1l;
+        for(ci = 0; ci < nCols; ci++) {
+            dof_proc = cols[ci] / topo->n1l;
+            cols2[ci] = dof_proc * (topo->n1l + topo->n2l) + cols[ci] % topo->n1l;
+        }
+        MatSetValues(B, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(R->M, mm, &nCols, &cols, &vals);
+    }
+    MatAssemblyBegin(R->M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  R->M, MAT_FINAL_ASSEMBLY);
+
+    // [u,h] block
+    MatMatMult(EtoF->E12, M2->M, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Muh);
+    MatScale(Muh, 0.5*_dt*grav);
+    MatAssemblyBegin(Muh, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Muh, MAT_FINAL_ASSEMBLY);
+
+    MatGetOwnershipRange(Muh, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(Muh, mm, &nCols, &cols, &vals);
+        dof_proc = mm / topo->n1l;
+        ri = dof_proc * (topo->n1l + topo->n2l) + mm % topo->n1l;
+        for(ci = 0; ci < nCols; ci++) {
+            dof_proc = cols[ci] / topo->n2l;
+            cols2[ci] = dof_proc * (topo->n1l + topo->n2l) + cols[ci] % topo->n2l + topo->n1l;
+        }
+        MatSetValues(B, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(Muh, mm, &nCols, &cols, &vals);
+    }
+
+    // [h,u] block
+    MatMatMult(M2->M, EtoF->E21, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mhu);
+    MatScale(Mhu, 0.5*_dt*H_MEAN);
+    MatAssemblyBegin(Mhu, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Mhu, MAT_FINAL_ASSEMBLY);
+
+    MatGetOwnershipRange(Mhu, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        MatGetRow(Mhu, mm, &nCols, &cols, &vals);
+        dof_proc = mm / topo->n2l;
+        ri = dof_proc * (topo->n1l + topo->n2l) + mm % topo->n2l + topo->n1l;
+        for(ci = 0; ci < nCols; ci++) {
+            dof_proc = cols[ci] / topo->n1l;
+            cols2[ci] = dof_proc * (topo->n1l + topo->n2l) + cols[ci] % topo->n1l;
+        }
+        MatSetValues(B, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(Mhu, mm, &nCols, &cols, &vals);
+    }
+    MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  B, MAT_FINAL_ASSEMBLY);
+
+    MatDestroy(&Muh);
+    MatDestroy(&Mhu);
 /*
     int n2 = (topo->elOrd+1)*(topo->elOrd+1);
     int mm, mi, mf, ri, ci, dof_proc;
@@ -811,7 +882,7 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     int it = 0;
     double norm = 1.0e+9, norm_dx, norm_x;
     Vec x, f, dx;
-    KSP kspA;
+    //KSP kspA;
 
     dt = _dt;
 
@@ -832,11 +903,11 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     VecCopy(un, uj);
     VecCopy(hn, hj);
 
-    KSPCreate(MPI_COMM_WORLD, &kspA);
-    KSPSetOperators(kspA, A, A);
-    KSPSetTolerances(kspA, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetOptionsPrefix(kspA, "A_");
-    KSPSetFromOptions(kspA);
+    //KSPCreate(MPI_COMM_WORLD, &kspA);
+    //KSPSetOperators(kspA, A, A);
+    //KSPSetTolerances(kspA, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    //KSPSetOptionsPrefix(kspA, "A_");
+    //KSPSetFromOptions(kspA);
 
     do {
         assemble_residual(x, f);
@@ -875,7 +946,7 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     VecDestroy(&x);
     VecDestroy(&f);
     VecDestroy(&dx);
-    KSPDestroy(&kspA);
+    //KSPDestroy(&kspA);
 }
 
 SWEqn::~SWEqn() {
@@ -894,7 +965,10 @@ SWEqn::~SWEqn() {
     VecDestroy(&uil);
     VecDestroy(&ujl);
     if(u_prev) VecDestroy(&u_prev);
-    if(A) MatDestroy(&A);
+    if(A) { 
+        MatDestroy(&A);
+        KSPDestroy(&kspA);
+    }
     if(DM1inv) {
         MatDestroy(&Muf);
         MatDestroy(&G);
@@ -1865,12 +1939,10 @@ void SWEqn::rhs_2ndOrd(Vec fu, Vec fh) {
 }
 
 void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
-    Vec fu, fh, du1, dh1, du2, dh2, utmp, htmp, Phi, _F, qi, qj, ql;
-    double upwind_tau = 120.0;
+    Vec fu, fh, du1, dh1, du2, dh2, utmp, htmp, _f, _x;
 
     dt = _dt;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du1);
@@ -1879,8 +1951,11 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dh2);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &_f);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &_x);
 
-    if(!A) assemble_operator_schur(ROS_ALPHA*dt);
+    //if(!A) assemble_operator_schur(ROS_ALPHA*dt);
+    if(!A) assemble_operator(2.0*ROS_ALPHA*dt);
 
     VecCopy(un, ui);
     VecCopy(hn, hi);
@@ -1890,7 +1965,10 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     rosenbrock_residuals(ui, hi, uil, fu, fh);
     VecScale(fu, dt);
     VecScale(fh, dt);
-    solve_schur(fu, fh, du1, dh1, ROS_ALPHA*dt);
+    //solve_schur(fu, fh, du1, dh1, ROS_ALPHA*dt);
+    repack(_f, fu, fh);
+    KSPSolve(kspA, _f, _x);
+    unpack(_x, du1, dh1);
 
     VecCopy(ui, uj);
     VecCopy(hi, hj);
@@ -1908,26 +1986,37 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecScale(fu, 2.0);
     VecScale(fh, 2.0);
 
-    R->assemble(fl);
-    MatMult(M1->M, ui, utmp);
-    VecAXPY(fu, +1.0, utmp);
-    MatMult(R->M, ui, utmp);
-    VecAXPY(fu, -1.0*ROS_ALPHA*dt, utmp);
-    MatMult(G, hi, utmp);
-    VecAXPY(fu, -1.0, utmp);
-    MatMult(R->M, uj, utmp);
-    VecAXPY(fu, +2.0*ROS_ALPHA*dt, utmp);
-    MatMult(G, hj, utmp);
-    VecAXPY(fu, +2.0, utmp);
+    //R->assemble(fl);
+    //MatMult(M1->M, ui, utmp);   VecAXPY(fu, +1.0, utmp);
+    //MatMult(R->M, ui, utmp);    VecAXPY(fu, -1.0*ROS_ALPHA*dt, utmp);
+    //MatMult(G, hi, utmp);       VecAXPY(fu, -1.0, utmp);
+    //MatMult(R->M, uj, utmp);    VecAXPY(fu, +2.0*ROS_ALPHA*dt, utmp);
+    //MatMult(G, hj, utmp);       VecAXPY(fu, +2.0, utmp);
 
-    MatMult(D, ui, htmp);
+    //MatMult(D, ui, htmp);       VecAXPY(fh, -1.0, htmp);
+    //MatMult(M2->M, hi, htmp);   VecAXPY(fh, +1.0, htmp);
+    //MatMult(D, uj, htmp);       VecAXPY(fh, +2.0, htmp);
+    repack(_x, ui, hi);
+    MatMult(B, _x, _f);
+    unpack(_f, utmp, htmp);
+    VecAXPY(fu, -1.0, utmp);
     VecAXPY(fh, -1.0, htmp);
+    MatMult(M1->M, ui, utmp);
     MatMult(M2->M, hi, htmp);
+    VecAXPY(fu, +1.0, utmp);
     VecAXPY(fh, +1.0, htmp);
-    MatMult(D, uj, htmp);
+
+    repack(_x, uj, hj);
+    MatMult(B, _x, _f);
+    unpack(_f, utmp, htmp);
+    VecAXPY(fu, +2.0, utmp);
     VecAXPY(fh, +2.0, htmp);
 
-    solve_schur(fu, fh, uj, hj, ROS_ALPHA*dt);
+    //solve_schur(fu, fh, uj, hj, ROS_ALPHA*dt);
+    repack(_f, fu, fh);
+    KSPSolve(kspA, _f, _x);
+    unpack(_x, uj, hj);
+
     VecScale(uj, 0.5);
     VecScale(hj, 0.5);
     VecAXPY(uj, 0.5, ui);
@@ -1961,7 +2050,8 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecDestroy(&fh);
     VecDestroy(&utmp);
     VecDestroy(&htmp);
-    VecDestroy(&ql);
+    VecDestroy(&_f);
+    VecDestroy(&_x);
 }
 
 void SWEqn::coriolisMatInv(Mat A, Mat* Ainv) {
