@@ -25,6 +25,8 @@
 //#define W2_ALPHA (0.25*M_PI)
 #define UP_VORT
 #define H_MEAN 1.0e+4
+//#define ROS_ALPHA (0.5 + 0.5*sqrt(2.0))
+#define ROS_ALPHA (0.25)
 
 using namespace std;
 
@@ -1663,7 +1665,6 @@ void SWEqn::rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh) {
 
 void SWEqn::rosenbrock_solve(Vec _ui, Vec _uil, Vec _hi, Vec _uj, Vec _hj) {
     Vec fu, fh, du1, dh1, du2, dh2, _ul, utmp, htmp;
-    double alpha = 1.0 + 0.5*sqrt(2.0);
 
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &_ul);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
@@ -1675,12 +1676,12 @@ void SWEqn::rosenbrock_solve(Vec _ui, Vec _uil, Vec _hi, Vec _uj, Vec _hj) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
 
-    if(!A) assemble_operator_schur(alpha*dt);
+    if(!A) assemble_operator_schur(ROS_ALPHA*dt);
 
     rosenbrock_residuals(_ui, _hi, _uil, fu, fh);
     VecScale(fu, -1.0*dt);
     VecScale(fh, -1.0*dt);
-    solve_schur(fu, fh, du1, dh1, alpha*dt);
+    solve_schur(fu, fh, du1, dh1, ROS_ALPHA*dt);
 
     VecCopy(_ui, _uj);
     VecCopy(_hi, _hj);
@@ -1697,7 +1698,7 @@ void SWEqn::rosenbrock_solve(Vec _ui, Vec _uil, Vec _hi, Vec _uj, Vec _hj) {
     MatMult(M2->M, dh1, htmp);
     VecAXPY(fu, -2.0, utmp);
     VecAXPY(fh, -2.0, htmp);
-    solve_schur(fu, fh, du2, dh2, alpha*dt);
+    solve_schur(fu, fh, du2, dh2, ROS_ALPHA*dt);
 
 /*
     VecCopy(_ui, _uj);
@@ -1866,7 +1867,6 @@ void SWEqn::rhs_2ndOrd(Vec fu, Vec fh) {
 void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     Vec fu, fh, du1, dh1, du2, dh2, utmp, htmp, Phi, _F, qi, qj, ql;
     double upwind_tau = 120.0;
-    double alpha = 1.0 + 0.5*sqrt(2.0);
 
     dt = _dt;
 
@@ -1880,7 +1880,7 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
 
-    if(!A) assemble_operator_schur(alpha*dt);
+    if(!A) assemble_operator_schur(ROS_ALPHA*dt);
 
     VecCopy(un, ui);
     VecCopy(hn, hi);
@@ -1890,7 +1890,7 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     rosenbrock_residuals(ui, hi, uil, fu, fh);
     VecScale(fu, dt);
     VecScale(fh, dt);
-    solve_schur(fu, fh, du1, dh1, alpha*dt);
+    solve_schur(fu, fh, du1, dh1, ROS_ALPHA*dt);
 
     VecCopy(ui, uj);
     VecCopy(hi, hj);
@@ -1912,11 +1912,11 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     MatMult(M1->M, ui, utmp);
     VecAXPY(fu, +1.0, utmp);
     MatMult(R->M, ui, utmp);
-    VecAXPY(fu, -1.0*alpha*dt, utmp);
+    VecAXPY(fu, -1.0*ROS_ALPHA*dt, utmp);
     MatMult(G, hi, utmp);
     VecAXPY(fu, -1.0, utmp);
     MatMult(R->M, uj, utmp);
-    VecAXPY(fu, +2.0*alpha*dt, utmp);
+    VecAXPY(fu, +2.0*ROS_ALPHA*dt, utmp);
     MatMult(G, hj, utmp);
     VecAXPY(fu, +2.0, utmp);
 
@@ -1927,7 +1927,7 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     MatMult(D, uj, htmp);
     VecAXPY(fh, +2.0, htmp);
 
-    solve_schur(fu, fh, uj, hj, alpha*dt);
+    solve_schur(fu, fh, uj, hj, ROS_ALPHA*dt);
     VecScale(uj, 0.5);
     VecScale(hj, 0.5);
     VecAXPY(uj, 0.5, ui);
