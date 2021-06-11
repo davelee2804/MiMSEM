@@ -1983,8 +1983,8 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
          J = f'(y)
          (I - aJ)y_2 = f(y_0) + f(y_1) + (1 + aJ)y_0 - 2aJy_1
          y_2 = (y_2 + y+0)/2                                     */
-    VecScale(fu, 2.0);
-    VecScale(fh, 2.0);
+    VecScale(fu, 2.0*dt);
+    VecScale(fh, 2.0*dt);
 
     //R->assemble(fl);
     //MatMult(M1->M, ui, utmp);   VecAXPY(fu, +1.0, utmp);
