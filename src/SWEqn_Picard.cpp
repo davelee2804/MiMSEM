@@ -1991,51 +1991,6 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecAXPY(uj, dt, du2);
     VecAXPY(hj, dt, dh2);
 
-    /* modified second stage:
-         J = f'(y)
-         (I - aJ)y_2 = f(y_0) + f(y_1) + (1 + aJ)y_0 - 2aJy_1
-         y_2 = (y_2 + y+0)/2                                     */
-/*
-    VecScale(fu, 2.0*dt);
-    VecScale(fh, 2.0*dt);
-
-    //R->assemble(fl);
-    //MatMult(M1->M, ui, utmp);   VecAXPY(fu, +1.0, utmp);
-    //MatMult(R->M, ui, utmp);    VecAXPY(fu, -1.0*ROS_ALPHA*dt, utmp);
-    //MatMult(G, hi, utmp);       VecAXPY(fu, -1.0, utmp);
-    //MatMult(R->M, uj, utmp);    VecAXPY(fu, +2.0*ROS_ALPHA*dt, utmp);
-    //MatMult(G, hj, utmp);       VecAXPY(fu, +2.0, utmp);
-
-    //MatMult(D, ui, htmp);       VecAXPY(fh, -1.0, htmp);
-    //MatMult(M2->M, hi, htmp);   VecAXPY(fh, +1.0, htmp);
-    //MatMult(D, uj, htmp);       VecAXPY(fh, +2.0, htmp);
-    repack(_x, ui, hi);
-    MatMult(B, _x, _f);
-    unpack(_f, utmp, htmp);
-    VecAXPY(fu, -1.0, utmp);
-    VecAXPY(fh, -1.0, htmp);
-    MatMult(M1->M, ui, utmp);
-    MatMult(M2->M, hi, htmp);
-    VecAXPY(fu, +1.0, utmp);
-    VecAXPY(fh, +1.0, htmp);
-
-    repack(_x, uj, hj);
-    MatMult(B, _x, _f);
-    unpack(_f, utmp, htmp);
-    VecAXPY(fu, +2.0, utmp);
-    VecAXPY(fh, +2.0, htmp);
-
-    //solve_schur(fu, fh, uj, hj, ROS_ALPHA*dt);
-    repack(_f, fu, fh);
-    KSPSolve(kspA, _f, _x);
-    unpack(_x, uj, hj);
-
-    VecScale(uj, 0.5);
-    VecScale(hj, 0.5);
-    VecAXPY(uj, 0.5, ui);
-    VecAXPY(hj, 0.5, hi);
-*/
-
     VecCopy(uj, un);
     VecCopy(hj, hn);
 
