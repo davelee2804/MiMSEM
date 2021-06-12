@@ -1963,8 +1963,8 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
 
     rosenbrock_residuals(ui, hi, uil, fu, fh);
-    VecScale(fu, dt);
-    VecScale(fh, dt);
+    VecScale(fu, -1.0);
+    VecScale(fh, -1.0);
     //solve_schur(fu, fh, du1, dh1, ROS_ALPHA*dt);
     repack(_f, fu, fh);
     KSPSolve(kspA, _f, _x);
@@ -1972,17 +1972,30 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
 
     VecCopy(ui, uj);
     VecCopy(hi, hj);
-    VecAXPY(uj, 1.0, du1);
-    VecAXPY(hj, 1.0, dh1);
+    VecAXPY(uj, dt, du1);
+    VecAXPY(hj, dt, dh1);
     VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
 
     rhs_2ndOrd(fu, fh);
+    repack(_f, du1, dh1);
+    MatMult(B, _f, _x);
+    unpack(_x, utmp, htmp);
+    VecAYPX(fu, -1.0, utmp);
+    VecAYPX(fh, -1.0, htmp);
+    repack(_f, fu, fh);
+    KSPSolve(kspA, _f, _x);
+    unpack(_x, du2, dh2);
+    VecCopy(ui, uj);
+    VecCopy(hi, hj);
+    VecAXPY(uj, dt, du2);
+    VecAXPY(hj, dt, dh2);
 
     /* modified second stage:
          J = f'(y)
          (I - aJ)y_2 = f(y_0) + f(y_1) + (1 + aJ)y_0 - 2aJy_1
          y_2 = (y_2 + y+0)/2                                     */
+/*
     VecScale(fu, 2.0*dt);
     VecScale(fh, 2.0*dt);
 
@@ -2021,6 +2034,7 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecScale(hj, 0.5);
     VecAXPY(uj, 0.5, ui);
     VecAXPY(hj, 0.5, hi);
+*/
 
     VecCopy(uj, un);
     VecCopy(hj, hn);
