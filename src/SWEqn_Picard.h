@@ -51,6 +51,7 @@ class SWEqn {
         Mat Muf;
         Mat G;
         Mat D;
+        Mat M1inv;
         void coriolis();
         void curl(Vec u, Vec* w);
         void diagnose_F(Vec* F);
@@ -73,10 +74,8 @@ class SWEqn {
         void solve_schur(Vec Fu, Vec Fh, Vec _u, Vec _h, double imp_dt);
         void solve(Vec u, Vec h, double _dt, bool save);
         void solve_imex(Vec un, Vec hn, double _dt, bool save);
-        void solve_implicit(Vec un, Vec hn, double _dt, bool save);
         void solve_rosenbrock(Vec un, Vec hn, double _dt, bool save);
         void rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh);
-        void rosenbrock_solve(Vec _ui, Vec _uil, Vec _hi, Vec _uj, Vec _hj);
         void rhs_2ndOrd(Vec fu, Vec fh);
         double viscosity();
         void unpack(Vec x, Vec u, Vec h);
