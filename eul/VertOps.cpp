@@ -887,7 +887,6 @@ void VertOps::AssembleConstInv(int ex, int ey, Mat B) {
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
         Inv(WtQW, WtQWinv, n2);
-        //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 
         for(ii = 0; ii < W->nDofsJ; ii++) {
             inds2k[ii] = ii + kk*W->nDofsJ;
@@ -1567,7 +1566,7 @@ void VertOps::Assemble_EOS_Residual_new(int ex, int ey, Vec rt, Vec exner, Vec e
     double exq[99], tmp1[99], tmp2[99], tmp3[99];
     PetscScalar *rArray, *eArray, *fArray;
 
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
@@ -2086,7 +2085,7 @@ void VertOps::AssembleConLinWithRho(int ex, int ey, Mat BA, Vec rho) {
     ei   = ey*topo->nElsX + ex;
     mp1  = quad->n + 1;
     mp12 = mp1*mp1;
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
 
     MatZeroEntries(BA);
 
