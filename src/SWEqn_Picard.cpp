@@ -1384,10 +1384,10 @@ void SWEqn::writeConservation(double time, Vec u, Vec h, double mass0, double vo
 
 void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     int size;
-    double en_con_err, upwind_tau = 120.0;
+    double kin, pot, k2p, en_con_err, upwind_tau = 120.0;
     char filename[50];
     ofstream file;
-    Vec Fi, Fj, Phi, qi, qj, ql, ul, utmp, htmp, fu, up;
+    Vec Fi, Fj, Phi, qi, qj, ql, ul, utmp, htmp, fu, up, _F, _Phi;
     Mat KT, KTD;
     KSP ksp_f;
     PC pc;
@@ -1403,6 +1403,8 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &up);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fj);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &_Phi);
 
     // 1. compute provisional velocity
     VecCopy(un, ui);
@@ -1419,12 +1421,14 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     MatTranspose(K->M, MAT_INITIAL_MATRIX, &KT);
     MatMult(KT, hi, utmp);
     VecScale(utmp, 2.0);
+    VecCopy(utmp, _F);
     KSPSolve(ksp, utmp, Fi);
 
     // Phi^n
     MatMult(K->M, ui, htmp);
     MatMult(M2->M, hi, Phi);
     VecAYPX(Phi, grav, htmp);
+    VecCopy(Phi, _Phi);
     MatMult(EtoF->E12, Phi, fu);
 
     // q^n
@@ -1548,14 +1552,28 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
         VecDestroy(&wi);
     }
 
-    // write the energy conservation error
+    // write the energy conservation error and diagnostics
+    MatMult(M1->M, _F, utmp);
+    VecDot(ui, _F, &kin);
+    kin *= 0.5;
+
+    MatMult(M2->M, hi, htmp);
+    VecDot(hi, htmp, &pot);
+    pot *= 0.5*grav;
+
+    MatMult(EtoF->E21, _F, htmp);
+    MatMult(M2->M, htmp, Phi);
+    VecDot(_Phi, Phi, &k2p);
+
     VecAYPX(up, -1.0, uj);
     MatMult(M1->M, Fj, utmp);
     VecDot(Fj, up, &en_con_err);
-    sprintf(filename, "output/conservation_err.dat");
+
+    sprintf(filename, "output/conservation_2.dat");
     if(!rank) {
         file.open(filename, ios::out | ios::app);
-        file << en_con_err << endl;
+        file << scientific;
+        file << kin << "\t" << pot << "\t" << k2p << "\t" << en_con_err << endl;
         file.close();
     }
 
@@ -1570,20 +1588,20 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     VecDestroy(&fu);
     VecDestroy(&utmp);
     VecDestroy(&up);
+    VecDestroy(&_F);
+    VecDestroy(&_Phi);
     MatDestroy(&KT);
     MatDestroy(&KTD);
     KSPDestroy(&ksp_f);
 }
 
-void SWEqn::rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh) {
+void SWEqn::rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh, Vec _F, Vec _Phi) {
     double upwind_tau = 120.0;
-    Vec utmp, _F, qi, ql, htmp, _Phi;
+    Vec utmp, qi, ql, htmp;
     Mat KT;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &_Phi);
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
 
     K->assemble(_ul);
@@ -1614,8 +1632,6 @@ void SWEqn::rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh) {
 
     VecDestroy(&utmp);
     VecDestroy(&htmp);
-    VecDestroy(&_F);
-    VecDestroy(&_Phi);
     VecDestroy(&ql);
     MatDestroy(&KT);
 }
@@ -1669,7 +1685,7 @@ void SWEqn::rhs_2ndOrd(Vec fu, Vec fh) {
 }
 
 void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
-    Vec fu, fh, du1, dh1, du2, dh2, utmp, htmp, _f, _x;
+    Vec fu, fh, du1, dh1, du2, dh2, utmp, htmp, _f, _x, _F, _Phi;
 
     dt = _dt;
 
@@ -1683,6 +1699,8 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &_f);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &_x);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &_Phi);
 
     if(!A) assemble_operator(2.0*ROS_ALPHA*dt);
 
@@ -1691,7 +1709,7 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
 
-    rosenbrock_residuals(ui, hi, uil, fu, fh);
+    rosenbrock_residuals(ui, hi, uil, fu, fh, _F, _Phi);
     VecScale(fu, -1.0);
     VecScale(fh, -1.0);
     repack(_f, fu, fh);
@@ -1724,6 +1742,30 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecCopy(uj, un);
     VecCopy(hj, hn);
 
+    {
+	double kin, pot, k2p;
+        char filename[50];
+        ofstream file;
+
+        MatMult(M1->M, _F, utmp);
+        VecDot(utmp, ui, &kin);
+        kin *= 0.5;
+        MatMult(M2->M, hi, htmp);
+        VecDot(htmp, hi, &pot);
+        pot *= 0.5*grav;
+        MatMult(EtoF->E21, _F, htmp);
+        MatMult(M2->M, htmp, dh1);
+        VecDot(_Phi, dh1, &k2p);
+
+        if(!rank) {
+            sprintf(filename, "output/conservation_2.dat");
+            file.open(filename, ios::out | ios::app);
+            file << scientific;
+            file << kin << "\t" << pot << "\t" << k2p << endl;
+            file.close();
+        }
+    }
+
     if(save) {
         Vec wi;
         char fieldname[20];
@@ -1751,6 +1793,8 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecDestroy(&htmp);
     VecDestroy(&_f);
     VecDestroy(&_x);
+    VecDestroy(&_F);
+    VecDestroy(&_Phi);
 }
 
 void SWEqn::coriolisMatInv(Mat A, Mat* Ainv) {
