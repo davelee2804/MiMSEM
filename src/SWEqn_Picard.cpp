@@ -1797,6 +1797,129 @@ void SWEqn::solve_rosenbrock(Vec un, Vec hn, double _dt, bool save) {
     VecDestroy(&_Phi);
 }
 
+void SWEqn::solve_rosenbrock_schur(Vec un, Vec hn, double _dt, bool save) {
+    Vec fu, fh, du1, dh1, du2, dh2, utmp, htmp, _f, _x, _F, _Phi;
+
+    dt = _dt;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dh1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dh2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &_f);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &_x);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &_Phi);
+
+    if(!A) {
+        assemble_operator(2.0*ROS_ALPHA*dt);
+        MatDestroy(&A);
+        assemble_operator_schur(ROS_ALPHA*dt);
+    }
+
+    VecCopy(un, ui);
+    VecCopy(hn, hi);
+    VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+
+    // first order velocity solve
+    rosenbrock_residuals(ui, hi, uil, fu, fh, _F, _Phi);
+    MatMult(M1->M, ui, utmp);
+    VecAYPX(fu, -dt, utmp);
+    KSPSolve(ksp, fu, uj);
+    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    MatMult(EtoF->E21, _F, hj);
+    VecAYPX(hj, -dt, hi);
+    
+    // first rosenbrock step
+    rhs_2ndOrd(fu, fh);
+    VecScale(fu, -1.0);
+    VecScale(fh, -1.0);
+    solve_schur(fu, fh, du1, dh1, ROS_ALPHA*dt);
+
+    VecCopy(ui, uj);
+    VecCopy(hi, hj);
+    VecAXPY(uj, dt, du1);
+    VecAXPY(hj, dt, dh1);
+    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+
+    // second rosenbrock step
+    rhs_2ndOrd(fu, fh);
+    repack(_f, du1, dh1);
+    MatMult(B, _f, _x);
+    unpack(_x, utmp, htmp);
+    VecAYPX(fu, -1.0, utmp);
+    VecAYPX(fh, -1.0, htmp);
+    solve_schur(fu, fh, du2, dh2, ROS_ALPHA*dt);
+    VecCopy(ui, uj);
+    VecCopy(hi, hj);
+    VecAXPY(uj, dt, du2);
+    VecAXPY(hj, dt, dh2);
+
+    VecCopy(uj, un);
+    VecCopy(hj, hn);
+
+    {
+	double kin, pot, k2p;
+        char filename[50];
+        ofstream file;
+
+        MatMult(M1->M, _F, utmp);
+        VecDot(utmp, ui, &kin);
+        kin *= 0.5;
+        MatMult(M2->M, hi, htmp);
+        VecDot(htmp, hi, &pot);
+        pot *= 0.5*grav;
+        MatMult(EtoF->E21, _F, htmp);
+        MatMult(M2->M, htmp, dh1);
+        VecDot(_Phi, dh1, &k2p);
+
+        if(!rank) {
+            sprintf(filename, "output/conservation_2.dat");
+            file.open(filename, ios::out | ios::app);
+            file << scientific;
+            file << kin << "\t" << pot << "\t" << k2p << endl;
+            file.close();
+        }
+    }
+
+    if(save) {
+        Vec wi;
+        char fieldname[20];
+
+        step++;
+        curl(un, &wi);
+
+        sprintf(fieldname, "vorticity");
+        geom->write0(wi, fieldname, step);
+        sprintf(fieldname, "velocity");
+        geom->write1(un, fieldname, step);
+        sprintf(fieldname, "pressure");
+        geom->write2(hn, fieldname, step);
+
+        VecDestroy(&wi);
+    }
+
+    VecDestroy(&du1);
+    VecDestroy(&dh1);
+    VecDestroy(&du2);
+    VecDestroy(&dh2);
+    VecDestroy(&fu);
+    VecDestroy(&fh);
+    VecDestroy(&utmp);
+    VecDestroy(&htmp);
+    VecDestroy(&_f);
+    VecDestroy(&_x);
+    VecDestroy(&_F);
+    VecDestroy(&_Phi);
+}
+
 void SWEqn::coriolisMatInv(Mat A, Mat* Ainv) {
     int mi, mf, ci, nCols1, nCols2;
     const int *cols1, *cols2;
