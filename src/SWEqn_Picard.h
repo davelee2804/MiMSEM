@@ -44,6 +44,7 @@ class SWEqn {
         Vec uil;
         Vec ujl;
         Vec u_prev;
+        Vec h_prev;
         Mat A;
         Mat B;
         Mat DM1inv;
@@ -74,6 +75,7 @@ class SWEqn {
         void solve_schur(Vec Fu, Vec Fh, Vec _u, Vec _h, double imp_dt);
         void solve(Vec u, Vec h, double _dt, bool save);
         void solve_imex(Vec un, Vec hn, double _dt, bool save);
+        void solve_rk2(Vec un, Vec hn, double _dt, bool save);
         void solve_rosenbrock(Vec un, Vec hn, double _dt, bool save);
         void solve_rosenbrock_schur(Vec un, Vec hn, double _dt, bool save);
         void rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh, Vec _F, Vec _Phi);

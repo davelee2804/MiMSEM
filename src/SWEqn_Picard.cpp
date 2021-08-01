@@ -1595,6 +1595,165 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     KSPDestroy(&ksp_f);
 }
 
+void SWEqn::solve_rk2(Vec un, Vec hn, double _dt, bool save) {
+    double kin, pot, k2p, upwind_tau = 120.0;
+    char filename[50];
+    ofstream file;
+    Vec Phi, qi, ql, utmp, htmp, fu, fh, _F, Fi, _Phi;
+    Mat KT;
+    KSP ksp2;
+
+    dt = _dt;
+
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Phi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &_Phi);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
+
+    // 1. compute provisional velocity
+    VecCopy(un, ui);
+    VecCopy(un, uj);
+    VecCopy(hn, hi);
+    VecCopy(hn, hj);
+    VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
+
+    // F^n
+    K->assemble(uil);
+    MatTranspose(K->M, MAT_INITIAL_MATRIX, &KT);
+    MatMult(KT, hi, utmp);
+    VecScale(utmp, 2.0);
+    VecCopy(utmp, _F);
+    KSPSolve(ksp, utmp, Fi);
+
+    // Phi^n
+    MatMult(K->M, ui, htmp);
+    MatMult(M2->M, hi, Phi);
+    VecAYPX(Phi, grav, htmp);
+    VecCopy(Phi, _Phi);
+    MatMult(EtoF->E12, Phi, fu);
+
+    // q^n
+    diagnose_q(upwind_tau, ui, uil, hi, &qi);
+    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+#ifdef UP_VORT
+    R_up->assemble(ql, uil, upwind_tau);
+    MatMult(R_up->M, Fi, utmp);
+#else
+    R->assemble(ql);
+    MatMult(R->M, Fi, utmp);
+#endif
+    VecAXPY(fu, 1.0, utmp);
+
+    if(u_prev) {
+        MatMult(M1->M, u_prev, utmp);
+        VecAYPX(fu, -2.0*_dt, utmp);
+
+        VecCopy(h_prev, hj);
+        MatMult(EtoF->E21, Fi, htmp);
+        VecAXPY(hj, -2.0*_dt, htmp);
+    } else {
+        MatMult(M1->M, ui, utmp);
+        VecAYPX(fu, -_dt, utmp);
+
+        VecCopy(hi, hj);
+        MatMult(EtoF->E21, Fi, htmp);
+        VecAXPY(hj, -_dt, htmp);
+    }
+    KSPSolve(ksp, fu, uj);
+    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
+
+    if(!u_prev) {
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_prev);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_prev);
+    }
+    VecCopy(ui, u_prev);
+    VecCopy(hi, h_prev);
+
+    rhs_2ndOrd(fu, fh);
+
+    MatMult(M1->M, ui, utmp);
+    VecAYPX(fu, -_dt, utmp);
+    KSPSolve(ksp, fu, uj);
+
+    MatMult(M2->M, hi, htmp);
+    VecAYPX(fh, -_dt, htmp);
+
+    //
+    KSPCreate(MPI_COMM_WORLD, &ksp2);
+    KSPSetOperators(ksp2, M2->M, M2->M);
+    KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp2, KSPGMRES);
+    KSPSetOptionsPrefix(ksp2, "init2_");
+    KSPSetFromOptions(ksp2);
+    KSPSolve(ksp2, fh, hj);
+
+    VecCopy(uj, un);
+    VecCopy(hj, hn);
+
+    if(save) {
+        Vec wi;
+        char fieldname[20];
+
+        step++;
+        curl(un, &wi);
+
+        sprintf(fieldname, "vorticity");
+        geom->write0(wi, fieldname, step);
+        sprintf(fieldname, "velocity");
+        geom->write1(un, fieldname, step);
+        sprintf(fieldname, "pressure");
+        geom->write2(hn, fieldname, step);
+
+        VecDestroy(&wi);
+    }
+
+    // write the energy conservation error and diagnostics
+    MatMult(M1->M, _F, utmp);
+    VecDot(ui, _F, &kin);
+    kin *= 0.5;
+
+    MatMult(M2->M, hi, htmp);
+    VecDot(hi, htmp, &pot);
+    pot *= 0.5*grav;
+
+    MatMult(EtoF->E21, _F, htmp);
+    MatMult(M2->M, htmp, Phi);
+    VecDot(_Phi, Phi, &k2p);
+
+    //VecAYPX(up, -1.0, uj);
+    //MatMult(M1->M, Fj, utmp);
+    //VecDot(Fj, up, &en_con_err);
+
+    sprintf(filename, "output/conservation_2.dat");
+    if(!rank) {
+        file.open(filename, ios::out | ios::app);
+        file << scientific;
+        file << kin << "\t" << pot << "\t" << k2p << endl;
+        file.close();
+    }
+
+    VecDestroy(&qi);
+    VecDestroy(&ql);
+    VecDestroy(&Phi);
+    VecDestroy(&htmp);
+    VecDestroy(&fu);
+    VecDestroy(&fh);
+    VecDestroy(&utmp);
+    VecDestroy(&Fi);
+    VecDestroy(&_F);
+    VecDestroy(&_Phi);
+    MatDestroy(&KT);
+    KSPDestroy(&ksp2);
+}
+
 void SWEqn::rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh, Vec _F, Vec _Phi) {
     double upwind_tau = 120.0;
     Vec utmp, qi, ql, htmp;
