@@ -81,13 +81,13 @@ double h_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 30.0;
+    double dt = 360.0;
     double vort_0, mass_0, ener_0;
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 8*24*120;
-    int dumpEvery = 24*120;
+    int nSteps = 20*24*10;
+    int dumpEvery = 24*10;
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
@@ -145,10 +145,9 @@ int main(int argc, char** argv) {
         }
         dump = (step%dumpEvery == 0) ? true : false;
         //sw->solve(ui, hi, dt, dump);
-        sw->solve_imex(ui, hi, dt, dump);
-        //if(dump) {
-            sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
-        //}
+        //sw->solve_imex(ui, hi, dt, dump);
+        sw->solve_rosenbrock(ui, hi, dt, dump);
+        sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
     }
 
     delete sw;

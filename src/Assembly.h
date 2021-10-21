@@ -7,8 +7,9 @@ class Umat {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
+        bool mat_alloc;
         void assemble();
-        void assemble_up(double dt, Vec u1);
+        void assemble_up(double dt, Vec u1, Vec h2);
 };
 
 class Wmat {
@@ -242,6 +243,7 @@ class RotMat_up {
         M1y_j_xy_i* V;
         Wii* Q;
         void assemble(Vec q0, Vec ul, double dt);
+        void assemble_apvm(Vec q0, Vec ul, Vec dql, double dt);
 };
 
 class U0mat {

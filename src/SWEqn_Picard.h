@@ -56,6 +56,7 @@ class SWEqn {
         void coriolis();
         void curl(Vec u, Vec* w);
         void diagnose_F(Vec* F);
+        void diagnose_F_up(Vec* F, double tau, Vec _ul);
         void diagnose_Phi(Vec* Phi);
         void diagnose_q(double _dt, Vec _ug, Vec _ul, Vec _h, Vec* qi);
         void init0(Vec q, ICfunc* func);
