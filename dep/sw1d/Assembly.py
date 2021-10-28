@@ -347,3 +347,60 @@ class P_interp_2:
 		vals = vals[:nnz]
 
 		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+# 0 form mass matrix, with field at quadrature points
+class Uhmat:
+	def __init__(self,topo,quad,dX,hq):
+		topo_q = Topo(topo.nx,quad.n)
+		P = M0_j_x_i(topo.n,quad.n).A
+		Pt = P.transpose()
+
+		maps,nnz = self.genMap(topo)
+
+		n2 = topo.n*topo.n
+		np1 = topo.n + 1
+		np12 = np1*np1
+		mp1 = quad.n+1
+		rows = np.zeros(nnz,dtype=np.int32)
+		cols = np.zeros(nnz,dtype=np.int32)
+		vals = np.zeros(nnz,dtype=np.float64)
+		vq = np.zeros((topo_q.n+1))
+		for ex in np.arange(topo.nx):
+			inds0 = topo.localToGlobal0(ex)
+			inds0q = topo_q.localToGlobal0(ex)
+			Q = (dX[ex]/2.0) * Wii(quad.n).A
+			for jj in np.arange(mp1):
+                                Q[jj][jj] = Q[jj][jj]*hq[inds0q[jj]]
+			PtQ = mult(Pt,Q)
+			self.Me = mult(PtQ,P)
+			for jj in np.arange(np12):
+				row = inds0[jj//np1]
+				col = inds0[jj%np1]
+				ii = maps[row,col]
+				if ii == -1:
+					print('ERROR! assembly')
+				rows[ii] = row
+				cols[ii] = col
+				vals[ii] = vals[ii] + self.Me[jj//np1,jj%np1]
+
+		nr = topo.nx*topo.n
+		nc = topo.nx*topo.n
+		self.M = sparse.csc_matrix((vals,(rows,cols)),shape=(nr,nc),dtype=np.float64)
+
+	def genMap(self,topo):
+		np1 = topo.n+1
+		ne = np1
+		nr = topo.nx*topo.n
+		nc = topo.nx*topo.n
+		maps = -1*np.ones((nr,nc),dtype=np.int32)
+		ii = 0
+		for ex in np.arange(topo.nx):
+			inds0 = topo.localToGlobal0(ex)
+			for jj in np.arange(ne*ne):
+				row = inds0[jj//ne]
+				col = inds0[jj%ne]
+				if maps[row][col] == -1:
+					maps[row][col] = ii
+					ii = ii + 1
+
+		return maps, ii
