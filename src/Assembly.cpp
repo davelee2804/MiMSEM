@@ -1623,11 +1623,11 @@ void RotMat_up::assemble(Vec q0, Vec ul, double dt) {
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
 
-void RotMat_up::assemble_apvm(Vec q0, Vec ul, Vec dql, double dt) {
+void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double tau, double dt, Vec qi) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y;
-    double det, **J, vort, ux[2], dq[2];
-    PetscScalar *q0Array, *u1Array, *dqArray;
+    double det, **J, vort, ux[2], dq[2], vort_i;
+    PetscScalar *q0Array, *u1Array, *dqArray, *qiArray;
 
     mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
@@ -1635,6 +1635,7 @@ void RotMat_up::assemble_apvm(Vec q0, Vec ul, Vec dql, double dt) {
     VecGetArray(q0, &q0Array);
     VecGetArray(ul, &u1Array);
     VecGetArray(dql, &dqArray);
+    VecGetArray(qi, &qiArray);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -1650,13 +1651,14 @@ void RotMat_up::assemble_apvm(Vec q0, Vec ul, Vec dql, double dt) {
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, dqArray, dq);
+                geom->interp0(ex, ey, ii%mp1, ii/mp1, qiArray, &vort_i);
 
                 //ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
                 //ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
                 //dq2[0] = +J[1][1]*dq[0]/det - J[0][1]*dq[1]/det;
                 //dq2[1] = -J[1][0]*dq[0]/det + J[0][0]*dq[1]/det;
-                //vort -= dt*(ux2[0]*dq2[1] - ux2[1]*dq2[0]);
-                vort -= dt*(ux[0]*dq[1] - ux[1]*dq[0]);
+                //vort -= tau*(ux2[0]*dq2[1] - ux2[1]*dq2[0]);
+                vort -= tau*(ux[0]*dq[1] - ux[1]*dq[0] + (vort - vort_i)/dt);
 
                 Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det;
                 Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det;
@@ -1683,6 +1685,7 @@ void RotMat_up::assemble_apvm(Vec q0, Vec ul, Vec dql, double dt) {
     VecRestoreArray(q0, &q0Array);
     VecRestoreArray(ul, &u1Array);
     VecRestoreArray(dql, &dqArray);
+    VecRestoreArray(qi, &qiArray);
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);

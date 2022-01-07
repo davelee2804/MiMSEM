@@ -341,7 +341,7 @@ void SWEqn::diagnose_Phi(Vec* Phi) {
     VecDestroy(&b);
 }
 
-void SWEqn::diagnose_q(double _dt, Vec _ug, Vec _ul, Vec _h, Vec* qi) {
+void SWEqn::diagnose_q(double tau, Vec _ug, Vec _ul, Vec _h, Vec* qi) {
     Vec rhs, tmp;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &rhs);
@@ -352,7 +352,7 @@ void SWEqn::diagnose_q(double _dt, Vec _ug, Vec _ul, Vec _h, Vec* qi) {
     MatMult(E01M1, _ug, tmp);
     VecAXPY(rhs, 1.0, tmp);
 #ifdef UP_VORT
-    M0h->assemble_up(_ul, _h, _dt);
+    M0h->assemble_up(_ul, _h, tau);
 #else
     M0h->assemble(_h);
 #endif
@@ -464,7 +464,8 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 }
 
 void SWEqn::assemble_residual(Vec x, Vec f) {
-    Vec F, Phi, fu, fh, utmp, htmp1, htmp2, d2u, d4u, fs, qi, qj, ql, dql, dqg;
+    double upwind_tau = 120.0;
+    Vec F, Phi, fu, fh, utmp, htmp1, htmp2, d2u, d4u, fs, qi, qj, qil, qjl, dql, dqg;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
@@ -472,7 +473,8 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp1);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp2);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &fs);
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &qil);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &qjl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dqg);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dql);
 
@@ -494,38 +496,39 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     MatMult(EtoF->E12, Phi, fu);
 
     // upwinded convective term
-    diagnose_q(dt, ui, uil, hi, &qi);
-    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+    diagnose_q(upwind_tau, ui, uil, hi, &qi);
+    diagnose_q(upwind_tau, uj, ujl, hj, &qj);
+    VecScatterBegin(topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_0, qj, qjl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qj, qjl, INSERT_VALUES, SCATTER_FORWARD);
+
 #ifdef UP_VORT
-    R_up->assemble(ql, uil, dt);
+    R_up->assemble(qil, uil, upwind_tau);
     MatMult(R_up->M, F, utmp);
 #elif UP_APVM
     MatMult(NtoE->E10, qi, dqg);
     VecScatterBegin(topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
-    R_up->assemble_apvm(ql, uil, dql, dt);
+    R_up->assemble_supg(qil, uil, dql, upwind_tau, -0.0*dt, qjl);
     MatMult(R_up->M, F, utmp);
 #else
-    R->assemble(ql);
+    R->assemble(qil);
     MatMult(R->M, F, utmp);
 #endif
     VecAXPY(fu, 0.5, utmp);
 
-    diagnose_q(dt, uj, ujl, hj, &qj);
-    VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, ujl, dt);
+    R_up->assemble(qjl, ujl, upwind_tau);
     MatMult(R_up->M, F, utmp);
 #elif UP_APVM
     MatMult(NtoE->E10, qj, dqg);
     VecScatterBegin(topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
-    R_up->assemble_apvm(ql, ujl, dql, dt);
+    R_up->assemble_supg(qjl, ujl, dql, upwind_tau, +0.0*dt, qil);
     MatMult(R_up->M, F, utmp);
 #else
-    R->assemble(ql);
+    R->assemble(qjl);
     MatMult(R->M, F, utmp);
 #endif
     VecAXPY(fu, 0.5, utmp);
@@ -575,7 +578,8 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecDestroy(&fs);
     VecDestroy(&qi);
     VecDestroy(&qj);
-    VecDestroy(&ql);
+    VecDestroy(&qil);
+    VecDestroy(&qjl);
     VecDestroy(&dql);
     VecDestroy(&dqg);
 }
@@ -850,6 +854,7 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
         VecScale(f, -1.0);
         KSPSolve(kspA, f, dx);
         VecAXPY(x, +1.0, dx);
+        unpack(x, uj, hj);
         VecNorm(x, NORM_2, &norm_x);
         VecNorm(dx, NORM_2, &norm_dx);
         norm = norm_dx/norm_x;
@@ -858,7 +863,7 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
             cout << it << "\t|x|: " << norm_x << "\t|dx|: " << norm_dx << "\t|dx|/|x|: " << norm << endl; 
         }
         it++;
-    } while(norm > 1.0e-14 and it < 2);
+    } while(norm > 1.0e-14 and it < 25);
 
     unpack(x, un, hn);
 
@@ -1410,12 +1415,17 @@ double SWEqn::intE(Vec ug, Vec hg) {
 }
 
 void SWEqn::writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0) {
-    double mass, vort, ener;
+    double mass, vort, ener, enst;
     char filename[50];
     ofstream file;
-    Vec wi;
+    Vec wi, qi, v0;
 
     curl(u, &wi);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &v0);
+    diagnose_q(0.0, u, uil, h, &qi);
+    MatMult(M0h->M, qi, v0);
+    VecDot(qi, v0, &enst);
 
     mass = int2(h);
     vort = int0(wi);
@@ -1429,10 +1439,13 @@ void SWEqn::writeConservation(double time, Vec u, Vec h, double mass0, double vo
         sprintf(filename, "output/conservation.dat");
         file.open(filename, ios::out | ios::app);
         // write time in days
-        file << time/60.0/60.0/24.0 << "\t" << (mass-mass0)/mass0 << "\t" << (vort-vort0) << "\t" << (ener-ener0)/ener0 << endl;
+        file << scientific;
+        file << time/60.0/60.0/24.0 << "\t" << (mass-mass0)/mass0 << "\t" << (vort-vort0) << "\t" << (ener-ener0)/ener0 << "\t" << enst << endl;
         file.close();
     }
     VecDestroy(&wi);
+    VecDestroy(&qi);
+    VecDestroy(&v0);
 } 
 
 void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
@@ -1440,14 +1453,15 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     double kin, pot, k2p, en_con_err, upwind_tau = 120.0;
     char filename[50];
     ofstream file;
-    Vec Fi, Fj, Phi, qi, qj, ql, ul, utmp, htmp, fu, up, _F, _Phi;
+    Vec Fi, Fj, Phi, qi, qj, qil, qjl, ul, utmp, htmp, fu, up, _F, _Phi;
     Mat KT, KTD;
     KSP ksp_f;
     PC pc;
 
     dt = _dt;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &qil);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &qjl);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Phi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
@@ -1486,13 +1500,13 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
 
     // q^n
     diagnose_q(upwind_tau, ui, uil, hi, &qi);
-    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, uil, upwind_tau);
+    R_up->assemble(qil, uil, upwind_tau);
     MatMult(R_up->M, Fi, utmp);
 #else
-    R->assemble(ql);
+    R->assemble(qil);
     MatMult(R->M, Fi, utmp);
 #endif
     VecAXPY(fu, 1.0, utmp);
@@ -1561,7 +1575,7 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     MatMult(EtoF->E12, Phi, fu);
 
 #ifdef UP_VORT
-    R_up->assemble(ql, uil, upwind_tau);
+    R_up->assemble(qjl, uil, upwind_tau);
     MatMult(R_up->M, Fj, utmp);
 #else
     R->assemble(qil);
@@ -1570,13 +1584,13 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     VecAXPY(fu, 0.5, utmp);
 
     diagnose_q(upwind_tau, uj, ujl, hj, &qj);
-    VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_0, qj, qjl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qj, qjl, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, ujl, upwind_tau);
+    R_up->assemble(qjl, ujl, upwind_tau);
     MatMult(R_up->M, Fj, utmp);
 #else
-    R->assemble(ql);
+    R->assemble(qjl);
     MatMult(R->M, Fj, utmp);
 #endif
     VecAXPY(fu, 0.5, utmp);
@@ -1632,7 +1646,8 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
 
     VecDestroy(&qi);
     VecDestroy(&qj);
-    VecDestroy(&ql);
+    VecDestroy(&qil);
+    VecDestroy(&qjl);
     VecDestroy(&ul);
     VecDestroy(&Phi);
     VecDestroy(&htmp);
@@ -1847,7 +1862,7 @@ void SWEqn::rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh, Vec _F
     MatMult(NtoE->E10, qi, dqg);
     VecScatterBegin(topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
-    R_up->assemble_apvm(ql, _ul, dql, upwind_tau);
+    R_up->assemble_supg(ql, _ul, dql, upwind_tau, 0.0, ql);
     MatMult(R_up->M, _F, utmp);
 #else
     R->assemble(ql);
@@ -1868,9 +1883,10 @@ void SWEqn::rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh, Vec _F
 
 void SWEqn::rhs_2ndOrd(Vec fu, Vec fh) {
     double upwind_tau = 120.0;
-    Vec Phi, _F, qi, qj, ql, utmp, htmp, dql, dqg;
+    Vec Phi, _F, qi, qj, qil, qjl, utmp, htmp, dql, dqg;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &qil);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &qjl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dql);
@@ -1888,37 +1904,38 @@ void SWEqn::rhs_2ndOrd(Vec fu, Vec fh) {
     MatMult(EtoF->E12, Phi, fu);
 
     diagnose_q(upwind_tau, ui, uil, hi, &qi);
-    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
+    diagnose_q(upwind_tau, uj, ujl, hj, &qj);
+    VecScatterBegin(topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterBegin(topo->gtol_0, qj, qjl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qj, qjl, INSERT_VALUES, SCATTER_FORWARD);
+
 #ifdef UP_VORT
-    R_up->assemble(ql, uil, upwind_tau);
+    R_up->assemble(qil, uil, upwind_tau);
     MatMult(R_up->M, _F, utmp);
 #elif UP_APVM
     MatMult(NtoE->E10, qi, dqg);
     VecScatterBegin(topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
-    R_up->assemble_apvm(ql, uil, dql, upwind_tau);
+    R_up->assemble_supg(qil, uil, dql, upwind_tau, -dt, qjl);
     MatMult(R_up->M, _F, utmp);
 #else
-    R->assemble(ql);
+    R->assemble(qil);
     MatMult(R->M, _F, utmp);
 #endif
     VecAXPY(fu, 0.5, utmp);
 
-    diagnose_q(upwind_tau, uj, ujl, hj, &qj);
-    VecScatterBegin(topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, qj, ql, INSERT_VALUES, SCATTER_FORWARD);
 #ifdef UP_VORT
-    R_up->assemble(ql, ujl, upwind_tau);
+    R_up->assemble(qjl, ujl, upwind_tau);
     MatMult(R_up->M, _F, utmp);
 #elif UP_APVM
     MatMult(NtoE->E10, qj, dqg);
     VecScatterBegin(topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
-    R_up->assemble_apvm(ql, ujl, dql, upwind_tau);
+    R_up->assemble_supg(qjl, ujl, dql, upwind_tau, +dt, qil);
     MatMult(R_up->M, _F, utmp);
 #else
-    R->assemble(ql);
+    R->assemble(qjl);
     MatMult(R->M, _F, utmp);
 #endif
     VecAXPY(fu, 0.5, utmp);
@@ -1932,7 +1949,8 @@ void SWEqn::rhs_2ndOrd(Vec fu, Vec fh) {
     VecDestroy(&_F);
     VecDestroy(&qi);
     VecDestroy(&qj);
-    VecDestroy(&ql);
+    VecDestroy(&qil);
+    VecDestroy(&qjl);
     VecDestroy(&dqg);
     VecDestroy(&dql);
 }

@@ -146,7 +146,8 @@ int main(int argc, char** argv) {
         dump = (step%dumpEvery == 0) ? true : false;
         //sw->solve(ui, hi, dt, dump);
         //sw->solve_imex(ui, hi, dt, dump);
-        sw->solve_rosenbrock(ui, hi, dt, dump);
+        //sw->solve_rosenbrock(ui, hi, dt, dump);
+        sw->solve(ui, hi, dt, dump);
         sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
     }
 
