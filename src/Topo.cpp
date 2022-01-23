@@ -12,6 +12,8 @@
 using namespace std;
 using std::string;
 
+#define PC_DD 0
+
 Topo::Topo() {
     Vec vl, vg;
 
@@ -152,6 +154,46 @@ Topo::Topo() {
     VecScatterCreate(vg, is_g_1, vl, is_l_1, &gtol_1);
     VecDestroy(&vl);
     VecDestroy(&vg);
+
+    // load the internal, dual, skeleton dof maps
+# ifdef PC_DD
+    dd_skel_locl_x = new int[n1];
+    dd_skel_locl_y = new int[n1];
+    dd_dual_locl_x = new int[n1];
+    dd_dual_locl_y = new int[n1];
+    dd_intl_locl_x = new int[n1];
+    dd_intl_locl_y = new int[n1];
+    dd_skel_global = new int[n1];
+
+    sprintf(filename, "input/skeleton_inds_x_%.4u.txt", pi);
+    loadObjs(filename, dd_skel_locl_x);
+    sprintf(filename, "input/skeleton_inds_y_%.4u.txt", pi);
+    loadObjs(filename, dd_skel_locl_y);
+    sprintf(filename, "input/dual_inds_x_%.4u.txt", pi);
+    loadObjs(filename, dd_dual_locl_x);
+    sprintf(filename, "input/dual_inds_y_%.4u.txt", pi);
+    loadObjs(filename, dd_dual_locl_y);
+    sprintf(filename, "input/internal_inds_x_%.4u.txt", pi);
+    loadObjs(filename, dd_intl_locl_x);
+    sprintf(filename, "input/internal_inds_y_%.4u.txt", pi);
+    loadObjs(filename, dd_intl_locl_y);
+    sprintf(filename, "input/global_to_skeleton.txt");
+    loadObjs(filename, dd_skel_global);
+
+    dd_n_skel_locl = 0;
+    dd_n_dual_locl = 0;
+    dd_n_intl_locl = 0;
+    dd_n_skel_glob = 0;
+    for(ii = 0; ii < n1; ii++) {
+        if(dd_skel_locl_x[ii] > dd_n_skel_locl) dd_n_skel_locl = dd_skel_locl_x[ii];
+        if(dd_skel_locl_y[ii] > dd_n_skel_locl) dd_n_skel_locl = dd_skel_locl_y[ii];
+        if(dd_dual_locl_x[ii] > dd_n_dual_locl) dd_n_dual_locl = dd_dual_locl_x[ii];
+        if(dd_dual_locl_y[ii] > dd_n_dual_locl) dd_n_dual_locl = dd_dual_locl_y[ii];
+        if(dd_intl_locl_x[ii] > dd_n_intl_locl) dd_n_intl_locl = dd_intl_locl_x[ii];
+        if(dd_intl_locl_y[ii] > dd_n_intl_locl) dd_n_intl_locl = dd_intl_locl_y[ii];
+    }
+    for(ii = 0; ii < nDofs1G; ii++) if(dd_skel_global[ii] > dd_n_skel_glob) dd_n_skel_glob = dd_skel_global[ii];
+#endif
 }
 
 Topo::~Topo() {
@@ -178,6 +220,16 @@ Topo::~Topo() {
 
     VecScatterDestroy(&gtol_0);
     VecScatterDestroy(&gtol_1);
+
+#ifdef PC_DD
+    delete[] dd_skel_locl_x;
+    delete[] dd_skel_locl_y;
+    delete[] dd_dual_locl_x;
+    delete[] dd_dual_locl_y;
+    delete[] dd_intl_locl_x;
+    delete[] dd_intl_locl_y;
+    delete[] dd_skel_global;
+#endif
 }
 
 void Topo::loadObjs(char* filename, int* loc) {

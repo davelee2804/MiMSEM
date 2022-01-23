@@ -47,4 +47,15 @@ class Topo {
         int* elInds1x_g(int ex, int ey);
         int* elInds1y_g(int ex, int ey);
         int* elInds2_g(int ex, int ey);
+	int dd_n_skel_locl;
+	int dd_n_dual_locl;
+	int dd_n_intl_locl;
+	int dd_n_skel_glob;
+        int* dd_skel_locl_x;
+        int* dd_skel_locl_y;
+        int* dd_dual_locl_x;
+        int* dd_dual_locl_y;
+        int* dd_intl_locl_x;
+        int* dd_intl_locl_y;
+        int* dd_skel_global;
 };
