@@ -193,6 +193,15 @@ Topo::Topo() {
         if(dd_intl_locl_y[ii] > dd_n_intl_locl) dd_n_intl_locl = dd_intl_locl_y[ii];
     }
     for(ii = 0; ii < nDofs1G; ii++) if(dd_skel_global[ii] > dd_n_skel_glob) dd_n_skel_glob = dd_skel_global[ii];
+
+    inds_intl_x_l = new int[(elOrd)*(elOrd+1)];
+    inds_intl_y_l = new int[(elOrd+1)*(elOrd)];
+    inds_dual_x_l = new int[(elOrd)*(elOrd+1)];
+    inds_dual_y_l = new int[(elOrd+1)*(elOrd)];
+    inds_skel_x_l = new int[(elOrd)*(elOrd+1)];
+    inds_skel_y_l = new int[(elOrd+1)*(elOrd)];
+    inds_skel_x_g = new int[(elOrd)*(elOrd+1)];
+    inds_skel_y_g = new int[(elOrd+1)*(elOrd)];
 #endif
 }
 
@@ -354,3 +363,119 @@ int* Topo::elInds2_g(int ex, int ey) {
 
     return inds2_g;
 }
+
+#ifdef PC_DD
+int* Topo::elInds_intl_x_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds_intl_x_l[kk] = dd_intl_locl_x[2*((ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix) + 0];
+            kk++;
+        }
+    }
+
+    return inds_intl_x_l;
+}
+
+int* Topo::elInds_intl_y_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds_intl_y_l[kk] = dd_intl_locl_y[2*((ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix) + 1];
+            kk++;
+        }
+    }
+
+    return inds_intl_y_l;
+}
+
+int* Topo::elInds_dual_x_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds_dual_x_l[kk] = dd_dual_locl_x[2*((ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix) + 0];
+            kk++;
+        }
+    }
+
+    return inds_dual_x_l;
+}
+
+int* Topo::elInds_dual_y_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds_dual_y_l[kk] = dd_dual_locl_y[2*((ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix) + 1];
+            kk++;
+        }
+    }
+
+    return inds_dual_y_l;
+}
+
+int* Topo::elInds_skel_x_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds_skel_x_l[kk] = dd_skel_locl_x[2*((ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix) + 0];
+            kk++;
+        }
+    }
+
+    return inds_skel_x_l;
+}
+
+int* Topo::elInds_skel_y_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds_skel_y_l[kk] = dd_skel_locl_y[2*((ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix) + 1];
+            kk++;
+        }
+    }
+
+    return inds_skel_y_l;
+}
+
+int* Topo::elInds_skel_x_g(int ex, int ey) {
+    int ix, iy, kk, ind_g;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            ind_g = loc1x[(ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix];
+            inds_skel_x_g[kk] = dd_skel_global[ind_g];
+            kk++;
+        }
+    }
+
+    return inds_skel_x_g;
+}
+
+int* Topo::elInds_skel_y_g(int ex, int ey) {
+    int ix, iy, kk, ind_g;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            ind_g = loc1y[(ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix];
+            inds_skel_y_g[kk] = dd_skel_global[ind_g];
+            kk++;
+        }
+    }
+
+    return inds_skel_y_g;
+}
+#endif
