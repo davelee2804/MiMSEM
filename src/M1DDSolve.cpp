@@ -262,7 +262,7 @@ void M1DDSolve::assemble_rhs_hu(Vec rho, Vec vel) {
     int *inds_dual_x, *inds_dual_y;
     int *inds_skel_x, *inds_skel_y;
     double det, **J;
-    PetscScalar *intlArray, *dialArray, *skelArray, *velArray, *rhoArray;
+    PetscScalar *intlArray, *dualArray, *skelArray, *velArray, *rhoArray;
     double _u[2], _r, Qaa[99], Qab[99], Qba[99], Qbb[99], rhs[99];
 
     mp1 = node->q->n + 1;

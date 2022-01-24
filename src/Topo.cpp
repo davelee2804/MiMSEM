@@ -12,7 +12,7 @@
 using namespace std;
 using std::string;
 
-#define PC_DD 0
+//#define PC_DD 1
 
 Topo::Topo() {
     Vec vl, vg;
@@ -22,6 +22,7 @@ Topo::Topo() {
     ifstream file;
     char filename[100];
     string line;
+    int *inds_g, skel_l, indx_g;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &pi);
 
@@ -193,6 +194,11 @@ Topo::Topo() {
         if(dd_intl_locl_y[ii] > dd_n_intl_locl) dd_n_intl_locl = dd_intl_locl_y[ii];
     }
     for(ii = 0; ii < nDofs1G; ii++) if(dd_skel_global[ii] > dd_n_skel_glob) dd_n_skel_glob = dd_skel_global[ii];
+    // sanity check
+    if(dd_n_skel_locl%4 != 0) {
+        cerr << pi << ":\tERROR! no. local skeleton dofs: " << dd_n_skel_locl << " not evenly divisible by 4!\n";
+	abort();
+    }
 
     inds_intl_x_l = new int[(elOrd)*(elOrd+1)];
     inds_intl_y_l = new int[(elOrd+1)*(elOrd)];
@@ -202,6 +208,34 @@ Topo::Topo() {
     inds_skel_y_l = new int[(elOrd+1)*(elOrd)];
     inds_skel_x_g = new int[(elOrd)*(elOrd+1)];
     inds_skel_y_g = new int[(elOrd+1)*(elOrd)];
+
+    // create the global to local vec scatter for the skeleton dofs
+    inds_g = new int[dd_n_skel_locl];
+    for(ii = 0; ii < n1x; ii++) {
+        skel_l = dd_skel_locl_x[ii];
+        if(skel_l > -1) {
+            indx_g = loc1x[ii];
+	    inds_g[skel_l] = dd_skel_global[indx_g];
+	}
+    }
+    for(ii = 0; ii < n1y; ii++) {
+        skel_l = dd_skel_locl_y[ii];
+        if(skel_l > -1) {
+            indx_g = loc1y[ii];
+	    inds_g[skel_l] = dd_skel_global[indx_g];
+	}
+    }
+
+    ISCreateStride(MPI_COMM_SELF, dd_n_skel_locl, 0, 1, &is_skel_l);
+    ISCreateGeneral(MPI_COMM_WORLD, dd_n_skel_glob, inds_g, PETSC_COPY_VALUES, &is_skel_g);
+
+    VecCreateSeq(MPI_COMM_SELF, dd_n_skel_locl, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, dd_n_skel_locl/2, dd_n_skel_glob, &vg);
+    VecScatterCreate(vg, is_skel_g, vl, is_skel_l, &gtol_skel);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+
+    delete[] inds_g;
 #endif
 }
 
@@ -238,6 +272,9 @@ Topo::~Topo() {
     delete[] dd_intl_locl_x;
     delete[] dd_intl_locl_y;
     delete[] dd_skel_global;
+    ISDestroy(&is_skel_l);
+    ISDestroy(&is_skel_g);
+    VecScatterDestroy(&gtol_skel);
 #endif
 }
 
