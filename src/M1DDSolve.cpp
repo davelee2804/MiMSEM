@@ -21,7 +21,7 @@
 
 using namespace std;
 
-#define PC_DD 0
+#define PC_DD 1
 
 #ifdef PC_DD
 M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
@@ -54,8 +54,15 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
     KSPSetOptionsPrefix(ksp, "sw_");
     KSPSetFromOptions(ksp);
 
-    // allocate the matrices
+    Q = new Wii(node->q, geom);
     U = new M1x_j_xy_i(node, edge);
+    V = new M1y_j_xy_i(node, edge);
+    Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+
+    // allocate the matrices
     MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_intl_locl, topo->dd_n_intl_locl, 4*U->nDofsJ, PETSC_NULL, &Mii);
     MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_intl_locl, topo->dd_n_dual_locl, 4*U->nDofsJ, PETSC_NULL, &Mid);
     MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_intl_locl, topo->dd_n_skel_locl, 4*U->nDofsJ, PETSC_NULL, &Mis);
@@ -68,7 +75,16 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
     MatSetSizes(Mss, topo->dd_n_skel_locl, topo->dd_n_skel_locl, topo->dd_n_skel_glob, topo->dd_n_skel_glob);
     MatSetType(Mss, MATMPIAIJ);
     MatMPIAIJSetPreallocation(Mss, 4*U->nDofsJ, PETSC_NULL, 4*U->nDofsJ, PETSC_NULL);
-    delete U;
+
+    // and the vectors
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_intl_locl, &b_intl);
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_intl_locl, &x_intl);
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_dual_locl, &b_dual);
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_dual_locl, &x_dual);
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_skel_locl, &b_skel);
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_skel_locl, &x_skel);
+    VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_skel_locl, topo->dd_n_skel_glob, &b_skel_g);
+    VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_skel_locl, topo->dd_n_skel_glob, &x_skel_g);
 }
 
 M1DDSolve::~M1DDSolve() {
@@ -82,22 +98,28 @@ M1DDSolve::~M1DDSolve() {
     MatDestroy(&Msi);
     MatDestroy(&Msd);
     MatDestroy(&Mss);
+    VecDestroy(&b_intl);
+    VecDestroy(&x_intl);
+    VecDestroy(&b_dual);
+    VecDestroy(&x_dual);
+    VecDestroy(&b_skel);
+    VecDestroy(&x_skel);
     delete M1;
     delete EtoF;
+    delete U;
+    delete V;
+    delete Q;
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
     delete edge;
     delete node;
     delete quad;
 }
 
-void M1DDSolve::assemble() {
+void M1DDSolve::assemble_mat() {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_intl_x, *inds_intl_y, *inds_dual_x, *inds_dual_y, *inds_skel_x, *inds_skel_y, *inds_skel_x_g, *inds_skel_y_g;
-    Wii* Q = new Wii(node->q, geom);
-    M1x_j_xy_i* U = new M1x_j_xy_i(node, edge);
-    M1y_j_xy_i* V = new M1y_j_xy_i(node, edge);
     double det, **J;
-    double** Ut = Alloc2D(U->nDofsJ, U->nDofsI);
-    double** Vt = Alloc2D(U->nDofsJ, U->nDofsI);
     double** UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
     double** UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
     double** VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
@@ -145,8 +167,6 @@ void M1DDSolve::assemble() {
             inds_skel_x_g = topo->elInds_skel_x_g(ex, ey);
             inds_skel_y_g = topo->elInds_skel_y_g(ex, ey);
 
-            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
-            Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
 
             Mult_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
             Mult_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
@@ -160,15 +180,47 @@ void M1DDSolve::assemble() {
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
             MatSetValues(Mii, U->nDofsJ, inds_intl_x, U->nDofsJ, inds_intl_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mid, U->nDofsJ, inds_intl_x, U->nDofsJ, inds_dual_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mis, U->nDofsJ, inds_intl_x, U->nDofsJ, inds_skel_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mdi, U->nDofsJ, inds_dual_x, U->nDofsJ, inds_intl_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mdd, U->nDofsJ, inds_dual_x, U->nDofsJ, inds_dual_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mds, U->nDofsJ, inds_dual_x, U->nDofsJ, inds_skel_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Msi, U->nDofsJ, inds_skel_x, U->nDofsJ, inds_intl_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Msd, U->nDofsJ, inds_skel_x, U->nDofsJ, inds_dual_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mss, U->nDofsJ, inds_skel_x_g, U->nDofsJ, inds_skel_x_g, UtQUflat, ADD_VALUES);
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
             MatSetValues(Mii, U->nDofsJ, inds_intl_x, U->nDofsJ, inds_intl_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mid, U->nDofsJ, inds_intl_x, U->nDofsJ, inds_dual_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mis, U->nDofsJ, inds_intl_x, U->nDofsJ, inds_skel_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mdi, U->nDofsJ, inds_dual_x, U->nDofsJ, inds_intl_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mdd, U->nDofsJ, inds_dual_x, U->nDofsJ, inds_dual_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mds, U->nDofsJ, inds_dual_x, U->nDofsJ, inds_skel_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Msi, U->nDofsJ, inds_skel_x, U->nDofsJ, inds_intl_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Msd, U->nDofsJ, inds_skel_x, U->nDofsJ, inds_dual_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mss, U->nDofsJ, inds_skel_x_g, U->nDofsJ, inds_skel_y_g, UtQUflat, ADD_VALUES);
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
             MatSetValues(Mii, U->nDofsJ, inds_intl_y, U->nDofsJ, inds_intl_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mid, U->nDofsJ, inds_intl_y, U->nDofsJ, inds_dual_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mis, U->nDofsJ, inds_intl_y, U->nDofsJ, inds_skel_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mdi, U->nDofsJ, inds_dual_y, U->nDofsJ, inds_intl_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mdd, U->nDofsJ, inds_dual_y, U->nDofsJ, inds_dual_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mds, U->nDofsJ, inds_dual_y, U->nDofsJ, inds_skel_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Msi, U->nDofsJ, inds_skel_y, U->nDofsJ, inds_intl_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Msd, U->nDofsJ, inds_skel_y, U->nDofsJ, inds_dual_x, UtQUflat, ADD_VALUES);
+            MatSetValues(Mss, U->nDofsJ, inds_skel_y_g, U->nDofsJ, inds_skel_x_g, UtQUflat, ADD_VALUES);
 
             Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
             MatSetValues(Mii, U->nDofsJ, inds_intl_y, U->nDofsJ, inds_intl_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mid, U->nDofsJ, inds_intl_y, U->nDofsJ, inds_dual_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mis, U->nDofsJ, inds_intl_y, U->nDofsJ, inds_skel_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mdi, U->nDofsJ, inds_dual_y, U->nDofsJ, inds_intl_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mdd, U->nDofsJ, inds_dual_y, U->nDofsJ, inds_dual_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mds, U->nDofsJ, inds_dual_y, U->nDofsJ, inds_skel_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Msi, U->nDofsJ, inds_skel_y, U->nDofsJ, inds_intl_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Msd, U->nDofsJ, inds_skel_y, U->nDofsJ, inds_dual_y, UtQUflat, ADD_VALUES);
+            MatSetValues(Mss, U->nDofsJ, inds_skel_y_g, U->nDofsJ, inds_skel_y_g, UtQUflat, ADD_VALUES);
         }
     }
     MatAssemblyBegin(Mii, MAT_FINAL_ASSEMBLY);
@@ -190,8 +242,6 @@ void M1DDSolve::assemble() {
     MatAssemblyEnd(Msd, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(Mss, MAT_FINAL_ASSEMBLY);
 
-    Free2D(U->nDofsJ, Ut);
-    Free2D(U->nDofsJ, Vt);
     Free2D(U->nDofsJ, UtQaa);
     Free2D(U->nDofsJ, UtQab);
     Free2D(U->nDofsJ, VtQba);
@@ -204,9 +254,95 @@ void M1DDSolve::assemble() {
     Free2D(Q->nDofsI, Qab);
     Free2D(Q->nDofsI, Qbb);
     delete[] UtQUflat;
-    delete Q;
-    delete U;
-    delete V;
+}
+
+void M1DDSolve::assemble_rhs_hu(Vec rho, Vec vel) {
+    int ex, ey, ei, ii, mp1, mp12;
+    int *inds_intl_x, *inds_intl_y;
+    int *inds_dual_x, *inds_dual_y;
+    int *inds_skel_x, *inds_skel_y;
+    double det, **J;
+    PetscScalar *intlArray, *dialArray, *skelArray, *velArray, *rhoArray;
+    double _u[2], _r, Qaa[99], Qab[99], Qba[99], Qbb[99], rhs[99];
+
+    mp1 = node->q->n + 1;
+    mp12 = mp1*mp1;
+
+    VecZeroEntries(b_intl);
+    VecZeroEntries(b_dual);
+    VecZeroEntries(b_skel);
+
+    VecGetArray(b_intl, &intlArray);
+    VecGetArray(b_dual, &dualArray);
+    VecGetArray(b_skel, &skelArray);
+    VecGetArray(vel, &velArray);
+    VecGetArray(rho, &rhoArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det;
+                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det;
+                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det;
+                Qba[ii] = Qab[ii];
+
+                // multiply by the velocity vector
+                geom->interp1_l(ex, ey, ii%mp1, ii/mp1, velArray, _u);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rhoArray, &_r);
+
+                Qaa[ii] *= (_u[0] * _r);
+                Qba[ii] *= (_u[0] * _r);
+                Qab[ii] *= (_u[1] * _r);
+                Qbb[ii] *= (_u[1] * _r);
+            }
+
+            inds_intl_x = topo->elInds_intl_x_l(ex, ey);
+            inds_intl_y = topo->elInds_intl_y_l(ex, ey);
+            inds_dual_x = topo->elInds_dual_x_l(ex, ey);
+            inds_dual_y = topo->elInds_dual_y_l(ex, ey);
+            inds_skel_x = topo->elInds_skel_x_l(ex, ey);
+            inds_skel_y = topo->elInds_skel_y_l(ex, ey);
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Ut, Qaa, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                if(inds_intl_x[ii] != -1) intlArray[inds_intl_x[ii]] += rhs[ii];
+                if(inds_dual_x[ii] != -1) dualArray[inds_dual_x[ii]] += rhs[ii];
+                if(inds_skel_x[ii] != -1) skelArray[inds_skel_x[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Ut, Qab, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                if(inds_intl_x[ii] != -1) intlArray[inds_intl_x[ii]] += rhs[ii];
+                if(inds_dual_x[ii] != -1) dualArray[inds_dual_x[ii]] += rhs[ii];
+                if(inds_skel_x[ii] != -1) skelArray[inds_skel_x[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Vt, Qba, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                if(inds_intl_y[ii] != -1) intlArray[inds_intl_y[ii]] += rhs[ii];
+                if(inds_dual_y[ii] != -1) dualArray[inds_dual_y[ii]] += rhs[ii];
+                if(inds_skel_y[ii] != -1) skelArray[inds_skel_y[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, Vt, Qbb, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                if(inds_intl_y[ii] != -1) intlArray[inds_intl_y[ii]] += rhs[ii];
+                if(inds_dual_y[ii] != -1) dualArray[inds_dual_y[ii]] += rhs[ii];
+                if(inds_skel_y[ii] != -1) skelArray[inds_skel_y[ii]] += rhs[ii];
+            }
+        }
+    }
+    VecRestoreArray(b_intl, &intlArray);
+    VecRestoreArray(b_dual, &dualArray);
+    VecRestoreArray(b_skel, &skelArray);
+    VecRestoreArray(vel, &velArray);
+    VecRestoreArray(rho, &rhoArray);
+
+    // TODO: scatter the skeleton vector to global indices
 }
 
 // upwinded test function matrix

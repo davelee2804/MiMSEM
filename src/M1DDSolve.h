@@ -8,6 +8,11 @@ class M1DDSolve {
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
+        Wii* Q;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+	double** Ut;
+	double** Vt;
         Topo* topo;
         Geom* geom;
         Umat* M1;
@@ -24,5 +29,14 @@ class M1DDSolve {
 	Mat Msi;
 	Mat Msd;
 	Mat Mss;
-	void assemble();
+        Vec b_intl;
+        Vec x_intl;
+        Vec b_dual;
+        Vec x_dual;
+        Vec b_skel;
+        Vec x_skel;
+        Vec b_skel_g;
+        Vec x_skel_g;
+	void assemble_mat();
+	void assemble_rhs_hu(Vec vel, Vec rho);
 };
