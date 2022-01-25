@@ -29,6 +29,8 @@ class M1DDSolve {
 	Mat Msi;
 	Mat Msd;
 	Mat Mss;
+	Mat Midid;
+	Mat Mid_s;
         Vec b_intl;
         Vec x_intl;
         Vec b_dual;
@@ -39,4 +41,7 @@ class M1DDSolve {
         Vec x_skel_g;
 	void assemble_mat();
 	void assemble_rhs_hu(Vec vel, Vec rho);
+        void pack_intl_dual_sq();
+        void pack_intl_dual_skel();
+	void solve();
 };

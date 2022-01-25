@@ -75,6 +75,10 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
     MatSetSizes(Mss, topo->dd_n_skel_locl, topo->dd_n_skel_locl, topo->dd_n_skel_glob, topo->dd_n_skel_glob);
     MatSetType(Mss, MATMPIAIJ);
     MatMPIAIJSetPreallocation(Mss, 4*U->nDofsJ, PETSC_NULL, 4*U->nDofsJ, PETSC_NULL);
+    MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_intl_locl+topo->dd_n_dual_locl, 
+		                   topo->dd_n_intl_locl+topo->dd_n_dual_locl, 4*U->nDofsJ, PETSC_NULL, &Midid);
+    MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_intl_locl+topo->dd_n_dual_locl, 
+		                   topo->dd_n_skel_locl, 4*U->nDofsJ, PETSC_NULL, &Mid_s);
 
     // and the vectors
     VecCreateSeq(MPI_COMM_SELF, topo->dd_n_intl_locl, &b_intl);
@@ -98,6 +102,8 @@ M1DDSolve::~M1DDSolve() {
     MatDestroy(&Msi);
     MatDestroy(&Msd);
     MatDestroy(&Mss);
+    MatDestroy(&Midid);
+    MatDestroy(&Mid_s);
     VecDestroy(&b_intl);
     VecDestroy(&x_intl);
     VecDestroy(&b_dual);
@@ -271,6 +277,7 @@ void M1DDSolve::assemble_rhs_hu(Vec rho, Vec vel) {
     VecZeroEntries(b_intl);
     VecZeroEntries(b_dual);
     VecZeroEntries(b_skel);
+    VecZeroEntries(b_skel_g);
 
     VecGetArray(b_intl, &intlArray);
     VecGetArray(b_dual, &dualArray);
@@ -342,7 +349,74 @@ void M1DDSolve::assemble_rhs_hu(Vec rho, Vec vel) {
     VecRestoreArray(vel, &velArray);
     VecRestoreArray(rho, &rhoArray);
 
-    // TODO: scatter the skeleton vector to global indices
+    // scatter the skeleton vector to global indices
+    VecScatterBegin(topo->gtol_skel, b_skel, b_skel_g, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_skel, b_skel, b_skel_g, ADD_VALUES, SCATTER_REVERSE);
+}
+
+void M1DDSolve::pack_intl_dual_sq() {
+    int ii, jj, ri, nCols, cols2[999];
+    const int *cols;
+    const double *vals;
+
+    MatZeroEntries(Midid);
+
+    for(ii = 0; ii < topo->dd_n_intl_locl; ii++) {
+        MatGetRow(Mii, ii, &nCols, &cols, &vals);
+        MatSetValues(Midid, 1, &ii, nCols, cols, vals, INSERT_VALUES);
+        MatRestoreRow(Mii, ii, &nCols, &cols, &vals);
+
+        MatGetRow(Mid, ii, &nCols, &cols, &vals);
+        for(jj = 0; jj < nCols; jj++) {
+            cols2[jj] = cols[jj] + topo->dd_n_intl_locl;
+        }
+        MatSetValues(Midid, 1, &ii, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(Mid, ii, &nCols, &cols, &vals);
+    }
+    for(ii = 0; ii < topo->dd_n_dual_locl; ii++) {
+        ri = ii + topo->dd_n_intl_locl;
+
+        MatGetRow(Mdi, ii, &nCols, &cols, &vals);
+        MatSetValues(Midid, 1, &ri, nCols, cols, vals, INSERT_VALUES);
+        MatRestoreRow(Mdi, ii, &nCols, &cols, &vals);
+
+        MatGetRow(Mdd, ii, &nCols, &cols, &vals);
+        for(jj = 0; jj < nCols; jj++) {
+            cols2[jj] = cols[jj] + topo->dd_n_intl_locl;
+        }
+        MatSetValues(Midid, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(Mdd, ii, &nCols, &cols, &vals);
+    }
+
+    MatAssemblyBegin(Midid, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Midid, MAT_FINAL_ASSEMBLY);
+}
+
+void M1DDSolve::pack_intl_dual_skel() {
+    int ii, ri, nCols;
+    const int *cols;
+    const double *vals;
+
+    MatZeroEntries(Mid_s);
+
+    for(ii = 0; ii < topo->dd_n_intl_locl; ii++) {
+        MatGetRow(Mis, ii, &nCols, &cols, &vals);
+        MatSetValues(Mid_s, 1, &ii, nCols, cols, vals, INSERT_VALUES);
+        MatRestoreRow(Mis, ii, &nCols, &cols, &vals);
+    }
+    for(ii = 0; ii < topo->dd_n_dual_locl; ii++) {
+        ri = ii + topo->dd_n_intl_locl;
+
+        MatGetRow(Mds, ii, &nCols, &cols, &vals);
+        MatSetValues(Mid_s, 1, &ri, nCols, cols, vals, INSERT_VALUES);
+        MatRestoreRow(Mds, ii, &nCols, &cols, &vals);
+    }
+
+    MatAssemblyBegin(Mid_s, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Mid_s, MAT_FINAL_ASSEMBLY);
+}
+
+void M1DDSolve::solve() {
 }
 
 // upwinded test function matrix
