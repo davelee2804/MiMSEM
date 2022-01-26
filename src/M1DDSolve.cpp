@@ -41,6 +41,7 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
 
     // 1 form mass matrix
     M1 = new Umat(topo, geom, node, edge);
+    M2 = new Wmat(topo, geom, edge);
     EtoF = new E21mat(topo);
 
     // initialize the linear solver
@@ -76,7 +77,7 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
     MatSetType(Mss, MATMPIAIJ);
     MatMPIAIJSetPreallocation(Mss, 4*U->nDofsJ, PETSC_NULL, 4*U->nDofsJ, PETSC_NULL);
     MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_intl_locl+topo->dd_n_dual_locl, 
-		                   topo->dd_n_intl_locl+topo->dd_n_dual_locl, 4*U->nDofsJ, PETSC_NULL, &Midid);
+		                   topo->dd_n_intl_locl+topo->dd_n_dual_locl, 4*U->nDofsJ, PETSC_NULL, &Midid_inv);
     MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_intl_locl+topo->dd_n_dual_locl, 
 		                   topo->dd_n_skel_locl, 4*U->nDofsJ, PETSC_NULL, &Mid_s);
 
@@ -102,7 +103,7 @@ M1DDSolve::~M1DDSolve() {
     MatDestroy(&Msi);
     MatDestroy(&Msd);
     MatDestroy(&Mss);
-    MatDestroy(&Midid);
+    MatDestroy(&Midid_inv);
     MatDestroy(&Mid_s);
     VecDestroy(&b_intl);
     VecDestroy(&x_intl);
@@ -111,6 +112,7 @@ M1DDSolve::~M1DDSolve() {
     VecDestroy(&b_skel);
     VecDestroy(&x_skel);
     delete M1;
+    delete M2;
     delete EtoF;
     delete U;
     delete V;
@@ -359,37 +361,39 @@ void M1DDSolve::pack_intl_dual_sq() {
     const int *cols;
     const double *vals;
 
-    MatZeroEntries(Midid);
+    MatZeroEntries(Midid_inv);
 
     for(ii = 0; ii < topo->dd_n_intl_locl; ii++) {
         MatGetRow(Mii, ii, &nCols, &cols, &vals);
-        MatSetValues(Midid, 1, &ii, nCols, cols, vals, INSERT_VALUES);
+        MatSetValues(Midid_inv, 1, &ii, nCols, cols, vals, INSERT_VALUES);
         MatRestoreRow(Mii, ii, &nCols, &cols, &vals);
 
         MatGetRow(Mid, ii, &nCols, &cols, &vals);
         for(jj = 0; jj < nCols; jj++) {
             cols2[jj] = cols[jj] + topo->dd_n_intl_locl;
         }
-        MatSetValues(Midid, 1, &ii, nCols, cols2, vals, INSERT_VALUES);
+        MatSetValues(Midid_inv, 1, &ii, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(Mid, ii, &nCols, &cols, &vals);
     }
     for(ii = 0; ii < topo->dd_n_dual_locl; ii++) {
         ri = ii + topo->dd_n_intl_locl;
 
         MatGetRow(Mdi, ii, &nCols, &cols, &vals);
-        MatSetValues(Midid, 1, &ri, nCols, cols, vals, INSERT_VALUES);
+        MatSetValues(Midid_inv, 1, &ri, nCols, cols, vals, INSERT_VALUES);
         MatRestoreRow(Mdi, ii, &nCols, &cols, &vals);
 
         MatGetRow(Mdd, ii, &nCols, &cols, &vals);
         for(jj = 0; jj < nCols; jj++) {
             cols2[jj] = cols[jj] + topo->dd_n_intl_locl;
         }
-        MatSetValues(Midid, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
+        MatSetValues(Midid_inv, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(Mdd, ii, &nCols, &cols, &vals);
     }
 
-    MatAssemblyBegin(Midid, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  Midid, MAT_FINAL_ASSEMBLY);
+    MatAssemblyBegin(Midid_inv, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Midid_inv, MAT_FINAL_ASSEMBLY);
+
+    MatLUFactor(Midid_inv, PETSC_NULL, PETSC_NULL, PETSC_NULL);
 }
 
 void M1DDSolve::pack_intl_dual_skel() {
@@ -416,9 +420,112 @@ void M1DDSolve::pack_intl_dual_skel() {
     MatAssemblyEnd(  Mid_s, MAT_FINAL_ASSEMBLY);
 }
 
-void M1DDSolve::solve() {
+void M1DDSolve::setup_matrices() {
+    assemble_mat();
+    pack_intl_dual_sq();
+    pack_intl_dual_skel();
 }
 
+void M1DDSolve::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
+    int ex, ey, ii, mp1, mp12;
+    int *inds0, *loc02;
+    UtQmat* UQ = new UtQmat(topo, geom, node, edge);
+    PetscScalar *bArray;
+    Vec bl, bg, UQb;
+    IS isl, isg;
+    VecScatter scat;
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, 2*geom->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, 2*geom->n0l, 2*geom->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &UQb);
+    VecZeroEntries(bg);
+
+    VecGetArray(bl, &bArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = geom->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                bArray[2*inds0[ii]+0] = func_x(geom->x[inds0[ii]]);
+                bArray[2*inds0[ii]+1] = func_y(geom->x[inds0[ii]]);
+            }
+        }
+    }
+    VecRestoreArray(bl, &bArray);
+
+    // create a new vec scatter object to handle vector quantity on nodes
+    loc02 = new int[2*geom->n0];
+    for(ii = 0; ii < geom->n0; ii++) {
+        loc02[2*ii+0] = 2*geom->loc0[ii]+0;
+        loc02[2*ii+1] = 2*geom->loc0[ii]+1;
+    }
+    ISCreateStride(MPI_COMM_WORLD, 2*geom->n0, 0, 1, &isl);
+    ISCreateGeneral(MPI_COMM_WORLD, 2*geom->n0, loc02, PETSC_COPY_VALUES, &isg);
+    VecScatterCreate(bg, isg, bl, isl, &scat);
+    VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+    MatMult(UQ->M, bg, UQb);
+    KSPSolve(ksp, UQb, u);
+
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&UQb);
+    ISDestroy(&isl);
+    ISDestroy(&isg);
+    VecScatterDestroy(&scat);
+    delete UQ;
+    delete[] loc02;
+}
+
+void M1DDSolve::init2(Vec h, ICfunc* func) {
+    int ex, ey, ii, mp1, mp12;
+    int *inds0;
+    PetscScalar *bArray;
+    KSP ksp2;
+    Vec bl, bg, WQb;
+    WtQmat* WQ = new WtQmat(topo, geom, edge);
+
+    mp1 = quad->n + 1;
+    mp12 = mp1*mp1;
+
+    VecCreateSeq(MPI_COMM_SELF, geom->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &bg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
+    VecZeroEntries(bg);
+
+    VecGetArray(bl, &bArray);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = geom->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                bArray[inds0[ii]] = func(geom->x[inds0[ii]]);
+            }
+        }
+    }
+    VecRestoreArray(bl, &bArray);
+    VecScatterBegin(geom->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(geom->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+
+    MatMult(WQ->M, bg, WQb);
+
+    KSPCreate(MPI_COMM_WORLD, &ksp2);
+    KSPSetOperators(ksp2, M2->M, M2->M);
+    KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetType(ksp2, KSPGMRES);
+    KSPSetOptionsPrefix(ksp2, "init2_");
+    KSPSetFromOptions(ksp2);
+    KSPSolve(ksp2, WQb, h);
+
+    delete WQ;
+    KSPDestroy(&ksp2);
+    VecDestroy(&bl);
+    VecDestroy(&bg);
+    VecDestroy(&WQb);
+}
 // upwinded test function matrix
 void M1DDSolve::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
     int ex, ey, ei, ii, mp1, mp12;

@@ -16,9 +16,11 @@ class M1DDSolve {
         Topo* topo;
         Geom* geom;
         Umat* M1;
+        Wmat* M2;
         E21mat* EtoF;
         KSP ksp;           // 1 form mass matrix linear solver
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
+        void init2(Vec h, ICfunc* func);
         void err1(Vec u, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms);
 	Mat Mii;
 	Mat Mid;
@@ -29,7 +31,7 @@ class M1DDSolve {
 	Mat Msi;
 	Mat Msd;
 	Mat Mss;
-	Mat Midid;
+	Mat Midid_inv;
 	Mat Mid_s;
         Vec b_intl;
         Vec x_intl;
@@ -43,5 +45,5 @@ class M1DDSolve {
 	void assemble_rhs_hu(Vec vel, Vec rho);
         void pack_intl_dual_sq();
         void pack_intl_dual_skel();
-	void solve();
+	void setup_matrices();
 };
