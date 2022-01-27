@@ -80,6 +80,19 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
 		                   topo->dd_n_intl_locl+topo->dd_n_dual_locl, 4*U->nDofsJ, PETSC_NULL, &Midid_inv);
     MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_intl_locl+topo->dd_n_dual_locl, 
 		                   topo->dd_n_skel_locl, 4*U->nDofsJ, PETSC_NULL, &Mid_s);
+    MatCreate(MPI_COMM_WORLD, &Ss);
+    MatSetSizes(Ss, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(Ss, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(Ss, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+
+    MatCreate(MPI_COMM_WORLD, &Sg);
+    MatSetSizes(Sg, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
+    MatSetType(Sg, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(Sg, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
+
+    Mid_s_T         = PETSC_NULL;
+    Midid_inv_Mid_s = PETSC_NULL;
+    Ss_l            = PETSC_NULL;
 
     // and the vectors
     VecCreateSeq(MPI_COMM_SELF, topo->dd_n_intl_locl, &b_intl);
@@ -105,6 +118,10 @@ M1DDSolve::~M1DDSolve() {
     MatDestroy(&Mss);
     MatDestroy(&Midid_inv);
     MatDestroy(&Mid_s);
+    if(Midid_inv_Mid_s) MatDestroy(&Midid_inv_Mid_s);
+    if(Ss_l)            MatDestroy(&Ss_l);
+    MatDestroy(&Ss);
+    MatDestroy(&Sg);
     VecDestroy(&b_intl);
     VecDestroy(&x_intl);
     VecDestroy(&b_dual);
@@ -418,12 +435,36 @@ void M1DDSolve::pack_intl_dual_skel() {
 
     MatAssemblyBegin(Mid_s, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  Mid_s, MAT_FINAL_ASSEMBLY);
+
+    // compute the transpose
+    if(!Mid_s_T) {
+        MatTranspose(Mid_s, MAT_INITIAL_MATRIX, &Mid_s_T);
+    } else {
+        MatTranspose(Mid_s, MAT_REUSE_MATRIX, &Mid_s_T);
+    }
+}
+
+void M1DDSolve::pack_schur_skel() {
+    // TODO
 }
 
 void M1DDSolve::setup_matrices() {
     assemble_mat();
     pack_intl_dual_sq();
     pack_intl_dual_skel();
+    if(Midid_inv_Mid_s) {
+        MatMatMult(Midid_inv, Mid_s,           MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Midid_inv_Mid_s);
+        MatMatMult(Mid_s_T,   Midid_inv_Mid_s, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Ss_l);
+    } else {
+        MatMatMult(Midid_inv, Mid_s,           MAT_REUSE_MATRIX, PETSC_DEFAULT, &Midid_inv_Mid_s);
+        MatMatMult(Mid_s_T,   Midid_inv_Mid_s, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Ss_l);
+    }
+    pack_schur_skel();
+    MatAYPX(Ss, -1.0, Mss, DIFFERENT_NONZERO_PATTERN);
+}
+
+void M1DDSolve::solve_F(Vec h, Vec ul) {
+    assemble_rhs_hu(h, ul);
 }
 
 void M1DDSolve::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
