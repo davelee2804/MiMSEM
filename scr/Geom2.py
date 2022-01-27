@@ -11,11 +11,14 @@ def init_geom(pn, ne, make_image, expand_sphere):
 	a = np.sqrt(7.0)
 	b = np.sqrt((7.0 - 2.0*a)/21.0)
 	c = np.sqrt((7.0 + 2.0*a)/21.0)
+	d = (2.0/11.0)*np.sqrt(5.0/3.0)
 
 	q2 = np.array([-1.0,0.0,+1.0])
 	q3 = np.array([-1.0,-np.sqrt(0.2),+np.sqrt(0.2),+1.0])
 	q4 = np.array([-1,-np.sqrt(3.0/7.0),0.0,+np.sqrt(3.0/7.0),+1])
 	q5 = np.array([-1.0,-c,-b,+b,+c,+1.0])
+	q6 = np.array([-1.0,-np.sqrt(5.0/11.0+d),-np.sqrt(5.0/11.0-d),0.0,+np.sqrt(5.0/11.0-d),+np.sqrt(5.0/11.0+d),+1.0])
+	q7 = np.array([-1.0,-0.871740148509607,-0.591700181433142,-0.209299217902479,+0.209299217902479,+0.591700181433142,+0.871740148509607,+1.0])
 
 	nx = pn*ne
 	X = np.zeros(pn*ne+1,dtype=np.float64)
@@ -29,6 +32,10 @@ def init_geom(pn, ne, make_image, expand_sphere):
 			X[el*pn:(el+1)*pn] = dx*0.5*(q4[:pn]+1.0) + el*dx - 0.25*np.pi
 		elif pn == 5:
 			X[el*pn:(el+1)*pn] = dx*0.5*(q5[:pn]+1.0) + el*dx - 0.25*np.pi
+		elif pn == 6:
+			X[el*pn:(el+1)*pn] = dx*0.5*(q6[:pn]+1.0) + el*dx - 0.25*np.pi
+		elif pn == 7:
+			X[el*pn:(el+1)*pn] = dx*0.5*(q7[:pn]+1.0) + el*dx - 0.25*np.pi
 	
 		X[pn*ne] = +0.25*np.pi
 	
