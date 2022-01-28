@@ -76,4 +76,5 @@ class Topo {
         int* elInds_skel_y_g(int ex, int ey);
         IS is_skel_l, is_skel_g;
         VecScatter gtol_skel;
+        int* dd_skel_locl_glob_map;
 };

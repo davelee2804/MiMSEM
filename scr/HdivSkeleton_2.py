@@ -30,6 +30,8 @@ inds_skel[:] = -1
 inds_skel_locl[:,:,:] = -1
 inds_dual[:,:,:] = -1
 inds_intl[:,:,:] = -1
+skel_locl_glob_map = np.zeros((num_proc,2*n),dtype=np.int32)
+skel_locl_glob_map[:,:] = -1
 
 # populate the global indices
 print("loading edge dofs...")
@@ -62,13 +64,15 @@ for ii in np.arange(2*num_proc-1):
                 gj = inds_glob[pj,vj,nj]
                 if gi == gj and inds_skel[gi] == -1:
                     inds_skel[gi] = glob_ind
-                    glob_ind += 1
                     if inds_skel_locl[pi,vi,ni] == -1:
                         inds_skel_locl[pi,vi,ni] = locl_ind[pi]
+                        skel_locl_glob_map[pi,locl_ind[pi]] = glob_ind
                         locl_ind[pi] += 1
                     if inds_skel_locl[pj,vj,nj] == -1:
                         inds_skel_locl[pj,vj,nj] = locl_ind[pj]
+                        skel_locl_glob_map[pi,locl_ind[pj]] = glob_ind
                         locl_ind[pj] += 1
+                    glob_ind += 1
 
 filename = path + '/global_to_skeleton.txt'
 np.savetxt(filename,inds_skel,fmt='%u')
@@ -77,6 +81,8 @@ for proc_i in np.arange(num_proc):
     np.savetxt(filename,inds_skel_locl[proc_i,0,:],fmt='%u')
     filename = path + '/skeleton_inds_y_%.4u.txt'%proc_i
     np.savetxt(filename,inds_skel_locl[proc_i,1,:],fmt='%u')
+    filename = path + '/skeleton_local_to_global_map_%.4u.txt'%proc_i
+    np.savetxt(filename,skel_locl_glob_map[proc_i,:],fmt='%u')
 
 # generate the associated dual indices, dofs within
 # the same element as a skeleton index, in the same 

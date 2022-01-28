@@ -235,6 +235,11 @@ Topo::Topo() {
     VecDestroy(&vl);
     VecDestroy(&vg);
 
+    // TODO: test to see if this is the same as 'inds_g'
+    dd_skel_locl_glob_map = new int[n1];
+    sprintf(filename, "input/skeleton_local_to_global_map_%.4u.txt", pi);
+    loadObjs(filename, dd_skel_locl_glob_map);
+
     delete[] inds_g;
 #endif
 }
@@ -275,6 +280,7 @@ Topo::~Topo() {
     ISDestroy(&is_skel_l);
     ISDestroy(&is_skel_g);
     VecScatterDestroy(&gtol_skel);
+    delete[] dd_skel_locl_glob_map;
 #endif
 }
 

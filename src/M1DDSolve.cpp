@@ -445,7 +445,21 @@ void M1DDSolve::pack_intl_dual_skel() {
 }
 
 void M1DDSolve::pack_schur_skel() {
-    // TODO
+    int ii, jj, ri, nCols, cols2[999];
+    const int *cols;
+    const double *vals;
+
+    for(ii = 0; ii < topo->dd_n_skel_locl; ii++) {
+        MatGetRow(Ss_l, ii, &nCols, &cols, &vals);
+        ri = topo->dd_skel_locl_glob_map[ii];
+        for(jj = 0; jj < nCols; jj++) {
+            cols2[jj] = topo->dd_skel_locl_glob_map[cols[jj]];
+        }
+        MatSetValues(Ss, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatRestoreRow(Ss_l, ii, &nCols, &cols, &vals);
+    }
+    MatAssemblyBegin(Ss, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Ss, MAT_FINAL_ASSEMBLY);
 }
 
 void M1DDSolve::setup_matrices() {
@@ -459,6 +473,7 @@ void M1DDSolve::setup_matrices() {
         MatMatMult(Midid_inv, Mid_s,           MAT_REUSE_MATRIX, PETSC_DEFAULT, &Midid_inv_Mid_s);
         MatMatMult(Mid_s_T,   Midid_inv_Mid_s, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Ss_l);
     }
+    MatZeroEntries(Ss);
     pack_schur_skel();
     MatAYPX(Ss, -1.0, Mss, DIFFERENT_NONZERO_PATTERN);
 }
