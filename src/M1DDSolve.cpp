@@ -77,10 +77,13 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
     MatSetSizes(Mss, topo->dd_n_skel_locl, topo->dd_n_skel_locl, topo->dd_n_skel_glob, topo->dd_n_skel_glob);
     MatSetType(Mss, MATMPIAIJ);
     MatMPIAIJSetPreallocation(Mss, 4*U->nDofsJ, PETSC_NULL, 4*U->nDofsJ, PETSC_NULL);
+    MatCreateSeqDense(MPI_COMM_SELF, topo->dd_n_intl_locl, topo->dd_n_intl_locl, PETSC_NULL, &Mii_inv);
+    MatCreateSeqDense(MPI_COMM_SELF, topo->dd_n_intl_locl+topo->dd_n_dual_locl, 
+                                     topo->dd_n_intl_locl+topo->dd_n_dual_locl, PETSC_NULL, &Midid_inv);
     MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_intl_locl+topo->dd_n_dual_locl, 
-		                   topo->dd_n_intl_locl+topo->dd_n_dual_locl, 4*U->nDofsJ, PETSC_NULL, &Midid_inv);
-    MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_intl_locl+topo->dd_n_dual_locl, 
-		                   topo->dd_n_skel_locl, 4*U->nDofsJ, PETSC_NULL, &Mid_s);
+                                   topo->dd_n_skel_locl, 4*U->nDofsJ, PETSC_NULL, &Mid_s);
+    MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_intl_locl, topo->dd_n_dual_locl+topo->dd_n_skel_locl, 
+                                   4*U->nDofsJ, PETSC_NULL, &Mi_ds);
     MatCreate(MPI_COMM_WORLD, &Ss);
     MatSetSizes(Ss, topo->n1l, topo->n1l, topo->nDofs1G, topo->nDofs1G);
     MatSetType(Ss, MATMPIAIJ);
@@ -104,10 +107,13 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
     MatTranspose(M0Rdual, MAT_INITIAL_MATRIX, &M0Rdual_T);
 
     Mid_s_T                     = PETSC_NULL;
+    Mi_ds_T                     = PETSC_NULL;
     Midid_inv_Mid_s             = PETSC_NULL;
     Ss_l                        = PETSC_NULL;
     M0Rdual_Midid_inv_Mid_s     = PETSC_NULL;
     M0Rdual_Midid_inv_M0Rdual_T = PETSC_NULL;
+    Mii_inv_Mig                 = PETSC_NULL;
+    Mgi_Mii_inv                 = PETSC_NULL;
 
     // and the vectors
     VecCreateSeq(MPI_COMM_SELF, topo->dd_n_intl_locl, &b_intl);
@@ -136,6 +142,11 @@ M1DDSolve::~M1DDSolve() {
     if(Midid_inv_Mid_s)         MatDestroy(&Midid_inv_Mid_s);
     if(Ss_l)                    MatDestroy(&Ss_l);
     if(M0Rdual_Midid_inv_Mid_s) MatDestroy(&M0Rdual_Midid_inv_Mid_s);
+    MatDestroy(&Mii_inv);
+    if(Mii_inv_Mig)             MatDestroy(&Mii_inv_Mig);
+    if(Mgi_Mii_inv)             MatDestroy(&Mgi_Mii_inv);
+    if(Mid_s_T)                 MatDestroy(&Mid_s_T);
+    if(Mi_ds_T)                 MatDestroy(&Mi_ds_T);
     MatDestroy(&M0Rdual);
     MatDestroy(&M0Rdual_T);
     MatDestroy(&Ss);
@@ -432,12 +443,11 @@ void M1DDSolve::pack_intl_dual_sq() {
 }
 
 void M1DDSolve::pack_intl_dual_skel() {
-    int ii, ri, nCols;
+    int ii, jj, ri, nCols, cols2[999];
     const int *cols;
     const double *vals;
 
     MatZeroEntries(Mid_s);
-
     for(ii = 0; ii < topo->dd_n_intl_locl; ii++) {
         MatGetRow(Mis, ii, &nCols, &cols, &vals);
         MatSetValues(Mid_s, 1, &ii, nCols, cols, vals, INSERT_VALUES);
@@ -450,15 +460,32 @@ void M1DDSolve::pack_intl_dual_skel() {
         MatSetValues(Mid_s, 1, &ri, nCols, cols, vals, INSERT_VALUES);
         MatRestoreRow(Mds, ii, &nCols, &cols, &vals);
     }
-
     MatAssemblyBegin(Mid_s, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  Mid_s, MAT_FINAL_ASSEMBLY);
+
+    MatZeroEntries(Mi_ds);
+    for(ii = 0; ii < topo->dd_n_intl_locl; ii++) {
+        MatGetRow(Mid, ii, &nCols, &cols, &vals);
+        MatSetValues(Mi_ds, 1, &ii, nCols, cols, vals, INSERT_VALUES);
+        MatRestoreRow(Mid, ii, &nCols, &cols, &vals);
+
+        MatGetRow(Mis, ii, &nCols, &cols, &vals);
+        for(jj = 0; jj < nCols; jj++) {
+            cols2[jj] = cols[jj] + topo->dd_n_dual_locl;
+        }
+        MatSetValues(Mi_ds, 1, &ii, nCols, cols2, vals, INSERT_VALUES);
+        MatRestoreRow(Mis, ii, &nCols, &cols, &vals);
+    }
+    MatAssemblyBegin(Mi_ds, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Mi_ds, MAT_FINAL_ASSEMBLY);
 
     // compute the transpose
     if(!Mid_s_T) {
         MatTranspose(Mid_s, MAT_INITIAL_MATRIX, &Mid_s_T);
+        MatTranspose(Mi_ds, MAT_INITIAL_MATRIX, &Mi_ds_T);
     } else {
         MatTranspose(Mid_s, MAT_REUSE_MATRIX, &Mid_s_T);
+        MatTranspose(Mi_ds, MAT_REUSE_MATRIX, &Mi_ds_T);
     }
 }
 
@@ -487,13 +514,13 @@ void M1DDSolve::setup_matrices() {
     pack_intl_dual_sq();
     pack_intl_dual_skel();
     if(Midid_inv_Mid_s) {
-        MatMatMult(Midid_inv, Mid_s,           MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Midid_inv_Mid_s);
-        MatMatMult(Mid_s_T,   Midid_inv_Mid_s, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Ss_l);
-        MatMatMult(M0Rdual,   Midid_inv_Mid_s, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0Rdual_Midid_inv_Mid_s);
-    } else {
         MatMatMult(Midid_inv, Mid_s,           MAT_REUSE_MATRIX, PETSC_DEFAULT, &Midid_inv_Mid_s);
         MatMatMult(Mid_s_T,   Midid_inv_Mid_s, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Ss_l);
         MatMatMult(M0Rdual,   Midid_inv_Mid_s, MAT_REUSE_MATRIX, PETSC_DEFAULT, &M0Rdual_Midid_inv_Mid_s);
+    } else {
+        MatMatMult(Midid_inv, Mid_s,           MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Midid_inv_Mid_s);
+        MatMatMult(Mid_s_T,   Midid_inv_Mid_s, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Ss_l);
+        MatMatMult(M0Rdual,   Midid_inv_Mid_s, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0Rdual_Midid_inv_Mid_s);
     }
 
     MatZeroEntries(Ss);
@@ -502,11 +529,22 @@ void M1DDSolve::setup_matrices() {
 
     MatMatMult(Midid_inv, M0Rdual_T, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &TMP);
     if(M0Rdual_Midid_inv_M0Rdual_T) {
-        MatMatMult(M0Rdual, TMP, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0Rdual_Midid_inv_M0Rdual_T);
-    } else {
         MatMatMult(M0Rdual, TMP, MAT_REUSE_MATRIX, PETSC_DEFAULT, &M0Rdual_Midid_inv_M0Rdual_T);
+    } else {
+        MatMatMult(M0Rdual, TMP, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &M0Rdual_Midid_inv_M0Rdual_T);
     }
     MatDestroy(&TMP);
+
+    MatCopy(Mii, Mii_inv, DIFFERENT_NONZERO_PATTERN);
+    MatLUFactor(Mii_inv, PETSC_NULL, PETSC_NULL, PETSC_NULL);
+
+    if(Mii_inv_Mig) {
+        MatMatMult(Mii_inv, Mi_ds, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Mii_inv_Mig);
+        MatTranspose(Mii_inv_Mig, MAT_REUSE_MATRIX, &Mgi_Mii_inv);
+    } else {
+        MatMatMult(Mii_inv, Mi_ds, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mii_inv_Mig);
+        MatTranspose(Mii_inv_Mig, MAT_INITIAL_MATRIX, &Mgi_Mii_inv);
+    }
 }
 
 void M1DDSolve::solve_F(Vec h, Vec ul) {
