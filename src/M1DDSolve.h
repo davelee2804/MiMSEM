@@ -5,6 +5,7 @@ class M1DDSolve {
         M1DDSolve(Topo* _topo, Geom* _geom);
         ~M1DDSolve();
         int rank;
+        int size;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
@@ -57,6 +58,10 @@ class M1DDSolve {
         Vec x_skel;
         Vec b_skel_g;
         Vec x_skel_g;
+        Vec PhiTb_skel_g;
+	Vec b_dual_skel_g;
+	Vec x_dual_skel_g;
+        KSP ksp_ss;
 	void assemble_mat();
 	void assemble_rhs_hu(Vec vel, Vec rho);
         void pack_intl_dual_sq();
@@ -64,6 +69,7 @@ class M1DDSolve {
         void pack_dual_dual_inv();
         void pack_schur_skel();
         void pack_phi();
+	void pack_dual_skel_g(Vec dual, Vec skel_g, Vec dual_skel_g);
 	void setup_matrices();
-        void solve_F(Vec h, Vec ul);
+        void solve_F(Vec h, Vec ul, bool do_rhs);
 };

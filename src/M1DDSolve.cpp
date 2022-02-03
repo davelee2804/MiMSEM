@@ -26,7 +26,7 @@ using namespace std;
 #ifdef PC_DD
 M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
     PC pc;
-    int size, ii, jj;
+    int ii, jj;
     double val;
     M1x_j_xy_i* U;
 
@@ -122,6 +122,7 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
     Midid_inv_M0Rdual_T     = PETSC_NULL;
     Mii_inv_Mig             = PETSC_NULL;
     Mgi_Mii_inv             = PETSC_NULL;
+    ksp_ss                  = PETSC_NULL;
 
     // and the vectors
     VecCreateSeq(MPI_COMM_SELF, topo->dd_n_intl_locl, &b_intl);
@@ -132,6 +133,11 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
     VecCreateSeq(MPI_COMM_SELF, topo->dd_n_skel_locl, &x_skel);
     VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_skel_locl, topo->dd_n_skel_glob, &b_skel_g);
     VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_skel_locl, topo->dd_n_skel_glob, &x_skel_g);
+    VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_skel_locl, topo->dd_n_skel_glob, &PhiTb_skel_g);
+    VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_dual_locl+topo->dd_n_skel_locl, 
+                                 size*(topo->dd_n_dual_locl)+topo->dd_n_skel_glob, &b_dual_skel_g);
+    VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_dual_locl+topo->dd_n_skel_locl, 
+                                 size*(topo->dd_n_dual_locl)+topo->dd_n_skel_glob, &x_dual_skel_g);
 }
 
 M1DDSolve::~M1DDSolve() {
@@ -156,6 +162,7 @@ M1DDSolve::~M1DDSolve() {
     if(Mgi_Mii_inv)             MatDestroy(&Mgi_Mii_inv);
     if(Mid_s_T)                 MatDestroy(&Mid_s_T);
     if(Mi_ds_T)                 MatDestroy(&Mi_ds_T);
+    if(ksp_ss)                  KSPDestroy(&ksp_ss);
     MatDestroy(&M0Rdual);
     MatDestroy(&M0Rdual_T);
     MatDestroy(&Ss);
@@ -168,6 +175,11 @@ M1DDSolve::~M1DDSolve() {
     VecDestroy(&x_dual);
     VecDestroy(&b_skel);
     VecDestroy(&x_skel);
+    VecDestroy(&b_skel_g);
+    VecDestroy(&x_skel_g);
+    VecDestroy(&PhiTb_skel_g);
+    VecDestroy(&b_dual_skel_g);
+    VecDestroy(&x_dual_skel_g);
     delete M1;
     delete M2;
     delete EtoF;
@@ -566,6 +578,25 @@ void M1DDSolve::pack_schur_skel() {
     MatAssemblyEnd(  Ss, MAT_FINAL_ASSEMBLY);
 }
 
+void M1DDSolve::pack_dual_skel_g(Vec dual, Vec skel_g, Vec dual_skel_g) {
+    int ii, jj;
+    PetscScalar *skel_array, *dual_array, *dual_skel_array;
+
+    VecGetArray(b_dual, &dual_array);
+    VecGetArray(b_skel_g, &skel_array);
+    VecGetArray(b_dual_skel_g, &dual_skel_array);
+    for(ii = 0; ii < topo->dd_n_dual_locl; ii++) {
+        dual_skel_array[ii] = dual_array[ii];
+    }
+    for(ii = 0; ii < topo->dd_n_skel_locl; ii++) {
+        jj = ii + topo->dd_n_dual_locl;
+        dual_skel_array[jj] = skel_array[ii];
+    }
+    VecRestoreArray(dual_skel_g, &dual_skel_array);
+    VecRestoreArray(skel_g, &skel_array);
+    VecRestoreArray(dual, &dual_array);
+}
+
 void M1DDSolve::setup_matrices() {
     assemble_mat();
     pack_intl_dual_sq();
@@ -604,10 +635,33 @@ void M1DDSolve::setup_matrices() {
         MatMatMult(Mii_inv, Mi_ds, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mii_inv_Mig);
         MatTranspose(Mii_inv_Mig, MAT_INITIAL_MATRIX, &Mgi_Mii_inv);
     }
+
+    if(!ksp_ss) {
+        PC pc;
+        KSPCreate(MPI_COMM_WORLD, &ksp_ss);
+        KSPSetOperators(ksp_ss, Ss, Ss);
+        KSPSetTolerances(ksp_ss, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+        KSPSetType(ksp_ss, KSPGMRES);
+        KSPGetPC(ksp_ss, &pc);
+        PCSetType(pc, PCBJACOBI);
+        PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
+        KSPSetOptionsPrefix(ksp_ss, "dd_");
+        KSPSetFromOptions(ksp_ss);
+    }
 }
 
-void M1DDSolve::solve_F(Vec h, Vec ul) {
-    assemble_rhs_hu(h, ul);
+void M1DDSolve::solve_F(Vec h, Vec ul, bool do_rhs) {
+    if(do_rhs) {
+        assemble_rhs_hu(h, ul);
+        pack_dual_skel_g(b_dual, b_skel_g, b_dual_skel_g);
+    }
+    // global part of the solve, [Phi][S_s]^{-1}[Phi]^T
+    MatMultTranspose(Phi, b_dual_skel_g, PhiTb_skel_g);
+    KSPSolve(ksp_ss, PhiTb_skel_g, x_skel_g);
+    MatMult(Phi, x_skel_g, b_dual_skel_g);
+    // local part of the solve
+    MatMult(Mdd_inv, b_dual, x_dual);
+    pack_dual_skel_g(x_dual, x_skel_g, x_dual_skel_g);
 }
 
 void M1DDSolve::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
