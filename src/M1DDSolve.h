@@ -43,10 +43,12 @@ class M1DDSolve {
         Mat M0Rdual;
         Mat M0Rdual_T;
         Mat M0Rdual_Midid_inv_Mid_s;
-        Mat M0Rdual_Midid_inv_M0Rdual_T;
+        Mat Midid_inv_M0Rdual_T;
+	Mat Mdd_inv;
 	Mat Ss_l;
         Mat Ss;
         Mat Sg;
+        Mat Phi;
         Vec b_intl;
         Vec x_intl;
         Vec b_dual;
@@ -59,7 +61,9 @@ class M1DDSolve {
 	void assemble_rhs_hu(Vec vel, Vec rho);
         void pack_intl_dual_sq();
         void pack_intl_dual_skel();
+        void pack_dual_dual_inv();
         void pack_schur_skel();
+        void pack_phi();
 	void setup_matrices();
         void solve_F(Vec h, Vec ul);
 };
