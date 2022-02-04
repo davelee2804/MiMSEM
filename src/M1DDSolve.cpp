@@ -115,29 +115,32 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
     MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_dual_locl, topo->dd_n_dual_locl, topo->dd_n_dual_locl, PETSC_NULL, &Mdd_inv);
 
     Mid_s_T                 = PETSC_NULL;
-    Mi_ds_T                 = PETSC_NULL;
     Midid_inv_Mid_s         = PETSC_NULL;
     Ss_l                    = PETSC_NULL;
     M0Rdual_Midid_inv_Mid_s = PETSC_NULL;
     Midid_inv_M0Rdual_T     = PETSC_NULL;
-    Mii_inv_Mig             = PETSC_NULL;
-    Mgi_Mii_inv             = PETSC_NULL;
     ksp_ss                  = PETSC_NULL;
 
     // and the vectors
     VecCreateSeq(MPI_COMM_SELF, topo->dd_n_intl_locl, &b_intl);
     VecCreateSeq(MPI_COMM_SELF, topo->dd_n_intl_locl, &x_intl);
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_intl_locl, &t_intl);
     VecCreateSeq(MPI_COMM_SELF, topo->dd_n_dual_locl, &b_dual);
     VecCreateSeq(MPI_COMM_SELF, topo->dd_n_dual_locl, &x_dual);
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_dual_locl, &t_dual);
     VecCreateSeq(MPI_COMM_SELF, topo->dd_n_skel_locl, &b_skel);
     VecCreateSeq(MPI_COMM_SELF, topo->dd_n_skel_locl, &x_skel);
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_skel_locl, &t_skel);
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_dual_locl+topo->dd_n_skel_locl, &b_dual_skel);
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_dual_locl+topo->dd_n_skel_locl, &x_dual_skel);
+    VecCreateSeq(MPI_COMM_SELF, topo->dd_n_dual_locl+topo->dd_n_skel_locl, &t_dual_skel);
     VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_skel_locl, topo->dd_n_skel_glob, &b_skel_g);
     VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_skel_locl, topo->dd_n_skel_glob, &x_skel_g);
-    VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_skel_locl, topo->dd_n_skel_glob, &PhiTb_skel_g);
+    VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_skel_locl, topo->dd_n_skel_glob, &t_skel_g);
     VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_dual_locl+topo->dd_n_skel_locl, 
                                  size*(topo->dd_n_dual_locl)+topo->dd_n_skel_glob, &b_dual_skel_g);
-    VecCreateMPI(MPI_COMM_WORLD, topo->dd_n_dual_locl+topo->dd_n_skel_locl, 
-                                 size*(topo->dd_n_dual_locl)+topo->dd_n_skel_glob, &x_dual_skel_g);
+    VecDuplicate(b_dual_skel_g, &x_dual_skel_g);
+    VecDuplicate(b_dual_skel_g, &t_dual_skel_g);
 }
 
 M1DDSolve::~M1DDSolve() {
@@ -158,10 +161,7 @@ M1DDSolve::~M1DDSolve() {
     if(M0Rdual_Midid_inv_Mid_s) MatDestroy(&M0Rdual_Midid_inv_Mid_s);
     if(Midid_inv_M0Rdual_T)     MatDestroy(&Midid_inv_M0Rdual_T);
     MatDestroy(&Mii_inv);
-    if(Mii_inv_Mig)             MatDestroy(&Mii_inv_Mig);
-    if(Mgi_Mii_inv)             MatDestroy(&Mgi_Mii_inv);
     if(Mid_s_T)                 MatDestroy(&Mid_s_T);
-    if(Mi_ds_T)                 MatDestroy(&Mi_ds_T);
     if(ksp_ss)                  KSPDestroy(&ksp_ss);
     MatDestroy(&M0Rdual);
     MatDestroy(&M0Rdual_T);
@@ -171,15 +171,22 @@ M1DDSolve::~M1DDSolve() {
     MatDestroy(&Mdd_inv);
     VecDestroy(&b_intl);
     VecDestroy(&x_intl);
+    VecDestroy(&t_intl);
     VecDestroy(&b_dual);
     VecDestroy(&x_dual);
+    VecDestroy(&t_dual);
     VecDestroy(&b_skel);
     VecDestroy(&x_skel);
+    VecDestroy(&t_skel);
+    VecDestroy(&b_dual_skel);
+    VecDestroy(&x_dual_skel);
+    VecDestroy(&t_dual_skel);
     VecDestroy(&b_skel_g);
     VecDestroy(&x_skel_g);
-    VecDestroy(&PhiTb_skel_g);
+    VecDestroy(&t_skel_g);
     VecDestroy(&b_dual_skel_g);
     VecDestroy(&x_dual_skel_g);
+    VecDestroy(&t_dual_skel_g);
     delete M1;
     delete M2;
     delete EtoF;
@@ -504,10 +511,8 @@ void M1DDSolve::pack_intl_dual_skel() {
     // compute the transpose
     if(!Mid_s_T) {
         MatTranspose(Mid_s, MAT_INITIAL_MATRIX, &Mid_s_T);
-        MatTranspose(Mi_ds, MAT_INITIAL_MATRIX, &Mi_ds_T);
     } else {
         MatTranspose(Mid_s, MAT_REUSE_MATRIX, &Mid_s_T);
-        MatTranspose(Mi_ds, MAT_REUSE_MATRIX, &Mi_ds_T);
     }
 }
 
@@ -541,7 +546,7 @@ void M1DDSolve::pack_dual_dual_inv() {
 
 // Phi shape: [n_dual + n_skel] X [n_skel]
 void M1DDSolve::pack_phi() {
-    int ii, ri, cj, nCols;
+    int ii, jj, ri, cj, nCols, cols2[999];
     const int *cols;
     const double *vals, one = 1.0;
 
@@ -549,12 +554,16 @@ void M1DDSolve::pack_phi() {
     for(ii = 0; ii < topo->dd_n_dual_locl; ii++) {
         MatGetRow(Midid_inv_Mid_s, ii, &nCols, &cols, &vals);
 	ri = ii + rank*(topo->dd_n_dual_locl + topo->dd_n_skel_locl);
-        MatSetValues(Phi, 1, &ri, nCols, cols, vals, ADD_VALUES);
+        for(jj = 0; jj < nCols; jj++) {
+            cols2[jj] = topo->dd_skel_locl_glob_map[cols[jj]];
+        }
+        MatSetValues(Phi, 1, &ri, nCols, cols2, vals, ADD_VALUES);
         MatRestoreRow(Midid_inv_Mid_s, ii, &nCols, &cols, &vals);
     }
     for(ii = 0; ii < topo->dd_n_skel_locl; ii++) {
-        cj = ii + topo->dd_n_dual_locl + rank*(topo->dd_n_dual_locl + topo->dd_n_skel_locl);
-        MatSetValues(Phi, 1, &ii, 1, &cj, &one, INSERT_VALUES);
+        ri = rank*(topo->dd_n_dual_locl + topo->dd_n_skel_locl) + topo->dd_n_dual_locl + ii;
+        cj = rank*(topo->dd_n_dual_locl + topo->dd_n_skel_locl) + ii;
+        MatSetValues(Phi, 1, &ri, 1, &cj, &one, ADD_VALUES);
     }
     MatAssemblyBegin(Phi, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  Phi, MAT_FINAL_ASSEMBLY);
@@ -597,6 +606,29 @@ void M1DDSolve::pack_dual_skel_g(Vec dual, Vec skel_g, Vec dual_skel_g) {
     VecRestoreArray(dual, &dual_array);
 }
 
+void M1DDSolve::scat_dual_skel_l2g(Vec dual, Vec skel, Vec skel_g, Vec dual_skel_l, Vec dual_skel_g) {
+    int ii;
+    PetscScalar *dsArray, *sArray, *dArray;
+ 
+    VecGetArray(skel, &sArray);
+    VecGetArray(dual_skel_l, &dsArray);
+    for(ii = 0; ii < topo->dd_n_skel_locl; ii++) {
+        sArray[ii] = dsArray[ii+topo->dd_n_dual_locl];
+    }
+    VecRestoreArray(dual_skel_l, &dsArray);
+    VecRestoreArray(skel, &sArray);
+    VecZeroEntries(skel_g);
+    VecScatterBegin(topo->gtol_skel, skel, skel_g, ADD_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  topo->gtol_skel, skel, skel_g, ADD_VALUES, SCATTER_REVERSE);
+    VecGetArray(dual, &dArray);
+    VecGetArray(dual_skel_g, &dsArray);
+    for(ii = 0; ii < topo->dd_n_dual_locl; ii++) {
+        dsArray[ii] = dArray[ii];
+    }
+    VecRestoreArray(dual_skel_g, &dsArray);
+    VecRestoreArray(dual, &dArray);
+}
+
 void M1DDSolve::setup_matrices() {
     assemble_mat();
     pack_intl_dual_sq();
@@ -628,13 +660,6 @@ void M1DDSolve::setup_matrices() {
 
     MatCopy(Mii, Mii_inv, DIFFERENT_NONZERO_PATTERN);
     MatLUFactor(Mii_inv, PETSC_NULL, PETSC_NULL, PETSC_NULL);
-    if(Mii_inv_Mig) {
-        MatMatMult(Mii_inv, Mi_ds, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Mii_inv_Mig);
-        MatTranspose(Mii_inv_Mig, MAT_REUSE_MATRIX, &Mgi_Mii_inv);
-    } else {
-        MatMatMult(Mii_inv, Mi_ds, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mii_inv_Mig);
-        MatTranspose(Mii_inv_Mig, MAT_INITIAL_MATRIX, &Mgi_Mii_inv);
-    }
 
     if(!ksp_ss) {
         PC pc;
@@ -655,13 +680,24 @@ void M1DDSolve::solve_F(Vec h, Vec ul, bool do_rhs) {
         assemble_rhs_hu(h, ul);
         pack_dual_skel_g(b_dual, b_skel_g, b_dual_skel_g);
     }
+
+    // boundary dof solve
+    // global component
+    MatMult(Mii_inv, b_intl, t_intl);
+    MatMultTranspose(Mi_ds, t_intl, t_dual_skel);
+    // scatter the skeleton dofs
+    scat_dual_skel_l2g(t_dual, t_skel, t_skel_g, t_dual_skel, t_dual_skel_g);
+    VecAYPX(t_dual_skel_g, -1.0, b_dual_skel_g);
     // global part of the solve, [Phi][S_s]^{-1}[Phi]^T
-    MatMultTranspose(Phi, b_dual_skel_g, PhiTb_skel_g);
-    KSPSolve(ksp_ss, PhiTb_skel_g, x_skel_g);
-    MatMult(Phi, x_skel_g, b_dual_skel_g);
-    // local part of the solve
-    MatMult(Mdd_inv, b_dual, x_dual);
-    pack_dual_skel_g(x_dual, x_skel_g, x_dual_skel_g);
+    MatMultTranspose(Phi, t_dual_skel_g, t_skel_g);
+    KSPSolve(ksp_ss, t_skel_g, x_skel_g);
+    MatMult(Phi, x_skel_g, x_dual_skel_g);
+    // local component
+    MatMult(Mdd_inv, b_dual, t_dual);
+    pack_dual_skel_g(t_dual, t_skel_g, t_dual_skel_g);
+    VecAXPY(x_dual_skel_g, +1.0, t_dual_skel_g);
+
+    // internal dof solve
 }
 
 void M1DDSolve::init1(Vec u, ICfunc* func_x, ICfunc* func_y) {
