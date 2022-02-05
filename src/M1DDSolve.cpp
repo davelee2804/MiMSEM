@@ -112,13 +112,15 @@ M1DDSolve::M1DDSolve(Topo* _topo, Geom* _geom) {
     MatSetType(Phi, MATMPIAIJ);
     MatMPIAIJSetPreallocation(Phi, topo->dd_n_skel_locl, PETSC_NULL, 0, PETSC_NULL);
 
-    MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_dual_locl, topo->dd_n_dual_locl, topo->dd_n_dual_locl, PETSC_NULL, &Mdd_inv);
+    //MatCreateSeqAIJ(MPI_COMM_SELF, topo->dd_n_dual_locl, topo->dd_n_dual_locl, topo->dd_n_dual_locl, PETSC_NULL, &Mdd_inv);
 
     Mid_s_T                 = PETSC_NULL;
     Midid_inv_Mid_s         = PETSC_NULL;
     Ss_l                    = PETSC_NULL;
     M0Rdual_Midid_inv_Mid_s = PETSC_NULL;
     Midid_inv_M0Rdual_T     = PETSC_NULL;
+    Mii_inv_Mid             = PETSC_NULL;
+    Sd_inv                  = PETSC_NULL;
     ksp_ss                  = PETSC_NULL;
 
     // and the vectors
@@ -162,13 +164,15 @@ M1DDSolve::~M1DDSolve() {
     if(Midid_inv_M0Rdual_T)     MatDestroy(&Midid_inv_M0Rdual_T);
     MatDestroy(&Mii_inv);
     if(Mid_s_T)                 MatDestroy(&Mid_s_T);
+    if(Mii_inv_Mid)             MatDestroy(&Mii_inv_Mid);
+    if(Sd_inv)                  MatDestroy(&Sd_inv);
     if(ksp_ss)                  KSPDestroy(&ksp_ss);
     MatDestroy(&M0Rdual);
     MatDestroy(&M0Rdual_T);
     MatDestroy(&Ss);
     MatDestroy(&Sg);
     MatDestroy(&Phi);
-    MatDestroy(&Mdd_inv);
+    //MatDestroy(&Mdd_inv);
     VecDestroy(&b_intl);
     VecDestroy(&x_intl);
     VecDestroy(&t_intl);
@@ -631,6 +635,78 @@ void M1DDSolve::scat_dual_skel_l2g(Vec dual, Vec skel, Vec skel_g, Vec dual_skel
 
 void M1DDSolve::setup_matrices() {
     assemble_mat();
+    // construct the internal-dual (local) dof schur complement inverse
+    MatCopy(Mii, Mii_inv, DIFFERENT_NONZERO_PATTERN);
+    MatLUFactor(Mii_inv, PETSC_NULL, PETSC_NULL, PETSC_NULL);
+    if(Sd_inv) {
+        MatMatMult(Mii_inv, Mid,         MAT_REUSE_MATRIX, PETSC_DEFAULT, &Mii_inv_Mid);
+        MatMatMult(Mdi,     Mii_inv_Mid, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Sd_inv);
+    } else {
+        MatMatMult(Mii_inv, Mid,         MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mii_inv_Mid);
+        MatMatMult(Mdi,     Mii_inv_Mid, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Sd_inv);
+    }
+    MatAYPX(Sd_inv, -1.0, Mdd, DIFFERENT_NONZERO_PATTERN);
+    MatLUFactor(Sd_inv, PETSC_NULL, PETSC_NULL, PETSC_NULL);
+    // construct the skeleton (global) dof schur complement
+    {
+        Mat Sd_inv_Mdi;
+        Mat Sd_inv_Mdi_Mii_inv;                 // x2
+        Mat Sd_inv_Mdi_Mii_inv_Mis;
+        Mat A10;
+        Mat Mid_Sd_inv_Mdi_Mii_inv;
+        Mat Mii_inv_Mid_Sd_inv_Mdi_Mii_inv;
+        Mat Mii_inv_Mid_Sd_inv_Mdi_Mii_inv_Mis;
+        Mat Sd_inv_Mds;                         // x2
+        Mat Mid_Sd_inv_Mds;
+        Mat Mii_inv_Mid_Sd_inv_Mds;
+        Mat A01;
+        Mat A11;
+
+        MatMatMult(Sd_inv, Mdi, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Sd_inv_Mdi);
+        MatMatMult(Sd_inv_Mdi, Mii_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Sd_inv_Mdi_Mii_inv);
+        MatMatMult(Sd_inv_Mdi_Mii_inv, Mis, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Sd_inv_Mdi_Mii_inv_Mis);
+        MatMatMult(Msd, Sd_inv_Mdi_Mii_inv_Mis, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &A10);
+
+        MatMatMult(Mid, Sd_inv_Mdi_Mii_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mid_Sd_inv_Mdi_Mii_inv);
+        MatMatMult(Mii_inv, Mid_Sd_inv_Mdi_Mii_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mii_inv_Mid_Sd_inv_Mdi_Mii_inv);
+        MatAXPY(Mii_inv_Mid_Sd_inv_Mdi_Mii_inv_Mis, +1.0, Mii_inv, DIFFERENT_NONZERO_PATTERN);
+        MatMatMult(Mii_inv_Mid_Sd_inv_Mdi_Mii_inv, Mis, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mii_inv_Mid_Sd_inv_Mdi_Mii_inv_Mis);
+        if(Ss_l) {
+            MatZeroEntries(Ss_l);
+            MatMatMult(Msi, Mii_inv_Mid_Sd_inv_Mdi_Mii_inv_Mis, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Ss_l);
+        } else {
+            MatMatMult(Msi, Mii_inv_Mid_Sd_inv_Mdi_Mii_inv_Mis, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Ss_l);
+        }
+
+        MatMatMult(Sd_inv, Mds, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Sd_inv_Mds);
+        MatMatMult(Mid, Sd_inv_Mds, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mid_Sd_inv_Mds);
+        MatMatMult(Mii_inv, Mid_Sd_inv_Mds, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Mii_inv_Mid_Sd_inv_Mds);
+        MatMatMult(Mdi, Mii_inv_Mid_Sd_inv_Mds, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &A01);
+
+        MatMatMult(Mds, Sd_inv_Mds, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &A11);
+
+	MatAYPX(Ss_l, -1.0, A01, DIFFERENT_NONZERO_PATTERN);
+	MatAXPY(Ss_l, +1.0, A10, DIFFERENT_NONZERO_PATTERN);
+	MatAXPY(Ss_l, -1.0, A11, DIFFERENT_NONZERO_PATTERN);
+        
+        MatDestroy(&Sd_inv_Mdi);
+        MatDestroy(&Sd_inv_Mdi_Mii_inv);
+        MatDestroy(&Sd_inv_Mdi_Mii_inv_Mis);
+        MatDestroy(&A10);
+        MatDestroy(&Mid_Sd_inv_Mdi_Mii_inv);
+        MatDestroy(&Mii_inv_Mid_Sd_inv_Mdi_Mii_inv);
+        MatDestroy(&Mii_inv_Mid_Sd_inv_Mdi_Mii_inv_Mis);
+        MatDestroy(&Sd_inv_Mds);
+        MatDestroy(&Mid_Sd_inv_Mds);
+        MatDestroy(&Mii_inv_Mid_Sd_inv_Mds);
+        MatDestroy(&A01);
+        MatDestroy(&A11);
+    }
+    MatZeroEntries(Ss);
+    pack_schur_skel();
+    MatAXPY(Ss, +1.0, Mss, DIFFERENT_NONZERO_PATTERN);
+    
+/*
     pack_intl_dual_sq();
     pack_intl_dual_skel();
     if(Midid_inv_Mid_s) {
@@ -657,10 +733,7 @@ void M1DDSolve::setup_matrices() {
     }
 
     pack_phi();
-
-    MatCopy(Mii, Mii_inv, DIFFERENT_NONZERO_PATTERN);
-    MatLUFactor(Mii_inv, PETSC_NULL, PETSC_NULL, PETSC_NULL);
-
+*/
     if(!ksp_ss) {
         PC pc;
         KSPCreate(MPI_COMM_WORLD, &ksp_ss);
@@ -693,7 +766,8 @@ void M1DDSolve::solve_F(Vec h, Vec ul, bool do_rhs) {
     KSPSolve(ksp_ss, t_skel_g, x_skel_g);
     MatMult(Phi, x_skel_g, x_dual_skel_g);
     // local component
-    MatMult(Mdd_inv, b_dual, t_dual);
+    //MatMult(Mdd_inv, b_dual, t_dual);
+    MatMult(Sd_inv, b_dual, t_dual);
     pack_dual_skel_g(t_dual, t_skel_g, t_dual_skel_g);
     VecAXPY(x_dual_skel_g, +1.0, t_dual_skel_g);
 

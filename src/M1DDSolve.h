@@ -38,6 +38,7 @@ class M1DDSolve {
 	Mat Mi_ds;
 	Mat Midid_inv_Mid_s;
 	Mat Mii_inv;
+	Mat Mii_inv_Mid;
         Mat M0Rdual;
         Mat M0Rdual_T;
         Mat M0Rdual_Midid_inv_Mid_s;
@@ -46,6 +47,7 @@ class M1DDSolve {
 	Mat Ss_l;
         Mat Ss;
         Mat Sg;
+        Mat Sd_inv;
         Mat Phi;
         Vec b_intl;
         Vec x_intl;
