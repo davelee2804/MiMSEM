@@ -11,6 +11,7 @@ include ${PETSC_DIR}/lib/petsc/conf/rules
 
 CXX = mpicxx
 
+# module load pbs openmpi/4.0.2 fftw3/3.3.8 petsc/3.12.2 hdf5/1.10.5p netcdf/4.7.3
 CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -O3 -Wall
 
 OBJS = LinAlg.o \
@@ -27,7 +28,7 @@ OBJS = LinAlg.o \
        UMJS14.o
 
 mimsem: ${OBJS}
-	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} -lblas ${CXXFLAGS}
+	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
 UMJS14.o: UMJS14.cpp Euler_2.o VertSolve.o HorizSolve.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c UMJS14.cpp ${CXXFLAGS}

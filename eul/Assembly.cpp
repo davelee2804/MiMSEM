@@ -162,11 +162,11 @@ void Umat::_assemble(int lev, double scale, bool vert_scale) {
 }
 
 // upwinded test function matrix
-void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
-    int ex, ey, ei, m0, mp1, mp12, ii, jj;
+void Umat::assemble_up(int lev, double scale, double tau, Vec ui, Vec uj) {
+    int ex, ey, ei, nn, np1, m0, mp1, mp12, ii, jj;
     int *inds_x, *inds_y, *inds_0;
-    double det, **J, ug[2], ul[2], lx[99], ly[99], _ex[99], _ey[99];
-    PetscScalar *u1Array;
+    double det, **J, uil[2], ujl[2], lx[99], ly[99];
+    PetscScalar *uiArray, *ujArray;
     MatReuse reuse = (!MT) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     GaussLobatto* quad = l->q;
     Wii* Q = new Wii(l->q, geom);
@@ -186,12 +186,15 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
     double* Qab = new double[Q->nDofsI];
     double* Qbb = new double[Q->nDofsI];
 
+    nn = l->n;
+    np1 = nn + 1;
     m0 = l->q->n;
     mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
     MatZeroEntries(M);
-    VecGetArray(u1, &u1Array);
+    VecGetArray(ui, &uiArray);
+    VecGetArray(uj, &ujArray);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -201,27 +204,31 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
 
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ug);
-                ug[0] *= geom->thickInv[lev][inds_0[ii]];
-                ug[1] *= geom->thickInv[lev][inds_0[ii]];
+                geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uiArray, uil);
+                geom->interp1_l(ex, ey, ii%mp1, ii/mp1, ujArray, ujl);
+                uil[0] *= geom->thickInv[lev][inds_0[ii]]/det;
+                uil[1] *= geom->thickInv[lev][inds_0[ii]]/det;
+                ujl[0] *= geom->thickInv[lev][inds_0[ii]]/det;
+                ujl[1] *= geom->thickInv[lev][inds_0[ii]]/det;
 
-                // map velocity to local element coordinates
-                ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
-                ul[1] = (-J[1][0]*ug[0] + J[0][0]*ug[1])/det;
                 // evaluate the nodal bases at the upwinded locations
-                for(jj = 0; jj < mp1; jj++) {
-                    lx[jj] = l->eval_q(quad->x[ii%mp1] + dt*ul[0], jj);
-                    ly[jj] = l->eval_q(quad->x[ii/mp1] + dt*ul[1], jj);
+                for(jj = 0; jj < np1; jj++) {
+                    lx[jj] = l->eval_q(quad->x[ii%mp1] + 0.5*tau*uil[0] + 0.5*tau*ujl[0], jj);
+                    ly[jj] = l->eval_q(quad->x[ii/mp1] + 0.5*tau*uil[1] + 0.5*tau*ujl[1], jj);
                 }
                 // evaluate the edge bases at the upwinded locations
-                for(jj = 0; jj < m0; jj++) {
-                    _ex[jj] = e->eval(quad->x[ii%mp1] + dt*ul[0], jj);
-                    _ey[jj] = e->eval(quad->x[ii/mp1] + dt*ul[1], jj);
-                }
+                //for(jj = 0; jj < m0; jj++) {
+                //    _ex[jj] = e->eval(quad->x[ii%mp1] + dt*ul[0], jj);
+                //    _ey[jj] = e->eval(quad->x[ii/mp1] + dt*ul[1], jj);
+                //}
                 // evaluate the 2 form basis at the upwinded locations
+                //for(jj = 0; jj < m0*mp1; jj++) {
+                //    Ut[jj*mp12+ii] = lx[jj%mp1]*_ey[jj/mp1];
+                //    Vt[jj*mp12+ii] = _ex[jj%m0]*ly[jj/m0];
+                //}
                 for(jj = 0; jj < m0*mp1; jj++) {
-                    Ut[jj*mp12+ii] = lx[jj%mp1]*_ey[jj/mp1];
-                    Vt[jj*mp12+ii] = _ex[jj%m0]*ly[jj/m0];
+                    Ut[jj*mp12+ii] = lx[jj%mp1]*e->ejxi[ii/mp1][jj/mp1];
+                    Vt[jj*mp12+ii] = e->ejxi[ii%mp1][jj%m0]*ly[jj/m0];
                 }
 
                 Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
@@ -261,7 +268,8 @@ void Umat::assemble_up(int lev, double scale, double dt, Vec u1) {
             MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, VtQV, ADD_VALUES);
         }
     }
-    VecRestoreArray(u1, &u1Array);
+    VecRestoreArray(ui, &uiArray);
+    VecRestoreArray(uj, &ujArray);
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
@@ -3113,6 +3121,100 @@ void Uvec::assemble_hu(int lev, double scale, Vec vel, Vec rho, bool zero_and_sc
         VecScatterBegin(topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
         VecScatterEnd(  topo->gtol_1, vl, vg, ADD_VALUES, SCATTER_REVERSE);
     }
+}
+
+void Uvec::assemble_hu_up(int lev, double scale, Vec vel, Vec rho, double fac, double tau, Vec vel2) {
+    int ex, ey, ei, ii, jj, mp1, mp12, nn, np1, nj;
+    int *inds_x, *inds_y, *inds_0;
+    double det, **J;
+    PetscScalar *vArray, *velArray, *rhoArray, *vel2Array;
+    double _u[2], _r, Qaa[99], Qab[99], Qba[99], Qbb[99], rhs[99], uh[2], MUt[399], MVt[399], lx[99], ly[99];
+    GaussLobatto* quad = node->q;
+
+    nn = node->n;
+    np1 = nn + 1;
+    nj = nn*np1;
+    mp1 = node->q->n + 1;
+    mp12 = mp1*mp1;
+
+    VecGetArray(vl, &vArray);
+    VecGetArray(vel, &velArray);
+    VecGetArray(rho, &rhoArray);
+    VecGetArray(vel2, &vel2Array);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            inds_0 = topo->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
+                Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii]*(scale/det);
+                Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii]*(scale/det);
+
+                // horiztonal velocity is piecewise constant in the vertical
+                Qaa[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qab[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qbb[ii] *= geom->thickInv[lev][inds_0[ii]];
+                Qba[ii]  = Qab[ii];
+
+                // multiply by the velocity vector
+                geom->interp1_l(ex, ey, ii%mp1, ii/mp1, velArray, _u);
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, rhoArray, &_r);
+                _r *= geom->thickInv[lev][inds_0[ii]];
+                _r *= fac;
+
+                Qaa[ii] *= (_u[0] * _r);
+                Qba[ii] *= (_u[0] * _r);
+                Qab[ii] *= (_u[1] * _r);
+                Qbb[ii] *= (_u[1] * _r);
+
+                geom->interp1_l(ex, ey, ii%mp1, ii/mp1, vel2Array, uh);
+                uh[0] += _u[0];
+                uh[1] += _u[1];
+		uh[0] *= 0.5*geom->thickInv[lev][inds_0[ii]]/det;
+		uh[1] *= 0.5*geom->thickInv[lev][inds_0[ii]]/det;
+
+                for(jj = 0; jj < np1; jj++) {
+                    lx[jj] = node->eval_q(quad->x[ii%mp1] + 0.5*tau*uh[0], jj);
+                    ly[jj] = node->eval_q(quad->x[ii/mp1] + 0.5*tau*uh[1], jj);
+                }
+                for(jj = 0; jj < nj; jj++) {
+                    MUt[jj*mp12+ii] = lx[jj%np1]*edge->ejxi[ii/mp1][jj/np1];
+                    MVt[jj*mp12+ii] = edge->ejxi[ii%mp1][jj%nn]*ly[jj/nn];
+                }
+            }
+
+            inds_x = topo->elInds1x_l(ex, ey);
+            inds_y = topo->elInds1y_l(ex, ey);
+
+            Ax_b(U->nDofsJ, Q->nDofsI, MUt, Qaa, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_x[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, MUt, Qab, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_x[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, MVt, Qba, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_y[ii]] += rhs[ii];
+            }
+
+            Ax_b(U->nDofsJ, Q->nDofsI, MVt, Qbb, rhs);
+            for(ii = 0; ii < U->nDofsJ; ii++) {
+                vArray[inds_y[ii]] += rhs[ii];
+            }
+        }
+    }
+    VecRestoreArray(vl, &vArray);
+    VecRestoreArray(vel, &velArray);
+    VecRestoreArray(rho, &rhoArray);
+    VecRestoreArray(vel2, &vel2Array);
 }
 
 void Uvec::assemble_wxu(int lev, double scale, Vec vel, Vec vort) {

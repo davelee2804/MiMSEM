@@ -10,7 +10,7 @@ class Umat {
         Mat MT;
         Mat _M;
         void assemble(int lev, double scale, bool vert_scale);
-        void assemble_up(int lev, double scale, double dt, Vec u1);
+        void assemble_up(int lev, double scale, double tau, Vec ui, Vec uj);
         void _assemble(int lev, double scale, bool vert_scale);
 };
 
@@ -464,6 +464,7 @@ class Uvec {
         void assemble(int lev, double scale, bool vert_scale, Vec vel);
         void assemble_hu(int lev, double scale, Vec vel, Vec rho, bool zero_and_scatter, double fac);
         void assemble_wxu(int lev, double scale, Vec vel, Vec vort);
+        void assemble_hu_up(int lev, double scale, Vec vel, Vec rho, double fac, double tau, Vec vel2);
 };
 
 class Wvec {
