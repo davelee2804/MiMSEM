@@ -105,7 +105,6 @@ int main(int argc, char** argv) {
     geom = new Geom(topo);
     sw = new SWEqn(topo, geom);
     sw->step = startStep;
-    sw->do_visc = false;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);

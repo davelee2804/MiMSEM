@@ -20,7 +20,6 @@ OBJS = LinAlg.o \
        Geom.o \
        ElMats.o \
        Assembly.o \
-       M1DDSolve.o \
        SWEqn_Picard.o \
        Galewsky.o
 #       Williamson2.o
@@ -43,9 +42,6 @@ Williamson2.o: Williamson2.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o 
 
 SWEqn_Picard.o: SWEqn_Picard.cpp SWEqn_Picard.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c SWEqn_Picard.cpp ${CXXFLAGS}
-
-M1DDSolve.o: M1DDSolve.cpp M1DDSolve.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c M1DDSolve.cpp ${CXXFLAGS}
 
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}

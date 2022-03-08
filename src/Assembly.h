@@ -43,7 +43,9 @@ class Phmat {
         LagrangeNode* node;
         Mat M;
         void assemble(Vec h2);
-        void assemble_up(Vec ul, Vec hl, double dt);
+        void assemble_block(Vec h2, int row_offset, int col_offset, Mat Q2);
+        void assemble_up(Vec ul, Vec hl, double fac, double dt);
+        void assemble_up_block(Vec ul, Vec hl, double fac, double dt, int row_offset, int col_offset, Mat Q2);
 };
 
 class Uhmat {
@@ -242,8 +244,8 @@ class RotMat_up {
         M1x_j_xy_i* U;
         M1y_j_xy_i* V;
         Wii* Q;
-        void assemble(Vec q0, Vec ul, double dt);
-        void assemble_supg(Vec q0, Vec ul, Vec dql, double tau, double dt, Vec qi);
+        void assemble(Vec q0, Vec ul, double tau, double dt);
+        void assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Vec qi);
 };
 
 class U0mat {

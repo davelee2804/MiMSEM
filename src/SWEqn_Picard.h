@@ -7,10 +7,9 @@ class SWEqn {
         double dt;
         double grav;
         double omega;
-        double del2;
-        bool do_visc;
         int step;
         int rank;
+        int size;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
@@ -36,6 +35,7 @@ class SWEqn {
         KSP ksp_rot;
         KSP ksp_helm;
         KSP kspA;
+        KSP ksp1h;
         VecScatter gtol_x;
         Vec ui;
         Vec hi;
@@ -53,6 +53,8 @@ class SWEqn {
         Mat G;
         Mat D;
         Mat M1inv;
+	Mat Q2;
+	KSP ksp_Q;
         void coriolis();
         void curl(Vec u, Vec* w);
         void diagnose_F(Vec* F);
@@ -68,7 +70,6 @@ class SWEqn {
         double int0(Vec u);
         double int2(Vec u);
         double intE(Vec u, Vec h);
-        void laplacian(Vec u, Vec* ddu);
         void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0);
         void assemble_residual(Vec x, Vec f);
         void assemble_operator(double dt);
@@ -81,8 +82,8 @@ class SWEqn {
         void solve_rosenbrock_schur(Vec un, Vec hn, double _dt, bool save);
         void rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh, Vec _F, Vec _Phi);
         void rhs_2ndOrd(Vec fu, Vec fh);
-        double viscosity();
         void unpack(Vec x, Vec u, Vec h);
         void repack(Vec x, Vec u, Vec h);
         void coriolisMatInv(Mat A, Mat* Ainv);
+	void diagnose_q_exact(Vec* qh);
 };
