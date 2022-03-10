@@ -58,7 +58,6 @@ class SWEqn {
         void coriolis();
         void curl(Vec u, Vec* w);
         void diagnose_F(Vec* F);
-        void diagnose_F_up(Vec* F, double tau, Vec _ul);
         void diagnose_Phi(Vec* Phi);
         void diagnose_q(double _dt, Vec _ug, Vec _ul, Vec _h, Vec* qi);
         void init0(Vec q, ICfunc* func);
@@ -70,14 +69,13 @@ class SWEqn {
         double int0(Vec u);
         double int2(Vec u);
         double intE(Vec u, Vec h);
-        void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0);
+        void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0, double enst0);
         void assemble_residual(Vec x, Vec f);
         void assemble_operator(double dt);
         void assemble_operator_schur(double dt);
         void solve_schur(Vec Fu, Vec Fh, Vec _u, Vec _h, double imp_dt);
-        void solve(Vec u, Vec h, double _dt, bool save);
+        void solve(Vec u, Vec h, double _dt, bool save, int nits);
         void solve_imex(Vec un, Vec hn, double _dt, bool save);
-        void solve_rk2(Vec un, Vec hn, double _dt, bool save);
         void solve_rosenbrock(Vec un, Vec hn, double _dt, bool save);
         void solve_rosenbrock_schur(Vec un, Vec hn, double _dt, bool save);
         void rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh, Vec _F, Vec _Phi);

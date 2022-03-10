@@ -25,7 +25,6 @@
 //#define W2_ALPHA (0.25*M_PI)
 //#define UP_VORT 1
 //#define UP_APVM 1
-//#define UP_FLUX 1
 #define H_MEAN 1.0e+4
 //#define ROS_ALPHA (1.0 + 0.5*sqrt(2.0))
 #define ROS_ALPHA (0.5)
@@ -285,49 +284,11 @@ void SWEqn::diagnose_F(Vec* F) {
     VecDestroy(&b);
 }
 
-void SWEqn::diagnose_F_up(Vec* F, double tau, Vec _ul) {
-    Vec hu, b;
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, F);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &hu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &b);
-    VecZeroEntries(*F);
-    VecZeroEntries(hu);
-
-    // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
-    M1->assemble_up(tau, _ul, hi);
-
-    MatMult(M1->M, ui, b);
-    VecAXPY(hu, 1.0/3.0, b);
-
-    MatMult(M1->M, uj, b);
-    VecAXPY(hu, 1.0/6.0, b);
-
-    M1->assemble_up(tau, _ul, hj);
-
-    MatMult(M1->M, ui, b);
-    VecAXPY(hu, 1.0/6.0, b);
-
-    MatMult(M1->M, uj, b);
-    VecAXPY(hu, 1.0/3.0, b);
-
-    // solve the linear system
-    M1->assemble_up(tau, _ul, NULL);
-    KSPSolve(ksp, hu, *F);
-    M1->assemble();
-
-    VecDestroy(&hu);
-    VecDestroy(&b);
-}
-
 // dH/dh = (1/2)u^2 + gh = \Phi
 // note: \Phi is in integral form here
 //          \int_{\Omega} \gamma_h,\Phi_h d\Omega
 void SWEqn::diagnose_Phi(Vec* Phi) {
     Vec b;
-
-    //VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil);
-    //VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl);
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &b);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, Phi);
@@ -440,8 +401,7 @@ void SWEqn::repack(Vec x, Vec u, Vec h) {
 }
 
 void SWEqn::assemble_residual(Vec x, Vec f) {
-    Vec F, Phi, fu, fh, utmp, htmp1, htmp2, fs, qi, qj, qil, qjl, dql, dqg;
-    Vec uhg, uhl, hh;
+    Vec F, Phi, fu, fh, utmp, htmp1, htmp2, fs, qi, qil, qjl, dql, dqg;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
@@ -453,9 +413,6 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &qjl);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dqg);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dql);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uhg);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hh);
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &uhl);
 
     VecZeroEntries(fu);
     VecZeroEntries(fh);
@@ -514,18 +471,6 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
 //#endif
 //    VecAXPY(fu, 0.5, utmp);
 
-/*
-    VecZeroEntries(uhg);
-    VecAXPY(uhg, 0.5, ui);
-    VecAXPY(uhg, 0.5, uj);
-    VecZeroEntries(uhl);
-    VecAXPY(uhl, 0.5, uil);
-    VecAXPY(uhl, 0.5, ujl);
-    VecZeroEntries(hh);
-    VecAXPY(hh, 0.5, hi);
-    VecAXPY(hh, 0.5, hj);
-    diagnose_q(dt, uhg, uhl, hh, &qi);
-*/
     diagnose_q_exact(&qi);
     VecScatterBegin(topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
@@ -576,15 +521,10 @@ void SWEqn::assemble_residual(Vec x, Vec f) {
     VecDestroy(&Phi);
     VecDestroy(&fs);
     VecDestroy(&qi);
-    //VecDestroy(&qj);
     VecDestroy(&qil);
     VecDestroy(&qjl);
     VecDestroy(&dql);
     VecDestroy(&dqg);
-
-    VecDestroy(&uhg);
-    VecDestroy(&uhl);
-    VecDestroy(&hh);
 }
 
 void SWEqn::assemble_operator(double _dt) {
@@ -596,7 +536,6 @@ void SWEqn::assemble_operator(double _dt) {
     int cols2[9999];
     Mat Muh, Mhu;
 
-    //if(A) return;
     if(!A) {
         MatCreate(MPI_COMM_WORLD, &A);
         MatSetSizes(A, topo->n1l+topo->n2l, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, topo->nDofs1G+topo->nDofs2G);
@@ -822,7 +761,7 @@ void SWEqn::solve_schur(Vec Fu, Vec Fh, Vec _u, Vec _h, double imp_dt) {
     VecDestroy(&rhs_u);
 }
 
-void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
+void SWEqn::solve(Vec un, Vec hn, double _dt, bool save, int nits) {
     int it = 0;
     double norm = 1.0e+9, norm_dx, norm_x;
     Vec x, f, dx;
@@ -846,12 +785,6 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     VecCopy(un, uj);
     VecCopy(hn, hj);
 
-    //KSPCreate(MPI_COMM_WORLD, &kspA);
-    //KSPSetOperators(kspA, A, A);
-    //KSPSetTolerances(kspA, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    //KSPSetOptionsPrefix(kspA, "A_");
-    //KSPSetFromOptions(kspA);
-
     do {
         assemble_residual(x, f);
         VecScale(f, -1.0);
@@ -866,8 +799,7 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
             cout << "iteration: " << it << "\t|x|: " << norm_x << "\t|dx|: " << norm_dx << "\t|dx|/|x|: " << norm << endl; 
         }
         it++;
-    } while(norm > 1.0e-14 and it < 40);
-    //} while(norm > 1.0e-14 and it < 2);
+    } while(norm > 1.0e-14 and it < nits);
 
     unpack(x, un, hn);
 
@@ -1421,7 +1353,7 @@ double SWEqn::intE(Vec ug, Vec hg) {
     return global;
 }
 
-void SWEqn::writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0) {
+void SWEqn::writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0, double enst0) {
     double mass, vort, ener, enst;
     char filename[50];
     ofstream file;
@@ -1442,12 +1374,14 @@ void SWEqn::writeConservation(double time, Vec u, Vec h, double mass0, double vo
         cout << "conservation of mass:      " << (mass - mass0)/mass0 << endl;
         cout << "conservation of vorticity: " << (vort - vort0) << endl;
         cout << "conservation of energy:    " << (ener - ener0)/ener0 << endl;
+        cout << "conservation of enstrophy: " << (enst - enst0)/enst0 << endl;
 
         sprintf(filename, "output/conservation.dat");
         file.open(filename, ios::out | ios::app);
         // write time in days
         file << scientific;
-        file << time/60.0/60.0/24.0 << "\t" << (mass-mass0)/mass0 << "\t" << (vort-vort0) << "\t" << (ener-ener0)/ener0 << "\t" << enst << endl;
+        file << time/60.0/60.0/24.0 << "\t" << (mass-mass0)/mass0 << "\t" << (vort-vort0) << "\t" 
+                                            << (ener-ener0)/ener0 << "\t" << (enst-enst0)/enst0 << endl;
         file.close();
     }
     VecDestroy(&wi);
@@ -1670,165 +1604,6 @@ void SWEqn::solve_imex(Vec un, Vec hn, double _dt, bool save) {
     KSPDestroy(&ksp_f);
 }
 
-void SWEqn::solve_rk2(Vec un, Vec hn, double _dt, bool save) {
-    double kin, pot, k2p;
-    char filename[50];
-    ofstream file;
-    Vec Phi, qi, ql, utmp, htmp, fu, fh, _F, Fi, _Phi;
-    Mat KT;
-    KSP ksp2;
-
-    dt = _dt;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Phi);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &fu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &fh);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_F);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &_Phi);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Fi);
-
-    // 1. compute provisional velocity
-    VecCopy(un, ui);
-    VecCopy(un, uj);
-    VecCopy(hn, hi);
-    VecCopy(hn, hj);
-    VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
-
-    // F^n
-    K->assemble(uil);
-    MatTranspose(K->M, MAT_INITIAL_MATRIX, &KT);
-    MatMult(KT, hi, utmp);
-    VecScale(utmp, 2.0);
-    VecCopy(utmp, _F);
-    KSPSolve(ksp, utmp, Fi);
-
-    // Phi^n
-    MatMult(K->M, ui, htmp);
-    MatMult(M2->M, hi, Phi);
-    VecAYPX(Phi, grav, htmp);
-    VecCopy(Phi, _Phi);
-    MatMult(EtoF->E12, Phi, fu);
-
-    // q^n
-    diagnose_q(dt, ui, uil, hi, &qi);
-    VecScatterBegin(topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, qi, ql, INSERT_VALUES, SCATTER_FORWARD);
-#ifdef UP_VORT
-    R_up->assemble(ql, uil, UP_TAU, dt);
-    MatMult(R_up->M, Fi, utmp);
-#else
-    R->assemble(ql);
-    MatMult(R->M, Fi, utmp);
-#endif
-    VecAXPY(fu, 1.0, utmp);
-
-    if(u_prev) {
-        MatMult(M1->M, u_prev, utmp);
-        VecAYPX(fu, -2.0*_dt, utmp);
-
-        VecCopy(h_prev, hj);
-        MatMult(EtoF->E21, Fi, htmp);
-        VecAXPY(hj, -2.0*_dt, htmp);
-    } else {
-        MatMult(M1->M, ui, utmp);
-        VecAYPX(fu, -_dt, utmp);
-
-        VecCopy(hi, hj);
-        MatMult(EtoF->E21, Fi, htmp);
-        VecAXPY(hj, -_dt, htmp);
-    }
-    KSPSolve(ksp, fu, uj);
-    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
-
-    if(!u_prev) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_prev);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_prev);
-    }
-    VecCopy(ui, u_prev);
-    VecCopy(hi, h_prev);
-
-    rhs_2ndOrd(fu, fh);
-
-    MatMult(M1->M, ui, utmp);
-    VecAYPX(fu, -_dt, utmp);
-    KSPSolve(ksp, fu, uj);
-
-    MatMult(M2->M, hi, htmp);
-    VecAYPX(fh, -_dt, htmp);
-
-    //
-    KSPCreate(MPI_COMM_WORLD, &ksp2);
-    KSPSetOperators(ksp2, M2->M, M2->M);
-    KSPSetTolerances(ksp2, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp2, KSPGMRES);
-    KSPSetOptionsPrefix(ksp2, "init2_");
-    KSPSetFromOptions(ksp2);
-    KSPSolve(ksp2, fh, hj);
-
-    VecCopy(uj, un);
-    VecCopy(hj, hn);
-
-    if(save) {
-        Vec wi;
-        char fieldname[20];
-
-        step++;
-        curl(un, &wi);
-
-        sprintf(fieldname, "vorticity");
-        geom->write0(wi, fieldname, step);
-        sprintf(fieldname, "velocity");
-        geom->write1(un, fieldname, step);
-        sprintf(fieldname, "pressure");
-        geom->write2(hn, fieldname, step);
-
-        VecDestroy(&wi);
-    }
-
-    // write the energy conservation error and diagnostics
-    MatMult(M1->M, _F, utmp);
-    VecDot(ui, _F, &kin);
-    kin *= 0.5;
-
-    MatMult(M2->M, hi, htmp);
-    VecDot(hi, htmp, &pot);
-    pot *= 0.5*grav;
-
-    MatMult(EtoF->E21, _F, htmp);
-    MatMult(M2->M, htmp, Phi);
-    VecDot(_Phi, Phi, &k2p);
-
-    //VecAYPX(up, -1.0, uj);
-    //MatMult(M1->M, Fj, utmp);
-    //VecDot(Fj, up, &en_con_err);
-
-    sprintf(filename, "output/conservation_2.dat");
-    if(!rank) {
-        file.open(filename, ios::out | ios::app);
-        file << scientific;
-        file << kin << "\t" << pot << "\t" << k2p << endl;
-        file.close();
-    }
-
-    VecDestroy(&qi);
-    VecDestroy(&ql);
-    VecDestroy(&Phi);
-    VecDestroy(&htmp);
-    VecDestroy(&fu);
-    VecDestroy(&fh);
-    VecDestroy(&utmp);
-    VecDestroy(&Fi);
-    VecDestroy(&_F);
-    VecDestroy(&_Phi);
-    MatDestroy(&KT);
-    KSPDestroy(&ksp2);
-}
-
 void SWEqn::rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh, Vec _F, Vec _Phi) {
     Vec utmp, qi, ql, htmp, dql, dqg;
     Mat KT;
@@ -1841,17 +1616,9 @@ void SWEqn::rosenbrock_residuals(Vec _u, Vec _h, Vec _ul, Vec fu, Vec fh, Vec _F
 
     K->assemble(_ul);
     MatTranspose(K->M, MAT_INITIAL_MATRIX, &KT);
-//#ifdef UP_FLUX
-//    M1->assemble_up(upwind_tau, _ul, _h);
-//    MatMult(M1->M, _u, utmp);
-//    M1->assemble_up(upwind_tau, _ul, NULL);
-//    KSPSolve(ksp, utmp, _F);
-//    M1->assemble();
-//#else
     MatMult(KT, _h, utmp);
     VecScale(utmp, 2.0);
     KSPSolve(ksp, utmp, _F);
-//#endif
 
     MatMult(K->M, _u, htmp);
     MatMult(M2->M, _h, _Phi);
@@ -1898,14 +1665,7 @@ void SWEqn::rhs_2ndOrd(Vec fu, Vec fh) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dqg);
 
     diagnose_Phi(&Phi);
-//#ifdef UP_FLUX
-//    VecZeroEntries(dql);
-//    VecAXPY(dql, 0.5, uil);
-//    VecAXPY(dql, 0.5, ujl);
-//    diagnose_F_up(&_F, upwind_tau, dql);
-//#else
     diagnose_F(&_F);
-//#endif
     MatMult(EtoF->E12, Phi, fu);
 
     diagnose_q(dt, ui, uil, hi, &qi);
