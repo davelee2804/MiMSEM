@@ -7,29 +7,35 @@ class SWEqn {
         double dt;
         double grav;
         double omega;
-        double del2;
-        bool do_visc;
         int step;
         int rank;
+        int size;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
         Topo* topo;
         Geom* geom;
         Pvec* m0;
+        Pmat* M0;
         Umat* M1;
         Wmat* M2;
         E10mat* NtoE;
         E21mat* EtoF;
         RotMat* R;
         Uhmat* M1h;
+        Phmat* M0h;
         WtQUmat* K;
         Vec fg;            // coriolis vector (global)
-        Vec topog;
+        Vec fl;            // coriolis vector (local)
         Mat E01M1;
         Mat E12M2;
-        U0mat* M1_pc;
         KSP ksp;           // 1 form mass matrix linear solver
+        KSP ksp0;          // 0 form mass matrix linear solver
+        KSP ksp0h;         // 0 form mass matrix linear solver
+        KSP ksp_rot;
+        KSP ksp_helm;
+        KSP kspA;
+        KSP ksp1h;
         VecScatter gtol_x;
         Vec ui;
         Vec hi;
@@ -37,17 +43,24 @@ class SWEqn {
         Vec hj;
         Vec uil;
         Vec ujl;
+        Vec u_prev;
+        Vec h_prev;
         Mat A;
-        P_up_mat* P_up;
+        Mat B;
+        Mat DM1inv;
         RotMat_up* R_up;
-        KSP ksp_p;
+        Mat Muf;
+        Mat G;
+        Mat D;
+        Mat M1inv;
+	Mat Q2;
+	KSP ksp_Q;
         void coriolis();
         void curl(Vec u, Vec* w);
-        void curl_up(Vec u, Vec* w);
         void diagnose_F(Vec* F);
         void diagnose_Phi(Vec* Phi);
-        void diagnose_wxu(Vec* wxu);
-        void diagnose_q(Vec* qi, Vec* qj);
+        void diagnose_q(double _dt, Vec _ug, Vec _ul, Vec _h, Vec* qi);
+	void diagnose_q_exact(Vec* qh);
         void init0(Vec q, ICfunc* func);
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
         void init2(Vec h, ICfunc* func);
@@ -57,14 +70,10 @@ class SWEqn {
         double int0(Vec u);
         double int2(Vec u);
         double intE(Vec u, Vec h);
-        void laplacian(Vec u, Vec* ddu);
-        void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0);
-        void assemble_residual(Vec x, Vec f);
+        void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0, double enst0);
+        void assemble_residual(Vec x, Vec f, bool q_exact);
         void assemble_operator(double dt);
-        void solve(Vec u, Vec h, double _dt, bool save);
-        void solve_explicit(Vec u, Vec h, double _dt, bool save);
-        void solve_imex(Vec un, Vec hn, double _dt, bool save);
-        double viscosity();
+        void solve(Vec u, Vec h, double _dt, bool save, int nits, bool q_exact);
         void unpack(Vec x, Vec u, Vec h);
         void repack(Vec x, Vec u, Vec h);
 };

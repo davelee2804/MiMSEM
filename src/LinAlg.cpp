@@ -123,6 +123,17 @@ void Tran_IP(int ni, int nj, double** A, double** B) {
     }
 }
 
+void Ax_b(int ni, int nj, double** A, double* x, double* b) {
+    int ii, jj;
+
+    for(ii = 0; ii < ni; ii++) {
+        b[ii] = 0.0;
+        for(jj = 0; jj < nj; jj++) {
+            b[ii] += A[ii][jj]*x[jj];
+        }
+    }
+}
+
 double ArcLen(double* a, double* b, double rad) {
     double cx, cy, cz, c;
 

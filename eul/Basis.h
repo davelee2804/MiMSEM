@@ -13,13 +13,12 @@ class LagrangeNode {
         ~LagrangeNode();
         int n;
         double* a;
-        double* x;
         double** ljxi;
         double** ljxi_t;
         GaussLobatto* q;
-        double eval(double _x, int i);
-        double eval_q(double _x, int i);
-        double evalDeriv(double _x, int i);
+        double eval(double x, int i);
+        double eval_q(double x, int i);
+        double evalDeriv(double x, int i);
         void test();
 };
 

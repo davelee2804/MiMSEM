@@ -11,6 +11,8 @@ from Geom2 import *
 pn = int(sys.argv[1])
 ne = int(sys.argv[2])
 n_procs = int(sys.argv[3])
+qn = int(sys.argv[4]) # quadrature order
+proj = sys.argv[5]
 
 def isqrt(n):
 	x = n
@@ -26,7 +28,7 @@ if ne%n_procs_per_dim != 0:
 	print('ERROR! number of elements per dimension per face ' + str(ne) + ' must fit evenly into the number of processors per dimension per face ' + str(n_procs_per_dim))
 	os.abort()
 
-path = '../eul/'
+path = '../' + proj + '/'
 
 try:
 	os.makedirs(path + '/input')
@@ -38,7 +40,7 @@ except OSError:
 pc = ParaCube(n_procs,pn,ne,path)
 
 for pi in np.arange(n_procs):
-	pc.print_nodes(pi)
+	pc.print_nodes(pi, 'nodes')
 	pc.print_edges(pi,0)
 	pc.print_edges(pi,1)
 	pc.print_faces(pi)
@@ -51,7 +53,10 @@ f.write(str(ne//pc.npx))
 f.close()
 
 # Generate the geometry
-xg, yg, zg = init_geom(pn, ne, False, True)
+pc = ParaCube(n_procs,qn,ne,path)
+for pi in np.arange(n_procs):
+	pc.print_nodes(pi, 'quads')
+xg, yg, zg = init_geom(qn, ne, False, True)
 
 for pi in np.arange(n_procs):
 	proc = pc.procs[pi]
@@ -63,5 +68,11 @@ for pi in np.arange(n_procs):
 
 	np.savetxt(path + '/input/geom_%.4u'%pi + '.txt', coords, fmt='%.18e')
 
-os.popen('cd ../eul; ln -s ../src/Basis.* .')
-os.popen('cd ../eul; ln -s ../src/Topo.* .')
+	n0l = np.zeros(1,dtype=np.int32)
+	n0l[0] = proc.n0l
+	np.savetxt(path + 'input/local_sizes_quad_%.4u'%pi + '.txt', n0l, fmt='%u')
+
+f = open(path + '/input/grid_res_quad.txt', 'w')
+f.write(str(qn) + '\n')
+f.write(str(ne//pc.npx))
+f.close()

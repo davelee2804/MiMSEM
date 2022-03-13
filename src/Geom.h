@@ -4,6 +4,13 @@ class Geom {
         ~Geom();
         int pi;
         int nl;
+        int n0;
+        int nDofsX;
+        int* loc0;
+        int* inds0_l;
+        int* inds0_g;
+        int n0l;
+        int nDofs0G;
         double** x;
         double** s;
         double** det;
@@ -22,6 +29,11 @@ class Geom {
         void write2(Vec h, char* fieldname, int tstep);
         void initJacobians();
         void updateGlobalCoords();
+        int* elInds0_l(int ex, int ey);
+        int* elInds0_g(int ex, int ey);
+        IS is_l_0;
+        IS is_g_0;
+        VecScatter gtol_0;
     private:
         void jacobian(int ex, int ey, int qx, int qy, double** J);
         double jacDet(int ex, int ey, int qx, int qy, double** J);

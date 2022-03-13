@@ -655,10 +655,10 @@ class ParaCube:
 
 		#print str(pi) + ':\t' + str(neighbours)
 
-	def print_nodes(self,pi):
+	def print_nodes(self,pi,filename):
 		proc = self.procs[pi]
 		#print str(pi) + ':\t' + str(proc.loc0)
-		np.savetxt(self.path+'/input/nodes_%.4u'%pi + '.txt', proc.loc0, fmt='%u')
+		np.savetxt(self.path+'/input/' + filename + '_%.4u'%pi + '.txt', proc.loc0, fmt='%u')
 
 	def print_edges(self,pi,dim):
 		proc = self.procs[pi]
