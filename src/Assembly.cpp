@@ -1781,9 +1781,9 @@ void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Ve
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, dqArray, dq);
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, qiArray, &vort_i);
 
-                tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1])/(sqrt(det)*fac);
+                //tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1])/(sqrt(det)*fac);
                 //tmp2 = fabs(fac*dt)*(ux[0]*ux[0] + ux[1]*ux[1])/det;
-                tau = 1.0/(1.0/fabs(fac*dt) + tmp/* + tmp2*/);
+                tau = 1.0/(1.0/fabs(fac*dt) /*+ tmp + tmp2*/);
 
                 vort -= tau*(ux[0]*dq[1] - ux[1]*dq[0] + (vort - vort_i)/dt);
 
@@ -1959,4 +1959,48 @@ void U0mat::assemble() {
 
 U0mat::~U0mat() {
     MatDestroy(&M);
+}
+
+// Coarse problem operators
+E21mat_coarse::E21mat_coarse(Topo* _topo) {
+    int rank, size;
+    int cols[4];
+    double vals[4];
+    Mat E21t;
+
+    topo = _topo;
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    MatCreate(MPI_COMM_WORLD, &E21);
+    MatSetSizes(E21, 1, 2, size, 2*size);
+    MatSetType(E21, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(E21, 4, PETSC_NULL, 4, PETSC_NULL);
+    MatZeroEntries(E21);
+    
+    cols[0] = topo->coarse_inds_x[0];
+    cols[1] = topo->coarse_inds_x[1];
+    cols[2] = topo->coarse_inds_y[0];
+    cols[3] = topo->coarse_inds_y[1];
+    vals[0] = -1.0;
+    vals[1] = +1.0;
+    vals[2] = -1.0;
+    vals[3] = +1.0;
+    MatSetValues(E21, 1, &rank, 4, cols, vals, INSERT_VALUES);
+
+    MatAssemblyBegin(E21, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(E21, MAT_FINAL_ASSEMBLY);
+
+    // build the -ve of the transpose
+    MatTranspose(E21, MAT_INITIAL_MATRIX, &E21t);
+    MatDuplicate(E21t, MAT_DO_NOT_COPY_VALUES, &E12);
+    MatZeroEntries(E12);
+    MatAXPY(E12, -1.0, E21t, SAME_NONZERO_PATTERN);
+    MatDestroy(&E21t);
+}
+
+E21mat_coarse::~E21mat_coarse() {
+    MatDestroy(&E21);
+    MatDestroy(&E12);
 }

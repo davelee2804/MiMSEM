@@ -32,6 +32,9 @@ class Topo {
         int* inds1x_g;  // element indices for x-normal edges on this processor
         int* inds1y_g;  // element indices for y-normal edges on this processor
         int* inds2_g;   // element indices for faces on this processor
+	int* coarse_inds_x;
+	int* coarse_inds_y;
+	int* coarse_inds;
         IS is_l_0;
         IS is_g_0;
         IS is_l_1;
@@ -47,4 +50,8 @@ class Topo {
         int* elInds1x_g(int ex, int ey);
         int* elInds1y_g(int ex, int ey);
         int* elInds2_g(int ex, int ey);
+        IS is_l_coarse;
+        IS is_g_coarse;
+        VecScatter gtol_coarse;
+	void coarseInds();
 };

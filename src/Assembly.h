@@ -259,3 +259,13 @@ class U0mat {
         Mat M;
         void assemble();
 };
+
+// coarse scale operators
+class E21mat_coarse {
+    public:
+        E21mat_coarse(Topo* _topo);
+        ~E21mat_coarse();
+        Topo* topo;
+        Mat E21;
+        Mat E12;
+};

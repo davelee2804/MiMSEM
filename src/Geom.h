@@ -34,6 +34,11 @@ class Geom {
         IS is_l_0;
         IS is_g_0;
         VecScatter gtol_0;
+	double** xi_coarse;
+        void _Jacobian(double* c1, double* c2, double* c3, double* c4, double* xi, double* jac);
+        double _LocalToGlobal(double* c1, double* c2, double* c3, double* c4, double* xi, double* si);
+        bool _FindLocal(double* c1, double* c2, double* c3, double* c4, double*  theta_i, double* xi);
+        void coarseGlobalToLocal();
     private:
         void jacobian(int ex, int ey, int qx, int qy, double** J);
         double jacDet(int ex, int ey, int qx, int qy, double** J);
