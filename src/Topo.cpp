@@ -308,6 +308,11 @@ int* Topo::elInds2_g(int ex, int ey) {
     return inds2_g;
 }
 
+#define COARSE_ORD 1
+#define TWOX_COARSE_ORD (2*COARSE_ORD)
+#define COARSE_ORD_P1 (COARSE_ORD+1)
+#define TWOX_COARSE_ORD_P1 (2*COARSE_ORD_P1)
+
 void Topo::coarseInds() {
     int ii, n_procs;
     ifstream file;
@@ -315,12 +320,13 @@ void Topo::coarseInds() {
     string line;
     Vec vl, vg;
 
-    coarse_inds_x = new int[2];
-    coarse_inds_y = new int[2];
-    coarse_inds = new int[4];
+    coarse_inds_x = new int[COARSE_ORD_P1];
+    coarse_inds_y = new int[COARSE_ORD_P1];
+    coarse_inds = new int[TWOX_COARSE_ORD_P1];
 
     sprintf(filename, "input/edges_x_coarse_%.4u.txt", pi);
     file.open(filename);
+    ii = 0;
     while (std::getline(file, line)) {
         coarse_inds_x[ii] = atoi(line.c_str());
         ii++;
@@ -329,24 +335,25 @@ void Topo::coarseInds() {
 
     sprintf(filename, "input/edges_y_coarse_%.4u.txt", pi);
     file.open(filename);
+    ii = 0;
     while (std::getline(file, line)) {
         coarse_inds_y[ii] = atoi(line.c_str());
         ii++;
     }
     file.close();
 
-    for(ii = 0; ii < 2; ii++) {
+    for(ii = 0; ii < COARSE_ORD_P1; ii++) {
         coarse_inds[2*ii+0] = coarse_inds_x[ii];
         coarse_inds[2*ii+1] = coarse_inds_y[ii];
     }
 
     MPI_Comm_rank(MPI_COMM_WORLD, &n_procs);
 
-    ISCreateStride(MPI_COMM_SELF, 4, 0, 1, &is_l_coarse);
-    ISCreateGeneral(MPI_COMM_WORLD, 4, coarse_inds, PETSC_COPY_VALUES, &is_g_coarse);
+    ISCreateStride(MPI_COMM_SELF, TWOX_COARSE_ORD_P1, 0, 1, &is_l_coarse);
+    ISCreateGeneral(MPI_COMM_WORLD, TWOX_COARSE_ORD_P1, coarse_inds, PETSC_COPY_VALUES, &is_g_coarse);
 
-    VecCreateSeq(MPI_COMM_SELF, 4, &vl);
-    VecCreateMPI(MPI_COMM_WORLD, 2, 2*n_procs, &vg);
+    VecCreateSeq(MPI_COMM_SELF, TWOX_COARSE_ORD_P1, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, TWOX_COARSE_ORD_P1, TWOX_COARSE_ORD*n_procs, &vg);
     VecScatterCreate(vg, is_g_coarse, vl, is_l_coarse, &gtol_coarse);
     VecDestroy(&vl);
     VecDestroy(&vg);

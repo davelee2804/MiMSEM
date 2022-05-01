@@ -1962,8 +1962,14 @@ U0mat::~U0mat() {
 }
 
 // Coarse problem operators
+#define COARSE_ORD 1
+#define COARSE_ORD_SQ (COARSE_ORD*COARSE_ORD)
+#define TWOX_COARSE_ORD (2*COARSE_ORD)
+#define COARSE_ORD_P1 (COARSE_ORD+1)
+#define TWOX_COARSE_ORD_P1 (2*COARSE_ORD_P1)
+
 E21mat_coarse::E21mat_coarse(Topo* _topo) {
-    int rank, size;
+    int ii, jj, kk, row, rank, size;
     int cols[4];
     double vals[4];
     Mat E21t;
@@ -1974,20 +1980,26 @@ E21mat_coarse::E21mat_coarse(Topo* _topo) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     MatCreate(MPI_COMM_WORLD, &E21);
-    MatSetSizes(E21, 1, 2, size, 2*size);
+    MatSetSizes(E21, COARSE_ORD_SQ, 2*COARSE_ORD_SQ, size*COARSE_ORD_SQ, size*2*COARSE_ORD_SQ);
     MatSetType(E21, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(E21, 4, PETSC_NULL, 4, PETSC_NULL);
+    MatMPIAIJSetPreallocation(E21, 4*COARSE_ORD_SQ, PETSC_NULL, 4*COARSE_ORD_SQ, PETSC_NULL);
     MatZeroEntries(E21);
     
-    cols[0] = topo->coarse_inds_x[0];
-    cols[1] = topo->coarse_inds_x[1];
-    cols[2] = topo->coarse_inds_y[0];
-    cols[3] = topo->coarse_inds_y[1];
-    vals[0] = -1.0;
-    vals[1] = +1.0;
-    vals[2] = -1.0;
-    vals[3] = +1.0;
-    MatSetValues(E21, 1, &rank, 4, cols, vals, INSERT_VALUES);
+    for(ii = 0; ii < COARSE_ORD; ii++) {
+        for(jj = 0; jj < COARSE_ORD; jj++) {
+            kk = ii*COARSE_ORD + jj;
+	    row = rank*COARSE_ORD_SQ + kk;
+            cols[0] = topo->coarse_inds_x[jj+0];
+            cols[1] = topo->coarse_inds_x[jj+1];
+            cols[2] = topo->coarse_inds_y[ii+0];
+            cols[3] = topo->coarse_inds_y[ii+1];
+            vals[0] = -1.0;
+            vals[1] = +1.0;
+            vals[2] = -1.0;
+            vals[3] = +1.0;
+            MatSetValues(E21, 1, &row, 4, cols, vals, INSERT_VALUES);
+	}
+    }
 
     MatAssemblyBegin(E21, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(E21, MAT_FINAL_ASSEMBLY);
@@ -2003,4 +2015,40 @@ E21mat_coarse::E21mat_coarse(Topo* _topo) {
 E21mat_coarse::~E21mat_coarse() {
     MatDestroy(&E21);
     MatDestroy(&E12);
+}
+
+Wmat_coarse::Wmat_coarse(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    e = _e;
+
+    assemble();
+}
+
+void Wmat_coarse::assemble() {
+    int ii, rank, size;
+    double val = 0.0;
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &size);
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, 1, 1, size, size);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 1, PETSC_NULL, 1, PETSC_NULL);
+    MatZeroEntries(M);
+
+    for(ii = 0; ii < geom->nl; ii++) {
+        val += geom->wt_coarse[ii]/geom->jacDet_coarse[ii];
+    }
+    val *= 0.25*0.25;
+
+    MatSetValues(M, 1, &rank, 1, &rank, &val, ADD_VALUES);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+}
+
+Wmat_coarse::~Wmat_coarse() {
+    MatDestroy(&M);
 }

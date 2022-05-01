@@ -269,3 +269,14 @@ class E21mat_coarse {
         Mat E21;
         Mat E12;
 };
+
+class Wmat_coarse {
+    public:
+        Wmat_coarse(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~Wmat_coarse();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+        Mat M;
+        void assemble();
+};

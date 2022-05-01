@@ -2,6 +2,8 @@ class Geom {
     public:
         Geom(Topo* _topo);
         ~Geom();
+	int quad_ord;
+	int n_procs;
         int pi;
         int nl;
         int n0;
@@ -35,9 +37,12 @@ class Geom {
         IS is_g_0;
         VecScatter gtol_0;
 	double** xi_coarse;
+	double** jac_coarse;
+	double* jacDet_coarse;
+	double* wt_coarse;
         void _Jacobian(double* c1, double* c2, double* c3, double* c4, double* xi, double* jac);
         double _LocalToGlobal(double* c1, double* c2, double* c3, double* c4, double* xi, double* si);
-        bool _FindLocal(double* c1, double* c2, double* c3, double* c4, double*  theta_i, double* xi);
+        bool _FindLocal(double* c1, double* c2, double* c3, double* c4, double*  theta_i, double* xi, double* jac);
         void coarseGlobalToLocal();
     private:
         void jacobian(int ex, int ey, int qx, int qy, double** J);

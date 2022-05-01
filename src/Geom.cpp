@@ -22,7 +22,7 @@ using std::string;
 #define COARSE 1
 
 Geom::Geom(Topo* _topo) {
-    int ii, jj, quad_ord, n_procs;
+    int ii, jj;
     ifstream file;
     char filename[100];
     string line;
@@ -696,13 +696,13 @@ double Geom::_LocalToGlobal(double* c1, double* c2, double* c3, double* c4, doub
     return 1.0/rTildeMag;
 }
 
-bool Geom::_FindLocal(double* c1, double* c2, double* c3, double* c4, double*  theta_i, double* xi) {
+bool Geom::_FindLocal(double* c1, double* c2, double* c3, double* c4, double*  theta_i, double* xi, double* jac) {
     bool found = false;
     int ii, numIts = 200;
     double eps = 1.0e-12;
     //double eps = 1.0e-14;
     //double eps = 1.0e-10;
-    double theta_j[2], dTheta[2], dx[2], abs, jac[4], jacInv[4], di;
+    double theta_j[2], dTheta[2], dx[2], abs, jacInv[4], di;
 
     ii = 0;
     xi[0] = xi[1] = dx[0] = dx[1] = 0.0;
@@ -747,7 +747,7 @@ bool Geom::_FindLocal(double* c1, double* c2, double* c3, double* c4, double*  t
 #define NW 6
 
 void Geom::coarseGlobalToLocal() {
-    int ii, jj, n_procs, n_procs_on_6, proc_on_face_0;
+    int ex, ey, ii, jj, proc_on_face_0, *inds0;
     double** x_dom = new double*[9];
     double** x_0 = new double*[nl];
     double** s_0 = new double*[nl];
@@ -755,11 +755,10 @@ void Geom::coarseGlobalToLocal() {
     ifstream file;
     char filename[100];
     string line;
-    double value;
+    double value, wt_total = 0.0, wt_global, fac;
+    GaussLobatto* quad = new GaussLobatto(quad_ord);
 
-    MPI_Comm_size(MPI_COMM_WORLD, &n_procs);
-    n_procs_on_6 = n_procs/6;
-    proc_on_face_0 = topo->pi % n_procs_on_6;
+    proc_on_face_0 = topo->pi % (n_procs / 6);
 
     // load the global coords of the vertices (on the 0th face)
     sprintf(filename, "input/geom_%.4u.txt", proc_on_face_0);
@@ -804,10 +803,33 @@ void Geom::coarseGlobalToLocal() {
     }
 
     xi_coarse = new double*[nl];
+    jac_coarse = new double*[nl];
+    jacDet_coarse = new double[nl];
     for(ii = 0; ii < nl; ii++) {
         xi_coarse[ii] = new double[3];
-        _FindLocal(c1, c2, c3, c4, s_0[ii], xi_coarse[ii]);
+        jac_coarse[ii] = new double[4];
+        _FindLocal(c1, c2, c3, c4, s_0[ii], xi_coarse[ii], jac_coarse[ii]);
+	jacDet_coarse[ii] = jac_coarse[ii][0]*jac_coarse[ii][3] - jac_coarse[ii][1]*jac_coarse[ii][2];
+	wt_total += jacDet_coarse[ii];
     }
+    MPI_Allreduce(&wt_total, &wt_global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    cout << "BDDC: global weight from fine problem:    " << wt_total << endl;
+
+    wt_coarse = new double[nl];
+    for(ii = 0; ii < nl; ii++) wt_coarse[ii] = 0.0;
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds0 = elInds0_l(ex, ey);
+	    for(jj = 0; jj < (quad_ord+1)*(quad_ord+1); jj++) {
+                fac = jacDet_coarse[inds0[jj]] / wt_total;
+                wt_coarse[inds0[jj]] += fac*quad->w[jj%(quad_ord+1)]*quad->w[jj/(quad_ord+1)];
+            }
+	}
+    }
+    wt_total = 0.0;
+    for(ii = 0; ii < nl; ii++) wt_total += wt_coarse[ii];
+    MPI_Allreduce(&wt_total, &wt_global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    cout << "BDDC: global weight from coarse problem:  " << wt_total << endl;
 
     for(ii = 0; ii < 9; ii++) {
         delete[] x_dom[ii];
@@ -819,4 +841,6 @@ void Geom::coarseGlobalToLocal() {
     }
     delete[] x_0;
     delete[] s_0;
+
+    delete quad;
 }
