@@ -277,6 +277,45 @@ class Wmat_coarse {
         Topo* topo;
         Geom* geom;
         LagrangeEdge* e;
+        M2_j_xy_i* W;
         Mat M;
         void assemble();
+};
+
+class Umat_coarse {
+    public:
+        Umat_coarse(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~Umat_coarse();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        Mat M;
+        bool mat_alloc;
+        void assemble();
+};
+
+class RotMat_coarse {
+    public:
+        RotMat_coarse(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~RotMat_coarse();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        double* UtQUflat;
+        double** Ut;
+        double** Vt;
+        double* Qab;
+        double* Qba;
+        double** UtQab;
+        double** VtQba;
+        double** UtQV;
+        double** VtQU;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        void assemble(Vec q0);
 };

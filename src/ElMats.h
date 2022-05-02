@@ -5,8 +5,11 @@ class M1x_j_xy_i {
         int nDofsI;
         int nDofsJ;
         double** A;
+	int n_coarse;
+	double** A_coarse;
         LagrangeNode* node;
         LagrangeEdge* edge;
+        void eval_at_pts(double** pts, int np);
 };
 
 class M1y_j_xy_i {
@@ -16,8 +19,11 @@ class M1y_j_xy_i {
         int nDofsI;
         int nDofsJ;
         double** A;
+	int n_coarse;
+	double** A_coarse;
         LagrangeNode* node;
         LagrangeEdge* edge;
+        void eval_at_pts(double** pts, int np);
 };
 
 class M2_j_xy_i {
@@ -27,7 +33,10 @@ class M2_j_xy_i {
         int nDofsI;
         int nDofsJ;
         double** A;
+	int n_coarse;
+	double** A_coarse;
         LagrangeEdge* edge;
+        void eval_at_pts(double** pts, int np);
 };
 
 class M0_j_xy_i {

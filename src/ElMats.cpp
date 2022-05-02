@@ -45,6 +45,28 @@ M1x_j_xy_i::M1x_j_xy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
             A[ii][jj] = li*ei;
         }
     }
+
+    A_coarse = NULL;
+}
+
+void M1x_j_xy_i::eval_at_pts(double** pts, int np) {
+    int ii, jj, nn, np1, nj;
+    double li, ei;
+
+    nn = edge->l->n;
+    np1 = nn + 1;
+    nj = np1*nn;
+
+    n_coarse = np;
+    A_coarse = new double*[np];
+    for(ii = 0; ii < np; ii++) {
+        A_coarse[ii] = new double[nj];
+        for(jj = 0; jj < nj; jj++) {
+            li = node->eval_q(pts[ii][0], jj%np1);
+            ei = edge->eval(pts[ii][1], jj/np1);
+	    A_coarse[ii][jj] = li*ei;
+        }
+    }
 }
 
 M1x_j_xy_i::~M1x_j_xy_i() {
@@ -55,6 +77,12 @@ M1x_j_xy_i::~M1x_j_xy_i() {
         delete[] A[ii];
     }
     delete[] A;
+    if(A_coarse) {
+        for(ii = 0; ii < n_coarse; ii++) {
+            delete[] A_coarse[ii];
+        }
+    }
+    delete[] A_coarse;
 }
 
 // Outer product of 1-form in x and 0-form in y (columns)
@@ -89,6 +117,28 @@ M1y_j_xy_i::M1y_j_xy_i(LagrangeNode* _node, LagrangeEdge* _edge) {
             A[ii][jj] = ei*li;
         }
     }
+
+    A_coarse = NULL;
+}
+
+void M1y_j_xy_i::eval_at_pts(double** pts, int np) {
+    int ii, jj, nn, np1, nj;
+    double li, ei;
+
+    nn = edge->l->n;
+    np1 = nn + 1;
+    nj = np1*nn;
+
+    n_coarse = np;
+    A_coarse = new double*[np];
+    for(ii = 0; ii < np; ii++) {
+        A_coarse[ii] = new double[nj];
+        for(jj = 0; jj < nj; jj++) {
+            li = node->eval_q(pts[ii][1], jj/nn);
+            ei = edge->eval(pts[ii][0], jj%nn);
+	    A_coarse[ii][jj] = ei*li;
+        }
+    }
 }
 
 M1y_j_xy_i::~M1y_j_xy_i() {
@@ -99,6 +149,12 @@ M1y_j_xy_i::~M1y_j_xy_i() {
         delete[] A[ii];
     }
     delete[] A;
+    if(A_coarse) {
+        for(ii = 0; ii < n_coarse; ii++) {
+            delete[] A_coarse[ii];
+        }
+    }
+    delete[] A_coarse;
 }
 
 // Outer product of 1-form in x and 1-form in y
@@ -130,6 +186,27 @@ M2_j_xy_i::M2_j_xy_i(LagrangeEdge* _edge) {
             A[ii][jj] = ei*ej;
         }        
     }
+
+    A_coarse = NULL;
+}
+
+void M2_j_xy_i::eval_at_pts(double** pts, int np) {
+    int ii, jj, nn, nj;
+    double ei, ej;
+
+    nn = edge->l->n;
+    nj = nn*nn;
+
+    n_coarse = np;
+    A_coarse = new double*[np];
+    for(ii = 0; ii < np; ii++) {
+        A_coarse[ii] = new double[nj];
+        for(jj = 0; jj < nj; jj++) {
+            ei = edge->eval(pts[ii][0], jj%nn);
+            ej = edge->eval(pts[ii][1], jj/nn);
+	    A_coarse[ii][jj] = ei*ej;
+        }
+    }
 }
 
 M2_j_xy_i::~M2_j_xy_i() {
@@ -142,6 +219,12 @@ M2_j_xy_i::~M2_j_xy_i() {
         delete[] A[ii];
     }
     delete[] A;
+    if(A_coarse) {
+        for(ii = 0; ii < n_coarse; ii++) {
+            delete[] A_coarse[ii];
+        }
+    }
+    delete[] A_coarse;
 }
 
 // 0 form basis function terms (j) evaluated at the

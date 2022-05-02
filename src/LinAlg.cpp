@@ -93,6 +93,18 @@ void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C) {
     }
 }
 
+// Multiply full by diagonal matrix
+void Mult_FD_IP(int ni, int nj, double** A, double* B, double** C) {
+    int ii, jj;
+
+    for(ii = 0; ii < ni; ii++) {
+        for(jj = 0; jj < nj; jj++) {
+            C[ii][jj] = A[ii][jj]*B[jj];
+        }
+    }
+}
+
+
 // Matrix transpose into a new matrix
 double** Tran(int ni, int nj, double** A) {
     int ii, jj;
