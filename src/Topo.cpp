@@ -156,6 +156,7 @@ Topo::Topo() {
     VecDestroy(&vg);
 #ifdef COARSE
     coarseInds();
+    skelIntlInds();
 #endif
 }
 
@@ -183,6 +184,17 @@ Topo::~Topo() {
 
     VecScatterDestroy(&gtol_0);
     VecScatterDestroy(&gtol_1);
+#ifdef COARSE
+    delete[] dd_skel_locl_x;
+    delete[] dd_skel_locl_y;
+    delete[] dd_intl_locl_x;
+    delete[] dd_intl_locl_y;
+    delete[] dd_skel_global;
+    ISDestroy(&is_skel_l);
+    ISDestroy(&is_skel_g);
+    VecScatterDestroy(&gtol_skel);
+    delete[] dd_skel_locl_glob_map;
+#endif
 }
 
 void Topo::loadObjs(char* filename, int* loc) {
@@ -357,4 +369,170 @@ void Topo::coarseInds() {
     VecScatterCreate(vg, is_g_coarse, vl, is_l_coarse, &gtol_coarse);
     VecDestroy(&vl);
     VecDestroy(&vg);
+}
+
+void Topo::skelIntlInds() {
+    int ii;
+    int *inds_g, skel_l, indx_g;
+    char filename[100];
+    Vec vl, vg;
+
+    dd_skel_locl_x = new int[n1];
+    dd_skel_locl_y = new int[n1];
+    dd_intl_locl_x = new int[n1];
+    dd_intl_locl_y = new int[n1];
+    dd_skel_global = new int[n1];
+
+    sprintf(filename, "input/skeleton_inds_x_%.4u.txt", pi);
+    loadObjs(filename, dd_skel_locl_x);
+    sprintf(filename, "input/skeleton_inds_y_%.4u.txt", pi);
+    loadObjs(filename, dd_skel_locl_y);
+    sprintf(filename, "input/internal_inds_x_%.4u.txt", pi);
+    loadObjs(filename, dd_intl_locl_x);
+    sprintf(filename, "input/internal_inds_y_%.4u.txt", pi);
+    loadObjs(filename, dd_intl_locl_y);
+    sprintf(filename, "input/global_to_skeleton.txt");
+    loadObjs(filename, dd_skel_global);
+
+    dd_n_skel_locl = 0;
+    dd_n_intl_locl = 0;
+    dd_n_skel_glob = 0;
+    for(ii = 0; ii < n1; ii++) {
+        if(dd_skel_locl_x[ii] > dd_n_skel_locl) dd_n_skel_locl = dd_skel_locl_x[ii];
+        if(dd_skel_locl_y[ii] > dd_n_skel_locl) dd_n_skel_locl = dd_skel_locl_y[ii];
+        if(dd_intl_locl_x[ii] > dd_n_intl_locl) dd_n_intl_locl = dd_intl_locl_x[ii];
+        if(dd_intl_locl_y[ii] > dd_n_intl_locl) dd_n_intl_locl = dd_intl_locl_y[ii];
+    }
+    for(ii = 0; ii < nDofs1G; ii++) if(dd_skel_global[ii] > dd_n_skel_glob) dd_n_skel_glob = dd_skel_global[ii];
+    // sanity check
+    if(dd_n_skel_locl%4 != 0) {
+        cerr << pi << ":\tERROR! no. local skeleton dofs: " << dd_n_skel_locl << " not evenly divisible by 4!\n";
+	abort();
+    }
+
+    inds_intl_x_l = new int[(elOrd)*(elOrd+1)];
+    inds_intl_y_l = new int[(elOrd+1)*(elOrd)];
+    inds_skel_x_l = new int[(elOrd)*(elOrd+1)];
+    inds_skel_y_l = new int[(elOrd+1)*(elOrd)];
+    inds_skel_x_g = new int[(elOrd)*(elOrd+1)];
+    inds_skel_y_g = new int[(elOrd+1)*(elOrd)];
+
+    // create the global to local vec scatter for the skeleton dofs
+    inds_g = new int[dd_n_skel_locl];
+    for(ii = 0; ii < n1x; ii++) {
+        skel_l = dd_skel_locl_x[ii];
+        if(skel_l > -1) {
+            indx_g = loc1x[ii];
+	    inds_g[skel_l] = dd_skel_global[indx_g];
+	}
+    }
+    for(ii = 0; ii < n1y; ii++) {
+        skel_l = dd_skel_locl_y[ii];
+        if(skel_l > -1) {
+            indx_g = loc1y[ii];
+	    inds_g[skel_l] = dd_skel_global[indx_g];
+	}
+    }
+
+    ISCreateStride(MPI_COMM_SELF, dd_n_skel_locl, 0, 1, &is_skel_l);
+    ISCreateGeneral(MPI_COMM_WORLD, dd_n_skel_glob, inds_g, PETSC_COPY_VALUES, &is_skel_g);
+
+    VecCreateSeq(MPI_COMM_SELF, dd_n_skel_locl, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, dd_n_skel_locl/2, dd_n_skel_glob, &vg);
+    VecScatterCreate(vg, is_skel_g, vl, is_skel_l, &gtol_skel);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+
+    // TODO: test to see if this is the same as 'inds_g'
+    dd_skel_locl_glob_map = new int[n1];
+    sprintf(filename, "input/skeleton_local_to_global_map_%.4u.txt", pi);
+    loadObjs(filename, dd_skel_locl_glob_map);
+
+    delete[] inds_g;
+}
+
+int* Topo::elInds_intl_x_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds_intl_x_l[kk] = dd_intl_locl_x[2*((ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix) + 0];
+            kk++;
+        }
+    }
+
+    return inds_intl_x_l;
+}
+
+int* Topo::elInds_intl_y_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds_intl_y_l[kk] = dd_intl_locl_y[2*((ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix) + 1];
+            kk++;
+        }
+    }
+
+    return inds_intl_y_l;
+}
+
+int* Topo::elInds_skel_x_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds_skel_x_l[kk] = dd_skel_locl_x[2*((ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix) + 0];
+            kk++;
+        }
+    }
+
+    return inds_skel_x_l;
+}
+
+int* Topo::elInds_skel_y_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            inds_skel_y_l[kk] = dd_skel_locl_y[2*((ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix) + 1];
+            kk++;
+        }
+    }
+
+    return inds_skel_y_l;
+}
+
+int* Topo::elInds_skel_x_g(int ex, int ey) {
+    int ix, iy, kk, ind_g;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            ind_g = loc1x[(ey*elOrd + iy)*(nDofsX + 1) + ex*elOrd + ix];
+            inds_skel_x_g[kk] = dd_skel_global[ind_g];
+            kk++;
+        }
+    }
+
+    return inds_skel_x_g;
+}
+
+int* Topo::elInds_skel_y_g(int ex, int ey) {
+    int ix, iy, kk, ind_g;
+
+    kk = 0;
+    for(iy = 0; iy < elOrd; iy++) {
+        for(ix = 0; ix < elOrd + 1; ix++) {
+            ind_g = loc1y[(ey*elOrd + iy)*(nDofsX) + ex*elOrd + ix];
+            inds_skel_y_g[kk] = dd_skel_global[ind_g];
+            kk++;
+        }
+    }
+
+    return inds_skel_y_g;
 }

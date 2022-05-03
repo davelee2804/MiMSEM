@@ -297,6 +297,21 @@ class Umat_coarse {
         void assemble();
 };
 
+class UtQmat_coarse {
+    public:
+        UtQmat_coarse(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~UtQmat_coarse();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        Mat M;
+        bool mat_alloc;
+        void assemble();
+};
+
 class RotMat_coarse {
     public:
         RotMat_coarse(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);

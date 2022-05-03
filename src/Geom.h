@@ -44,6 +44,7 @@ class Geom {
         double _LocalToGlobal(double* c1, double* c2, double* c3, double* c4, double* xi, double* si);
         bool _FindLocal(double* c1, double* c2, double* c3, double* c4, double*  theta_i, double* xi, double* jac);
         void coarseGlobalToLocal();
+        void interp0_all(double* vec, double* val);
     private:
         void jacobian(int ex, int ey, int qx, int qy, double** J);
         double jacDet(int ex, int ey, int qx, int qy, double** J);

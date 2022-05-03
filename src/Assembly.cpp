@@ -2212,20 +2212,22 @@ RotMat_coarse::RotMat_coarse(Topo* _topo, Geom* _geom, LagrangeNode* _l, Lagrang
 
 void RotMat_coarse::assemble(Vec q0) {
     int ii;
-    double *jac, fac, vort = 0.0;
+    double *jac, fac, *vort;
     PetscScalar* q0Array;
+
+    vort = new double[geom->nl];
 
     VecGetArray(q0, &q0Array);
     MatZeroEntries(M);
 
+    geom->interp0_all(q0Array, vort);
+
     for(ii = 0; ii < geom->nl; ii++) {
         jac = geom->jac_coarse[ii];
         fac = geom->wt_coarse[ii]/geom->jacDet_coarse[ii];
-	// TODO: map quad pt to element
-        //geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
 
-        Qab[ii] = vort*(-jac[0*2+0]*jac[1*2+1] + jac[0*2+1]*jac[1*2+0])*fac;
-        Qba[ii] = vort*(+jac[0*2+0]*jac[1*2+1] - jac[0*2+1]*jac[1*2+0])*fac;
+        Qab[ii] = vort[ii]*(-jac[0*2+0]*jac[1*2+1] + jac[0*2+1]*jac[1*2+0])*fac;
+        Qba[ii] = vort[ii]*(+jac[0*2+0]*jac[1*2+1] - jac[0*2+1]*jac[1*2+0])*fac;
     }
 
     Tran_IP(geom->nl, COARSE_DOFS_HDIV, U->A_coarse, Ut);
@@ -2249,6 +2251,8 @@ void RotMat_coarse::assemble(Vec q0) {
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    delete[] vort;
 }
 
 RotMat_coarse::~RotMat_coarse() {
@@ -2262,6 +2266,108 @@ RotMat_coarse::~RotMat_coarse() {
     delete[] Qab;
     delete[] Qba;
     delete[] UtQUflat;
+    delete U;
+    delete V;
+    MatDestroy(&M);
+}
+
+UtQmat_coarse::UtQmat_coarse(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
+    topo = _topo;
+    geom = _geom;
+    l = _l;
+    e = _e;
+
+    U = new M1x_j_xy_i(l, e);
+    V = new M1y_j_xy_i(l, e);
+    U->eval_at_pts(geom->xi_coarse, geom->nl);
+    V->eval_at_pts(geom->xi_coarse, geom->nl);
+
+    mat_alloc = true;
+    assemble();
+    mat_alloc = false;
+}
+
+void UtQmat_coarse::assemble() {
+    int ii, size, *inds_aa, *inds_ab, *inds_ba, *inds_bb;
+    double fac, *jac;
+    double** Ut = Alloc2D(COARSE_DOFS_HDIV, geom->nl);
+    double** Vt = Alloc2D(COARSE_DOFS_HDIV, geom->nl);
+    double** UtQaa = Alloc2D(COARSE_DOFS_HDIV, geom->nl);
+    double** UtQab = Alloc2D(COARSE_DOFS_HDIV, geom->nl);
+    double** VtQba = Alloc2D(COARSE_DOFS_HDIV, geom->nl);
+    double** VtQbb = Alloc2D(COARSE_DOFS_HDIV, geom->nl);
+    double* Qaa = new double[geom->nl];
+    double* Qab = new double[geom->nl];
+    double* Qbb = new double[geom->nl];
+    double* UtQflat = new double[COARSE_DOFS_HDIV*geom->nl];
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &size);
+    if(mat_alloc) {
+        MatCreate(MPI_COMM_WORLD, &M);
+        MatSetSizes(M, TWOX_COARSE_ORD, 4*geom->n0l, size*TWOX_COARSE_ORD, 4*geom->nDofs0G);
+        MatSetType(M, MATMPIAIJ);
+        MatMPIAIJSetPreallocation(M, 4*geom->n0l, PETSC_NULL, 4*geom->n0l, PETSC_NULL);
+    }
+    MatZeroEntries(M);
+
+    inds_aa = new int[geom->nl];
+    inds_ab = new int[geom->nl];
+    inds_ba = new int[geom->nl];
+    inds_bb = new int[geom->nl];
+    for(ii = 0; ii < geom->nl; ii++) {
+        inds_aa[ii] = 4*geom->loc0[ii]+0;
+        inds_ab[ii] = 4*geom->loc0[ii]+1;
+        inds_ba[ii] = 4*geom->loc0[ii]+2;
+        inds_bb[ii] = 4*geom->loc0[ii]+3;
+
+	fac = geom->wt_coarse[ii]/geom->jacDet_coarse[ii];
+        jac = geom->jac_coarse[ii];
+
+        Qaa[ii] = (jac[0*2+0]*jac[0*2+0] + jac[1*2+0]*jac[1*2+0])*fac;
+        Qab[ii] = (jac[0*2+0]*jac[0*2+1] + jac[1*2+0]*jac[1*2+1])*fac;
+        Qbb[ii] = (jac[0*2+1]*jac[0*2+1] + jac[1*2+1]*jac[1*2+1])*fac;
+    }
+
+    Tran_IP(geom->nl, COARSE_DOFS_HDIV, U->A_coarse, Ut);
+    Tran_IP(geom->nl, COARSE_DOFS_HDIV, V->A_coarse, Vt);
+
+    Mult_FD_IP(COARSE_DOFS_HDIV, geom->nl, Ut, Qaa, UtQaa);
+    Mult_FD_IP(COARSE_DOFS_HDIV, geom->nl, Ut, Qab, UtQab);
+    Mult_FD_IP(COARSE_DOFS_HDIV, geom->nl, Vt, Qab, VtQba);
+    Mult_FD_IP(COARSE_DOFS_HDIV, geom->nl, Vt, Qbb, VtQbb);
+
+    Flat2D_IP(COARSE_DOFS_HDIV, COARSE_DOFS_HDIV, UtQaa, UtQflat);
+    MatSetValues(M, COARSE_DOFS_HDIV, topo->coarse_inds_x, geom->nl, inds_aa, UtQflat, ADD_VALUES);
+
+    Flat2D_IP(COARSE_DOFS_HDIV, COARSE_DOFS_HDIV, UtQab, UtQflat);
+    MatSetValues(M, COARSE_DOFS_HDIV, topo->coarse_inds_x, geom->nl, inds_ab, UtQflat, ADD_VALUES);
+
+    Flat2D_IP(COARSE_DOFS_HDIV, COARSE_DOFS_HDIV, VtQba, UtQflat);
+    MatSetValues(M, COARSE_DOFS_HDIV, topo->coarse_inds_y, geom->nl, inds_ba, UtQflat, ADD_VALUES);
+
+    Flat2D_IP(COARSE_DOFS_HDIV, COARSE_DOFS_HDIV, VtQbb, UtQflat);
+    MatSetValues(M, COARSE_DOFS_HDIV, topo->coarse_inds_y, geom->nl, inds_bb, UtQflat, ADD_VALUES);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(COARSE_DOFS_HDIV, Ut);
+    Free2D(COARSE_DOFS_HDIV, Vt);
+    Free2D(COARSE_DOFS_HDIV, UtQaa);
+    Free2D(COARSE_DOFS_HDIV, UtQab);
+    Free2D(COARSE_DOFS_HDIV, VtQba);
+    Free2D(COARSE_DOFS_HDIV, VtQbb);
+    delete[] Qaa;
+    delete[] Qab;
+    delete[] Qbb;
+    delete[] UtQflat;
+    delete[] inds_aa;
+    delete[] inds_ab;
+    delete[] inds_ba;
+    delete[] inds_bb;
+}
+
+UtQmat_coarse::~UtQmat_coarse() {
     delete U;
     delete V;
     MatDestroy(&M);

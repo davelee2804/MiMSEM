@@ -1,0 +1,38 @@
+class Assembly_M1DD {
+    public:
+        Assembly_M1DD(Topo* _topo, Geom* _geom);
+        ~Assembly_M1DD();
+        int rank;
+        int size;
+        GaussLobatto* quad;
+        LagrangeNode* node;
+        LagrangeEdge* edge;
+        Wii* Q;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+	double** Ut;
+	double** Vt;
+        Topo* topo;
+        Geom* geom;
+	Mat Mii;
+	Mat Mis;
+	Mat Mdd;
+	Mat Mds;
+	Mat Msi;
+	Mat Mss;
+	Mat Ss_l;
+        Mat Ss;
+        Mat Sg;
+        Vec b_intl;
+        Vec x_intl;
+        Vec t_intl;
+        Vec b_skel;
+        Vec x_skel;
+        Vec t_skel;
+        Vec b_skel_g;
+        Vec x_skel_g;
+        Vec t_skel_g;
+	void assemble_mat();
+	void assemble_rhs_hu(Vec vel, Vec rho);
+        void pack_schur_skel();
+};

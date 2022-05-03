@@ -271,6 +271,27 @@ void Geom::interp0(int ex, int ey, int px, int py, double* vec, double* val) {
     }
 }
 
+void Geom::interp0_all(double* vec, double* val) {
+    int ex, ey, qi, mp1, mp12, *inds_q;
+    double tmp;
+
+    mp1 = quad->n+1;
+    mp12 = mp1*mp1;
+
+    for(qi = 0; qi < nl; qi++) val[qi] = 0.0;
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_q = elInds0_l(ex, ey);
+            for(qi = 0; qi < mp12; qi++) {
+                interp0(ex, ey, qi%mp1, qi/mp1, vec, &tmp);
+		// might want to average at element edges/corners....
+		val[inds_q[qi]] = tmp;
+            }
+        }
+    }
+}
+
 void Geom::interp1_l(int ex, int ey, int px, int py, double* vec, double* val) {
     int jj, nn, np1, n2;
     int *inds1x, *inds1y;
