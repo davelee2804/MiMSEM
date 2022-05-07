@@ -22,6 +22,7 @@ OBJS = LinAlg.o \
        ElMats.o \
        VertOps.o \
        Assembly.o \
+       Assembly_Coupled.o \
        HorizSolve.o \
        VertSolve.o \
        Euler_2.o \
@@ -44,6 +45,9 @@ HorizSolve.o: HorizSolve.cpp HorizSolve.h Assembly.o VertOps.o ElMats.o L2Vecs.o
 
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}
+
+Assembly_Coupled.o: Assembly_Coupled.cpp Assembly_Coupled.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Assembly_Coupled.cpp ${CXXFLAGS}
 
 VertOps.o: VertOps.cpp VertOps.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c VertOps.cpp ${CXXFLAGS}

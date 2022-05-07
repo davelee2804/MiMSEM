@@ -152,6 +152,13 @@ Topo::Topo() {
     VecScatterCreate(vg, is_g_1, vl, is_l_1, &gtol_1);
     VecDestroy(&vl);
     VecDestroy(&vg);
+
+    inds_velx_g  = new int[(elOrd+1)*(elOrd)];
+    inds_vely_g  = new int[(elOrd+1)*(elOrd)];
+    inds_rho_g   = new int[(elOrd)*(elOrd)];
+    inds_theta_g = new int[(elOrd)*(elOrd)];
+    inds_exner_g = new int[(elOrd)*(elOrd)];
+    inds_velz_g  = new int[(elOrd)*(elOrd)];
 }
 
 Topo::~Topo() {
@@ -301,4 +308,168 @@ int* Topo::elInds2_g(int ex, int ey) {
     }
 
     return inds2_g;
+}
+
+int* Topo::elInds_velx_g(int ex, int ey, int lev) {
+    int jj, nj, pj, qj, dofs_per_proc;
+
+    nj            = (elOrd+1)*elOrd;
+    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
+
+    elInds1x_g(ex, ey);
+    for(jj = 0; jj < nj; jj++) {
+	pj = inds1x_g[jj] / n1l;
+	qj = inds1x_g[jj] % n1l;
+        inds_velx_g[jj] = pj*dofs_per_proc + lev*n1l + qj;
+    }
+    return inds_velx_g;
+}
+
+int* Topo::elInds_vely_g(int ex, int ey, int lev) {
+    int jj, nj, pj, qj, dofs_per_proc;
+
+    nj            = (elOrd+1)*elOrd;
+    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
+
+    elInds1y_g(ex, ey);
+    for(jj = 0; jj < nj; jj++) {
+	pj = inds1y_g[jj] / n1l;
+	qj = inds1y_g[jj] % n1l;
+        inds_vely_g[jj] = pj*dofs_per_proc + lev*n1l + qj;
+    }
+    return inds_vely_g;
+}
+
+int* Topo::elInds_rho_g(int ex, int ey, int lev) {
+    int jj, nj, pj, qj, dofs_per_proc;
+
+    nj            = elOrd*elOrd;
+    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
+
+    elInds2_g(ex, ey);
+    for(jj = 0; jj < nj; jj++) {
+	pj = inds2_g[jj] / n2l;
+	qj = inds2_g[jj] % n2l;
+        inds_rho_g[jj] = pj*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+0;
+    }
+    return inds_rho_g;
+}
+
+int* Topo::elInds_theta_g(int ex, int ey, int lev) {
+    int jj, nj, pj, qj, dofs_per_proc;
+
+    nj            = elOrd*elOrd;
+    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
+
+    elInds2_g(ex, ey);
+    for(jj = 0; jj < nj; jj++) {
+	pj = inds2_g[jj] / n2l;
+	qj = inds2_g[jj] % n2l;
+        inds_theta_g[jj] = pj*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+1;
+    }
+    return inds_theta_g;
+}
+
+int* Topo::elInds_exner_g(int ex, int ey, int lev) {
+    int jj, nj, pj, qj, dofs_per_proc;
+
+    nj            = elOrd*elOrd;
+    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
+
+    elInds2_g(ex, ey);
+    for(jj = 0; jj < nj; jj++) {
+	pj = inds2_g[jj] / n2l;
+	qj = inds2_g[jj] % n2l;
+        inds_exner_g[jj] = pj*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+2;
+    }
+    return inds_exner_g;
+}
+
+int* Topo::elInds_velz_g(int ex, int ey, int lev) {
+    int jj, nj, pj, qj, dofs_per_proc;
+
+    nj            = elOrd*elOrd;
+    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
+
+    elInds2_g(ex, ey);
+    for(jj = 0; jj < nj; jj++) {
+	pj = inds2_g[jj] / n2l;
+	qj = inds2_g[jj] % n2l;
+        inds_velz_g[jj] = pj*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+3;
+    }
+    return inds_velz_g;
+}
+
+void Topo::repack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec x) {
+    int ii, kk, index, kn2, km1n2;
+    PetscScalar *xArray, *velxArray, *rhoArray, *thetaArray, *exnerArray, *velzArray;
+
+    kn2   = nk*elOrd*elOrd;
+    km1n2 = (nk-1)*elOrd*elOrd;
+
+    VecGetArray(x, &xArray);
+    for(kk = 0; kk < nk; kk++) {
+        VecGetArray(velx[kk], &velxArray);
+        for(ii = 0; ii < n1l; ii++) {
+            xArray[ii] = velxArray[ii];
+        }
+        VecRestoreArray(velx[kk], &velxArray);
+    }
+    index = nk*n1l;
+    for(ii = 0; ii < nElsX*nElsX; ii++) {
+        VecGetArray(rho[ii],   &rhoArray);
+        VecGetArray(theta[ii], &thetaArray);
+        VecGetArray(exner[ii], &exnerArray);
+        VecGetArray(velz[ii],  &velzArray);
+	for(kk = 0; kk < kn2; kk++) {
+            xArray[index] = rhoArray[kk];   index++;
+            xArray[index] = thetaArray[kk]; index++;
+            xArray[index] = exnerArray[kk]; index++;
+            if(kk < km1n2) {
+                xArray[index] = velzArray[kk]; index++;
+            }
+        }
+        VecRestoreArray(rho[ii],   &rhoArray);
+        VecRestoreArray(exner[ii], &exnerArray);
+        VecRestoreArray(theta[ii], &thetaArray);
+        VecRestoreArray(velz[ii],  &velzArray);
+    }
+    VecRestoreArray(x, &xArray);
+}
+
+void Topo::unpack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec x) {
+    int ii, kk, index, kn2, km1n2;
+    PetscScalar *xArray, *velxArray, *rhoArray, *thetaArray, *exnerArray, *velzArray;
+
+    kn2   = nk*elOrd*elOrd;
+    km1n2 = (nk-1)*elOrd*elOrd;
+
+    VecGetArray(x, &xArray);
+    for(kk = 0; kk < nk; kk++) {
+        VecGetArray(velx[kk], &velxArray);
+        for(ii = 0; ii < n1l; ii++) {
+            velxArray[ii] = xArray[ii];
+        }
+        VecRestoreArray(velx[kk], &velxArray);
+    }
+    index = nk*n1l;
+    for(ii = 0; ii < nElsX*nElsX; ii++) {
+        VecGetArray(rho[ii],   &rhoArray);
+        VecGetArray(theta[ii], &thetaArray);
+        VecGetArray(exner[ii], &exnerArray);
+        VecGetArray(velz[ii],  &velzArray);
+	for(kk = 0; kk < kn2; kk++) {
+            rhoArray[kk]   = xArray[index]; index++;
+            thetaArray[kk] = xArray[index]; index++;
+            exnerArray[kk] = xArray[index]; index++;
+            if(kk < km1n2) {
+                velzArray[kk] = xArray[index]; index++;
+            }
+        }
+        VecRestoreArray(rho[ii],   &rhoArray);
+        VecRestoreArray(exner[ii], &exnerArray);
+        VecRestoreArray(theta[ii], &thetaArray);
+        VecRestoreArray(velz[ii],  &velzArray);
+    }
+    VecRestoreArray(x, &xArray);
 }

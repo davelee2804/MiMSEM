@@ -47,4 +47,20 @@ class Topo {
         int* elInds1x_g(int ex, int ey);
         int* elInds1y_g(int ex, int ey);
         int* elInds2_g(int ex, int ey);
+
+	int nk;
+	int* inds_velx_g;
+	int* inds_vely_g;
+	int* inds_velz_g;
+	int* inds_rho_g;
+	int* inds_theta_g;
+	int* inds_exner_g;
+        int* elInds_velx_g(int ex, int ey, int lev);
+        int* elInds_vely_g(int ex, int ey, int lev);
+        int* elInds_rho_g(int ex, int ey, int lev);
+        int* elInds_theta_g(int ex, int ey, int lev);
+        int* elInds_exner_g(int ex, int ey, int lev);
+        int* elInds_velz_g(int ex, int ey, int lev);
+        void repack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec x);
+        void unpack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec x);
 };
