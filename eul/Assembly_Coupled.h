@@ -41,3 +41,21 @@ class RotMat_coupled {
         Wii* Q;
         void assemble(Vec* q0, double scale, Mat M);
 };
+
+class EoSmat_coupled {
+    public:
+        EoSmat_coupled(Topo* _topo, Geom* _geom, LagrangeEdge* _edge);
+        ~EoSmat_coupled();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* edge;
+        Wii* Q;
+        M2_j_xy_i* W;
+        double* Wt;
+        double* WtQ;
+        double* WtQW;
+        double* WtQWinv;
+        double* AAinv;
+        double* AAinvA;
+        void assemble(double scale, double fac, int col_ind, Vec* p2, Mat M);
+};
