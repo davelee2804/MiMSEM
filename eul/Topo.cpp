@@ -12,14 +12,15 @@
 using namespace std;
 using std::string;
 
-Topo::Topo() {
+Topo::Topo(int _nk) {
     Vec vl, vg;
-
     int ii, n_procs;
     int nLoc[4];
     ifstream file;
     char filename[100];
     string line;
+
+    nk = _nk;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &pi);
 
@@ -153,6 +154,7 @@ Topo::Topo() {
     VecDestroy(&vl);
     VecDestroy(&vg);
 
+    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
     inds_velx_g  = new int[(elOrd+1)*(elOrd)];
     inds_vely_g  = new int[(elOrd+1)*(elOrd)];
     inds_rho_g   = new int[(elOrd)*(elOrd)];
@@ -311,10 +313,9 @@ int* Topo::elInds2_g(int ex, int ey) {
 }
 
 int* Topo::elInds_velx_g(int ex, int ey, int lev) {
-    int jj, nj, pj, qj, dofs_per_proc;
+    int jj, nj, pj, qj;
 
     nj            = (elOrd+1)*elOrd;
-    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
 
     elInds1x_g(ex, ey);
     for(jj = 0; jj < nj; jj++) {
@@ -326,10 +327,9 @@ int* Topo::elInds_velx_g(int ex, int ey, int lev) {
 }
 
 int* Topo::elInds_vely_g(int ex, int ey, int lev) {
-    int jj, nj, pj, qj, dofs_per_proc;
+    int jj, nj, pj, qj;
 
     nj            = (elOrd+1)*elOrd;
-    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
 
     elInds1y_g(ex, ey);
     for(jj = 0; jj < nj; jj++) {
@@ -341,10 +341,9 @@ int* Topo::elInds_vely_g(int ex, int ey, int lev) {
 }
 
 int* Topo::elInds_rho_g(int ex, int ey, int lev) {
-    int jj, nj, pj, qj, dofs_per_proc;
+    int jj, nj, pj, qj;
 
     nj            = elOrd*elOrd;
-    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
 
     elInds2_g(ex, ey);
     for(jj = 0; jj < nj; jj++) {
@@ -356,10 +355,9 @@ int* Topo::elInds_rho_g(int ex, int ey, int lev) {
 }
 
 int* Topo::elInds_theta_g(int ex, int ey, int lev) {
-    int jj, nj, pj, qj, dofs_per_proc;
+    int jj, nj, pj, qj;
 
     nj            = elOrd*elOrd;
-    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
 
     elInds2_g(ex, ey);
     for(jj = 0; jj < nj; jj++) {
@@ -371,10 +369,9 @@ int* Topo::elInds_theta_g(int ex, int ey, int lev) {
 }
 
 int* Topo::elInds_exner_g(int ex, int ey, int lev) {
-    int jj, nj, pj, qj, dofs_per_proc;
+    int jj, nj, pj, qj;
 
     nj            = elOrd*elOrd;
-    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
 
     elInds2_g(ex, ey);
     for(jj = 0; jj < nj; jj++) {
@@ -386,10 +383,9 @@ int* Topo::elInds_exner_g(int ex, int ey, int lev) {
 }
 
 int* Topo::elInds_velz_g(int ex, int ey, int lev) {
-    int jj, nj, pj, qj, dofs_per_proc;
+    int jj, nj, pj, qj;
 
     nj            = elOrd*elOrd;
-    dofs_per_proc = nk*(n1l + 4*n2l) - n2l;
 
     elInds2_g(ex, ey);
     for(jj = 0; jj < nj; jj++) {

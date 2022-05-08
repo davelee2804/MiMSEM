@@ -357,3 +357,47 @@ EoSmat_coupled::~EoSmat_coupled() {
     delete[] AAinv;
     delete[] AAinvA;
 }
+
+void AddGrad_Coupled(Topo* topo, int lev, int var_ind, Mat G, Mat M) {
+    int mi, mf, mm, nCols, dof_proc, dof_locl, ri, ci;
+    const int *cols;
+    const double* vals;
+    int cols2[999];
+
+    MatGetOwnershipRange(G, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        dof_proc = mm / topo->n1l;
+        dof_locl = mm % topo->n1l;
+        MatGetRow(G, mm, &nCols, &cols, &vals);
+	ri = dof_proc*topo->dofs_per_proc + lev*topo->n1l + dof_locl;
+	for(ci = 0; ci < nCols; ci++) {
+            dof_proc = cols[ci] / topo->n2l;
+            dof_locl = cols[ci] % topo->n2l;
+            cols2[ci] = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk+1)*dof_locl + 4*lev + var_ind;
+        }
+	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatRestoreRow(G, mm, &nCols, &cols, &vals);
+    }
+}
+
+void AddDiv_Coupled(Topo* topo, int lev, int var_ind, Mat D, Mat M) {
+    int mi, mf, mm, nCols, dof_proc, dof_locl, ri, ci;
+    const int *cols;
+    const double* vals;
+    int cols2[999];
+
+    MatGetOwnershipRange(D, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        dof_proc = mm / topo->n2l;
+        dof_locl = mm % topo->n2l;
+        MatGetRow(D, mm, &nCols, &cols, &vals);
+	ri = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk+1)*dof_locl + 4*lev + var_ind;
+	for(ci = 0; ci < nCols; ci++) {
+            dof_proc = cols[ci] / topo->n1l;
+            dof_locl = cols[ci] % topo->n1l;
+            cols2[ci] = dof_proc*topo->dofs_per_proc + lev*topo->n1l + dof_locl;
+        }
+	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatRestoreRow(D, mm, &nCols, &cols, &vals);
+    }
+}

@@ -288,7 +288,7 @@ int main(int argc, char** argv) {
 
     cout << "importing topology for processor: " << rank << " of " << size << endl;
 
-    topo = new Topo();
+    topo = new Topo(NK);
     geom = new Geom(topo, NK);
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
