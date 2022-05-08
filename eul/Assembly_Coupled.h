@@ -63,3 +63,4 @@ class EoSmat_coupled {
 void AddGradx_Coupled(Topo* topo, int lev, int var_ind, Mat G, Mat M);
 void AddDivx_Coupled(Topo* topo, int lev, int var_ind, Mat G, Mat M);
 void AddQx_Coupled(Topo* topo, int lev, Mat Q, Mat M);
+void AddGradz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat G, Mat M);

@@ -417,9 +417,35 @@ void AddQx_Coupled(Topo* topo, int lev, Mat Q, Mat M) {
 	for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n2l;
             dof_locl = cols[ci] % topo->n2l;
-            cols2[ci] = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + 4*lev + 0; // Exner
+            cols2[ci] = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + 4*lev + 0; // rho
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
         MatRestoreRow(Q, mm, &nCols, &cols, &vals);
     }
 }
+
+void AddGradz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat G, Mat M) {
+    int nr, nc, mm, nCols, ri, ci, col_size, lev, fce, n2;
+    const int *cols;
+    const double* vals;
+    int cols2[1999];
+
+    n2 = topo->elOrd*topo->elOrd;
+    col_size = 4*topo->nk-1;
+
+    MatGetSize(G, &nr, &nc);
+    for(mm = 0; mm < nr; mm++) {
+        MatGetRow(G, mm, &nCols, &cols, &vals);
+        lev = mm / n2;
+        fce = mm % n2;
+	ri = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + fce*col_size + 4*lev + 3;
+	for(ci = 0; ci < nCols; ci++) {
+            lev = cols[ci] / n2;
+            fce = cols[ci] % n2;
+            cols2[ci] = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + fce*col_size + 4*lev + var_ind;
+        }
+	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatRestoreRow(G, mm, &nCols, &cols, &vals);
+    }
+}
+

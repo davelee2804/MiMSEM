@@ -341,57 +341,53 @@ int* Topo::elInds_vely_g(int ex, int ey, int lev) {
 }
 
 int* Topo::elInds_rho_g(int ex, int ey, int lev) {
-    int jj, nj, pj, qj;
+    int jj, nj, qj;
 
-    nj            = elOrd*elOrd;
+    nj = elOrd*elOrd;
 
-    elInds2_g(ex, ey);
+    elInds2_l(ex, ey);
     for(jj = 0; jj < nj; jj++) {
-	pj = inds2_g[jj] / n2l;
-	qj = inds2_g[jj] % n2l;
-        inds_rho_g[jj] = pj*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+0;
+	qj = inds2_l[jj];
+        inds_rho_g[jj] = pi*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+0;
     }
     return inds_rho_g;
 }
 
 int* Topo::elInds_theta_g(int ex, int ey, int lev) {
-    int jj, nj, pj, qj;
+    int jj, nj, qj;
 
-    nj            = elOrd*elOrd;
+    nj = elOrd*elOrd;
 
-    elInds2_g(ex, ey);
+    elInds2_l(ex, ey);
     for(jj = 0; jj < nj; jj++) {
-	pj = inds2_g[jj] / n2l;
-	qj = inds2_g[jj] % n2l;
-        inds_theta_g[jj] = pj*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+1;
+	qj = inds2_l[jj];
+        inds_theta_g[jj] = pi*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+1;
     }
     return inds_theta_g;
 }
 
 int* Topo::elInds_exner_g(int ex, int ey, int lev) {
-    int jj, nj, pj, qj;
+    int jj, nj, qj;
 
-    nj            = elOrd*elOrd;
+    nj = elOrd*elOrd;
 
-    elInds2_g(ex, ey);
+    elInds2_l(ex, ey);
     for(jj = 0; jj < nj; jj++) {
-	pj = inds2_g[jj] / n2l;
-	qj = inds2_g[jj] % n2l;
-        inds_exner_g[jj] = pj*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+2;
+	qj = inds2_l[jj];
+        inds_exner_g[jj] = pi*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+2;
     }
     return inds_exner_g;
 }
 
 int* Topo::elInds_velz_g(int ex, int ey, int lev) {
-    int jj, nj, pj, qj;
+    int jj, nj, qj;
 
-    nj            = elOrd*elOrd;
+    nj = elOrd*elOrd;
 
-    elInds2_g(ex, ey);
+    elInds2_l(ex, ey);
     for(jj = 0; jj < nj; jj++) {
-	pj = inds2_g[jj] / n2l;
-	qj = inds2_g[jj] % n2l;
-        inds_velz_g[jj] = pj*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+3;
+	qj = inds2_l[jj];
+        inds_velz_g[jj] = pi*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+3;
     }
     return inds_velz_g;
 }
