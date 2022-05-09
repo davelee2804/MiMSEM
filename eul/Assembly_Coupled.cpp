@@ -425,27 +425,91 @@ void AddQx_Coupled(Topo* topo, int lev, Mat Q, Mat M) {
 }
 
 void AddGradz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat G, Mat M) {
-    int nr, nc, mm, nCols, ri, ci, col_size, lev, fce, n2;
+    int nr, nc, mm, nCols, ri, ci, lev, fce, n2;
     const int *cols;
     const double* vals;
     int cols2[1999];
+    int *inds_row, *inds_col;
 
     n2 = topo->elOrd*topo->elOrd;
-    col_size = 4*topo->nk-1;
 
     MatGetSize(G, &nr, &nc);
     for(mm = 0; mm < nr; mm++) {
         MatGetRow(G, mm, &nCols, &cols, &vals);
         lev = mm / n2;
         fce = mm % n2;
-	ri = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + fce*col_size + 4*lev + 3;
+        inds_row = topo->elInds_velz_g(ex, ey, lev);
+	ri = inds_row[fce];
 	for(ci = 0; ci < nCols; ci++) {
             lev = cols[ci] / n2;
             fce = cols[ci] % n2;
-            cols2[ci] = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + fce*col_size + 4*lev + var_ind;
+	    if(var_ind == 1) {
+                inds_col = topo->elInds_theta_g(ex, ey, lev);
+            } else {
+                inds_col = topo->elInds_exner_g(ex, ey, lev);
+            }
+            cols2[ci] = inds_col[fce];
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
         MatRestoreRow(G, mm, &nCols, &cols, &vals);
+    }
+}
+
+void AddDivz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat D, Mat M) {
+    int nr, nc, mm, nCols, ri, ci, lev, fce, n2;
+    const int *cols;
+    const double* vals;
+    int cols2[1999];
+    int *inds_row, *inds_col;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    MatGetSize(D, &nr, &nc);
+    for(mm = 0; mm < nr; mm++) {
+        MatGetRow(D, mm, &nCols, &cols, &vals);
+        lev = mm / n2;
+        fce = mm % n2;
+	if(var_ind == 0) {
+            inds_row = topo->elInds_rho_g(ex, ey, lev);
+        } else {
+            inds_row = topo->elInds_theta_g(ex, ey, lev);
+        }
+	ri = inds_row[fce];
+	for(ci = 0; ci < nCols; ci++) {
+            lev = cols[ci] / n2;
+            fce = cols[ci] % n2;
+            inds_col = topo->elInds_velz_g(ex, ey, lev);
+            cols2[ci] = inds_col[fce];
+        }
+	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatRestoreRow(D, mm, &nCols, &cols, &vals);
+    }
+}
+
+void AddQz_Coupled(Topo* topo, int ex, int ey, Mat Q, Mat M) {
+    int nr, nc, mm, nCols, ri, ci, lev, fce, n2;
+    const int *cols;
+    const double* vals;
+    int cols2[1999];
+    int *inds_row, *inds_col;
+
+    n2 = topo->elOrd*topo->elOrd;
+
+    MatGetSize(Q, &nr, &nc);
+    for(mm = 0; mm < nr; mm++) {
+        MatGetRow(Q, mm, &nCols, &cols, &vals);
+        lev = mm / n2;
+        fce = mm % n2;
+        inds_row = topo->elInds_theta_g(ex, ey, lev);
+	ri = inds_row[fce];
+	for(ci = 0; ci < nCols; ci++) {
+            lev = cols[ci] / n2;
+            fce = cols[ci] % n2;
+            inds_col = topo->elInds_rho_g(ex, ey, lev);
+            cols2[ci] = inds_col[fce];
+        }
+	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatRestoreRow(Q, mm, &nCols, &cols, &vals);
     }
 }
 
