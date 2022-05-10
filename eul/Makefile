@@ -26,6 +26,7 @@ OBJS = LinAlg.o \
        HorizSolve.o \
        VertSolve.o \
        Euler_2.o \
+       Euler_I.o \
        UMJS14.o
 
 mimsem: ${OBJS}
@@ -33,6 +34,9 @@ mimsem: ${OBJS}
 
 UMJS14.o: UMJS14.cpp Euler_2.o VertSolve.o HorizSolve.o Assembly.o VertOps.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c UMJS14.cpp ${CXXFLAGS}
+
+Euler_I.o: Euler_I.cpp Euler_I.h VertSolve.o HorizSolve.o Assembly_Coupled.o Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Euler_I.cpp ${CXXFLAGS}
 
 Euler_2.o: Euler_2.cpp Euler_2.h VertSolve.o HorizSolve.o Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Euler_2.cpp ${CXXFLAGS}

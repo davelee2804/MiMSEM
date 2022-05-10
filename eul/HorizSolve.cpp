@@ -443,9 +443,6 @@ void HorizSolve::diagnose_q(int level, bool do_assemble, Vec rho, Vec vel, Vec* 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &tmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, qi);
 
-    //if(do_assemble) M1->assemble(level, SCALE, true);
-    //MatMult(M1->M, vel, tmp1);
-    //MatMult(NtoE->E01, tmp1, rhs);
     m1->assemble(level, SCALE, true, ul);
     MatMult(NtoE->E01, m1->vg, rhs);
 
@@ -458,38 +455,6 @@ void HorizSolve::diagnose_q(int level, bool do_assemble, Vec rho, Vec vel, Vec* 
 
     VecDestroy(&rhs);
     VecDestroy(&tmp);
-}
-
-void HorizSolve::diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu) {
-/*
-    Vec w1, w2, wl, uh;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uh);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, wxu);
-
-    // assume the vertex and volume mass matrices have already been assembled
-    // TODO compute once for half step
-    curl(false, u1, &w1, level, true);
-    curl(false, u2, &w2, level, true);
-    VecAXPY(w1, 1.0, w2);
-    VecScale(w1, 0.5);
-
-    VecScatterBegin(topo->gtol_0, w1, wl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, w1, wl, INSERT_VALUES, SCATTER_FORWARD);
-
-    VecZeroEntries(uh);
-    VecAXPY(uh, 0.5, u1);
-    VecAXPY(uh, 0.5, u2);
-
-    R->assemble(wl, level, SCALE);
-    MatMult(R->M, uh, *wxu);
-
-    VecDestroy(&w1);
-    VecDestroy(&w2);
-    VecDestroy(&wl);
-    VecDestroy(&uh);
-*/
 }
 
 void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi, 
@@ -535,18 +500,6 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
     R->assemble(ql, level, SCALE);
 
     VecZeroEntries(dp);
-/*
-    F->assemble(rho1, level, true, SCALE);
-    MatMult(F->M, velx1, utmp);
-    VecAXPY(dp, 1.0/3.0, utmp);
-    MatMult(F->M, velx2, utmp);
-    VecAXPY(dp, 1.0/6.0, utmp);
-    F->assemble(rho2, level, true, SCALE);
-    MatMult(F->M, velx1, utmp);
-    VecAXPY(dp, 1.0/6.0, utmp);
-    MatMult(F->M, velx2, utmp);
-    VecAXPY(dp, 1.0/3.0, utmp);
-*/
     VecZeroEntries(m1->vl);
     VecZeroEntries(m1->vg);
     m1->assemble_hu(level, SCALE, uil, rho1, false, 1.0/3.0);

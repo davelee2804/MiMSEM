@@ -49,7 +49,6 @@ class HorizSolve {
 
         void diagnose_Phi(int level, Vec u1, Vec u2, Vec u1l, Vec u2l, Vec* velz1, Vec* velz2, Vec* Phi);
         void diagnose_q(int level, bool do_assemble, Vec rho, Vec vel, Vec* qi, Vec ul);
-        void diagnose_wxu(int level, Vec u1, Vec u2, Vec* wxu);
         void diagHorizVort(Vec* velx, Vec* dudz);
         void diagVertVort(Vec* velz, Vec* rho, Vec* dwdx);
 

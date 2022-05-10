@@ -39,7 +39,7 @@ class RotMat_coupled {
         M1x_j_xy_i* U;
         M1y_j_xy_i* V;
         Wii* Q;
-        void assemble(Vec* q0, double scale, Mat M);
+        void assemble(double scale, double fac, Vec* q0, Mat M);
 };
 
 class EoSmat_coupled {

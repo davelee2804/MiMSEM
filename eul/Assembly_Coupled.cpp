@@ -140,7 +140,7 @@ RotMat_coupled::RotMat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, Lagra
     VtQU = Alloc2D(V->nDofsJ, V->nDofsJ);
 }
 
-void RotMat_coupled::assemble(Vec* q0, double scale, Mat M) {
+void RotMat_coupled::assemble(double scale, double fac, Vec* q0, Mat M) {
     int ex, ey, ei, ii, kk, mp1, mp12;
     int *inds_x, *inds_y, *inds_0;
     double det, **J, vort;
@@ -167,7 +167,7 @@ void RotMat_coupled::assemble(Vec* q0, double scale, Mat M) {
                     geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
 
                     // vertical vorticity is piecewise constant in the vertical
-                    vort *= geom->thickInv[kk][inds_0[ii]];
+                    vort *= fac*geom->thickInv[kk][inds_0[ii]];
 
                     Qab[ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii]*(scale/det);
                     Qba[ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii]*(scale/det);
