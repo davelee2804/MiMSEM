@@ -184,6 +184,7 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
 	VecPointwiseDivide(uz[1], uz[0], uz[1]);
         MatDiagonalSet(M1inv[ii], uz[1], INSERT_VALUES);
     }
+    GRADx = NULL;
 }
 
 // laplacian viscosity, from Guba et. al. (2014) GMD
@@ -1324,8 +1325,12 @@ void Euler_I::CreateCoupledOperator() {
     EoSc = new EoSmat_coupled(topo, geom, edge);
 }
 
-void Euler_I::AssembleCoupledOperator(Vec* rt_h, Vec* exner_h) {
+void Euler_I::AssembleCoupledOperator(Vec* theta_x, Vec* rt_z, Vec* exner_z) {
     int kk;
+    Vec theta_h;
+    MatReuse reuse = (!GRADx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h);
 
     MatZeroEntries(M);
 
@@ -1334,10 +1339,22 @@ void Euler_I::AssembleCoupledOperator(Vec* rt_h, Vec* exner_h) {
     M2c->assemble(SCALE, 1, M);
     M2c->assemble(SCALE, 2, M);
     M2c->assemble(SCALE, 0, M);
-    EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt_h, M);
-    EoSc->assemble(SCALE, +1.0, 2, exner_h, M);
+    EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt_z, M);
+    EoSc->assemble(SCALE, +1.0, 2, exner_z, M);
 
-    //for(kk = 0; kk < topo->nk; kk++) {
-    
-    //}
+    for(kk = 0; kk < topo->nk; kk++) {
+	M2->assemble(kk, SCALE, true);
+        MatMatMult(EtoF->E12, M2->M, reuse, PETSC_DEFAULT, &GRADx);
+        MatMatMult(M1inv[kk], GRADx, reuse, PETSC_DEFAULT, &M1invGRADx);
+
+	VecZeroEntries(theta_h);
+        VecAXPY(theta_h, 0.25*dt, theta_x[kk+0]);
+        VecAXPY(theta_h, 0.25*dt, theta_x[kk+1]);
+        F->assemble(theta_h, kk, false, SCALE);
+
+        MatMatMult(F->M, M1invGRADx, reuse, PETSC_DEFAULT, &Gx);
+	AddGradx_Coupled(topo, kk, 2, Gx, M);
+    }
+
+    VecDestroy(&theta_h);
 }

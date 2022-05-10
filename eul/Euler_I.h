@@ -54,6 +54,9 @@ class Euler_I {
 	Wmat_coupled*   M2c;
 	EoSmat_coupled* EoSc;
 	Mat*            M1inv;
+	Mat             GRADx;
+	Mat             M1invGRADx;
+	Mat             Gx;
 
         VertSolve* vert;
 
@@ -94,5 +97,5 @@ class Euler_I {
         void VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz);
 
 	void CreateCoupledOperator();
-	void AssembleCoupledOperator(Vec* rt_h, Vec* exner_h);
+	void AssembleCoupledOperator(Vec* theta_x, Vec* rt_z, Vec* exner_z);
 };

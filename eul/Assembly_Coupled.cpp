@@ -335,16 +335,63 @@ void EoSmat_coupled::assemble(double scale, double fac, int col_ind, Vec* p2, Ma
                 Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, AAinv, WtQW, AAinvA);
 
                 inds_row = topo->elInds_exner_g(ex, ey, kk);
-		if(col_ind == 1) {
+                if(col_ind == 1) {
                     inds_col = topo->elInds_theta_g(ex, ey, kk);
-		} else {
+                } else {
                     inds_col = topo->elInds_exner_g(ex, ey, kk);
-		}
+                }
                 MatSetValues(M, W->nDofsJ, inds_row, W->nDofsJ, inds_col, AAinvA, ADD_VALUES);
             }
             VecRestoreArray(p2[ei], &pArray);
         }
     }
+}
+
+void EoSmat_coupled::assemble_rho_inv_mm(double scale, double fac, Vec p2, Mat M2) {
+    int ii, jj, ex, ey, ei, mp1, mp12, n2;
+    int *inds0, *inds2;
+    double det, val, QA[99], QB[99];
+    PetscScalar* pArray;
+
+    MatZeroEntries(M2);
+
+    n2    = topo->elOrd*topo->elOrd;
+    mp1   = edge->l->q->n + 1;
+    mp12  = mp1*mp1;
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    VecGetArray(p2, &pArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei    = ey*topo->nElsX + ex;
+            inds0 = topo->elInds0_l(ex, ey);
+            inds2 = topo->elInds2_g(ex, ey);
+
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                QA[ii]  = Q->A[ii]*(scale/det);
+                QA[ii] *= geom->thickInv[kk][inds0[ii]];
+
+                val = 0.0;
+                for(jj = 0; jj < n2; jj++) {
+                    val += pArray[kk*n2+jj]*W->A[ii*n2+jj];
+                }
+                QB[ii] = QA[ii]*val/(fac*geom->thick[kk][inds0[ii]]*det);
+            }
+            // assemble the piecewise constant mass matrix for level k
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QB, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Inv(WtQW, WtQWinv, n2);
+
+            Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QA, WtQ);
+            Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+            Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQWinv, WtQW, AAinvA);
+
+            MatSetValues(M2, W->nDofsJ, inds2, W->nDofsJ, inds2, AAinvA, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(p2, &pArray);
 }
 
 EoSmat_coupled::~EoSmat_coupled() {
