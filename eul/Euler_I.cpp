@@ -126,9 +126,13 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uz[ii]);
         VecCreateSeq(MPI_COMM_SELF, topo->n1, &uzl[ii]);
     }
-    ul = new Vec[geom->nk];
+    uil = new Vec[geom->nk];
+    ujl = new Vec[geom->nk];
+    uhl = new Vec[geom->nk];
     for(ii = 0; ii < geom->nk; ii++) {
-        VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul[ii]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &uil[ii]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &ujl[ii]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &uhl[ii]);
     }
     uuz = new L2Vecs(geom->nk-1, topo, geom);
 
@@ -333,11 +337,15 @@ Euler_I::~Euler_I() {
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&fg[ii]);
         VecDestroy(&Kh[ii]);
-        VecDestroy(&ul[ii]);
+        VecDestroy(&uil[ii]);
+        VecDestroy(&ujl[ii]);
+        VecDestroy(&uhl[ii]);
     }
     delete[] fg;
     delete[] Kh;
-    delete[] ul;
+    delete[] uil;
+    delete[] ujl;
+    delete[] uhl;
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecDestroy(&gv[ii]);
         VecDestroy(&zv[ii]);
@@ -393,7 +401,7 @@ Euler_I::~Euler_I() {
 
 /*
 */
-void Euler_I::AssembleKEVecs(Vec* velx) {
+void Euler_I::AssembleKEVecs(Vec* ul, Vec* velx) {
     for(int kk = 0; kk < geom->nk; kk++) {
         K->assemble(ul[kk], kk, SCALE);
         VecZeroEntries(Kh[kk]);
@@ -600,7 +608,7 @@ void Euler_I::diagTheta(Vec* rho, Vec* rt, Vec* theta) {
 diagnose the potential temperature subject to an artificial viscosity 
 rho and theta are VERTICAL vectors
 */
-void Euler_I::diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs) {
+void Euler_I::diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs, Vec* ul) {
     double ae = 4.0*M_PI*RAD_EARTH*RAD_EARTH;
     double dx = sqrt(ae/topo->nDofs0G);
     double tau = dx/2.0/20.0; // u_{max} ~= 20m/s
@@ -954,18 +962,12 @@ double Euler_I::int2(Vec ug) {
     int ex, ey, ei, ii, mp1, mp12;
     double det, uq, local, global;
     PetscScalar *array_2;
-    //Vec _ul;
-
-    //VecCreateSeq(MPI_COMM_SELF, topo->n2, &_ul);
-    //VecScatterBegin(topo->gtol_2, ug, _ul, INSERT_VALUES, SCATTER_FORWARD);
-    //VecScatterEnd(topo->gtol_2, ug, _ul, INSERT_VALUES, SCATTER_FORWARD);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
     local = 0.0;
 
-    //VecGetArray(_ul, &array_2);
     VecGetArray(ug, &array_2);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -979,12 +981,9 @@ double Euler_I::int2(Vec ug) {
             }
         }
     }
-    //VecRestoreArray(_ul, &array_2);
     VecRestoreArray(ug, &array_2);
 
     MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-    //VecDestroy(&_ul);
 
     return global;
 }
@@ -1250,7 +1249,7 @@ void Euler_I::HorizPotVort(Vec* velx, Vec* rho) {
 }
 
 // compute the contribution of the vorticity vector to the vertical momentum equation
-void Euler_I::AssembleVertMomVort(L2Vecs* velz) {
+void Euler_I::AssembleVertMomVort(Vec* ul, L2Vecs* velz) {
     int kk;
     Vec _ul, ug, tmp, tmp1, dwdx;
 
@@ -1328,7 +1327,7 @@ void Euler_I::CreateCoupledOperator() {
     EoSc = new EoSmat_coupled(topo, geom, edge);
 }
 
-void Euler_I::AssembleCoupledOperator(Vec* rho_x, Vec* exner_x, Vec* theta_x, Vec* rt_z, Vec* exner_z) {
+void Euler_I::AssembleCoupledOperator(Vec* rho_x, Vec* rt_x, Vec* exner_x, Vec* theta_x, Vec* rt_z, Vec* exner_z) {
     int kk;
     Vec theta_h, d_pi, d_pi_l;
     MatReuse reuse = (!GRADx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
@@ -1371,6 +1370,30 @@ void Euler_I::AssembleCoupledOperator(Vec* rho_x, Vec* exner_x, Vec* theta_x, Ve
         MatTranspose(K->M, reuse_kt, &KT);
         MatMatMult(KT, T->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Gx);
 	AddGradx_Coupled(topo, kk, 1, Gx, M);
+
+	// Q_x block
+	T->assemble(theta_h, kk, SCALE, false);
+        MatMatMult(EtoF->E12, T->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &GRADx);
+        MatMatMult(M1inv[kk], GRADx, MAT_REUSE_MATRIX, PETSC_DEFAULT, &M1invGRADx);
+        K->assemble(uil[kk], kk, SCALE);
+        MatMatMult(K->M, M1invGRADx, reuse, PETSC_DEFAULT, &Qx);
+	AddQx_Coupled(topo, kk, Qx, M);
+
+        // D_rho_x block
+	VecCopy(rho_x[kk], theta_h);
+	VecScale(theta_h, 0.5*dt);
+	F->assemble(theta_h, kk, true, SCALE);
+        MatMatMult(M1inv[kk], F->M, reuse, PETSC_DEFAULT, &M1invM1);
+        MatMatMult(EtoF->E21, M1invM1, reuse, PETSC_DEFAULT, &DM1invM1);
+        MatMatMult(M2->M, DM1invM1, reuse, PETSC_DEFAULT, &Dx);
+        AddDivx_Coupled(topo, kk, 0, Dx, M);
+
+        // D_rt_x block
+	VecCopy(rt_x[kk], theta_h);
+	VecScale(theta_h, 0.5*dt);
+	T->assemble(theta_h, kk, SCALE, true);
+        MatMatMult(T->M, EtoF->E21, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Dx);
+        AddDivx_Coupled(topo, kk, 1, Dx, M);
     }
 
     VecDestroy(&theta_h);
