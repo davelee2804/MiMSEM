@@ -112,5 +112,6 @@ class Euler_I {
                               L2Vecs* exner_i, L2Vecs* exner_j, L2Vecs* exner_h,
                               L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
                               L2Vecs* theta_i, L2Vecs* theta_h,
-                              L2Vecs* Fz, Vec* dwdx_i, Vec* dwdx_j, Vec* R_u, Vec b);
+                              L2Vecs* Fz, L2Vecs* dFx, L2Vecs* dGx, Vec* dwdx_i, Vec* dwdx_j, 
+                              Vec* R_u, Vec* R_rho, Vec* R_rt, Vec* R_pi, Vec* R_w, Vec b);
 };

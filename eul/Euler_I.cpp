@@ -1346,11 +1346,18 @@ void Euler_I::AssembleResidual(Vec* velx_i, Vec* velx_j, Vec* velx_h,
                                L2Vecs* exner_i, L2Vecs* exner_j, L2Vecs* exner_h,
                                L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
                                L2Vecs* theta_i, L2Vecs* theta_h,
-                               L2Vecs* Fz, Vec* dwdx_i, Vec* dwdx_j, Vec* R_u, Vec b) 
+                               L2Vecs* Fz, L2Vecs* dFx, L2Vecs* dGx, Vec* dwdx_i, Vec* dwdx_j, 
+                               Vec* R_u, Vec* R_rho, Vec* R_rt, Vec* R_pi, Vec* R_w, Vec b) 
 {
-    int ii, kk;
-    Vec du, Mu;
+    int ii, kk, ex, ey, elOrd2;
+    Vec F_z, G_z, dF_z, dG_z, du, Mu;
 
+    elOrd2 = topo->elOrd*topo->elOrd;
+
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
 
@@ -1358,8 +1365,12 @@ void Euler_I::AssembleResidual(Vec* velx_i, Vec* velx_j, Vec* velx_h,
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecAXPY(theta_h->vz[ii], 1.0, theta_i->vz[ii]);
         VecScale(theta_h->vz[ii], 0.5);
+	VecZeroEntries(exner_h->vz[ii]);
+	VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
+	VecAXPY(exner_h->vz[ii], 0.5, exner_j->vz[ii]);
     }
     theta_h->VertToHoriz();
+    exner_h->VertToHoriz();
 
     HorizPotVort(velx_h, rho_h->vh, uzl_j);
     vert->horiz->diagVertVort(velz_j->vh, rho_j->vh, dwdx_j);
@@ -1375,6 +1386,41 @@ void Euler_I::AssembleResidual(Vec* velx_i, Vec* velx_j, Vec* velx_h,
 	VecAYPX(R_u[kk], dt, Mu);
     }
 
+    AssembleVertMomVort(ujl, velz_h); // uuz TOOD: second order in time
+    vert->horiz->advection_rhs(velx_i, velx_j, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, uil, ujl, true);
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        ex = ii%topo->nElsX;
+        ey = ii/topo->nElsX;
+
+        // assemble the residual vectors
+        vert->assemble_residual(ex, ey, theta_h->vz[ii], exner_h->vz[ii], 
+			        velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii],
+                                rt_i->vz[ii], rt_j->vz[ii], R_w[ii], F_z, G_z);
+
+        VecAXPY(R_w[ii], dt, uuz->vz[ii]);
+        vert->vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], R_pi[ii]);
+        vert->vo->AssembleConst(ex, ey, vert->vo->VB);
+        MatMult(vert->vo->V10, F_z, dF_z);
+        MatMult(vert->vo->V10, G_z, dG_z);
+        VecAYPX(dF_z, dt, rho_j->vz[ii]);
+        VecAYPX(dG_z, dt, rt_j->vz[ii]);
+        VecAXPY(dF_z, -1.0, rho_i->vz[ii]);
+        VecAXPY(dG_z, -1.0, rt_i->vz[ii] );
+
+        // add the horizontal forcing
+        VecAXPY(dF_z, dt, dFx->vz[ii]);
+        VecAXPY(dG_z, dt, dGx->vz[ii]);
+
+        MatMult(vert->vo->VB, dF_z, R_rho[ii]);
+        MatMult(vert->vo->VB, dG_z, R_rt[ii]);
+    }
+
+    topo->repack(R_u, R_rho, R_rt, R_pi, R_w, b);
+
+    VecDestroy(&F_z);
+    VecDestroy(&G_z);
+    VecDestroy(&dF_z);
+    VecDestroy(&dG_z);
     VecDestroy(&du);
     VecDestroy(&Mu);
 }
