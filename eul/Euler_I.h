@@ -103,5 +103,6 @@ class Euler_I {
         void VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz);
 
 	void CreateCoupledOperator();
-	void AssembleCoupledOperator(Vec* rho_x, Vec* rt_x, Vec* exner_x, Vec* theta_x, Vec* rt_z, Vec* exner_z);
+	void AssembleCoupledOperator(Vec* rho_x, Vec* rt_x, Vec* exner_x, Vec* theta_x, 
+			             Vec* rho_z, Vec* rt_z, Vec* exner_z, Vec* theta_z);
 };

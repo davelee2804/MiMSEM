@@ -1327,8 +1327,10 @@ void Euler_I::CreateCoupledOperator() {
     EoSc = new EoSmat_coupled(topo, geom, edge);
 }
 
-void Euler_I::AssembleCoupledOperator(Vec* rho_x, Vec* rt_x, Vec* exner_x, Vec* theta_x, Vec* rt_z, Vec* exner_z) {
-    int kk;
+void Euler_I::AssembleCoupledOperator(Vec* rho_x, Vec* rt_x, Vec* exner_x, Vec* theta_x, 
+		                      Vec* rho_z, Vec* rt_z, Vec* exner_z, Vec* theta_z) 
+{
+    int kk, ex, ey, ei;
     Vec theta_h, d_pi, d_pi_l;
     MatReuse reuse = (!GRADx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     MatReuse reuse_kt = (!KT) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
@@ -1394,6 +1396,18 @@ void Euler_I::AssembleCoupledOperator(Vec* rho_x, Vec* rt_x, Vec* exner_x, Vec* 
 	T->assemble(theta_h, kk, SCALE, true);
         MatMatMult(T->M, EtoF->E21, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Dx);
         AddDivx_Coupled(topo, kk, 1, Dx, M);
+    }
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            vert->assemble_operators(ex, ey, theta_z[ei], rho_z[ei], rt_z[ei], exner_z[ei]);
+            AddGradz_Coupled(topo, ex, ey, 1, vert->G_rt, M);
+            AddGradz_Coupled(topo, ex, ey, 2, vert->G_pi, M);
+            AddDivz_Coupled(topo, ex, ey, 0, vert->D_rho, M);
+            AddDivz_Coupled(topo, ex, ey, 1, vert->D_rt, M);
+            AddQz_Coupled(topo, ex, ey, vert->Q_rt_rho, M);
+        }
     }
 
     VecDestroy(&theta_h);
