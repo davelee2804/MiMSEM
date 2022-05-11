@@ -69,9 +69,9 @@ class Euler_I {
         double viscosity();
         void coriolis();
         void initGZ();
-        void grad(bool assemble, Vec phi, Vec* u, int lev);            // weak form grad operator
-        void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
-        void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
+        void grad(bool assemble, Vec phi, Vec u, int lev);            // weak form grad operator
+        void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f); // weak form curl operator
+        void laplacian(bool assemble, Vec u, Vec* ddu, int lev);      // laplacian operator via helmholtz decomposition
         void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux);
         void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner);
         void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu, Vec Flux, Vec uzb, Vec uzt, Vec velz_b, Vec velz_t);
@@ -97,5 +97,5 @@ class Euler_I {
         void VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz);
 
 	void CreateCoupledOperator();
-	void AssembleCoupledOperator(Vec* theta_x, Vec* rt_z, Vec* exner_z);
+	void AssembleCoupledOperator(Vec* rho_x, Vec* exner_x, Vec* theta_x, Vec* rt_z, Vec* exner_z);
 };

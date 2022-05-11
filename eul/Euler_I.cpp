@@ -411,10 +411,10 @@ void Euler_I::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec 
     Vec wl, wi, Ru, Ku, Mh, d2u, d4u, theta_k, dExner, dp;
 
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &wl);
-    //VecCreateSeq(MPI_COMM_SELF, topo->n2, &theta_k);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_k);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Ru);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dExner);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ku);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mh);
 
@@ -439,11 +439,10 @@ void Euler_I::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec 
     VecAXPY(theta_k, 0.5, theta_l[lev+0]);
     VecAXPY(theta_k, 0.5, theta_l[lev+1]);
 
-    grad(false, exner, &dExner, lev);
+    grad(false, exner, dExner, lev);
     F->assemble(theta_k, lev, false, SCALE);
     MatMult(F->M, dExner, dp);
     VecAXPY(Fu, 1.0, dp);
-    VecDestroy(&dExner);
 
     // second voritcity term
     if(velz_b) {
@@ -480,6 +479,7 @@ void Euler_I::horizMomRHS(Vec uh, Vec* theta_l, Vec exner, int lev, Vec Fu, Vec 
     VecDestroy(&Mh);
     VecDestroy(&dp);
     VecDestroy(&theta_k);
+    VecDestroy(&dExner);
 }
 
 // pi is a local vector
@@ -521,6 +521,8 @@ void Euler_I::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_1);
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rho_dTheta_2);
         VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &d2Theta);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dTheta);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &d3Theta);
     }
 
     for(kk = 0; kk < geom->nk; kk++) {
@@ -544,7 +546,7 @@ void Euler_I::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
         // apply horiztonal viscosity
         if(rho_l) {
             M2->assemble(kk, SCALE, false);
-            grad(false, theta_g, &dTheta, kk);
+            grad(false, theta_g, dTheta, kk);
             F->assemble(rho_l[kk], kk, true, SCALE);
             MatMult(F->M, dTheta, rho_dTheta_1);
 
@@ -552,7 +554,7 @@ void Euler_I::tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner) {
             MatMult(EtoF->E21, rho_dTheta_2, d2Theta);
 
             M2->assemble(kk, SCALE, true);
-            grad(false, d2Theta, &d3Theta, kk);
+            grad(false, d2Theta, d3Theta, kk);
             MatMult(EtoF->E21, d3Theta, d2Theta);
             VecAXPY(Fp[kk], del2*del2, d2Theta);
             VecDestroy(&d3Theta);
@@ -604,6 +606,7 @@ void Euler_I::diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs) {
     double tau = dx/2.0/20.0; // u_{max} ~= 20m/s
     Vec drt, u_drt, h_tmp, u_tmp_1, u_tmp_2;
 
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &drt);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &u_drt);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &h_tmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &u_tmp_1);
@@ -620,9 +623,8 @@ void Euler_I::diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs) {
             MatTranspose(K->M, MAT_INITIAL_MATRIX, &KT);
         }
 
-        grad(false, rt->vh[kk], &drt, kk);
+        grad(false, rt->vh[kk], drt, kk);
         MatMult(K->M, drt, u_drt);
-        VecDestroy(&drt);
         MatMult(M2inv->M, u_drt, h_tmp);
         MatMult(KT, h_tmp, u_tmp_1);
         KSPSolve(ksp1, u_tmp_1, u_tmp_2);
@@ -636,6 +638,7 @@ void Euler_I::diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs) {
     
     diagTheta(rho, rhs->vz, theta);
 
+    VecDestroy(&drt);
     VecDestroy(&u_drt);
     VecDestroy(&h_tmp);
     VecDestroy(&u_tmp_1);
@@ -645,10 +648,9 @@ void Euler_I::diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs) {
 /*
 Take the weak form gradient of a 2 form scalar field as a 1 form vector field
 */
-void Euler_I::grad(bool assemble, Vec phi, Vec* u, int lev) {
+void Euler_I::grad(bool assemble, Vec phi, Vec u, int lev) {
     Vec Mphi, dMphi;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, u);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mphi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMphi);
 
@@ -659,7 +661,7 @@ void Euler_I::grad(bool assemble, Vec phi, Vec* u, int lev) {
 
     MatMult(M2->M, phi, Mphi);
     MatMult(EtoF->E12, Mphi, dMphi);
-    KSPSolve(ksp1, dMphi, *u);
+    KSPSolve(ksp1, dMphi, u);
 
     VecDestroy(&Mphi);
     VecDestroy(&dMphi);
@@ -691,9 +693,10 @@ void Euler_I::curl(bool assemble, Vec u, Vec* w, int lev, bool add_f) {
     VecDestroy(&dMu);
 }
 
-void Euler_I::laplacian(bool assemble, Vec ui, Vec* ddu, int lev) {
+void Euler_I::laplacian(bool assemble, Vec ui, Vec *ddu, int lev) {
     Vec Du, Cu, RCu;
 
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, ddu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &RCu);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Du);
 
@@ -702,7 +705,7 @@ void Euler_I::laplacian(bool assemble, Vec ui, Vec* ddu, int lev) {
     MatMult(EtoF->E21, ui, Du);
 
     // grad (weak form)
-    grad(assemble, Du, ddu, lev);
+    grad(assemble, Du, *ddu, lev);
 
     /*** rotational component ***/
     // curl (weak form)
@@ -1325,12 +1328,15 @@ void Euler_I::CreateCoupledOperator() {
     EoSc = new EoSmat_coupled(topo, geom, edge);
 }
 
-void Euler_I::AssembleCoupledOperator(Vec* theta_x, Vec* rt_z, Vec* exner_z) {
+void Euler_I::AssembleCoupledOperator(Vec* rho_x, Vec* exner_x, Vec* theta_x, Vec* rt_z, Vec* exner_z) {
     int kk;
-    Vec theta_h;
+    Vec theta_h, d_pi, d_pi_l;
     MatReuse reuse = (!GRADx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    MatReuse reuse_kt = (!KT) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &d_pi);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &d_pi_l);
 
     MatZeroEntries(M);
 
@@ -1343,18 +1349,31 @@ void Euler_I::AssembleCoupledOperator(Vec* theta_x, Vec* rt_z, Vec* exner_z) {
     EoSc->assemble(SCALE, +1.0, 2, exner_z, M);
 
     for(kk = 0; kk < topo->nk; kk++) {
+	M1->assemble(kk, SCALE, true);
 	M2->assemble(kk, SCALE, true);
+
+	// G_pi_x block
         MatMatMult(EtoF->E12, M2->M, reuse, PETSC_DEFAULT, &GRADx);
         MatMatMult(M1inv[kk], GRADx, reuse, PETSC_DEFAULT, &M1invGRADx);
-
 	VecZeroEntries(theta_h);
         VecAXPY(theta_h, 0.25*dt, theta_x[kk+0]);
         VecAXPY(theta_h, 0.25*dt, theta_x[kk+1]);
         F->assemble(theta_h, kk, false, SCALE);
-
         MatMatMult(F->M, M1invGRADx, reuse, PETSC_DEFAULT, &Gx);
 	AddGradx_Coupled(topo, kk, 2, Gx, M);
+
+	// G_rt_x_block
+        grad(false, exner_x[kk], d_pi, kk);
+        VecScatterBegin(topo->gtol_1, d_pi, d_pi_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, d_pi, d_pi_l, INSERT_VALUES, SCATTER_FORWARD);
+        EoSc->assemble_rho_inv_mm(SCALE, 0.5*dt, kk, rho_x[kk], T->M);
+        K->assemble(d_pi_l, kk, SCALE);
+        MatTranspose(K->M, reuse_kt, &KT);
+        MatMatMult(KT, T->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Gx);
+	AddGradx_Coupled(topo, kk, 1, Gx, M);
     }
 
     VecDestroy(&theta_h);
+    VecDestroy(&d_pi);
+    VecDestroy(&d_pi_l);
 }

@@ -347,7 +347,7 @@ void EoSmat_coupled::assemble(double scale, double fac, int col_ind, Vec* p2, Ma
     }
 }
 
-void EoSmat_coupled::assemble_rho_inv_mm(double scale, double fac, Vec p2, Mat M2) {
+void EoSmat_coupled::assemble_rho_inv_mm(double scale, double fac, int lev, Vec p2, Mat M2) {
     int ii, jj, ex, ey, ei, mp1, mp12, n2;
     int *inds0, *inds2;
     double det, val, QA[99], QB[99];
@@ -371,13 +371,13 @@ void EoSmat_coupled::assemble_rho_inv_mm(double scale, double fac, Vec p2, Mat M
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 QA[ii]  = Q->A[ii]*(scale/det);
-                QA[ii] *= geom->thickInv[kk][inds0[ii]];
+                QA[ii] *= geom->thickInv[lev][inds0[ii]];
 
                 val = 0.0;
                 for(jj = 0; jj < n2; jj++) {
-                    val += pArray[kk*n2+jj]*W->A[ii*n2+jj];
+                    val += pArray[inds2[jj]]*W->A[ii*n2+jj];
                 }
-                QB[ii] = QA[ii]*val/(fac*geom->thick[kk][inds0[ii]]*det);
+                QB[ii] = QA[ii]*val/(fac*geom->thick[lev][inds0[ii]]*det);
             }
             // assemble the piecewise constant mass matrix for level k
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, QB, WtQ);
