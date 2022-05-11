@@ -39,7 +39,8 @@ class Euler_I {
         Vec* gv;
         Vec* zv;
         Vec* uz;                 // dudz and dvdz vorticity components
-        Vec* uzl;
+        Vec* uzl_i;
+        Vec* uzl_j;
         Vec* uil;
         Vec* ujl;
         Vec* uhl;
@@ -63,6 +64,7 @@ class Euler_I {
 	Mat             Gx;
 	Mat             Dx;
 	Mat             Qx;
+	KSP             ksp_c;
 
         VertSolve* vert;
 
@@ -89,7 +91,6 @@ class Euler_I {
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* p, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
-        void HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft, Vec* velz);
         void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
 
         double int2(Vec ug);
@@ -97,12 +98,19 @@ class Euler_I {
 
         void DiagExner(Vec* rtz, L2Vecs* exner);
 
-        void HorizVort(Vec* velx);
-        void HorizPotVort(Vec* velx, Vec* rho);
+        void HorizPotVort(Vec* velx, Vec* rho, Vec* uzl);
         void AssembleVertMomVort(Vec* ul, L2Vecs* velz);
         void VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz);
 
 	void CreateCoupledOperator();
 	void AssembleCoupledOperator(Vec* rho_x, Vec* rt_x, Vec* exner_x, Vec* theta_x, 
 			             Vec* rho_z, Vec* rt_z, Vec* exner_z, Vec* theta_z);
+
+        void AssembleResidual(Vec* velx_i, Vec* velx_j, Vec* velx_h,
+                              L2Vecs* rho_i, L2Vecs* rho_j, L2Vecs* rho_h,
+                              L2Vecs* rt_i, L2Vecs* rt_j, L2Vecs* rt_h,
+                              L2Vecs* exner_i, L2Vecs* exner_j, L2Vecs* exner_h,
+                              L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
+                              L2Vecs* theta_i, L2Vecs* theta_h,
+                              L2Vecs* Fz, Vec* dwdx_i, Vec* dwdx_j, Vec* R_u, Vec b);
 };

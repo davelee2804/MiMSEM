@@ -82,7 +82,6 @@ class Euler {
         void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
         void Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
         void Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
-        void Iterative(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
         double int2(Vec ug);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);

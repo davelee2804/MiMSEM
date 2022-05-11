@@ -121,10 +121,12 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
         VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &zv[ii]);
     }
     uz = new Vec[geom->nk-1];
-    uzl = new Vec[geom->nk-1];
+    uzl_i = new Vec[geom->nk-1];
+    uzl_j = new Vec[geom->nk-1];
     for(ii = 0; ii < geom->nk - 1; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &uz[ii]);
-        VecCreateSeq(MPI_COMM_SELF, topo->n1, &uzl[ii]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &uzl_i[ii]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &uzl_j[ii]);
     }
     uil = new Vec[geom->nk];
     ujl = new Vec[geom->nk];
@@ -187,6 +189,15 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
 	MatGetDiagonal(M1->M, uz[1]);
 	VecPointwiseDivide(uz[1], uz[0], uz[1]);
         MatDiagonalSet(M1inv[ii], uz[1], INSERT_VALUES);
+
+        KSPCreate(MPI_COMM_WORLD, &ksp_c);
+        KSPSetOperators(ksp_c, M, M);
+        KSPSetTolerances(ksp_c, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+        KSPSetType(ksp_c, KSPGMRES);
+        KSPGetPC(ksp2, &pc);
+        PCSetType(pc, PCILU);
+        KSPSetOptionsPrefix(ksp_c, "ksp_c_");
+        KSPSetFromOptions(ksp_c);
     }
     GRADx = NULL;
 }
@@ -354,10 +365,12 @@ Euler_I::~Euler_I() {
     delete[] zv;
     for(ii = 0; ii < geom->nk-1; ii++) {
         VecDestroy(&uz[ii]);
-        VecDestroy(&uzl[ii]);
+        VecDestroy(&uzl_i[ii]);
+        VecDestroy(&uzl_j[ii]);
     }
     delete[] uz;
-    delete[] uzl;
+    delete[] uzl_i;
+    delete[] uzl_j;
     delete uuz;
 
     MatDestroy(&VA);
@@ -389,6 +402,7 @@ Euler_I::~Euler_I() {
     delete vert;
 
     MatDestroy(&M);
+    KSPDestroy(&ksp_c);
     delete M1c;
     delete Rc;
     delete M2c;
@@ -729,51 +743,6 @@ void Euler_I::laplacian(bool assemble, Vec ui, Vec *ddu, int lev) {
     VecDestroy(&Cu);
     VecDestroy(&RCu);
     VecDestroy(&Du);
-}
-
-// rho and rt are local vectors, and exner is a global vector
-void Euler_I::HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft, Vec* velz) {
-    int kk;
-    L2Vecs* theta = new L2Vecs(geom->nk+1, topo, geom);
-    Vec* Flux;
-    Vec uzt, uzb, velz_t, velz_b;
-
-    k2i = i2k = 0.0;
-
-    Flux = new Vec[geom->nk];
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Flux[kk]);
-    }
-
-    // set the top and bottom potential temperature bcs
-    rho->HorizToVert();
-    rt->HorizToVert();
-    diagTheta(rho->vz, rt->vz, theta->vz);
-    theta->VertToHoriz();
-
-    massRHS(velx, rho->vh, Fp, Flux);
-    tempRHS(Flux, theta->vh, Ft, rho->vh, exner);
-
-    HorizVort(velx);
-    for(kk = 0; kk < geom->nk; kk++) {
-        velz_t = velz_b = NULL;
-        uzb = uzt = NULL;
-        if(kk > 0) {
-            uzb = uzl[kk-1];
-            velz_b = velz[kk-1];
-        }
-        if(kk < geom->nk - 1) {
-            uzt = uzl[kk+0];
-            velz_t = velz[kk+0];
-        }
-        horizMomRHS(velx[kk], theta->vh, exner[kk], kk, Fu[kk], Flux[kk], uzb, uzt, velz_b, velz_t);
-    }
-
-    delete theta;
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecDestroy(&Flux[kk]);
-    }
-    delete[] Flux;
 }
 
 void Euler_I::init0(Vec* q, ICfunc3D* func) {
@@ -1151,52 +1120,8 @@ void _DestroyHorizVecs(Vec* vecs, Geom* geom) {
     delete[] vecs;
 }
 
-// compute the vorticity components dudz, dvdz
-void Euler_I::HorizVort(Vec* velx) {
-    int ii, size;
-    Vec* Mu = new Vec[geom->nk];
-    Vec  du;
-    PC pc;
-    KSP ksp1_t;
-
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-    KSPCreate(MPI_COMM_WORLD, &ksp1_t);
-    KSPSetOperators(ksp1_t, M1t->M, M1t->M);
-    KSPSetTolerances(ksp1_t, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    KSPSetType(ksp1_t, KSPGMRES);
-    KSPGetPC(ksp1_t, &pc);
-    PCSetType(pc, PCBJACOBI);
-    PCBJacobiSetTotalBlocks(pc, size*topo->nElsX*topo->nElsX, NULL);
-    KSPSetOptionsPrefix(ksp1_t, "ksp1_t_");
-    KSPSetFromOptions(ksp1_t);
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
-    for(ii = 0; ii < geom->nk; ii++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu[ii]);
-        M1->assemble(ii, SCALE, true);
-        MatMult(M1->M, velx[ii], Mu[ii]);
-    }
-
-    for(ii = 0; ii < geom->nk-1; ii++) {
-        VecZeroEntries(du);
-        VecAXPY(du, +1.0, Mu[ii+1]);
-        VecAXPY(du, -1.0, Mu[ii+0]);
-        M1t->assemble(ii, SCALE);
-        KSPSolve(ksp1_t, du, uz[ii]);
-        VecScatterBegin(topo->gtol_1, uz[ii], uzl[ii], INSERT_VALUES, SCATTER_FORWARD);
-        VecScatterEnd(  topo->gtol_1, uz[ii], uzl[ii], INSERT_VALUES, SCATTER_FORWARD);
-    }
-
-    VecDestroy(&du);
-    for(ii = 0; ii < geom->nk; ii++) {
-        VecDestroy(&Mu[ii]);
-    }
-    delete[] Mu;
-    KSPDestroy(&ksp1_t);
-}
-
-void Euler_I::HorizPotVort(Vec* velx, Vec* rho) {
+// compute the potential vorticity components dUdz, dVdz
+void Euler_I::HorizPotVort(Vec* velx, Vec* rho, Vec* uzl) {
     int ii, size;
     Vec* Mu = new Vec[geom->nk];
     Vec  du, rho_h;
@@ -1413,4 +1338,43 @@ void Euler_I::AssembleCoupledOperator(Vec* rho_x, Vec* rt_x, Vec* exner_x, Vec* 
     VecDestroy(&theta_h);
     VecDestroy(&d_pi);
     VecDestroy(&d_pi_l);
+}
+
+void Euler_I::AssembleResidual(Vec* velx_i, Vec* velx_j, Vec* velx_h,
+                               L2Vecs* rho_i, L2Vecs* rho_j, L2Vecs* rho_h,
+                               L2Vecs* rt_i, L2Vecs* rt_j, L2Vecs* rt_h,
+                               L2Vecs* exner_i, L2Vecs* exner_j, L2Vecs* exner_h,
+                               L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
+                               L2Vecs* theta_i, L2Vecs* theta_h,
+                               L2Vecs* Fz, Vec* dwdx_i, Vec* dwdx_j, Vec* R_u, Vec b) 
+{
+    int ii, kk;
+    Vec du, Mu;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &du);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
+
+    vert->diagTheta2(rho_j->vz, rt_j->vz, theta_h->vz);
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecAXPY(theta_h->vz[ii], 1.0, theta_i->vz[ii]);
+        VecScale(theta_h->vz[ii], 0.5);
+    }
+    theta_h->VertToHoriz();
+
+    HorizPotVort(velx_h, rho_h->vh, uzl_j);
+    vert->horiz->diagVertVort(velz_j->vh, rho_j->vh, dwdx_j);
+    VertMassFlux(velz_i, velz_j, rho_i, rho_j, Fz);
+    for(kk = 0; kk < topo->nk; kk++) {
+	vert->horiz->momentum_rhs(kk, theta_h->vh, uzl_i, uzl_j, velz_i->vh, velz_j->vh, exner_h->vh[kk],
+                                  velx_i[kk], velx_j[kk], uil[kk], ujl[kk], rho_i->vh[kk], rho_j->vh[kk], 
+				  R_u[kk], Fz->vh, dwdx_i, dwdx_j);
+
+	VecCopy(velx_j[kk], du);
+	VecAXPY(du, -1.0, velx_i[kk]);
+	MatMult(vert->horiz->M1->M, du, Mu);
+	VecAYPX(R_u[kk], dt, Mu);
+    }
+
+    VecDestroy(&du);
+    VecDestroy(&Mu);
 }
