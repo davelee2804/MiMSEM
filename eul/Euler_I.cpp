@@ -41,9 +41,7 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     topo = _topo;
     geom = _geom;
 
-    do_visc = true;
     hs_forcing = false;
-    del2 = viscosity();
     step = 0;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -192,15 +190,6 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetFromOptions(ksp_c);
 
     GRADx = NULL;
-}
-
-// laplacian viscosity, from Guba et. al. (2014) GMD
-double Euler_I::viscosity() {
-    double ae = 4.0*M_PI*RAD_EARTH*RAD_EARTH;
-    double dx = sqrt(ae/topo->nDofs0G);
-    double del4 = 0.072*pow(dx,3.2);
-
-    return -sqrt(del4);
 }
 
 // project coriolis term onto 0 forms
@@ -901,9 +890,6 @@ void Euler_I::AssembleVertMomVort(Vec* ul, L2Vecs* velz) {
 void Euler_I::VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz) {
     int ex, ey;
 
-    rho1->HorizToVert();
-    rho2->HorizToVert();
-
     for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         ex = ii%topo->nElsX;
         ey = ii/topo->nElsX;
@@ -919,7 +905,6 @@ void Euler_I::CreateCoupledOperator() {
 
     n_locl = topo->nk*topo->n1l + (4*topo->nk-1)*topo->n2l;
     n_glob = topo->nk*topo->nDofs1G + (4*topo->nk-1)*topo->nDofs2G;
-    //nnz = 2*U->nDofsJ + 4*W->nDofsJ;
     nnz = 2*U->nDofsJ + 8*topo->nk*W->nDofsJ;
 
     MatCreate(MPI_COMM_WORLD, &M);

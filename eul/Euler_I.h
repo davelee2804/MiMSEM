@@ -5,8 +5,6 @@ class Euler_I {
         Euler_I(Topo* _topo, Geom* _geom, double _dt);
         ~Euler_I();
         double dt;
-        double del2;
-        bool do_visc;
         bool hs_forcing;
         int rank;
         int step;
@@ -75,7 +73,6 @@ class Euler_I {
         double* Wt;
         double* WtQ;
 
-        double viscosity();
         void coriolis();
         void initGZ();
         void grad(bool assemble, Vec phi, Vec u, int lev);            // weak form grad operator
