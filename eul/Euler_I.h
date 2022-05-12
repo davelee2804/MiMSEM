@@ -51,6 +51,9 @@ class Euler_I {
         KSP ksp2;
         KSP kspColA2; // for the diagnosis of theta without boundary conditions
 
+	Vec x;
+	Vec dx;
+	Vec b;
         Mat M; // global coupled matrix
 	Umat_coupled*   M1c;
 	RotMat_coupled* Rc;
@@ -103,15 +106,15 @@ class Euler_I {
         void VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz);
 
 	void CreateCoupledOperator();
-	void AssembleCoupledOperator(Vec* rho_x, Vec* rt_x, Vec* exner_x, Vec* theta_x, 
-			             Vec* rho_z, Vec* rt_z, Vec* exner_z, Vec* theta_z);
+        void AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* theta);
 
-        void AssembleResidual(Vec* velx_i, Vec* velx_j, Vec* velx_h,
-                              L2Vecs* rho_i, L2Vecs* rho_j, L2Vecs* rho_h,
-                              L2Vecs* rt_i, L2Vecs* rt_j, L2Vecs* rt_h,
+        void AssembleResidual(Vec* velx_i, Vec* velx_j,
+                              L2Vecs* rho_i, L2Vecs* rho_j,
+                              L2Vecs* rt_i, L2Vecs* rt_j,
                               L2Vecs* exner_i, L2Vecs* exner_j, L2Vecs* exner_h,
-                              L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
-                              L2Vecs* theta_i, L2Vecs* theta_h,
+                              L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* theta_i, L2Vecs* theta_h,
                               L2Vecs* Fz, L2Vecs* dFx, L2Vecs* dGx, Vec* dwdx_i, Vec* dwdx_j, 
-                              Vec* R_u, Vec* R_rho, Vec* R_rt, Vec* R_pi, Vec* R_w, Vec b);
+                              Vec* R_u, Vec* R_rho, Vec* R_rt, Vec* R_pi, Vec* R_w);
+
+        void Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 };
