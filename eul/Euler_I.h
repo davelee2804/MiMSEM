@@ -64,7 +64,8 @@ class Euler_I {
 	Mat             M1invGRADx;
 	Mat             M1invM1;
 	Mat             DM1invM1;
-	Mat             Gx;
+	Mat             Gpi;
+	Mat             Grt;
 	Mat             Dx;
 	Mat             Qx;
 	KSP             ksp_c;

@@ -392,6 +392,9 @@ void EoSmat_coupled::assemble_rho_inv_mm(double scale, double fac, int lev, Vec 
         }
     }
     VecRestoreArray(p2, &pArray);
+
+    MatAssemblyBegin(M2, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M2, MAT_FINAL_ASSEMBLY);
 }
 
 EoSmat_coupled::~EoSmat_coupled() {

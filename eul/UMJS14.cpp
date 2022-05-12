@@ -15,14 +15,15 @@
 #include "ElMats.h"
 #include "VertOps.h"
 #include "Assembly.h"
+#include "Assembly_Coupled.h"
 #include "HorizSolve.h"
 #include "VertSolve.h"
-#include "Euler_2.h"
+#include "Euler_I.h"
 
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define NK 30
+#define NK 4
 #define P0 100000.0
 #define RD 287.0
 #define GAMMA 0.005
@@ -273,12 +274,12 @@ int main(int argc, char** argv) {
     bool dump;
     int startStep = atoi(argv[1]);
     double dt = 60.0;
-    int nSteps = 12*24*60;
-    int dumpEvery = 1440; //dump evert 24 hours
+    int nSteps = 10;//12*24*60;
+    int dumpEvery =  2;//1440; //dump evert 24 hours
     ofstream file;
     Topo* topo;
     Geom* geom;
-    Euler* pe;
+    Euler_I* eul;
     Vec *velx, *velz, *rho, *rt, *exner;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
@@ -293,8 +294,8 @@ int main(int argc, char** argv) {
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
 
-    pe   = new Euler(topo, geom, dt);
-    pe->step = startStep;
+    eul = new Euler_I(topo, geom, dt);
+    eul->step = startStep;
     //pe->vert->horiz->do_visc = false;
 
     n2 = topo->nElsX*topo->nElsX;
@@ -316,10 +317,10 @@ int main(int argc, char** argv) {
     }
 
     if(startStep == 0) {
-        pe->init1(velx, u_init, v_init);
-        pe->init2(rho,   rho_init  );
-        pe->init2(exner, exner_init);
-        pe->init2(rt,    rt_init   );
+        eul->init1(velx, u_init, v_init);
+        eul->init2(rho,   rho_init  );
+        eul->init2(exner, exner_init);
+        eul->init2(rt,    rt_init   );
 
         for(ki = 0; ki < NK; ki++) {
             sprintf(fieldname,"velocity_h");
@@ -349,10 +350,10 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->Strang(velx, velz, rho, rt, exner, dump);
+        eul->Solve(velx, velz, rho, rt, exner, dump);
     }
 
-    delete pe;
+    delete eul;
     delete geom;
     delete topo;
 

@@ -194,8 +194,8 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
         KSPSetOperators(ksp_c, M, M);
         KSPSetTolerances(ksp_c, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
         KSPSetType(ksp_c, KSPGMRES);
-        KSPGetPC(ksp2, &pc);
-        PCSetType(pc, PCILU);
+        //KSPGetPC(ksp2, &pc);
+        //PCSetType(pc, PCILU);
         KSPSetOptionsPrefix(ksp_c, "ksp_c_");
         KSPSetFromOptions(ksp_c);
     }
@@ -291,7 +291,6 @@ void Euler_I::initGZ() {
                     Q0[ii] *= 0.5;
                 }
                 Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-                //Flat2D_IP(W->nDofsJ, Q->nDofsJ, WtQ, WtQflat);
 
                 for(ii = 0; ii < W->nDofsJ; ii++) {
                     inds2k[ii] = ii + kk*W->nDofsJ;
@@ -630,6 +629,7 @@ void Euler_I::diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs, Vec* u
     double _dx = sqrt(ae/topo->nDofs0G);
     double tau = _dx/2.0/20.0; // u_{max} ~= 20m/s
     Vec drt, u_drt, h_tmp, u_tmp_1, u_tmp_2;
+    MatReuse reuse_kt = (!KT) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &drt);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &u_drt);
@@ -642,11 +642,7 @@ void Euler_I::diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs, Vec* u
         M2->assemble(kk, SCALE, true);
         K->assemble(ul[kk], kk, SCALE);
         M2inv->assemble(kk, SCALE);
-        if(KT) {
-            MatTranspose(K->M, MAT_REUSE_MATRIX, &KT);
-        } else {
-            MatTranspose(K->M, MAT_INITIAL_MATRIX, &KT);
-        }
+        MatTranspose(K->M, reuse_kt, &KT);
 
         grad(false, rt->vh[kk], drt, kk);
         MatMult(K->M, drt, u_drt);
@@ -1240,7 +1236,8 @@ void Euler_I::CreateCoupledOperator() {
 
     n_locl = topo->nk*topo->n1l + (4*topo->nk-1)*topo->n2l;
     n_glob = topo->nk*topo->nDofs1G + (4*topo->nk-1)*topo->nDofs2G;
-    nnz = 2*U->nDofsJ + 4*W->nDofsJ;
+    //nnz = 2*U->nDofsJ + 4*W->nDofsJ;
+    nnz = 2*U->nDofsJ + 4*topo->nk*W->nDofsJ;
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, n_locl, n_locl, n_glob, n_glob);
@@ -1290,8 +1287,8 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
         VecAXPY(theta_h, 0.25*dt, theta->vh[kk+0]);
         VecAXPY(theta_h, 0.25*dt, theta->vh[kk+1]);
         F->assemble(theta_h, kk, false, SCALE);
-        MatMatMult(F->M, M1invGRADx, reuse, PETSC_DEFAULT, &Gx);
-	AddGradx_Coupled(topo, kk, 2, Gx, M);
+        MatMatMult(F->M, M1invGRADx, reuse, PETSC_DEFAULT, &Gpi);
+	AddGradx_Coupled(topo, kk, 2, Gpi, M);
 
 	// G_rt_x_block
         grad(false, exner->vh[kk], d_pi, kk);
@@ -1300,8 +1297,8 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
         EoSc->assemble_rho_inv_mm(SCALE, 0.5*dt, kk, rho->vh[kk], T->M);
         K->assemble(d_pi_l, kk, SCALE);
         MatTranspose(K->M, reuse_kt, &KT);
-        MatMatMult(KT, T->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Gx);
-	AddGradx_Coupled(topo, kk, 1, Gx, M);
+        MatMatMult(KT, T->M, reuse, PETSC_DEFAULT, &Grt);
+	AddGradx_Coupled(topo, kk, 1, Grt, M);
 
 	// Q_x block
 	T->assemble(theta_h, kk, SCALE, false);
@@ -1339,6 +1336,9 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
             AddQz_Coupled(topo, ex, ey, vert->Q_rt_rho, M);
         }
     }
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
 
     VecDestroy(&theta_h);
     VecDestroy(&d_pi);
