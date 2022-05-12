@@ -77,7 +77,7 @@ void Umat_coupled::assemble(double scale, Mat M) {
                 }
 
                 inds_x = topo->elInds_velx_g(ex, ey, kk);
-                inds_y = topo->elInds_velx_g(ex, ey, kk);
+                inds_y = topo->elInds_vely_g(ex, ey, kk);
 
                 Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
                 Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
@@ -418,8 +418,8 @@ void AddGradx_Coupled(Topo* topo, int lev, int var_ind, Mat G, Mat M) {
     for(mm = mi; mm < mf; mm++) {
         dof_proc = mm / topo->n1l;
         dof_locl = mm % topo->n1l;
-        MatGetRow(G, mm, &nCols, &cols, &vals);
 	ri = dof_proc*topo->dofs_per_proc + lev*topo->n1l + dof_locl;
+        MatGetRow(G, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n2l;
             dof_locl = cols[ci] % topo->n2l;
@@ -440,8 +440,8 @@ void AddDivx_Coupled(Topo* topo, int lev, int var_ind, Mat D, Mat M) {
     for(mm = mi; mm < mf; mm++) {
         dof_proc = mm / topo->n2l;
         dof_locl = mm % topo->n2l;
-        MatGetRow(D, mm, &nCols, &cols, &vals);
 	ri = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + 4*lev + var_ind;
+        MatGetRow(D, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n1l;
             dof_locl = cols[ci] % topo->n1l;
@@ -462,8 +462,8 @@ void AddQx_Coupled(Topo* topo, int lev, Mat Q, Mat M) {
     for(mm = mi; mm < mf; mm++) {
         dof_proc = mm / topo->n2l;
         dof_locl = mm % topo->n2l;
-        MatGetRow(Q, mm, &nCols, &cols, &vals);
         ri = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + 4*lev + 1;            // Theta
+        MatGetRow(Q, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n2l;
             dof_locl = cols[ci] % topo->n2l;
