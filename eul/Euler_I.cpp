@@ -1270,9 +1270,9 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
 
     M1c->assemble(SCALE, M);
     Rc->assemble(SCALE, 0.5*dt, vert->horiz->fl, M);
-    M2c->assemble(SCALE, 1, M);
-    M2c->assemble(SCALE, 2, M);
     M2c->assemble(SCALE, 0, M);
+    M2c->assemble(SCALE, 1, M);
+    M2c->assemble(SCALE, 3, M);
     EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
     EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
 
