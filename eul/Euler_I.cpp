@@ -106,10 +106,6 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetOptionsPrefix(ksp2, "ksp2_");
     KSPSetFromOptions(ksp2);
 
-    Kh = new Vec[geom->nk];
-    for(ii = 0; ii < geom->nk; ii++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Kh[ii]);
-    }
     gv = new Vec[topo->nElsX*topo->nElsX];
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &gv[ii]);
@@ -163,6 +159,7 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     initGZ();
 
     KT = NULL;
+    GRADx = NULL;
 
     CreateCoupledOperator();
     M1inv = new Mat[geom->nk];
@@ -178,6 +175,9 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
 	MatGetDiagonal(M1->M, uz[1]);
 	VecPointwiseDivide(uz[1], uz[0], uz[1]);
         MatDiagonalSet(M1inv[ii], uz[1], INSERT_VALUES);
+
+        MatAssemblyBegin(M1inv[ii], MAT_FINAL_ASSEMBLY);
+        MatAssemblyEnd(  M1inv[ii], MAT_FINAL_ASSEMBLY);
     }
 
     KSPCreate(MPI_COMM_WORLD, &ksp_c);
@@ -188,8 +188,6 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     PCSetType(pc, PCJACOBI);
     KSPSetOptionsPrefix(ksp_c, "ksp_c_");
     KSPSetFromOptions(ksp_c);
-
-    GRADx = NULL;
 }
 
 // project coriolis term onto 0 forms
@@ -326,13 +324,11 @@ Euler_I::~Euler_I() {
 
     for(ii = 0; ii < geom->nk; ii++) {
         VecDestroy(&fg[ii]);
-        VecDestroy(&Kh[ii]);
         VecDestroy(&uil[ii]);
         VecDestroy(&ujl[ii]);
         VecDestroy(&uhl[ii]);
     }
     delete[] fg;
-    delete[] Kh;
     delete[] uil;
     delete[] ujl;
     delete[] uhl;
@@ -913,6 +909,8 @@ void Euler_I::CreateCoupledOperator() {
     MatMPIAIJSetPreallocation(M, nnz, PETSC_NULL, nnz, PETSC_NULL);
     MatSetOptionsPrefix(M, "mat_c_");
     MatSetFromOptions(M);
+
+    if(!rank) cout << "coupled operator - global size: " << n_glob << endl;
 
     VecCreateMPI(MPI_COMM_WORLD, n_locl, n_glob, &x);
     VecCreateMPI(MPI_COMM_WORLD, n_locl, n_glob, &dx);

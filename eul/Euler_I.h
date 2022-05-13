@@ -31,7 +31,6 @@ class Euler_I {
         double i2k;              // kinetic to internal energy exchange
         double k2i_z;            // kinetic to internal energy exchange
         double i2k_z;            // kinetic to internal energy exchange
-        Vec* Kh;                 // kinetic energy vector for each horiztontal layer
         Vec* gv;
         Vec* zv;
         Vec* uz;                 // dudz and dvdz vorticity components

@@ -131,7 +131,7 @@ RotMat_coupled::RotMat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, Lagra
     V = new M1y_j_xy_i(l, e);
 
     Ut = Alloc2D(U->nDofsJ, U->nDofsI);
-    Vt = Alloc2D(V->nDofsJ, U->nDofsI);
+    Vt = Alloc2D(V->nDofsJ, V->nDofsI);
     Qab = new double[Q->nDofsI];
     Qba = new double[Q->nDofsI];
     UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
@@ -293,6 +293,7 @@ EoSmat_coupled::EoSmat_coupled(Topo* _topo, Geom* _geom, LagrangeEdge* _edge) {
     AAinvA  = new double[W->nDofsJ*W->nDofsJ];
 }
 
+// Note: p2 is a vertical vector
 void EoSmat_coupled::assemble(double scale, double fac, int col_ind, Vec* p2, Mat M) {
     int ii, jj, kk, ex, ey, ei, mp1, mp12, n2;
     int *inds0, *inds_row, *inds_col;
@@ -347,6 +348,7 @@ void EoSmat_coupled::assemble(double scale, double fac, int col_ind, Vec* p2, Ma
     }
 }
 
+// Note: p2 is a horiztonal vector
 void EoSmat_coupled::assemble_rho_inv_mm(double scale, double fac, int lev, Vec p2, Mat M2) {
     int ii, jj, ex, ey, ei, mp1, mp12, n2;
     int *inds0, *inds2;
@@ -366,7 +368,7 @@ void EoSmat_coupled::assemble_rho_inv_mm(double scale, double fac, int lev, Vec 
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei    = ey*topo->nElsX + ex;
             inds0 = topo->elInds0_l(ex, ey);
-            inds2 = topo->elInds2_g(ex, ey);
+            inds2 = topo->elInds2_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
@@ -388,6 +390,7 @@ void EoSmat_coupled::assemble_rho_inv_mm(double scale, double fac, int lev, Vec 
             Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
             Mult_IP(W->nDofsJ, W->nDofsJ, W->nDofsJ, WtQWinv, WtQW, AAinvA);
 
+            inds2 = topo->elInds2_g(ex, ey);
             MatSetValues(M2, W->nDofsJ, inds2, W->nDofsJ, inds2, AAinvA, ADD_VALUES);
         }
     }
@@ -413,6 +416,7 @@ void AddGradx_Coupled(Topo* topo, int lev, int var_ind, Mat G, Mat M) {
     const int *cols;
     const double* vals;
     int cols2[999];
+    int dofs_per_lev = (lev == topo->nk-1) ? 3 : 4;
 
     MatGetOwnershipRange(G, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
@@ -423,7 +427,7 @@ void AddGradx_Coupled(Topo* topo, int lev, int var_ind, Mat G, Mat M) {
 	for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n2l;
             dof_locl = cols[ci] % topo->n2l;
-            cols2[ci] = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + 4*lev + var_ind;
+            cols2[ci] = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + dofs_per_lev*lev + var_ind;
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
         MatRestoreRow(G, mm, &nCols, &cols, &vals);
@@ -435,12 +439,13 @@ void AddDivx_Coupled(Topo* topo, int lev, int var_ind, Mat D, Mat M) {
     const int *cols;
     const double* vals;
     int cols2[999];
+    int dofs_per_lev = (lev == topo->nk-1) ? 3 : 4;
 
     MatGetOwnershipRange(D, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         dof_proc = mm / topo->n2l;
         dof_locl = mm % topo->n2l;
-	ri = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + 4*lev + var_ind;
+	ri = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + dofs_per_lev*lev + var_ind;
         MatGetRow(D, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n1l;
@@ -457,17 +462,18 @@ void AddQx_Coupled(Topo* topo, int lev, Mat Q, Mat M) {
     const int *cols;
     const double* vals;
     int cols2[999];
+    int dofs_per_lev = (lev == topo->nk-1) ? 3 : 4;
 
     MatGetOwnershipRange(Q, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         dof_proc = mm / topo->n2l;
         dof_locl = mm % topo->n2l;
-        ri = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + 4*lev + 1;            // Theta
+        ri = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + dofs_per_lev*lev + 1;            // Theta
         MatGetRow(Q, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n2l;
             dof_locl = cols[ci] % topo->n2l;
-            cols2[ci] = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + 4*lev + 0; // rho
+            cols2[ci] = dof_proc*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*dof_locl + dofs_per_lev*lev + 0; // rho
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
         MatRestoreRow(Q, mm, &nCols, &cols, &vals);
