@@ -385,7 +385,7 @@ int* Topo::elInds_vely_l(int ex, int ey, int lev) {
 
 int* Topo::elInds_rho_g(int ex, int ey, int lev) {
     int jj, nj, qj;
-    int dofs_per_lev = (lev == nk-1) ? 3 : 4;
+    int dofs_per_lev = 4;
 
     nj = elOrd*elOrd;
 
@@ -399,7 +399,7 @@ int* Topo::elInds_rho_g(int ex, int ey, int lev) {
 
 int* Topo::elInds_rho_l(int ex, int ey, int lev) {
     int jj, nj, qj;
-    int dofs_per_lev = (lev == nk-1) ? 3 : 4;
+    int dofs_per_lev = 4;
 
     nj = elOrd*elOrd;
 
@@ -413,7 +413,7 @@ int* Topo::elInds_rho_l(int ex, int ey, int lev) {
 
 int* Topo::elInds_theta_g(int ex, int ey, int lev) {
     int jj, nj, qj;
-    int dofs_per_lev = (lev == nk-1) ? 3 : 4;
+    int dofs_per_lev = 4;
 
     nj = elOrd*elOrd;
 
@@ -427,7 +427,7 @@ int* Topo::elInds_theta_g(int ex, int ey, int lev) {
 
 int* Topo::elInds_theta_l(int ex, int ey, int lev) {
     int jj, nj, qj;
-    int dofs_per_lev = (lev == nk-1) ? 3 : 4;
+    int dofs_per_lev = 4;
 
     nj = elOrd*elOrd;
 
@@ -441,7 +441,7 @@ int* Topo::elInds_theta_l(int ex, int ey, int lev) {
 
 int* Topo::elInds_exner_g(int ex, int ey, int lev) {
     int jj, nj, qj;
-    int dofs_per_lev = (lev == nk-1) ? 3 : 4;
+    int dofs_per_lev = 4;
 
     nj = elOrd*elOrd;
 
@@ -455,7 +455,7 @@ int* Topo::elInds_exner_g(int ex, int ey, int lev) {
 
 int* Topo::elInds_exner_l(int ex, int ey, int lev) {
     int jj, nj, qj;
-    int dofs_per_lev = (lev == nk-1) ? 3 : 4;
+    int dofs_per_lev = 4;
 
     nj = elOrd*elOrd;
 

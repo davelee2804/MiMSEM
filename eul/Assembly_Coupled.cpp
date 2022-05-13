@@ -416,7 +416,7 @@ void AddGradx_Coupled(Topo* topo, int lev, int var_ind, Mat G, Mat M) {
     const int *cols;
     const double* vals;
     int cols2[999];
-    int dofs_per_lev = (lev == topo->nk-1) ? 3 : 4;
+    int dofs_per_lev = 4;
 
     MatGetOwnershipRange(G, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
@@ -439,7 +439,7 @@ void AddDivx_Coupled(Topo* topo, int lev, int var_ind, Mat D, Mat M) {
     const int *cols;
     const double* vals;
     int cols2[999];
-    int dofs_per_lev = (lev == topo->nk-1) ? 3 : 4;
+    int dofs_per_lev = 4;
 
     MatGetOwnershipRange(D, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
@@ -462,7 +462,7 @@ void AddQx_Coupled(Topo* topo, int lev, Mat Q, Mat M) {
     const int *cols;
     const double* vals;
     int cols2[999];
-    int dofs_per_lev = (lev == topo->nk-1) ? 3 : 4;
+    int dofs_per_lev = 4;
 
     MatGetOwnershipRange(Q, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {

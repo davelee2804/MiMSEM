@@ -901,7 +901,8 @@ void Euler_I::CreateCoupledOperator() {
 
     n_locl = topo->nk*topo->n1l + (4*topo->nk-1)*topo->n2l;
     n_glob = topo->nk*topo->nDofs1G + (4*topo->nk-1)*topo->nDofs2G;
-    nnz = 2*U->nDofsJ + 8*topo->nk*W->nDofsJ;
+    //nnz = 2*U->nDofsJ + 8*topo->nk*W->nDofsJ;
+    nnz = 2*U->nDofsJ + 2*topo->nk*W->nDofsJ;
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, n_locl, n_locl, n_glob, n_glob);
