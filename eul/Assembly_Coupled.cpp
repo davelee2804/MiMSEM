@@ -552,6 +552,34 @@ void AddDivz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat D, Mat M) {
     }
 }
 
+void AddMz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat Mz, Mat M) {
+    int nr, nc, mm, nCols, ri, ci, lev, fce, n2;
+    const int *cols;
+    const double* vals;
+    int cols2[1999];
+    int *inds, shift, dofs_per_col;
+
+    n2 = topo->elOrd*topo->elOrd;
+    inds = topo->elInds2_l(ex, ey);
+    shift = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l;
+    dofs_per_col = 4*topo->nk-1;
+
+    MatGetSize(Mz, &nr, &nc);
+    for(mm = 0; mm < nr; mm++) {
+        MatGetRow(Mz, mm, &nCols, &cols, &vals);
+        lev = mm / n2;
+        fce = mm % n2;
+        ri = shift + dofs_per_col*inds[fce] + 4*lev + var_ind;
+	for(ci = 0; ci < nCols; ci++) {
+            lev = cols[ci] / n2;
+            fce = cols[ci] % n2;
+            cols2[ci] = shift + dofs_per_col*inds[fce] + 4*lev + var_ind;
+        }
+	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatRestoreRow(Mz, mm, &nCols, &cols, &vals);
+    }
+}
+
 void AddQz_Coupled(Topo* topo, int ex, int ey, Mat Q, Mat M) {
     int nr, nc, mm, nCols, ri, ci, lev, fce, n2;
     const int *cols;
