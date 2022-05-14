@@ -74,6 +74,7 @@ VertSolve::VertSolve(Topo* _topo, Geom* _geom, double _dt) {
     ksp_pi = ksp_rho = NULL;
     pc_V01VBA = NULL;
     G_rho = G_rt = NULL;
+    pc_VB_rt_invVB_pi = NULL;
     UdotGRAD = NULL;
     M_u_inv = NULL;
 
@@ -907,6 +908,7 @@ void VertSolve::solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rh
 {
     int n2 = topo->elOrd*topo->elOrd;
     MatReuse reuse = (!G_rt) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    MatReuse reuse_2 = (!pc_VB_rt_invVB_pi) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
     if(!M_u_inv) {
         MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk-1)*n2, (geom->nk-1)*n2, n2, NULL, &M_u_inv);
@@ -987,10 +989,10 @@ void VertSolve::solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rh
 #else
     vo->AssembleConst(ex, ey, vo->VB);
     vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB_inv);
-    MatMatMult(vo->VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
+    MatMatMult(vo->VB_inv, vo->VB, reuse_2, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
     MatAssemblyBegin(pc_VB_rt_invVB_pi, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (pc_VB_rt_invVB_pi, MAT_FINAL_ASSEMBLY);
-    MatMatMult(vo->VB, pc_VB_rt_invVB_pi, reuse, PETSC_DEFAULT, &N_rt);
+    MatMatMult(vo->VB, pc_VB_rt_invVB_pi, reuse_2, PETSC_DEFAULT, &N_rt);
     MatScale(N_rt, -1.0*RD/CV);
     MatAssemblyBegin(N_rt, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (N_rt, MAT_FINAL_ASSEMBLY);
@@ -1009,11 +1011,11 @@ void VertSolve::solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rh
     MatAssemblyBegin(Q_rt_rho, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (Q_rt_rho, MAT_FINAL_ASSEMBLY);
 
-    MatMatMult(Q_rt_rho, M_rho_inv, reuse, PETSC_DEFAULT, &Q_rt_rho_M_rho_inv);
+    MatMatMult(Q_rt_rho, M_rho_inv, reuse_2, PETSC_DEFAULT, &Q_rt_rho_M_rho_inv);
     MatAssemblyBegin(Q_rt_rho_M_rho_inv, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (Q_rt_rho_M_rho_inv, MAT_FINAL_ASSEMBLY);
 
-    MatMatMult(G_pi, N_pi_inv, reuse, PETSC_DEFAULT, &G_pi_N_pi_inv);
+    MatMatMult(G_pi, N_pi_inv, reuse_2, PETSC_DEFAULT, &G_pi_N_pi_inv);
     MatAssemblyBegin(G_pi_N_pi_inv, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (G_pi_N_pi_inv, MAT_FINAL_ASSEMBLY);
     //MatMatMult(G_pi_N_pi_inv, N_rt, reuse, PETSC_DEFAULT, &G_pi_N_pi_inv_N_rt);
@@ -1028,7 +1030,7 @@ void VertSolve::solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rh
     MatAYPX(Q_rt_rho_M_rho_inv_D_rho, -1.0, D_rt, DIFFERENT_NONZERO_PATTERN);
     MatAssemblyBegin(Q_rt_rho_M_rho_inv_D_rho, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (Q_rt_rho_M_rho_inv_D_rho, MAT_FINAL_ASSEMBLY);
-    MatMatMult(Q_rt_rho_M_rho_inv_D_rho, M_u_inv, reuse, PETSC_DEFAULT, &D_rt_M_u_inv);
+    MatMatMult(Q_rt_rho_M_rho_inv_D_rho, M_u_inv, reuse_2, PETSC_DEFAULT, &D_rt_M_u_inv);
     MatAssemblyBegin(D_rt_M_u_inv, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (D_rt_M_u_inv, MAT_FINAL_ASSEMBLY);
     //MatMatMult(D_rt_M_u_inv, G_pi_N_pi_inv_N_rt, reuse, PETSC_DEFAULT, &L_rt_rt);
@@ -1774,8 +1776,8 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* rho_i, 
 
     // diagnose the potential temperature
     diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz);
-    theta_i->VertToHoriz();
     diagTheta2(rho_j->vz, rt_j->vz, theta_j->vz);
+    theta_i->VertToHoriz();
     theta_j->VertToHoriz();
 
     for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
@@ -1795,10 +1797,10 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* rho_i, 
 	VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
 	VecAXPY(theta_h->vz[ii], 0.5, theta_j->vz[ii]);
     }
-    rho_h->HorizToVert();
-    rt_h->HorizToVert();
-    velz_h->HorizToVert();
-    exner_h->HorizToVert();
+    rho_h->VertToHoriz();
+    rt_h->VertToHoriz();
+    velz_h->VertToHoriz();
+    exner_h->VertToHoriz();
     theta_h->VertToHoriz();
 
     do {
