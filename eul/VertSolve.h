@@ -58,6 +58,9 @@ class VertSolve {
 
         void AssembleVertMomVort(Vec* ul, L2Vecs* velz, KSP ksp1, Umat* M1, Wmat* M2, E21mat* EtoF, WtQdUdz_mat* Rz, L2Vecs* uuz);
 
+        void solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* rho_i, L2Vecs* rho_j, 
+			      L2Vecs* rt_i, L2Vecs* rt_j, L2Vecs* exner_i, L2Vecs* euler_j, 
+                              L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing);
         Mat _PCz;
         Mat pc_LAP;
 

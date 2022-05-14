@@ -339,7 +339,7 @@ void EoSmat_coupled::assemble(double scale, double fac, int col_ind, Vec* p2, Ma
                 if(col_ind == 1) {
                     inds_col = topo->elInds_theta_g(ex, ey, kk);
                 } else {
-                    inds_col = topo->elInds_exner_g(ex, ey, kk);
+                    inds_col = inds_row;
                 }
                 MatSetValues(M, W->nDofsJ, inds_row, W->nDofsJ, inds_col, AAinvA, ADD_VALUES);
             }
