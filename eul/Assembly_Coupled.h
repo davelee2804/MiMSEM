@@ -68,3 +68,23 @@ void AddGradz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat G, Mat M);
 void AddDivz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat D, Mat M);
 void AddMz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat Mz, Mat M);
 void AddQz_Coupled(Topo* topo, int ex, int ey, Mat Q, Mat M);
+
+class E32_Coupled {
+    public:
+        E32_Coupled(Topo* _topo);
+        ~E32_Coupled();
+        Topo* topo;
+        Mat M;
+        Mat MT;
+};
+
+class M3mat_coupled {
+    public:
+        M3mat_coupled(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
+        ~M3mat_coupled();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* e;
+	Mat M;
+        void assemble(double scale, Vec* p3, bool vert_scale, double fac);
+};
