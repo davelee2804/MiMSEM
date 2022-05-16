@@ -307,6 +307,9 @@ void Euler_I::initGZ() {
     MatDestroy(&GRAD);
     MatDestroy(&BQ);
     delete[] WtQflat;
+
+    CM2 = new M2mat_coupled(topo, geom, node, edge);
+    CM3 = new M3mat_coupled(topo, geom, edge);
 }
 
 Euler_I::~Euler_I() {
@@ -386,6 +389,9 @@ Euler_I::~Euler_I() {
         MatDestroy(&M1inv[ii]);
     }
     delete[] M1inv;
+
+    delete CM2;
+    delete CM3;
 }
 
 // Take the weak form gradient of a 2 form scalar field as a 1 form vector field
@@ -936,13 +942,41 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
 
     MatZeroEntries(M);
 
+    CM2->assemble(SCALE, 1.0, NULL);
+    AddM2_Coupled(topo, CM2->M, M);
+    CM3->assemble(SCALE, NULL, true, 1.0);
+    AddM3_Coupled(topo, 0, 0, CM3->M, M);
+    AddM3_Coupled(topo, 1, 1, CM3->M, M);
+AddM3_Coupled(topo, 2, 2, CM3->M, M);
+
+/*
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+	    vert->vo->AssembleLinear(ex, ey, vert->vo->VA);
+            AddMz_Coupled(topo, ex, ey, 3, vert->vo->VA, M);
+	    vert->vo->AssembleConst(ex, ey, vert->vo->VB);
+            AddMz_Coupled(topo, ex, ey, 0, vert->vo->VB, M);
+            AddMz_Coupled(topo, ex, ey, 1, vert->vo->VB, M);
+AddMz_Coupled(topo, ex, ey, 2, vert->vo->VB, M);
+
+            vert->assemble_operators(ex, ey, theta->vz[ei], rho->vz[ei], rt->vz[ei], exner->vz[ei]);
+            AddGradz_Coupled(topo, ex, ey, 1, vert->G_rt, M);
+            AddGradz_Coupled(topo, ex, ey, 2, vert->G_pi, M);
+            AddDivz_Coupled(topo, ex, ey, 0, vert->D_rho, M);
+            AddDivz_Coupled(topo, ex, ey, 1, vert->D_rt, M);
+            AddQz_Coupled(topo, ex, ey, vert->Q_rt_rho, M);
+        }
+    }
+
     M1c->assemble(SCALE, M);
     Rc->assemble(SCALE, 0.5*dt, vert->horiz->fl, M);
-    M2c->assemble(SCALE, 0, M);
-    M2c->assemble(SCALE, 1, M);
+    //M2c->assemble(SCALE, 0, M);
+    //M2c->assemble(SCALE, 1, M);
     //EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
     //EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
-M2c->assemble(SCALE, 2, M);
+//M2c->assemble(SCALE, 2, M);
 
     for(kk = 0; kk < topo->nk; kk++) {
 	M1->assemble(kk, SCALE, true);
@@ -992,22 +1026,8 @@ M2c->assemble(SCALE, 2, M);
         MatMatMult(T->M, EtoF->E21, MAT_REUSE_MATRIX, PETSC_DEFAULT, &Dx);
         //AddDivx_Coupled(topo, kk, 1, Dx, M);
     }
+*/
 
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            ei = ey*topo->nElsX + ex;
-
-	    vert->vo->AssembleLinear(ex, ey, vert->vo->VA);
-            AddMz_Coupled(topo, ex, ey, 3, vert->vo->VA, M);
-
-            vert->assemble_operators(ex, ey, theta->vz[ei], rho->vz[ei], rt->vz[ei], exner->vz[ei]);
-            AddGradz_Coupled(topo, ex, ey, 1, vert->G_rt, M);
-            AddGradz_Coupled(topo, ex, ey, 2, vert->G_pi, M);
-            AddDivz_Coupled(topo, ex, ey, 0, vert->D_rho, M);
-            AddDivz_Coupled(topo, ex, ey, 1, vert->D_rt, M);
-            AddQz_Coupled(topo, ex, ey, vert->Q_rt_rho, M);
-        }
-    }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
 

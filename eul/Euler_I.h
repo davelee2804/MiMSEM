@@ -63,6 +63,8 @@ class Euler_I {
 	Mat             Dx;
 	Mat             Qx;
 	KSP             ksp_c;
+	M2mat_coupled*  CM2;
+	M3mat_coupled*  CM3;
 
         VertSolve* vert;
 

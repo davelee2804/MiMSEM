@@ -769,6 +769,9 @@ void M3mat_coupled::assemble(double scale, Vec* p3, bool vert_scale, double fac)
             if(bArray) VecRestoreArray(p3[kk-1], &bArray);
 	}
     }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
     delete[] Qaa;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
@@ -797,7 +800,7 @@ M2mat_coupled::M2mat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, Lagrang
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, n_dofs_locl, n_dofs_locl, n_dofs_glob, n_dofs_glob);
     MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 2*nn*np1, PETSC_NULL, 2*nn*np1, PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, 4*nn*np1, PETSC_NULL, 4*nn*np1, PETSC_NULL);
     MatZeroEntries(M);
 }
 
@@ -932,6 +935,8 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* p3) {
             }
         }
     }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
 
     Free2D(U->nDofsJ, Ut);
     Free2D(U->nDofsJ, Vt);
@@ -1106,7 +1111,6 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
             VecGetArray(wl[ei], &uArray);
         }
     }
-
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
 }
