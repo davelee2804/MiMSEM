@@ -497,18 +497,10 @@ void AddGradz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat G, Mat M) {
         MatGetRow(G, mm, &nCols, &cols, &vals);
         lev = mm / n2;
         fce = mm % n2;
-        /*inds_row = topo->elInds_velz_g(ex, ey, lev);
-	ri = inds_row[fce];*/
         ri = shift + dofs_per_col*inds[fce] + 4*lev + 3;
 	for(ci = 0; ci < nCols; ci++) {
             lev = cols[ci] / n2;
             fce = cols[ci] % n2;
-	    /*if(var_ind == 1) {
-                inds_col = topo->elInds_theta_g(ex, ey, lev);
-            } else {
-                inds_col = topo->elInds_exner_g(ex, ey, lev);
-            }
-            cols2[ci] = inds_col[fce];*/
             cols2[ci] = shift + dofs_per_col*inds[fce] + 4*lev + var_ind;
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
@@ -533,18 +525,10 @@ void AddDivz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat D, Mat M) {
         MatGetRow(D, mm, &nCols, &cols, &vals);
         lev = mm / n2;
         fce = mm % n2;
-	/*if(var_ind == 0) {
-            inds_row = topo->elInds_rho_g(ex, ey, lev);
-        } else {
-            inds_row = topo->elInds_theta_g(ex, ey, lev);
-        }
-	ri = inds_row[fce];*/
         ri = shift + dofs_per_col*inds[fce] + 4*lev + var_ind;
 	for(ci = 0; ci < nCols; ci++) {
             lev = cols[ci] / n2;
             fce = cols[ci] % n2;
-            /*inds_col = topo->elInds_velz_g(ex, ey, lev);
-            cols2[ci] = inds_col[fce];*/
             cols2[ci] = shift + dofs_per_col*inds[fce] + 4*lev + 3;
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
@@ -625,7 +609,7 @@ E32_Coupled::E32_Coupled(Topo* _topo) {
     n_cols_locl = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, n_rows_locl, n_cols_locl, size*n_rows_locl, size*n_cols_locl);
+    MatSetSizes(M, n_rows_locl, n_cols_locl, size*n_rows_locl, topo->nk*topo->nDofs1G + (topo->nk-1)*topo->nDofs2G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 6, PETSC_NULL, 6, PETSC_NULL);
     MatZeroEntries(M);
@@ -792,5 +776,181 @@ void M3mat_coupled::assemble(double scale, Vec* p3, bool vert_scale, double fac)
 }
 
 M3mat_coupled::~M3mat_coupled() {
+    MatDestroy(&M);
+}
+
+M2mat_coupled::M2mat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
+    int nn, np1, n_dofs_locl, n_dofs_glob;
+
+    topo = _topo;
+    geom = _geom;
+    l = _l;
+    e = _e;
+
+    nn = topo->elOrd;
+    np1 = nn + 1;
+    n_dofs_locl = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
+    n_dofs_glob = topo->nk*topo->nDofs1G + (topo->nk-1)*topo->nDofs2G;
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, n_dofs_locl, n_dofs_locl, n_dofs_glob, n_dofs_glob);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 2*nn*np1, PETSC_NULL, 2*nn*np1, PETSC_NULL);
+    MatZeroEntries(M);
+}
+
+void M2mat_coupled::assemble(double scale, Vec* p3) {
+    int ex, ey, ei, kk, ii, jj, n2, mp1, mp12, dofs_per_proc, proc_ind, dof_ind, shift;
+    int *inds_x, *inds_y, *inds_0, *inds_2, inds_x_g[99], inds_y_g[99], inds_z_g[99];
+    Wii* Q = new Wii(l->q, geom);
+    M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
+    M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+    double det, **J, val;
+    double* Ut = Alloc2D(U->nDofsJ, U->nDofsI);
+    double* Vt = Alloc2D(U->nDofsJ, U->nDofsI);
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* UtQaa = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* UtQab = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* VtQba = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* VtQbb = Alloc2D(U->nDofsJ, Q->nDofsJ);
+    double* WtQ   = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* UtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* UtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* VtQU = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* VtQV = Alloc2D(U->nDofsJ, U->nDofsJ);
+    double* WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* Qaa = new double[Q->nDofsI];
+    double* Qab = new double[Q->nDofsI];
+    double* Qbb = new double[Q->nDofsI];
+    PetscScalar* pArray;
+
+    n2 = topo->elOrd*topo->elOrd;
+    mp1 = l->q->n + 1;
+    mp12 = mp1*mp1;
+    dofs_per_proc = geom->nk*topo->n1l + (geom->nk-1)*topo->n2l;
+
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    // horizontal vector components
+    for(kk = 0; kk < geom->nk; kk++) {
+        if(p3) VecGetArray(p3[kk], &pArray);
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                ei = ey*topo->nElsX + ex;
+                inds_0 = topo->elInds0_l(ex, ey);
+                if(p3) inds_2 = topo->elInds2_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    det = geom->det[ei][ii];
+                    J = geom->J[ei][ii];
+
+                    Qaa[ii] = (J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii]*(scale/det);
+                    Qab[ii] = (J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii]*(scale/det);
+                    Qbb[ii] = (J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii]*(scale/det);
+
+                    // horiztonal velocity is piecewise constant in the vertical
+                    Qaa[ii] *= geom->thickInv[kk][inds_0[ii]];
+                    Qab[ii] *= geom->thickInv[kk][inds_0[ii]];
+                    Qbb[ii] *= geom->thickInv[kk][inds_0[ii]];
+
+		    if(p3) {
+                        val = 0.0;
+                        for(jj = 0; jj < n2; jj++) {
+                            val += pArray[inds_2[jj]]*W->A[ii*n2+jj];
+                        }
+			val *= geom->thickInv[kk][inds_0[ii]]/det;
+			Qaa[ii] *= val;
+			Qab[ii] *= val;
+			Qbb[ii] *= val;
+		    }
+                }
+
+                inds_x = topo->elInds1x_g(ex, ey);
+                inds_y = topo->elInds1y_g(ex, ey);
+		for(ii = 0; ii < U->nDofsJ; ii++) {
+                    proc_ind = inds_x[ii]/topo->n1l;
+                    dof_ind  = inds_x[ii]%topo->n1l;
+                    inds_x_g[ii] = proc_ind*dofs_per_proc + kk*topo->n1l + dof_ind;
+                    proc_ind = inds_y[ii]/topo->n1l;
+                    dof_ind  = inds_y[ii]%topo->n1l;
+                    inds_y_g[ii] = proc_ind*dofs_per_proc + kk*topo->n1l + dof_ind;
+                }
+
+                Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
+                Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
+                Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Vt, Qab, VtQba);
+                Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
+
+                Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQaa, U->A, UtQU);
+                Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, V->A, UtQV);
+                Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, U->A, VtQU);
+                Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
+
+                MatSetValues(M, U->nDofsJ, inds_x_g, U->nDofsJ, inds_x_g, UtQU, ADD_VALUES);
+                MatSetValues(M, U->nDofsJ, inds_x_g, U->nDofsJ, inds_y_g, UtQV, ADD_VALUES);
+                MatSetValues(M, U->nDofsJ, inds_y_g, U->nDofsJ, inds_x_g, VtQU, ADD_VALUES);
+                MatSetValues(M, U->nDofsJ, inds_y_g, U->nDofsJ, inds_y_g, VtQV, ADD_VALUES);
+            }
+        }
+        if(p3) VecRestoreArray(p3[kk], &pArray);
+    }
+
+    // vertical vector components
+    shift = topo->pi*dofs_per_proc + topo->nk*topo->n1l;
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                ei = ey*topo->nElsX + ex;
+                if(p3) inds_0 = topo->elInds0_l(ex, ey);
+                inds_2 = topo->elInds2_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    det = geom->det[ei][ii];
+                    Qaa[ii] = Q->A[ii]*(scale/det);
+
+		    if(p3) {
+                        val = 0.0;
+                        for(jj = 0; jj < n2; jj++) {
+                            val += pArray[inds_2[jj]]*W->A[ii*n2+jj];
+                        }
+			val *= geom->thickInv[kk][inds_0[ii]]/det;
+			Qaa[ii] *= val;
+		    }
+                }
+
+		for(jj = 0; jj < n2; jj++) {
+                    inds_z_g[jj] = shift + kk*topo->n2l + inds_2[jj];
+                }
+                Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+                Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+                MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_z_g, WtQW, ADD_VALUES);
+            }
+        }
+    }
+
+    Free2D(U->nDofsJ, Ut);
+    Free2D(U->nDofsJ, Vt);
+    Free2D(U->nDofsJ, Wt);
+    Free2D(U->nDofsJ, UtQaa);
+    Free2D(U->nDofsJ, UtQab);
+    Free2D(U->nDofsJ, VtQba);
+    Free2D(U->nDofsJ, VtQbb);
+    Free2D(U->nDofsJ, WtQ);
+    Free2D(U->nDofsJ, UtQU);
+    Free2D(U->nDofsJ, UtQV);
+    Free2D(U->nDofsJ, VtQU);
+    Free2D(U->nDofsJ, VtQV);
+    Free2D(U->nDofsJ, WtQW);
+    delete[] Qaa;
+    delete[] Qab;
+    delete[] Qbb;
+    delete Q;
+    delete U;
+    delete V;
+    delete W;
+}
+
+M2mat_coupled::~M2mat_coupled() {
     MatDestroy(&M);
 }

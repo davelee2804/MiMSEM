@@ -88,3 +88,15 @@ class M3mat_coupled {
 	Mat M;
         void assemble(double scale, Vec* p3, bool vert_scale, double fac);
 };
+
+class M2mat_coupled {
+    public:
+        M2mat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~M2mat_coupled();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+	Mat M;
+        void assemble(double scale, Vec* p3);
+};
