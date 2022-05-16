@@ -98,5 +98,34 @@ class M2mat_coupled {
         LagrangeNode* l;
         LagrangeEdge* e;
 	Mat M;
-        void assemble(double scale, Vec* p3);
+        void assemble(double scale, double fac, Vec* p3);
+};
+
+class Kmat_coupled {
+    public:
+        Kmat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
+        ~Kmat_coupled();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* l;
+        LagrangeEdge* e;
+        Mat M;
+        double* UtQWflat;
+        double* VtQWflat;
+        double* Ut;
+        double* Vt;
+        double* Wt;
+        double* Qaa;
+        double* Qba;
+        double* UtQaa;
+        double* VtQba;
+        double* WtQ;
+        double* UtQW;
+        double* VtQW;
+        double* WtQW;
+        M1x_j_xy_i* U;
+        M1y_j_xy_i* V;
+        M2_j_xy_i* W;
+        Wii* Q;
+        void assemble(Vec* ul, Vec* wl, double fac, double scale);
 };
