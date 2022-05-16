@@ -129,3 +129,8 @@ class Kmat_coupled {
         Wii* Q;
         void assemble(Vec* ul, Vec* wl, double fac, double scale);
 };
+
+void AddM3_Coupled(Topo* topo, int row_ind, int col_ind, Mat M3, Mat M);
+void AddM2_Coupled(Topo* topo, Mat M2, Mat M);
+void AddG_Coupled(Topo* topo, int col_ind, Mat G, Mat M);
+void AddD_Coupled(Topo* topo, int row_ind, Mat D, Mat M);

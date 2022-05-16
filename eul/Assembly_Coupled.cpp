@@ -1129,3 +1129,128 @@ Kmat_coupled::~Kmat_coupled() {
     delete Q;
     MatDestroy(&M);
 }
+
+void AddM3_Coupled(Topo* topo, int row_ind, int col_ind, Mat M3, Mat M) {
+    int mi, mf, mm, mp, nCols, ri, ci, lev, fce, m3_dofs_per_proc;
+    const int *cols;
+    const double* vals;
+    int cols2[999];
+
+    m3_dofs_per_proc = topo->nk*topo->n2l;
+
+    MatGetOwnershipRange(M3, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        mp  = mm - topo->pi*m3_dofs_per_proc;
+        lev = mp / topo->n2l;
+        fce = mp % topo->n2l;
+        ri  = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*fce + 4*lev + row_ind;
+        MatGetRow(M3, mm, &nCols, &cols, &vals);
+	for(ci = 0; ci < nCols; ci++) {
+            mp  = cols[ci] - topo->pi*m3_dofs_per_proc;
+            lev = mp / topo->n2l;
+            fce = mp % topo->n2l;
+            cols2[ci] = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*fce + 4*lev + col_ind;
+        }
+	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatRestoreRow(M3, mm, &nCols, &cols, &vals);
+    }
+}
+
+void AddM2_Coupled(Topo* topo, Mat M2, Mat M) {
+    int mi, mf, mm, mp, nCols, ri, ci, m2_dofs_per_proc, xy_dofs_per_proc, lev, fce;
+    const int *cols;
+    const double* vals;
+    int cols2[999];
+
+    xy_dofs_per_proc = topo->nk*topo->n1l;
+    m2_dofs_per_proc = xy_dofs_per_proc + (topo->nk-1)*topo->n2l;
+
+    MatGetOwnershipRange(M2, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        mp = mm - topo->pi*m2_dofs_per_proc;
+	if(mp < xy_dofs_per_proc) {
+            ri  = topo->pi*topo->dofs_per_proc + mp;
+	} else {
+            lev = (mp-xy_dofs_per_proc) / topo->n2l;
+            fce = (mp-xy_dofs_per_proc) % topo->n2l;
+            ri  = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
+        }
+        MatGetRow(M2, mm, &nCols, &cols, &vals);
+	for(ci = 0; ci < nCols; ci++) {
+            mp = cols[ci] - topo->pi*m2_dofs_per_proc;
+            if(mp < xy_dofs_per_proc) {
+                cols2[ci] = topo->pi*topo->dofs_per_proc + mp;
+            } else {
+                lev       = (mp-xy_dofs_per_proc) / topo->n2l;
+                fce       = (mp-xy_dofs_per_proc) % topo->n2l;
+                cols2[ci] = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
+            }
+        }
+	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatRestoreRow(M2, mm, &nCols, &cols, &vals);
+    }
+}
+
+void AddG_Coupled(Topo* topo, int col_ind, Mat G, Mat M) {
+    int mi, mf, mm, mp, nCols, ri, ci, m2_dofs_per_proc, m3_dofs_per_proc, xy_dofs_per_proc, lev, fce;
+    const int *cols;
+    const double* vals;
+    int cols2[999];
+
+    m3_dofs_per_proc = topo->nk*topo->n2l;
+    xy_dofs_per_proc = topo->nk*topo->n1l;
+    m2_dofs_per_proc = xy_dofs_per_proc + (topo->nk-1)*topo->n2l;
+
+    MatGetOwnershipRange(G, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        mp = mm - topo->pi*m2_dofs_per_proc;
+	if(mp < xy_dofs_per_proc) {
+            ri  = topo->pi*topo->dofs_per_proc + mp;
+	} else {
+            lev = (mp-xy_dofs_per_proc) / topo->n2l;
+            fce = (mp-xy_dofs_per_proc) % topo->n2l;
+            ri  = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
+        }
+        MatGetRow(G, mm, &nCols, &cols, &vals);
+	for(ci = 0; ci < nCols; ci++) {
+            mp        = cols[ci] - topo->pi*m3_dofs_per_proc;
+            lev       = mp / topo->n2l;
+            fce       = mp % topo->n2l;
+            cols2[ci] = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*fce + 4*lev + col_ind;
+        }
+	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatRestoreRow(G, mm, &nCols, &cols, &vals);
+    }
+}
+
+void AddD_Coupled(Topo* topo, int row_ind, Mat D, Mat M) {
+    int mi, mf, mm, mp, nCols, ri, ci, m2_dofs_per_proc, m3_dofs_per_proc, xy_dofs_per_proc, lev, fce;
+    const int *cols;
+    const double* vals;
+    int cols2[999];
+
+    m3_dofs_per_proc = topo->nk*topo->n2l;
+    xy_dofs_per_proc = topo->nk*topo->n1l;
+    m2_dofs_per_proc = xy_dofs_per_proc + (topo->nk-1)*topo->n2l;
+
+    MatGetOwnershipRange(D, &mi, &mf);
+    for(mm = mi; mm < mf; mm++) {
+        mp  = mm - topo->pi*m3_dofs_per_proc;
+        lev = mp / topo->n2l;
+        fce = mp % topo->n2l;
+        ri  = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*fce + 4*lev + row_ind;
+        MatGetRow(D, mm, &nCols, &cols, &vals);
+	for(ci = 0; ci < nCols; ci++) {
+            mp = cols[ci] - topo->pi*m2_dofs_per_proc;
+            if(mp < xy_dofs_per_proc) {
+                cols2[ci] = topo->pi*topo->dofs_per_proc + mp;
+            } else {
+                lev       = (mp-xy_dofs_per_proc) / topo->n2l;
+                fce       = (mp-xy_dofs_per_proc) % topo->n2l;
+                cols2[ci] = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
+            }
+        }
+	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatRestoreRow(D, mm, &nCols, &cols, &vals);
+    }
+}
