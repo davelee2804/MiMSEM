@@ -163,6 +163,7 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     GRADx = NULL;
 
     CreateCoupledOperator();
+    /*
     M1inv = new Mat[geom->nk];
     VecSet(uz[0], 1.0);
     for(ii = 0; ii < geom->nk; ii++) {
@@ -179,6 +180,7 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
         MatAssemblyBegin(M1inv[ii], MAT_FINAL_ASSEMBLY);
         MatAssemblyEnd(  M1inv[ii], MAT_FINAL_ASSEMBLY);
     }
+    */
 
     KSPCreate(MPI_COMM_WORLD, &ksp_c);
     KSPSetOperators(ksp_c, M, M);
@@ -190,9 +192,10 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetFromOptions(ksp_c);
 
     CE23M3 = NULL;
-    CM2 = new M2mat_coupled(topo, geom, node, edge);
-    CM3 = new M3mat_coupled(topo, geom, edge);
+    CM2  = new M2mat_coupled(topo, geom, node, edge);
+    CM3  = new M3mat_coupled(topo, geom, edge);
     CE32 = new E32_Coupled(topo);
+    CK   = new Kmat_coupled(topo, geom, node, edge);
 
     n_dofs_locl = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
     n_dofs_glob = topo->nk*topo->nDofs1G + (topo->nk-1)*topo->nDofs2G;
@@ -407,13 +410,14 @@ Euler_I::~Euler_I() {
     delete Rc;
     delete M2c;
     delete EoSc;
-    for(ii = 0; ii < topo->nk; ii++) {
+    /*for(ii = 0; ii < topo->nk; ii++) {
         MatDestroy(&M1inv[ii]);
     }
-    delete[] M1inv;
+    delete[] M1inv;*/
 
     delete CM2;
     delete CM3;
+    delete CK;
     delete CE32;
     MatDestroy(&CM2inv);
 }
@@ -931,12 +935,13 @@ void Euler_I::CreateCoupledOperator() {
     n_locl = topo->nk*topo->n1l + (4*topo->nk-1)*topo->n2l;
     n_glob = topo->nk*topo->nDofs1G + (4*topo->nk-1)*topo->nDofs2G;
     //nnz = 2*U->nDofsJ + 8*topo->nk*W->nDofsJ;
-    nnz = 2*U->nDofsJ + 2*topo->nk*W->nDofsJ;
+    //nnz = 2*U->nDofsJ + 4*topo->nk*W->nDofsJ;
+    nnz = 4*U->nDofsJ + 4*topo->nk*W->nDofsJ;
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, n_locl, n_locl, n_glob, n_glob);
     MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, nnz, PETSC_NULL, nnz, PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, nnz, PETSC_NULL, nnz/2, PETSC_NULL);
     MatSetOptionsPrefix(M, "mat_c_");
     MatSetFromOptions(M);
 
@@ -954,16 +959,27 @@ void Euler_I::CreateCoupledOperator() {
     EoSc = new EoSmat_coupled(topo, geom, edge);
 }
 
-void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* theta) {
-    int kk, ex, ey, ei;
+void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* velz, L2Vecs* theta) {
+    int kk, ex, ey, ei, dp_size;
     Vec theta_h, d_pi, d_pi_l;
+    Vec *d_pi_h, *d_pi_z;
     MatReuse reuse = (!GRADx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     MatReuse reuse_kt = (!KT) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     MatReuse reuse_c = (!CE23M3) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
+    dp_size = (geom->nk-1)*topo->elOrd*topo->elOrd;
+
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &d_pi);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &d_pi_l);
+    d_pi_h = new Vec[geom->nk];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &d_pi_h[kk]);
+    }
+    d_pi_z = new Vec[topo->nElsX*topo->nElsX];
+    for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+        VecCreateSeq(MPI_COMM_SELF, dp_size, &d_pi_z[ei]);
+    }
 
     MatZeroEntries(M);
 
@@ -978,13 +994,41 @@ AddM3_Coupled(topo, 2, 2, CM3->M, M);
     MatMatMult(CM2inv, CE23M3, reuse_c, PETSC_DEFAULT, &CM2invE23M3);
     CM2->assemble(SCALE, 0.5*dt, theta->vh, theta->vz, false);
     MatMatMult(CM2->M, CM2invE23M3, reuse_c, PETSC_DEFAULT, &CGRAD);
-    AddG_Coupled(topo, 2, CGRAD, M);
+    //AddG_Coupled(topo, 2, CGRAD, M);
+
+    for(kk = 0; kk < geom->nk; kk++) {
+        grad(true, exner->vh[kk], d_pi, kk);
+        VecScatterBegin(topo->gtol_1, d_pi, d_pi_h[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, d_pi, d_pi_h[kk], INSERT_VALUES, SCATTER_FORWARD);
+    }
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            vert->vo->AssembleConst(ex, ey, vert->vo->VB);
+            MatMult(vert->vo->VB, exner->vz[ei], vert->_tmpB1);
+            MatMult(vert->vo->V01, vert->_tmpB1, vert->_tmpA1);
+            vert->vo->AssembleLinearInv(ex, ey, vert->vo->VA_inv);
+            MatMult(vert->vo->VA_inv, vert->_tmpA1, d_pi_z[ei]);
+	}
+    }
 
     CM2->assemble(SCALE, 0.5*dt, rho->vh, rho->vz, true);
     MatMatMult(CM2inv, CM2->M, reuse_c, PETSC_DEFAULT, &CM2invM2);
     MatMatMult(CE32->M, CM2invM2, reuse_c, PETSC_DEFAULT, &CE32M2invM2);
     MatMatMult(CM3->M, CE32M2invM2, reuse_c, PETSC_DEFAULT, &CDIV);
-    AddD_Coupled(topo, 0, CDIV, M);
+    //AddD_Coupled(topo, 0, CDIV, M);
+
+    CM3->assemble(SCALE, rt->vh, true, 0.5*dt);
+    MatMatMult(CM3->M, CE32->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &CDIV);
+    //AddD_Coupled(topo, 1, CDIV, M);
+
+    CM3->assemble(SCALE, theta->vh, false, 0.5*dt);
+    MatMatMult(CE32->MT, CM3->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &CE23M3);
+    MatMatMult(CM2inv, CE23M3, MAT_REUSE_MATRIX, PETSC_DEFAULT, &CM2invE23M3);
+    CK->assemble(ujl, velz->vz, 1.0, SCALE);
+    MatTransposeMatMult(CK->M, CM2invE23M3, reuse_c, PETSC_DEFAULT, &CQ);
+    //AddM3_Coupled(topo, 1, 0, CQ, M);
+
 
 /*
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -998,7 +1042,7 @@ AddM3_Coupled(topo, 2, 2, CM3->M, M);
             AddMz_Coupled(topo, ex, ey, 1, vert->vo->VB, M);
 AddMz_Coupled(topo, ex, ey, 2, vert->vo->VB, M);
 
-            vert->assemble_operators(ex, ey, theta->vz[ei], rho->vz[ei], rt->vz[ei], exner->vz[ei]);
+            vert->assemble_operators(ex, ey, theta->vz[ei], rho->vz[ei], rt->vz[ei], exner->vz[ei], velz->vz[ei]);
             AddGradz_Coupled(topo, ex, ey, 1, vert->G_rt, M);
             AddGradz_Coupled(topo, ex, ey, 2, vert->G_pi, M);
             AddDivz_Coupled(topo, ex, ey, 0, vert->D_rho, M);
@@ -1006,15 +1050,15 @@ AddMz_Coupled(topo, ex, ey, 2, vert->vo->VB, M);
             AddQz_Coupled(topo, ex, ey, vert->Q_rt_rho, M);
         }
     }
-
-    M1c->assemble(SCALE, M);
+*/
+    //M1c->assemble(SCALE, M);
     Rc->assemble(SCALE, 0.5*dt, vert->horiz->fl, M);
     //M2c->assemble(SCALE, 0, M);
     //M2c->assemble(SCALE, 1, M);
     //EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
     //EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
 //M2c->assemble(SCALE, 2, M);
-
+/*
     for(kk = 0; kk < topo->nk; kk++) {
 	M1->assemble(kk, SCALE, true);
 	M2->assemble(kk, SCALE, true);
@@ -1071,6 +1115,14 @@ AddMz_Coupled(topo, ex, ey, 2, vert->vo->VB, M);
     VecDestroy(&theta_h);
     VecDestroy(&d_pi);
     VecDestroy(&d_pi_l);
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecDestroy(&d_pi_h[kk]);
+    }
+    delete[] d_pi_h;
+    for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+        VecDestroy(&d_pi_z[ei]);
+    }
+    delete[] d_pi_z;
 }
 
 void Euler_I::AssembleResidual(Vec* velx_i, Vec* velx_j,
@@ -1242,7 +1294,7 @@ void Euler_I::Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sa
     vert->horiz->diagVertVort(velz_i->vh, rho_i->vh, dwdx_i);
 
     topo->repack(velx, rho_i->vz, rt_i->vz, exner_i->vz, velz_i->vz, x);
-    AssembleCoupledOperator(rho_i, rt_i, exner_i, theta_i);
+    AssembleCoupledOperator(rho_i, rt_i, exner_i, velz_i, theta_i);
 
     do {
         // precondition....

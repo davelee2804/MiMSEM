@@ -800,7 +800,7 @@ M2mat_coupled::M2mat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, Lagrang
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, n_dofs_locl, n_dofs_locl, n_dofs_glob, n_dofs_glob);
     MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 4*nn*np1, PETSC_NULL, 4*nn*np1, PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, 4*nn*np1, PETSC_NULL, 2*nn*np1, PETSC_NULL);
     MatZeroEntries(M);
 }
 
@@ -995,7 +995,7 @@ M2mat_coupled::~M2mat_coupled() {
 }
 
 Kmat_coupled::Kmat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {
-    int n_rows_locl, n_rows_glob;
+    int n_rows_locl, n_rows_glob, n_cols_locl, n_cols_glob;
 
     topo = _topo;
     geom = _geom;
@@ -1004,6 +1004,8 @@ Kmat_coupled::Kmat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeE
 
     n_rows_locl = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
     n_rows_glob = topo->nk*topo->nDofs1G + (topo->nk-1)*topo->nDofs2G;
+    n_cols_locl = topo->nk*topo->n2l;
+    n_cols_glob = topo->nk*topo->nDofs2G;
 
     U = new M1x_j_xy_i(l, e);
     V = new M1y_j_xy_i(l, e);
@@ -1025,9 +1027,10 @@ Kmat_coupled::Kmat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeE
     Tran_IP(V->nDofsI, V->nDofsJ, V->A, Vt);
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, n_rows_locl, topo->nk*topo->n2l, n_rows_glob, topo->pi*topo->nk*topo->n2l);
+    MatSetSizes(M, n_rows_locl, n_cols_locl, n_rows_glob, n_cols_glob);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
+    MatZeroEntries(M);
 }
 
 void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {

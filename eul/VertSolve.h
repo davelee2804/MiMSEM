@@ -87,7 +87,7 @@ class VertSolve {
 
         KSP ksp_pi, ksp_rho, ksp_w;
 
-        void assemble_operators(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec pi);
+        void assemble_operators(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec pi, Vec velz);
     //private:
         // vertical vectors and matrices
         Vec _Phi_z;

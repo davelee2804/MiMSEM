@@ -65,6 +65,7 @@ class Euler_I {
 	KSP             ksp_c;
 	M2mat_coupled*  CM2;
 	M3mat_coupled*  CM3;
+	Kmat_coupled*   CK;
 	E32_Coupled*    CE32;
 	Mat             CM2inv;
         Mat             CE23M3;
@@ -73,6 +74,7 @@ class Euler_I {
         Mat             CM2invM2;
         Mat             CE32M2invM2;
         Mat             CDIV;
+        Mat             CQ;
 
         VertSolve* vert;
 
@@ -99,7 +101,7 @@ class Euler_I {
         void VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz);
 
 	void CreateCoupledOperator();
-        void AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* theta);
+        void AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* velz, L2Vecs* theta);
 
         void AssembleResidual(Vec* velx_i, Vec* velx_j,
                               L2Vecs* rho_i, L2Vecs* rho_j,

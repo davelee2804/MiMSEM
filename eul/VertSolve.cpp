@@ -1006,6 +1006,7 @@ void VertSolve::solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rh
     MatMatMult(vo->VA_inv, pc_DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invDTV1);
     MatAssemblyBegin(pc_V0_invDTV1, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (pc_V0_invDTV1, MAT_FINAL_ASSEMBLY);
+vo->AssembleConLinWithW(ex, ey, velz, vo->VBA);
     MatMatMult(vo->VBA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &Q_rt_rho);
     MatScale(Q_rt_rho, 0.5*dt);
     MatAssemblyBegin(Q_rt_rho, MAT_FINAL_ASSEMBLY);
@@ -1672,7 +1673,7 @@ void VertSolve::solve_schur_3(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
     VecDestroy(&d_theta);
 }
 
-void VertSolve::assemble_operators(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec pi) {
+void VertSolve::assemble_operators(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec pi, Vec velz) {
     MatReuse reuse = (!G_rt) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
     // assemble the operators for the coupled system
@@ -1736,6 +1737,7 @@ void VertSolve::assemble_operators(int ex, int ey, Vec theta, Vec rho, Vec rt, V
     MatMatMult(vo->VA_inv, pc_DTV1, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_V0_invDTV1);
     MatAssemblyBegin(pc_V0_invDTV1, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (pc_V0_invDTV1, MAT_FINAL_ASSEMBLY);
+vo->AssembleConLinWithW(ex, ey, velz, vo->VBA);
     MatMatMult(vo->VBA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &Q_rt_rho);
     MatScale(Q_rt_rho, 0.5*dt);
     MatAssemblyBegin(Q_rt_rho, MAT_FINAL_ASSEMBLY);
@@ -1888,7 +1890,7 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* rho_i, 
         itt++;
 
         if(max_norm_exner < 1.0e-12 && max_norm_rho < 1.0e-12 && max_norm_rt < 1.0e-12) done = true;
-        if(!rank) cout << "\t" << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
+        if(!rank && done) cout << "\t" << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
                                  "\t|d_w|/|w|: "          << max_norm_w     <<
                                  "\t|d_rho|/|rho|: "      << max_norm_rho   <<
                                  "\t|d_rt|/|rt|: "        << max_norm_rt    << endl;
