@@ -65,6 +65,14 @@ class Euler_I {
 	KSP             ksp_c;
 	M2mat_coupled*  CM2;
 	M3mat_coupled*  CM3;
+	E32_Coupled*    CE32;
+	Mat             CM2inv;
+        Mat             CE23M3;
+        Mat             CM2invE23M3;
+	Mat             CGRAD;
+        Mat             CM2invM2;
+        Mat             CE32M2invM2;
+        Mat             CDIV;
 
         VertSolve* vert;
 

@@ -804,14 +804,14 @@ M2mat_coupled::M2mat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, Lagrang
     MatZeroEntries(M);
 }
 
-void M2mat_coupled::assemble(double scale, double fac, Vec* p3) {
+void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool vert_scale) {
     int ex, ey, ei, kk, ii, jj, n2, mp1, mp12, dofs_per_proc, proc_ind, dof_ind, shift;
     int *inds_x, *inds_y, *inds_0, *inds_2, inds_x_g[99], inds_y_g[99], inds_z_g[99];
     Wii* Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
     M1y_j_xy_i* V = new M1y_j_xy_i(l, e);
     M2_j_xy_i* W = new M2_j_xy_i(e);
-    double det, **J, val;
+    double det, **J, val, tVal, pVal;
     double* Ut = Alloc2D(U->nDofsJ, U->nDofsI);
     double* Vt = Alloc2D(U->nDofsJ, U->nDofsI);
     double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
@@ -828,7 +828,7 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* p3) {
     double* Qaa = new double[Q->nDofsI];
     double* Qab = new double[Q->nDofsI];
     double* Qbb = new double[Q->nDofsI];
-    PetscScalar* pArray;
+    PetscScalar *pArray, *tArray;
 
     n2 = topo->elOrd*topo->elOrd;
     mp1 = l->q->n + 1;
@@ -843,12 +843,18 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* p3) {
 
     // horizontal vector components
     for(kk = 0; kk < geom->nk; kk++) {
-        if(p3) VecGetArray(p3[kk], &pArray);
+        pArray = tArray = NULL;
+        if(ph && vert_scale) {
+            VecGetArray(ph[kk], &pArray);
+	} else if(ph) {
+	    VecGetArray(ph[kk+1], &tArray);
+	    VecGetArray(ph[kk+0], &pArray);
+        }
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
                 inds_0 = topo->elInds0_l(ex, ey);
-                if(p3) inds_2 = topo->elInds2_l(ex, ey);
+                if(ph) inds_2 = topo->elInds2_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     J = geom->J[ei][ii];
@@ -862,16 +868,25 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* p3) {
                     Qab[ii] *= geom->thickInv[kk][inds_0[ii]];
                     Qbb[ii] *= geom->thickInv[kk][inds_0[ii]];
 
-		    if(p3) {
-                        val = 0.0;
+		    pVal = tVal = 0.0;
+		    if(pArray) {
                         for(jj = 0; jj < n2; jj++) {
-                            val += pArray[inds_2[jj]]*W->A[ii*n2+jj];
+                            pVal += pArray[inds_2[jj]]*W->A[ii*n2+jj];
                         }
-			val *= fac*geom->thickInv[kk][inds_0[ii]]/det;
-			Qaa[ii] *= val;
-			Qab[ii] *= val;
-			Qbb[ii] *= val;
-		    }
+                    }
+		    if(tArray) {
+                        for(jj = 0; jj < n2; jj++) {
+                            tVal += tArray[inds_2[jj]]*W->A[ii*n2+jj];
+                        }
+                    }
+		    if(ph) {
+			if(vert_scale) {
+                            val = pVal*geom->thickInv[kk][inds_0[ii]]/det;
+			} else {
+                            val = 0.5*(pVal+tVal)/det;
+			}
+                        Qaa[ii] *= fac*val;
+                    }
                 }
 
                 inds_x = topo->elInds1x_g(ex, ey);
@@ -901,7 +916,10 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* p3) {
                 MatSetValues(M, U->nDofsJ, inds_y_g, U->nDofsJ, inds_y_g, VtQV, ADD_VALUES);
             }
         }
-        if(p3) VecRestoreArray(p3[kk], &pArray);
+        if(ph) {
+            if(tArray) VecRestoreArray(ph[kk+1], &tArray);
+            if(pArray) VecRestoreArray(ph[kk+0], &pArray);
+	}
     }
 
     // vertical vector components
@@ -910,22 +928,34 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* p3) {
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
-                if(p3) inds_0 = topo->elInds0_l(ex, ey);
-                inds_2 = topo->elInds2_l(ex, ey);
+                if(pz) {
+                    inds_0 = topo->elInds0_l(ex, ey);
+                    VecGetArray(pz[ei], &pArray);
+                }
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     Qaa[ii] = Q->A[ii]*(scale/det);
 
-		    if(p3) {
+		    if(pz && vert_scale) {
                         val = 0.0;
                         for(jj = 0; jj < n2; jj++) {
-                            val += pArray[inds_2[jj]]*W->A[ii*n2+jj];
+                            val += pArray[kk*n2+jj]*W->A[ii*n2+jj];
                         }
-			val *= geom->thickInv[kk][inds_0[ii]]/det;
+			val *= fac/det;
+			val *= geom->thickInv[kk][inds_0[ii]];
 			Qaa[ii] *= val;
-		    }
+		    } else if(pz) {
+                        val = 0.0;
+                        for(jj = 0; jj < n2; jj++) {
+                            val += pArray[(kk+1)*n2+jj]*W->A[ii*n2+jj]; // theta has nk+1 levels
+                        }
+			val *= fac/det;
+			Qaa[ii] *= val;
+                    }
                 }
+                if(pz) VecRestoreArray(pz[ei], &pArray);
 
+                inds_2 = topo->elInds2_l(ex, ey);
 		for(jj = 0; jj < n2; jj++) {
                     inds_z_g[jj] = shift + kk*topo->n2l + inds_2[jj];
                 }

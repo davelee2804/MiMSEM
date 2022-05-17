@@ -98,7 +98,7 @@ class M2mat_coupled {
         LagrangeNode* l;
         LagrangeEdge* e;
 	Mat M;
-        void assemble(double scale, double fac, Vec* p3);
+        void assemble(double scale, double fac, Vec* ph, Vec* pz, bool vert_scale);
 };
 
 class Kmat_coupled {

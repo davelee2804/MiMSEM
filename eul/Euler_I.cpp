@@ -34,7 +34,8 @@
 using namespace std;
 
 Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
-    int ii, n2, size;
+    int ii, n2, size, n_dofs_locl, n_dofs_glob;
+    Vec m2tmp1, m2tmp2;
     PC pc;
 
     dt = _dt;
@@ -187,6 +188,30 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     PCSetType(pc, PCJACOBI);
     KSPSetOptionsPrefix(ksp_c, "ksp_c_");
     KSPSetFromOptions(ksp_c);
+
+    CE23M3 = NULL;
+    CM2 = new M2mat_coupled(topo, geom, node, edge);
+    CM3 = new M3mat_coupled(topo, geom, edge);
+    CE32 = new E32_Coupled(topo);
+
+    n_dofs_locl = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
+    n_dofs_glob = topo->nk*topo->nDofs1G + (topo->nk-1)*topo->nDofs2G;
+    VecCreateMPI(MPI_COMM_WORLD, n_dofs_locl, n_dofs_glob, &m2tmp1);
+    VecCreateMPI(MPI_COMM_WORLD, n_dofs_locl, n_dofs_glob, &m2tmp2);
+    CM2->assemble(SCALE, 1.0, NULL, NULL, true);
+    MatGetDiagonal(CM2->M, m2tmp1);
+    VecSet(m2tmp2, 1.0);
+    VecPointwiseDivide(m2tmp1, m2tmp2, m2tmp1);
+    MatCreate(MPI_COMM_WORLD, &CM2inv);
+    MatSetSizes(CM2inv, n_dofs_locl, n_dofs_locl, n_dofs_glob, n_dofs_glob);
+    MatSetType(CM2inv, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(CM2inv, 1, PETSC_NULL, 0, PETSC_NULL);
+    MatZeroEntries(CM2inv);
+    MatDiagonalSet(CM2inv, m2tmp1, INSERT_VALUES);
+    MatAssemblyBegin(CM2inv, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  CM2inv, MAT_FINAL_ASSEMBLY);
+    VecDestroy(&m2tmp1);
+    VecDestroy(&m2tmp2);
 }
 
 // project coriolis term onto 0 forms
@@ -307,9 +332,6 @@ void Euler_I::initGZ() {
     MatDestroy(&GRAD);
     MatDestroy(&BQ);
     delete[] WtQflat;
-
-    CM2 = new M2mat_coupled(topo, geom, node, edge);
-    CM3 = new M3mat_coupled(topo, geom, edge);
 }
 
 Euler_I::~Euler_I() {
@@ -392,6 +414,8 @@ Euler_I::~Euler_I() {
 
     delete CM2;
     delete CM3;
+    delete CE32;
+    MatDestroy(&CM2inv);
 }
 
 // Take the weak form gradient of a 2 form scalar field as a 1 form vector field
@@ -935,6 +959,7 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
     Vec theta_h, d_pi, d_pi_l;
     MatReuse reuse = (!GRADx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     MatReuse reuse_kt = (!KT) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    MatReuse reuse_c = (!CE23M3) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &d_pi);
@@ -942,12 +967,24 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
 
     MatZeroEntries(M);
 
-    CM2->assemble(SCALE, 1.0, NULL);
-    AddM2_Coupled(topo, CM2->M, M);
+    CM2->assemble(SCALE, 1.0, NULL, NULL, true);
     CM3->assemble(SCALE, NULL, true, 1.0);
+    AddM2_Coupled(topo, CM2->M, M);
     AddM3_Coupled(topo, 0, 0, CM3->M, M);
     AddM3_Coupled(topo, 1, 1, CM3->M, M);
 AddM3_Coupled(topo, 2, 2, CM3->M, M);
+
+    MatMatMult(CE32->MT, CM3->M, reuse_c, PETSC_DEFAULT, &CE23M3);
+    MatMatMult(CM2inv, CE23M3, reuse_c, PETSC_DEFAULT, &CM2invE23M3);
+    CM2->assemble(SCALE, 0.5*dt, theta->vh, theta->vz, false);
+    MatMatMult(CM2->M, CM2invE23M3, reuse_c, PETSC_DEFAULT, &CGRAD);
+    AddG_Coupled(topo, 2, CGRAD, M);
+
+    CM2->assemble(SCALE, 0.5*dt, rho->vh, rho->vz, true);
+    MatMatMult(CM2inv, CM2->M, reuse_c, PETSC_DEFAULT, &CM2invM2);
+    MatMatMult(CE32->M, CM2invM2, reuse_c, PETSC_DEFAULT, &CE32M2invM2);
+    MatMatMult(CM3->M, CE32M2invM2, reuse_c, PETSC_DEFAULT, &CDIV);
+    AddD_Coupled(topo, 0, CDIV, M);
 
 /*
     for(ey = 0; ey < topo->nElsX; ey++) {
