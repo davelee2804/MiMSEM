@@ -86,7 +86,9 @@ class M3mat_coupled {
         Geom* geom;
         LagrangeEdge* e;
 	Mat M;
+	Mat Minv;
         void assemble(double scale, Vec* p3, bool vert_scale, double fac);
+        void assemble_inv(double scale, Vec* p3, double fac);
 };
 
 class M2mat_coupled {

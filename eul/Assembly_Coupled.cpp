@@ -695,6 +695,12 @@ M3mat_coupled::M3mat_coupled(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, n2, PETSC_NULL, 0, PETSC_NULL);
     MatZeroEntries(M);
+
+    MatCreate(MPI_COMM_WORLD, &Minv);
+    MatSetSizes(Minv, topo->nk*topo->n2l, topo->nk*topo->n2l, topo->nk*topo->nDofs2G, topo->nk*topo->nDofs2G);
+    MatSetType(Minv, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(Minv, n2, PETSC_NULL, 0, PETSC_NULL);
+    MatZeroEntries(Minv);
 }
 
 void M3mat_coupled::assemble(double scale, Vec* p3, bool vert_scale, double fac) {
@@ -780,8 +786,75 @@ void M3mat_coupled::assemble(double scale, Vec* p3, bool vert_scale, double fac)
     delete Q;
 }
 
+void M3mat_coupled::assemble_inv(double scale, Vec* p3, double fac) {
+    int ex, ey, ei, n2, mp1, mp12, ii, jj, kk, *inds, *inds0, inds_g[99], shift;
+    double det, val;
+    Wii* Q = new Wii(e->l->q, geom);
+    M2_j_xy_i* W = new M2_j_xy_i(e);
+    double* Qaa = new double[Q->nDofsI];
+    double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+    PetscScalar *pArray;
+
+    n2 = topo->elOrd*topo->elOrd;
+    mp1 = e->l->q->n + 1;
+    mp12 = mp1*mp1;
+    shift = topo->pi*topo->nk*topo->n2l;
+
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
+    MatZeroEntries(M);
+
+    for(kk = 0; kk < topo->nk; kk++) {
+        if(p3) VecGetArray(p3[kk], &pArray);
+        for(ey = 0; ey < topo->nElsX; ey++) {
+            for(ex = 0; ex < topo->nElsX; ex++) {
+                ei = ey*topo->nElsX + ex;
+                inds0 = topo->elInds0_l(ex, ey);
+                inds = topo->elInds2_l(ex, ey);
+                for(ii = 0; ii < mp12; ii++) {
+                    det = geom->det[ei][ii];
+                    Qaa[ii]  = Q->A[ii]*(scale/det);
+                    Qaa[ii] *= geom->thickInv[kk][inds0[ii]];
+
+		    if(p3) {
+		        val = 0.0;
+                        for(jj = 0; jj < n2; jj++) {
+                            val += pArray[inds[jj]]*W->A[ii*n2+jj];
+                        }
+                        val *= geom->thickInv[kk][inds0[ii]]/det;
+                        Qaa[ii] *= val/fac;
+                    }
+                }
+                Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+                Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+                Inv(WtQW, WtQWinv, n2);
+
+		for(ii = 0; ii < n2; ii++) {
+                    inds_g[ii] = shift + kk*topo->n2l + inds[ii];
+                }
+                MatSetValues(Minv, W->nDofsJ, inds_g, W->nDofsJ, inds_g, WtQWinv, ADD_VALUES);
+            }
+        }
+        if(p3) VecRestoreArray(p3[kk], &pArray);
+    }
+    MatAssemblyBegin(Minv, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Minv, MAT_FINAL_ASSEMBLY);
+
+    delete[] Qaa;
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQWinv);
+    delete W;
+    delete Q;
+}
+
 M3mat_coupled::~M3mat_coupled() {
     MatDestroy(&M);
+    MatDestroy(&Minv);
 }
 
 M2mat_coupled::M2mat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {

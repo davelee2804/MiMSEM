@@ -1011,6 +1011,11 @@ AddM3_Coupled(topo, 2, 2, CM3->M, M);
             MatMult(vert->vo->VA_inv, vert->_tmpA1, d_pi_z[ei]);
 	}
     }
+    CM3->assemble_inv(SCALE, rho->vh, 0.5*dt);
+    MatMatMult(CM3->Minv, CM3->M, reuse_c, PETSC_DEFAULT, &CM3invM3);
+    CK->assemble(d_pi_h, d_pi_z, 1.0, SCALE);
+    MatMatMult(CK->M, CM3invM3, reuse_c, PETSC_DEFAULT, &CGRAD);
+    //AddG_Coupled(topo, 1, CGRAD, M);
 
     CM2->assemble(SCALE, 0.5*dt, rho->vh, rho->vz, true);
     MatMatMult(CM2inv, CM2->M, reuse_c, PETSC_DEFAULT, &CM2invM2);

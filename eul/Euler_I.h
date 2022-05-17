@@ -72,6 +72,7 @@ class Euler_I {
         Mat             CM2invE23M3;
 	Mat             CGRAD;
         Mat             CM2invM2;
+        Mat             CM3invM3;
         Mat             CE32M2invM2;
         Mat             CDIV;
         Mat             CQ;
