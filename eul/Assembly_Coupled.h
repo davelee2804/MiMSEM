@@ -88,7 +88,7 @@ class M3mat_coupled {
 	Mat M;
 	Mat Minv;
         void assemble(double scale, Vec* p3, bool vert_scale, double fac);
-        void assemble_inv(double scale, Vec* p3, double fac);
+        void assemble_inv(double scale, Vec* p3);
 };
 
 class M2mat_coupled {

@@ -988,13 +988,13 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
     AddM2_Coupled(topo, CM2->M, M);
     AddM3_Coupled(topo, 0, 0, CM3->M, M);
     AddM3_Coupled(topo, 1, 1, CM3->M, M);
-AddM3_Coupled(topo, 2, 2, CM3->M, M);
+//AddM3_Coupled(topo, 2, 2, CM3->M, M);
 
     MatMatMult(CE32->MT, CM3->M, reuse_c, PETSC_DEFAULT, &CE23M3);
     MatMatMult(CM2inv, CE23M3, reuse_c, PETSC_DEFAULT, &CM2invE23M3);
     CM2->assemble(SCALE, 0.5*dt, theta->vh, theta->vz, false);
     MatMatMult(CM2->M, CM2invE23M3, reuse_c, PETSC_DEFAULT, &CGRAD);
-    //AddG_Coupled(topo, 2, CGRAD, M);
+    AddG_Coupled(topo, 2, CGRAD, M);
 
     for(kk = 0; kk < geom->nk; kk++) {
         grad(true, exner->vh[kk], d_pi, kk);
@@ -1011,29 +1011,28 @@ AddM3_Coupled(topo, 2, 2, CM3->M, M);
             MatMult(vert->vo->VA_inv, vert->_tmpA1, d_pi_z[ei]);
 	}
     }
-    CM3->assemble_inv(SCALE, rho->vh, 0.5*dt);
+    CM3->assemble_inv(SCALE, rho->vh);
     MatMatMult(CM3->Minv, CM3->M, reuse_c, PETSC_DEFAULT, &CM3invM3);
-    CK->assemble(d_pi_h, d_pi_z, 1.0, SCALE);
+    CK->assemble(d_pi_h, d_pi_z, 0.5*dt, SCALE);
     MatMatMult(CK->M, CM3invM3, reuse_c, PETSC_DEFAULT, &CGRAD);
-    //AddG_Coupled(topo, 1, CGRAD, M);
+    //AddG_Coupled(topo, 1, CGRAD, M); // ??
 
     CM2->assemble(SCALE, 0.5*dt, rho->vh, rho->vz, true);
     MatMatMult(CM2inv, CM2->M, reuse_c, PETSC_DEFAULT, &CM2invM2);
     MatMatMult(CE32->M, CM2invM2, reuse_c, PETSC_DEFAULT, &CE32M2invM2);
     MatMatMult(CM3->M, CE32M2invM2, reuse_c, PETSC_DEFAULT, &CDIV);
-    //AddD_Coupled(topo, 0, CDIV, M);
+    AddD_Coupled(topo, 0, CDIV, M);
 
     CM3->assemble(SCALE, rt->vh, true, 0.5*dt);
     MatMatMult(CM3->M, CE32->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &CDIV);
-    //AddD_Coupled(topo, 1, CDIV, M);
+    //AddD_Coupled(topo, 1, CDIV, M); // ??
 
     CM3->assemble(SCALE, theta->vh, false, 0.5*dt);
     MatMatMult(CE32->MT, CM3->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &CE23M3);
     MatMatMult(CM2inv, CE23M3, MAT_REUSE_MATRIX, PETSC_DEFAULT, &CM2invE23M3);
     CK->assemble(ujl, velz->vz, 1.0, SCALE);
     MatTransposeMatMult(CK->M, CM2invE23M3, reuse_c, PETSC_DEFAULT, &CQ);
-    //AddM3_Coupled(topo, 1, 0, CQ, M);
-
+    //AddM3_Coupled(topo, 1, 0, CQ, M); // ??
 
 /*
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -1060,8 +1059,8 @@ AddMz_Coupled(topo, ex, ey, 2, vert->vo->VB, M);
     Rc->assemble(SCALE, 0.5*dt, vert->horiz->fl, M);
     //M2c->assemble(SCALE, 0, M);
     //M2c->assemble(SCALE, 1, M);
-    //EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
-    //EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
+    EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
+    EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
 //M2c->assemble(SCALE, 2, M);
 /*
     for(kk = 0; kk < topo->nk; kk++) {
@@ -1303,9 +1302,9 @@ void Euler_I::Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sa
 
     do {
         // precondition....
-        vert->solve_schur_vert(velz_i, velz_j, rho_i, rho_j, 
-		               rt_i, rt_j, exner_i, exner_j, 
-                               NULL, velx, velx_j, uil, ujl, false);
+        //vert->solve_schur_vert(velz_i, velz_j, rho_i, rho_j, 
+	//	               rt_i, rt_j, exner_i, exner_j, 
+        //                       NULL, velx, velx_j, uil, ujl, false);
 
         AssembleResidual(velx, velx_j, rho_i, rho_j, rt_i, rt_j,
                          exner_i, exner_j, exner_h, velz_i, velz_j, 

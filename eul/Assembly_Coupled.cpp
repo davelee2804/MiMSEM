@@ -786,7 +786,7 @@ void M3mat_coupled::assemble(double scale, Vec* p3, bool vert_scale, double fac)
     delete Q;
 }
 
-void M3mat_coupled::assemble_inv(double scale, Vec* p3, double fac) {
+void M3mat_coupled::assemble_inv(double scale, Vec* p3) {
     int ex, ey, ei, n2, mp1, mp12, ii, jj, kk, *inds, *inds0, inds_g[99], shift;
     double det, val;
     Wii* Q = new Wii(e->l->q, geom);
@@ -825,7 +825,7 @@ void M3mat_coupled::assemble_inv(double scale, Vec* p3, double fac) {
                             val += pArray[inds[jj]]*W->A[ii*n2+jj];
                         }
                         val *= geom->thickInv[kk][inds0[ii]]/det;
-                        Qaa[ii] *= val/fac;
+                        Qaa[ii] *= val;
                     }
                 }
                 Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
@@ -959,6 +959,8 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
                             val = 0.5*(pVal+tVal)/det;
 			}
                         Qaa[ii] *= fac*val;
+                        Qab[ii] *= fac*val;
+                        Qbb[ii] *= fac*val;
                     }
                 }
 
@@ -996,6 +998,7 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
     }
 
     // vertical vector components
+    // TODO need to assemble both top and bottom components!
     shift = topo->pi*dofs_per_proc + topo->nk*topo->n1l;
     for(kk = 0; kk < geom->nk-1; kk++) {
         for(ey = 0; ey < topo->nElsX; ey++) {
@@ -1186,13 +1189,13 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
                         for(jj = 0; jj < n2; jj++) {
                             val += uArray[(kk-1)*n2+jj]*W->A[ii*n2+jj];
                         }
-                        Qaa[ii] *= val/det;
+                        Qba[ii] = Qaa[ii]*val/det;
                     }
 
                     for(jj = 0; jj < n2; jj++) {
                         inds_z_g[jj] = shift_row + (kk-1)*topo->n2l + inds_2[jj];
                     }
-                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qba, WtQ);
                     Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
                     MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_2_g, WtQW, ADD_VALUES);
 		}
@@ -1203,13 +1206,13 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
                         for(jj = 0; jj < n2; jj++) {
                             val += uArray[(kk+0)*n2+jj]*W->A[ii*n2+jj];
                         }
-                        Qaa[ii] *= val/det;
+                        Qba[ii] = Qaa[ii]*val/det;
                     }
 
                     for(jj = 0; jj < n2; jj++) {
                         inds_z_g[jj] = shift_row + (kk+0)*topo->n2l + inds_2[jj];
                     }
-                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qba, WtQ);
                     Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
                     MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_2_g, WtQW, ADD_VALUES);
                 }
@@ -1326,7 +1329,7 @@ void AddG_Coupled(Topo* topo, int col_ind, Mat G, Mat M) {
             mp        = cols[ci] - topo->pi*m3_dofs_per_proc;
             lev       = mp / topo->n2l;
             fce       = mp % topo->n2l;
-            cols2[ci] = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*fce + 4*lev + col_ind;
+            cols2[ci] = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + col_ind;
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
         MatRestoreRow(G, mm, &nCols, &cols, &vals);
@@ -1348,7 +1351,7 @@ void AddD_Coupled(Topo* topo, int row_ind, Mat D, Mat M) {
         mp  = mm - topo->pi*m3_dofs_per_proc;
         lev = mp / topo->n2l;
         fce = mp % topo->n2l;
-        ri  = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*fce + 4*lev + row_ind;
+        ri  = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + row_ind;
         MatGetRow(D, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
             mp = cols[ci] - topo->pi*m2_dofs_per_proc;
