@@ -805,7 +805,7 @@ void M3mat_coupled::assemble_inv(double scale, Vec* p3) {
 
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
-    MatZeroEntries(M);
+    MatZeroEntries(Minv);
 
     for(kk = 0; kk < topo->nk; kk++) {
         if(p3) VecGetArray(p3[kk], &pArray);
@@ -1139,6 +1139,7 @@ Kmat_coupled::Kmat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeE
 
     Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
     Tran_IP(V->nDofsI, V->nDofsJ, V->A, Vt);
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, n_rows_locl, n_cols_locl, n_rows_glob, n_cols_glob);
@@ -1223,6 +1224,7 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
 		// bottom
 		if(kk > 0) {
                     for(ii = 0; ii < mp12; ii++) {
+                        det = geom->det[ei][ii];
                         val = 0.0;
                         for(jj = 0; jj < n2; jj++) {
                             val += uArray[(kk-1)*n2+jj]*W->A[ii*n2+jj];
@@ -1240,6 +1242,7 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
 		// top
 		if(kk < topo->nk-1) {
                     for(ii = 0; ii < mp12; ii++) {
+                        det = geom->det[ei][ii];
                         val = 0.0;
                         for(jj = 0; jj < n2; jj++) {
                             val += uArray[(kk+0)*n2+jj]*W->A[ii*n2+jj];
