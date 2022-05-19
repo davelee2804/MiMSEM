@@ -70,11 +70,13 @@ class Euler_I {
 	Mat             CM2inv;
         Mat             CE23M3;
         Mat             CM2invE23M3;
-	Mat             CGRAD;
+	Mat             CGRAD1;
+	Mat             CGRAD2;
         Mat             CM2invM2;
         Mat             CM3invM3;
         Mat             CE32M2invM2;
-        Mat             CDIV;
+        Mat             CDIV1;
+        Mat             CDIV2;
         Mat             CQ;
 
         VertSolve* vert;
