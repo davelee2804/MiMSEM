@@ -1208,14 +1208,13 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
+            inds_2 = topo->elInds2_l(ex, ey);
             VecGetArray(wl[ei], &uArray);
             for(kk = 0; kk < geom->nk; kk++) {
-                inds_2 = topo->elInds2_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
-                    Qaa[ii] = fac*Q->A[ii]*(scale/det);
+                    Qaa[ii] = 0.5*fac*Q->A[ii]*(scale/det);
                 }
-
 		for(ii = 0; ii < W->nDofsJ; ii++) {
                     inds_2_g[ii] = shift_col + kk*topo->n2l + inds_2[ii];
                 }
