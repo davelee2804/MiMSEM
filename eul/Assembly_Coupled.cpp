@@ -705,14 +705,14 @@ M3mat_coupled::M3mat_coupled(Topo* _topo, Geom* _geom, LagrangeEdge* _e) {
 
 void M3mat_coupled::assemble(double scale, Vec* p3, bool vert_scale, double fac) {
     int ex, ey, ei, n2, mp1, mp12, ii, jj, kk, *inds, *inds0, inds_g[99], shift;
-    double det, pVal, bVal, val;
+    double det, pVal, tVal, val;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
     double* Qaa = new double[Q->nDofsI];
     double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
     double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
     double* WtQW = Alloc2D(W->nDofsJ, W->nDofsJ);
-    PetscScalar *pArray, *bArray;
+    PetscScalar *pArray, *tArray;
 
     n2 = topo->elOrd*topo->elOrd;
     mp1 = e->l->q->n + 1;
@@ -724,12 +724,12 @@ void M3mat_coupled::assemble(double scale, Vec* p3, bool vert_scale, double fac)
     MatZeroEntries(M);
 
     for(kk = 0; kk < topo->nk; kk++) {
-        pArray = bArray = NULL;
+        pArray = tArray = NULL;
         if(p3 && vert_scale) {
             VecGetArray(p3[kk], &pArray);
         } else if(p3) {
-	    if(kk > 0         ) VecGetArray(p3[kk-1], &bArray);
-	    if(kk < topo->nk-1) VecGetArray(p3[kk+0], &pArray);
+	    VecGetArray(p3[kk+0], &pArray);
+	    VecGetArray(p3[kk+1], &tArray);
         }
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
@@ -741,22 +741,22 @@ void M3mat_coupled::assemble(double scale, Vec* p3, bool vert_scale, double fac)
                     Qaa[ii]  = Q->A[ii]*(scale/det);
                     Qaa[ii] *= geom->thickInv[kk][inds0[ii]];
 
-		    pVal = bVal = 0.0;
+		    pVal = tVal = 0.0;
 		    if(pArray) {
                         for(jj = 0; jj < n2; jj++) {
                             pVal += pArray[inds[jj]]*W->A[ii*n2+jj];
                         }
                     }
-		    if(bArray) {
+		    if(tArray) {
                         for(jj = 0; jj < n2; jj++) {
-                            bVal += bArray[inds[jj]]*W->A[ii*n2+jj];
+                            tVal += tArray[inds[jj]]*W->A[ii*n2+jj];
                         }
                     }
 		    if(p3) {
 			if(vert_scale) {
                             val = pVal*geom->thickInv[kk][inds0[ii]]/det;
 			} else {
-                            val = 0.5*(pVal+bVal)/det;
+                            val = 0.5*(pVal+tVal)/det;
 			}
                         Qaa[ii] *= fac*val;
                     }
@@ -771,8 +771,8 @@ void M3mat_coupled::assemble(double scale, Vec* p3, bool vert_scale, double fac)
             }
         }
         if(p3) {
+            if(tArray) VecRestoreArray(p3[kk+1], &tArray);
             if(pArray) VecRestoreArray(p3[kk+0], &pArray);
-            if(bArray) VecRestoreArray(p3[kk-1], &bArray);
 	}
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
