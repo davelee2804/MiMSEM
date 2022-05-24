@@ -2,9 +2,8 @@ typedef double (ICfunc3D) (double* xi, int ki);
 
 class HorizSolve {
     public:
-        HorizSolve(Topo* _topo, Geom* _geom, double _dt);
+        HorizSolve(Topo* _topo, Geom* _geom);
         ~HorizSolve();
-        double dt;
         double del2;
         double k2i;
         bool do_visc;

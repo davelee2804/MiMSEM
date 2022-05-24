@@ -77,6 +77,7 @@ VertSolve::VertSolve(Topo* _topo, Geom* _geom, double _dt) {
     pc_VB_rt_invVB_pi = NULL;
     UdotGRAD = NULL;
     M_u_inv = NULL;
+    N_pi = NULL;
 
     viscosity();
 
@@ -89,7 +90,7 @@ VertSolve::VertSolve(Topo* _topo, Geom* _geom, double _dt) {
 
     theta_h = new L2Vecs(geom->nk+1, topo, geom);
     exner_h = new L2Vecs(geom->nk+0, topo, geom);
-    horiz = new HorizSolve(topo, geom, dt);
+    horiz = new HorizSolve(topo, geom);
 
     step = 0;
 }
@@ -1742,6 +1743,28 @@ vo->AssembleConLinWithW(ex, ey, velz, vo->VBA);
     MatScale(Q_rt_rho, 0.5*dt);
     MatAssemblyBegin(Q_rt_rho, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd  (Q_rt_rho, MAT_FINAL_ASSEMBLY);
+
+    vo->AssembleConst(ex, ey, vo->VB);
+    vo->AssembleConstWithRhoInv(ex, ey, rt, vo->VB_inv);
+    MatMatMult(vo->VB_inv, vo->VB, reuse, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
+    MatAssemblyBegin(pc_VB_rt_invVB_pi, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (pc_VB_rt_invVB_pi, MAT_FINAL_ASSEMBLY);
+    MatMatMult(vo->VB, pc_VB_rt_invVB_pi, reuse, PETSC_DEFAULT, &N_rt);
+    MatScale(N_rt, -1.0*RD/CV);
+    MatAssemblyBegin(N_rt, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (N_rt, MAT_FINAL_ASSEMBLY);
+
+    vo->AssembleConst(ex, ey, vo->VB);
+    vo->AssembleConstWithRhoInv(ex, ey, pi, vo->VB_inv);
+    MatMatMult(vo->VB_inv, vo->VB, MAT_REUSE_MATRIX, PETSC_DEFAULT, &pc_VB_rt_invVB_pi);
+    MatAssemblyBegin(pc_VB_rt_invVB_pi, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (pc_VB_rt_invVB_pi, MAT_FINAL_ASSEMBLY);
+    if(!N_pi)
+        MatMatMult(vo->VB, pc_VB_rt_invVB_pi, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &N_pi);
+    else
+        MatMatMult(vo->VB, pc_VB_rt_invVB_pi, MAT_REUSE_MATRIX, PETSC_DEFAULT, &N_pi);
+    MatAssemblyBegin(N_pi, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (N_pi, MAT_FINAL_ASSEMBLY);
 }
 
 void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h, L2Vecs* rho_i, L2Vecs* rho_j, L2Vecs* rho_h, 
@@ -1750,11 +1773,6 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
     bool done = false;
     int ex, ey, elOrd2, itt = 0;
     double norm_x, max_norm_w, max_norm_exner, max_norm_rho, max_norm_rt;
-    //L2Vecs* velz_h = new L2Vecs(geom->nk-1, topo, geom);
-    //L2Vecs* rho_h = new L2Vecs(geom->nk, topo, geom);
-    //L2Vecs* rt_h = new L2Vecs(geom->nk, topo, geom);
-    //L2Vecs* _exner_h = new L2Vecs(geom->nk, topo, geom);
-    //L2Vecs* _theta_h = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
     Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F_z, G_z, dF_z, dG_z, d_theta;
@@ -1908,11 +1926,6 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
 
     delete theta_i;
     delete theta_j;
-    //delete _theta_h;
-    //delete velz_h;
-    //delete rho_h;
-    //delete rt_h;
-    //delete _exner_h;
     delete dFx;
     delete dGx;
     VecDestroy(&F_w);

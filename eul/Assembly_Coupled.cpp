@@ -564,7 +564,7 @@ void AddMz_Coupled(Topo* topo, int ex, int ey, int var_ind, Mat Mz, Mat M) {
     }
 }
 
-void AddQz_Coupled(Topo* topo, int ex, int ey, Mat Q, Mat M) {
+void AddQz_Coupled(Topo* topo, int ex, int ey, int row_ind, int col_ind, Mat Q, Mat M) {
     int nr, nc, mm, nCols, ri, ci, lev, fce, n2;
     const int *cols;
     const double* vals;
@@ -581,11 +581,11 @@ void AddQz_Coupled(Topo* topo, int ex, int ey, Mat Q, Mat M) {
         MatGetRow(Q, mm, &nCols, &cols, &vals);
         lev = mm / n2;
         fce = mm % n2;
-        ri = shift + dofs_per_col*inds[fce] + 4*lev + 1;
+        ri = shift + dofs_per_col*inds[fce] + 4*lev + row_ind;
 	for(ci = 0; ci < nCols; ci++) {
             lev = cols[ci] / n2;
             fce = cols[ci] % n2;
-            cols2[ci] = shift + dofs_per_col*inds[fce] + 4*lev;
+            cols2[ci] = shift + dofs_per_col*inds[fce] + 4*lev + col_ind;
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
         MatRestoreRow(Q, mm, &nCols, &cols, &vals);
@@ -999,14 +999,12 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
 
     // vertical vector components
     shift = topo->pi*dofs_per_proc + topo->nk*topo->n1l;
-    for(kk = 0; kk < geom->nk-1; kk++) {
+    for(kk = 0; kk < geom->nk; kk++) {
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
                 inds_0 = topo->elInds0_l(ex, ey);
-                if(pz) {
-                    VecGetArray(pz[ei], &pArray);
-                }
+                if(pz) VecGetArray(pz[ei], &pArray);
 		// bottom
 		if(kk > 0) {
                     lev = kk - 1;
@@ -1285,11 +1283,12 @@ Kmat_coupled::~Kmat_coupled() {
 }
 
 void AddM3_Coupled(Topo* topo, int row_ind, int col_ind, Mat M3, Mat M) {
-    int mi, mf, mm, mp, nCols, ri, ci, lev, fce, m3_dofs_per_proc;
+    int mi, mf, mm, mp, nCols, ri, ci, lev, fce, m3_dofs_per_proc, shift;
     const int *cols;
     const double* vals;
     int cols2[999];
 
+    shift = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l;
     m3_dofs_per_proc = topo->nk*topo->n2l;
 
     MatGetOwnershipRange(M3, &mi, &mf);
@@ -1297,13 +1296,13 @@ void AddM3_Coupled(Topo* topo, int row_ind, int col_ind, Mat M3, Mat M) {
         mp  = mm - topo->pi*m3_dofs_per_proc;
         lev = mp / topo->n2l;
         fce = mp % topo->n2l;
-        ri  = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*fce + 4*lev + row_ind;
+        ri  = shift + (4*topo->nk-1)*fce + 4*lev + row_ind;
         MatGetRow(M3, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
             mp  = cols[ci] - topo->pi*m3_dofs_per_proc;
             lev = mp / topo->n2l;
             fce = mp % topo->n2l;
-            cols2[ci] = topo->pi*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*fce + 4*lev + col_ind;
+            cols2[ci] = shift + (4*topo->nk-1)*fce + 4*lev + col_ind;
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
         MatRestoreRow(M3, mm, &nCols, &cols, &vals);
@@ -1311,11 +1310,12 @@ void AddM3_Coupled(Topo* topo, int row_ind, int col_ind, Mat M3, Mat M) {
 }
 
 void AddM2_Coupled(Topo* topo, Mat M2, Mat M) {
-    int mi, mf, mm, mp, nCols, ri, ci, m2_dofs_per_proc, xy_dofs_per_proc, lev, fce;
+    int mi, mf, mm, mp, nCols, ri, ci, m2_dofs_per_proc, xy_dofs_per_proc, lev, fce, shift;
     const int *cols;
     const double* vals;
     int cols2[999];
 
+    shift            = topo->pi*topo->dofs_per_proc;
     xy_dofs_per_proc = topo->nk*topo->n1l;
     m2_dofs_per_proc = xy_dofs_per_proc + (topo->nk-1)*topo->n2l;
 
@@ -1327,7 +1327,7 @@ void AddM2_Coupled(Topo* topo, Mat M2, Mat M) {
 	} else {
             lev = (mp-xy_dofs_per_proc) / topo->n2l;
             fce = (mp-xy_dofs_per_proc) % topo->n2l;
-            ri  = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
+            ri  = shift + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
         }
         MatGetRow(M2, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
@@ -1337,7 +1337,7 @@ void AddM2_Coupled(Topo* topo, Mat M2, Mat M) {
             } else {
                 lev       = (mp-xy_dofs_per_proc) / topo->n2l;
                 fce       = (mp-xy_dofs_per_proc) % topo->n2l;
-                cols2[ci] = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
+                cols2[ci] = shift + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
             }
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
@@ -1372,7 +1372,7 @@ void AddG_Coupled(Topo* topo, int col_ind, Mat G, Mat M) {
             fce       = mp % topo->n2l;
             cols2[ci] = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + col_ind;
         }
-	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
         MatRestoreRow(G, mm, &nCols, &cols, &vals);
     }
 }
@@ -1404,7 +1404,7 @@ void AddD_Coupled(Topo* topo, int row_ind, Mat D, Mat M) {
                 cols2[ci] = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
             }
         }
-	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+        MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
         MatRestoreRow(D, mm, &nCols, &cols, &vals);
     }
 }

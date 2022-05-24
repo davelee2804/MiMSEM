@@ -963,8 +963,6 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
     int kk, ex, ey, ei, dp_size;
     Vec theta_h, d_pi, d_pi_l;
     Vec *d_pi_h, *d_pi_z;
-    //MatReuse reuse = (!GRADx) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
-    //MatReuse reuse_kt = (!KT) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
     MatReuse reuse_c = (!CE23M3) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
     dp_size = (geom->nk-1)*topo->elOrd*topo->elOrd;
@@ -1063,31 +1061,9 @@ VecDestroy(&v_row_1);
 VecDestroy(&v_row_2);
 }*/
 
-/*
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            ei = ey*topo->nElsX + ex;
-
-	    vert->vo->AssembleLinear(ex, ey, vert->vo->VA);
-            AddMz_Coupled(topo, ex, ey, 3, vert->vo->VA, M);
-	    vert->vo->AssembleConst(ex, ey, vert->vo->VB);
-            AddMz_Coupled(topo, ex, ey, 0, vert->vo->VB, M);
-            AddMz_Coupled(topo, ex, ey, 1, vert->vo->VB, M);
-AddMz_Coupled(topo, ex, ey, 2, vert->vo->VB, M);
-
-            vert->assemble_operators(ex, ey, theta->vz[ei], rho->vz[ei], rt->vz[ei], exner->vz[ei], velz->vz[ei]);
-            AddGradz_Coupled(topo, ex, ey, 1, vert->G_rt, M);
-            AddGradz_Coupled(topo, ex, ey, 2, vert->G_pi, M);
-            AddDivz_Coupled(topo, ex, ey, 0, vert->D_rho, M);
-            AddDivz_Coupled(topo, ex, ey, 1, vert->D_rt, M);
-            AddQz_Coupled(topo, ex, ey, vert->Q_rt_rho, M);
-        }
-    }
-*/
     Rc->assemble(SCALE, 0.5*dt, vert->horiz->fl, M);
     EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
     EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
-//M2c->assemble(SCALE, 2, M);
 /*
     for(kk = 0; kk < topo->nk; kk++) {
 	M1->assemble(kk, SCALE, true);
@@ -1154,6 +1130,72 @@ AddMz_Coupled(topo, ex, ey, 2, vert->vo->VB, M);
     }
     delete[] d_pi_z;
 }
+
+#if 0
+void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* velz, L2Vecs* theta) {
+    int kk, ex, ey, ei, dp_size;
+    Vec theta_h, d_pi, d_pi_l;
+    Vec *d_pi_h, *d_pi_z;
+    MatReuse reuse_c = (!CE23M3) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+
+    dp_size = (geom->nk-1)*topo->elOrd*topo->elOrd;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &d_pi);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &d_pi_l);
+    d_pi_h = new Vec[geom->nk];
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &d_pi_h[kk]);
+    }
+    d_pi_z = new Vec[topo->nElsX*topo->nElsX];
+    for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+        VecCreateSeq(MPI_COMM_SELF, dp_size, &d_pi_z[ei]);
+    }
+
+    MatZeroEntries(M);
+
+    CM2->assemble(SCALE, 1.0, NULL, NULL, true);
+    AddM2_Coupled(topo, CM2->M, M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+	    vert->vo->AssembleLinear(ex, ey, vert->vo->VA);
+            //AddMz_Coupled(topo, ex, ey, 3, vert->vo->VA, M);
+	    vert->vo->AssembleConst(ex, ey, vert->vo->VB);
+            AddMz_Coupled(topo, ex, ey, 0, vert->vo->VB, M);
+            AddMz_Coupled(topo, ex, ey, 1, vert->vo->VB, M);
+
+            vert->assemble_operators(ex, ey, theta->vz[ei], rho->vz[ei], rt->vz[ei], exner->vz[ei], velz->vz[ei]);
+            AddGradz_Coupled(topo, ex, ey, 1, vert->G_rt, M);
+            AddGradz_Coupled(topo, ex, ey, 2, vert->G_pi, M);
+            AddDivz_Coupled(topo, ex, ey, 0, vert->D_rho, M);
+            AddDivz_Coupled(topo, ex, ey, 1, vert->D_rt, M);
+            AddQz_Coupled(topo, ex, ey, 1, 0, vert->Q_rt_rho, M);
+            AddQz_Coupled(topo, ex, ey, 2, 1, vert->N_rt, M);
+            AddQz_Coupled(topo, ex, ey, 2, 2, vert->N_pi, M);
+        }
+    }
+    //EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
+    //EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
+    VecDestroy(&theta_h);
+    VecDestroy(&d_pi);
+    VecDestroy(&d_pi_l);
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecDestroy(&d_pi_h[kk]);
+    }
+    delete[] d_pi_h;
+    for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
+        VecDestroy(&d_pi_z[ei]);
+    }
+    delete[] d_pi_z;
+}
+#endif
 
 void Euler_I::AssembleResidual(Vec* velx_i, Vec* velx_j,
                                L2Vecs* rho_i, L2Vecs* rho_j,
@@ -1369,7 +1411,7 @@ void Euler_I::Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sa
             cout << "iter: " << it << "\t|x|: " << norm_x << "\t|dx|: " << norm_dx << "\t|dx|/|x|: " << norm << endl;
         }
         it++;
-    } while(norm > 1.0-14 && it < 20);
+    } while(norm > 1.0e-14 && it < 40);
 
     _DestroyHorizVecs(velx_j, geom);
     _DestroyHorizVecs(R_u, geom);

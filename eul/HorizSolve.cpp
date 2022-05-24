@@ -25,11 +25,10 @@
 
 using namespace std;
 
-HorizSolve::HorizSolve(Topo* _topo, Geom* _geom, double _dt) {
+HorizSolve::HorizSolve(Topo* _topo, Geom* _geom) {
     int ii;
     PC pc;
 
-    dt = _dt;
     topo = _topo;
     geom = _geom;
 
