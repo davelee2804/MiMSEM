@@ -57,7 +57,6 @@ class VertOps {
         void AssembleRayleigh(int ex, int ey, Mat B);
         void AssembleConstInv(int ex, int ey, Mat B);
         void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs, double factor, double exponent);
-        void AssembleLinConWithTheta(int ex, int ey, Mat AB, Vec theta);
         void AssembleConLin(int ex, int ey, Mat BA);
         void AssembleLinCon2(int ex, int ey, Mat AB);                // for the diagnosis of theta without boundary conditions
         void AssembleConLin2(int ex, int ey, Mat BA);

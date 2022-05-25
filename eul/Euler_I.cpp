@@ -82,9 +82,6 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     // potential temperature projection operator
     T = new Whmat(topo, geom, edge);
 
-    // coriolis vector (projected onto 0 forms)
-    coriolis();
-
     // initialize the 1 form linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp1);
     KSPSetOperators(ksp1, M1->M, M1->M);
@@ -107,14 +104,6 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetOptionsPrefix(ksp2, "ksp2_");
     KSPSetFromOptions(ksp2);
 
-    gv = new Vec[topo->nElsX*topo->nElsX];
-    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &gv[ii]);
-    }
-    zv = new Vec[topo->nElsX*topo->nElsX];
-    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*topo->elOrd*topo->elOrd, &zv[ii]);
-    }
     uz = new Vec[geom->nk-1];
     uzl_i = new Vec[geom->nk-1];
     uzl_j = new Vec[geom->nk-1];
@@ -157,8 +146,6 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
 
     Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
 
-    initGZ();
-
     KT = NULL;
     GRADx = NULL;
 
@@ -185,6 +172,7 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     KSPCreate(MPI_COMM_WORLD, &ksp_c);
     KSPSetOperators(ksp_c, M, M);
     KSPSetTolerances(ksp_c, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    //KSPSetTolerances(ksp_c, 1.0e-14, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp_c, KSPGMRES);
     KSPGetPC(ksp2, &pc);
     PCSetType(pc, PCJACOBI);
@@ -217,126 +205,6 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     VecDestroy(&m2tmp2);
 }
 
-// project coriolis term onto 0 forms
-// assumes diagonal 0 form mass matrix
-void Euler_I::coriolis() {
-    int ii, kk;
-    PtQmat* PtQ = new PtQmat(topo, geom, node);
-    PetscScalar *fArray;
-    Vec fl, fxl, fxg, PtQfxg;
-
-    // initialise the coriolis vector (local and global)
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fl);
-    fg = new Vec[geom->nk];
-
-    // evaluate the coriolis term at nodes
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fxl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fxg);
-    VecZeroEntries(fxg);
-    VecGetArray(fxl, &fArray);
-    for(ii = 0; ii < topo->n0; ii++) {
-        fArray[ii] = 2.0*OMEGA*sin(geom->s[ii][1]);
-    }
-    VecRestoreArray(fxl, &fArray);
-
-    // scatter array to global vector
-    VecScatterBegin(topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
-
-    // project vector onto 0 forms
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PtQfxg);
-    VecZeroEntries(PtQfxg);
-    MatMult(PtQ->M, fxg, PtQfxg);
-    // diagonal mass matrix as vector
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fg[kk]);
-        m0->assemble(kk, 1.0);
-        VecPointwiseDivide(fg[kk], PtQfxg, m0->vg);
-    }
-    
-    delete PtQ;
-    VecDestroy(&fl);
-    VecDestroy(&fxl);
-    VecDestroy(&fxg);
-    VecDestroy(&PtQfxg);
-}
-
-void Euler_I::initGZ() {
-    int ex, ey, ei, ii, kk, n2, mp12;
-    int* inds0;
-    int inds2k[99], inds0k[99];
-    double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
-    Vec gz;
-    Mat GRAD, BQ;
-    PetscScalar* zArray;
-    MatReuse reuse;
-
-    n2   = topo->elOrd*topo->elOrd;
-    mp12 = (quad->n + 1)*(quad->n + 1);
-
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*mp12, &gz);
-
-    MatCreate(MPI_COMM_SELF, &BQ);
-    MatSetType(BQ, MATSEQAIJ);
-    MatSetSizes(BQ, (geom->nk+0)*n2, (geom->nk+1)*mp12, (geom->nk+0)*n2, (geom->nk+1)*mp12);
-    MatSeqAIJSetPreallocation(BQ, 2*mp12, PETSC_NULL);
-
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
-
-            reuse = (!ei) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
-
-            MatZeroEntries(BQ);
-            for(kk = 0; kk < geom->nk; kk++) {
-                for(ii = 0; ii < mp12; ii++) {
-                    Q0[ii]  = Q->A[ii]*SCALE;
-                    // for linear field we multiply by the vertical jacobian determinant when
-                    // integrating, and do no other trasformations for the basis functions
-                    Q0[ii] *= 0.5;
-                }
-                Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-
-                for(ii = 0; ii < W->nDofsJ; ii++) {
-                    inds2k[ii] = ii + kk*W->nDofsJ;
-                }
-
-                // assemble the first basis function
-                for(ii = 0; ii < mp12; ii++) {
-                    inds0k[ii] = ii + (kk+0)*mp12;
-                }
-                MatSetValues(BQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQ, ADD_VALUES);
-                // assemble the second basis function
-                for(ii = 0; ii < mp12; ii++) {
-                    inds0k[ii] = ii + (kk+1)*mp12;
-                }
-                MatSetValues(BQ, W->nDofsJ, inds2k, Q->nDofsJ, inds0k, WtQ, ADD_VALUES);
-            }
-            MatAssemblyBegin(BQ, MAT_FINAL_ASSEMBLY);
-            MatAssemblyEnd(BQ, MAT_FINAL_ASSEMBLY);
-
-            MatMatMult(vert->vo->V01, BQ, reuse, PETSC_DEFAULT, &GRAD);
-
-            VecZeroEntries(gz);
-            VecGetArray(gz, &zArray);
-            for(kk = 0; kk < geom->nk+1; kk++) {
-                for(ii = 0; ii < mp12; ii++) {
-                    zArray[kk*mp12+ii] = GRAVITY*geom->levs[kk][inds0[ii]];
-                }
-            }
-            VecRestoreArray(gz, &zArray);
-            MatMult(GRAD, gz, gv[ei]);
-            MatMult(BQ,   gz, zv[ei]);
-        }
-    }
-
-    VecDestroy(&gz);
-    MatDestroy(&GRAD);
-    MatDestroy(&BQ);
-    delete[] WtQflat;
-}
-
 Euler_I::~Euler_I() {
     int ii;
 
@@ -350,21 +218,13 @@ Euler_I::~Euler_I() {
     KSPDestroy(&ksp2);
 
     for(ii = 0; ii < geom->nk; ii++) {
-        VecDestroy(&fg[ii]);
         VecDestroy(&uil[ii]);
         VecDestroy(&ujl[ii]);
         VecDestroy(&uhl[ii]);
     }
-    delete[] fg;
     delete[] uil;
     delete[] ujl;
     delete[] uhl;
-    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-        VecDestroy(&gv[ii]);
-        VecDestroy(&zv[ii]);
-    }
-    delete[] gv;
-    delete[] zv;
     for(ii = 0; ii < geom->nk-1; ii++) {
         VecDestroy(&uz[ii]);
         VecDestroy(&uzl_i[ii]);
@@ -440,30 +300,6 @@ void Euler_I::grad(bool assemble, Vec phi, Vec u, int lev) {
 
     VecDestroy(&Mphi);
     VecDestroy(&dMphi);
-}
-
-// Take the weak form curl of a 1 form vector field as a 1 form vector field
-void Euler_I::curl(bool assemble, Vec u, Vec* w, int lev, bool add_f) {
-    Vec Mu, dMu;
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, w);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &dMu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &Mu);
-
-    if(assemble) {
-        m0->assemble(lev, SCALE);
-        M1->assemble(lev, SCALE, true);
-    }
-    MatMult(M1->M, u, Mu);
-    MatMult(NtoE->E01, Mu, dMu);
-    VecPointwiseDivide(*w, dMu, m0->vg);
-
-    // add the coliolis term
-    if(add_f) {
-        VecAYPX(*w, 1.0, fg[lev]);
-    }
-    VecDestroy(&Mu);
-    VecDestroy(&dMu);
 }
 
 void Euler_I::init0(Vec* q, ICfunc3D* func) {
@@ -732,11 +568,11 @@ void Euler_I::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
             MatMult(VA, velz[ei], zi);
             vert->vo->AssembleLinearInv(ex, ey, VA);
             MatMult(VA, zi, gi);
-            VecDot(gi, gv[ei], &dot);
+            VecDot(gi, vert->gv[ei], &dot);
             loc2 += dot/SCALE;
 
             MatMult(vert->vo->V10, gi, w2);
-            VecDot(w2, zv[ei], &dot);
+            VecDot(w2, vert->zv[ei], &dot);
             loc3 += dot/SCALE;
         }
     }
@@ -758,7 +594,7 @@ void Euler_I::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            VecDot(zv[ei], l2_rho->vz[ei], &dot);
+            VecDot(vert->zv[ei], l2_rho->vz[ei], &dot);
             loc1 += dot/SCALE;
         }
     }
@@ -1033,33 +869,6 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
 //CK->assemble(d_pi_h, velz->vz, 1.0, SCALE);
     MatTransposeMatMult(CK->M, CM2invE23M3, reuse_c, PETSC_DEFAULT, &CQ);
     //AddM3_Coupled(topo, 1, 0, CQ, M); // ??
-/*{
-int n_rows_locl = topo->nk*topo->n2l;
-int n_rows_glob = topo->nk*topo->nDofs2G;
-int n_cols_locl = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
-int n_cols_glob = topo->nk*topo->nDofs1G + (topo->nk-1)*topo->nDofs2G;
-double norm;
-Vec v_row_1, v_row_2, v_col_1, v_col_2, v_col_3;
-VecCreateMPI(MPI_COMM_WORLD, n_rows_locl, n_rows_glob, &v_row_1);
-VecCreateMPI(MPI_COMM_WORLD, n_rows_locl, n_rows_glob, &v_row_2);
-VecCreateMPI(MPI_COMM_WORLD, n_rows_locl, n_rows_glob, &v_col_1);
-VecCreateMPI(MPI_COMM_WORLD, n_rows_locl, n_rows_glob, &v_col_2);
-VecCreateMPI(MPI_COMM_WORLD, n_rows_locl, n_rows_glob, &v_col_3);
-VecSet(v_row_1, 1.0);
-VecSet(v_col_1, 1.0);
-MatMult(CQ, v_col_1, v_row_2);
-VecDot(v_row_1, v_row_2, &norm);
-cout << "||Q_rt||: " << norm << endl;
-//MatMult(CM3invM3, v_col_1, v_col_2);
-//VecSet(v_col_3, 1.0);
-//VecDot(v_col_3, v_col_2, &norm);
-//cout << "||M_rho_inv||: " << norm << endl;
-VecDestroy(&v_col_1);
-VecDestroy(&v_col_2);
-VecDestroy(&v_col_3);
-VecDestroy(&v_row_1);
-VecDestroy(&v_row_2);
-}*/
 
     Rc->assemble(SCALE, 0.5*dt, vert->horiz->fl, M);
     EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
@@ -1133,24 +942,7 @@ VecDestroy(&v_row_2);
 
 #if 0
 void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* velz, L2Vecs* theta) {
-    int kk, ex, ey, ei, dp_size;
-    Vec theta_h, d_pi, d_pi_l;
-    Vec *d_pi_h, *d_pi_z;
-    MatReuse reuse_c = (!CE23M3) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
-
-    dp_size = (geom->nk-1)*topo->elOrd*topo->elOrd;
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &d_pi);
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &d_pi_l);
-    d_pi_h = new Vec[geom->nk];
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecCreateSeq(MPI_COMM_SELF, topo->n1, &d_pi_h[kk]);
-    }
-    d_pi_z = new Vec[topo->nElsX*topo->nElsX];
-    for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-        VecCreateSeq(MPI_COMM_SELF, dp_size, &d_pi_z[ei]);
-    }
+    int ex, ey, ei;
 
     MatZeroEntries(M);
 
@@ -1166,6 +958,7 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
 	    vert->vo->AssembleConst(ex, ey, vert->vo->VB);
             AddMz_Coupled(topo, ex, ey, 0, vert->vo->VB, M);
             AddMz_Coupled(topo, ex, ey, 1, vert->vo->VB, M);
+//AddMz_Coupled(topo, ex, ey, 2, vert->vo->VB, M);
 
             vert->assemble_operators(ex, ey, theta->vz[ei], rho->vz[ei], rt->vz[ei], exner->vz[ei], velz->vz[ei]);
             AddGradz_Coupled(topo, ex, ey, 1, vert->G_rt, M);
@@ -1182,18 +975,6 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
-
-    VecDestroy(&theta_h);
-    VecDestroy(&d_pi);
-    VecDestroy(&d_pi_l);
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecDestroy(&d_pi_h[kk]);
-    }
-    delete[] d_pi_h;
-    for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-        VecDestroy(&d_pi_z[ei]);
-    }
-    delete[] d_pi_z;
 }
 #endif
 
@@ -1248,7 +1029,7 @@ if(!rank)cout<<kk<<"\t|R_u|: "<<norm<<endl;
     }
 
     AssembleVertMomVort(ujl, velz_j); // uuz TOOD: second order in time
-    vert->horiz->advection_rhs(velx_i, velx_j, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, uil, ujl, true);
+    vert->horiz->advection_rhs(velx_i, velx_j, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, uil, ujl);
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         ex = ii%topo->nElsX;
         ey = ii/topo->nElsX;

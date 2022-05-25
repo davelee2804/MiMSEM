@@ -26,13 +26,10 @@ class Euler_I {
         WtQdUdz_mat* Rz;
         Whmat* T;
         Mat KT;
-        Vec* fg;                 // coriolis vector (global)
         double k2i;              // kinetic to internal energy exchange
         double i2k;              // kinetic to internal energy exchange
         double k2i_z;            // kinetic to internal energy exchange
         double i2k_z;            // kinetic to internal energy exchange
-        Vec* gv;
-        Vec* zv;
         Vec* uz;                 // dudz and dvdz vorticity components
         Vec* uzl_i;
         Vec* uzl_j;
@@ -87,10 +84,7 @@ class Euler_I {
         double* Wt;
         double* WtQ;
 
-        void coriolis();
-        void initGZ();
         void grad(bool assemble, Vec phi, Vec u, int lev);            // weak form grad operator
-        void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f); // weak form curl operator
         void init0(Vec* q, ICfunc3D* func);
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* p, ICfunc3D* func);
