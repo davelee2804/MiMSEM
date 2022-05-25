@@ -1768,14 +1768,13 @@ vo->AssembleConLinWithW(ex, ey, velz, vo->VBA);
 }
 
 void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h, L2Vecs* rho_i, L2Vecs* rho_j, L2Vecs* rho_h, 
-		                 L2Vecs* rt_i, L2Vecs* rt_j, L2Vecs* rt_h, L2Vecs* exner_i, L2Vecs* exner_j, L2Vecs* _exner_h, 
-                                 L2Vecs* _theta_h, L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing) {
+                                 L2Vecs* rt_i, L2Vecs* rt_j, L2Vecs* rt_h, L2Vecs* exner_i, L2Vecs* exner_j, L2Vecs* _exner_h, 
+                                 L2Vecs* theta_i, L2Vecs* _theta_h, L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, 
+                                 bool hs_forcing) {
     bool done = false;
     int ex, ey, elOrd2, itt = 0;
     double norm_x, max_norm_w, max_norm_exner, max_norm_rho, max_norm_rt;
-    L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
-    L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
-    Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F_z, G_z, dF_z, dG_z, d_theta;
+    Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F_z, G_z, dF_z, dG_z;
     L2Vecs* dFx = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* dGx = new L2Vecs(geom->nk, topo, geom);
 
@@ -1792,13 +1791,6 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*elOrd2, &d_theta);
-
-    // diagnose the potential temperature
-    diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz);
-    diagTheta2(rho_j->vz, rt_j->vz, theta_j->vz);
-    theta_i->VertToHoriz();
-    theta_j->VertToHoriz();
 
     for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         VecZeroEntries(rho_h->vz[ii]);
@@ -1813,9 +1805,6 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
         VecZeroEntries(_exner_h->vz[ii]);
 	VecAXPY(_exner_h->vz[ii], 0.5, exner_i->vz[ii]);
 	VecAXPY(_exner_h->vz[ii], 0.5, exner_j->vz[ii]);
-        VecZeroEntries(_theta_h->vz[ii]);
-	VecAXPY(_theta_h->vz[ii], 0.5, theta_i->vz[ii]);
-	VecAXPY(_theta_h->vz[ii], 0.5, theta_j->vz[ii]);
     }
     rho_h->VertToHoriz();
     rt_h->VertToHoriz();
@@ -1827,9 +1816,10 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
         k2i_z = 0.0;
         max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
 
-        rho_j->VertToHoriz();
-	if(!itt)
+//        if(!itt) {
+            rho_j->VertToHoriz();
             horiz->advection_rhs(velx1, velx2, rho_i->vh, rho_j->vh, _theta_h, dFx, dGx, u1l, u2l);
+//        }
 
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             ex = ii%topo->nElsX;
@@ -1891,14 +1881,12 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
             VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
         }
 
-        diagTheta2(rho_j->vz, rt_j->vz, theta_j->vz);
+        diagTheta2(rho_j->vz, rt_j->vz, _theta_h->vz);
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
-            VecZeroEntries(_theta_h->vz[ii]);
-            VecAXPY(_theta_h->vz[ii], 0.5, theta_j->vz[ii]);
+            VecScale(_theta_h->vz[ii], 0.5);
             VecAXPY(_theta_h->vz[ii], 0.5, theta_i->vz[ii]);
         }
         _theta_h->VertToHoriz();
-        theta_j->VertToHoriz();
 
         MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_exner = norm_x;
         MPI_Allreduce(&max_norm_w,     &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w     = norm_x;
@@ -1924,8 +1912,6 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
     rt_h->VertToHoriz();
     _exner_h->VertToHoriz();
 
-    delete theta_i;
-    delete theta_j;
     delete dFx;
     delete dGx;
     VecDestroy(&F_w);
@@ -1940,5 +1926,4 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
     VecDestroy(&G_z);
     VecDestroy(&dF_z);
     VecDestroy(&dG_z);
-    VecDestroy(&d_theta);
 }

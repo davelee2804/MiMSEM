@@ -171,8 +171,8 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
 
     KSPCreate(MPI_COMM_WORLD, &ksp_c);
     KSPSetOperators(ksp_c, M, M);
-    KSPSetTolerances(ksp_c, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
-    //KSPSetTolerances(ksp_c, 1.0e-14, 1.0e-50, PETSC_DEFAULT, 1000);
+    //KSPSetTolerances(ksp_c, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
+    KSPSetTolerances(ksp_c, 1.0e-14, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp_c, KSPGMRES);
     KSPGetPC(ksp2, &pc);
     PCSetType(pc, PCJACOBI);
@@ -866,7 +866,7 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
     CK->assemble(ujl, velz->vz, 1.0, SCALE);
 //for(kk = 0; kk < geom->nk; kk++) VecZeroEntries(d_pi_h[kk]);
 //for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) VecZeroEntries(d_pi_z[ei]);
-//CK->assemble(d_pi_h, velz->vz, 1.0, SCALE);
+//CK->assemble(ujl, d_pi_z, 1.0, SCALE);
     MatTransposeMatMult(CK->M, CM2invE23M3, reuse_c, PETSC_DEFAULT, &CQ);
     //AddM3_Coupled(topo, 1, 0, CQ, M); // ??
 
@@ -964,14 +964,14 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
             AddGradz_Coupled(topo, ex, ey, 1, vert->G_rt, M);
             AddGradz_Coupled(topo, ex, ey, 2, vert->G_pi, M);
             AddDivz_Coupled(topo, ex, ey, 0, vert->D_rho, M);
-            AddDivz_Coupled(topo, ex, ey, 1, vert->D_rt, M);
+            //AddDivz_Coupled(topo, ex, ey, 1, vert->D_rt, M); // ??
             AddQz_Coupled(topo, ex, ey, 1, 0, vert->Q_rt_rho, M);
-            AddQz_Coupled(topo, ex, ey, 2, 1, vert->N_rt, M);
-            AddQz_Coupled(topo, ex, ey, 2, 2, vert->N_pi, M);
+            //AddQz_Coupled(topo, ex, ey, 2, 1, vert->N_rt, M);
+            //AddQz_Coupled(topo, ex, ey, 2, 2, vert->N_pi, M);
         }
     }
-    //EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
-    //EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
+    EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
+    EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
@@ -1021,6 +1021,7 @@ void Euler_I::AssembleResidual(Vec* velx_i, Vec* velx_j,
 	VecAXPY(du, -1.0, velx_i[kk]);
 	MatMult(vert->horiz->M1->M, du, Mu);
 	VecAYPX(R_u[kk], dt, Mu);
+//VecAYPX(R_u[kk], 0.0*dt, Mu);
 /*{
 double norm;
 VecNorm(R_u[kk],NORM_2,&norm);
@@ -1039,7 +1040,7 @@ if(!rank)cout<<kk<<"\t|R_u|: "<<norm<<endl;
 			        velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii],
                                 rt_i->vz[ii], rt_j->vz[ii], R_w[ii], F_z, G_z);
 
-        VecAXPY(R_w[ii], dt, uuz->vz[ii]);
+        //VecAXPY(R_w[ii], dt, uuz->vz[ii]);
         vert->vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], R_pi[ii]);
         vert->vo->AssembleConst(ex, ey, vert->vo->VB);
         MatMult(vert->vo->V10, F_z, dF_z);
@@ -1163,7 +1164,7 @@ void Euler_I::Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sa
         // precondition....
         vert->solve_schur_vert(velz_i, velz_j, velz_h, rho_i, rho_j, rho_h, 
                                rt_i, rt_j, rt_h, exner_i, exner_j, exner_h, 
-                               theta_h, NULL, velx, velx_j, uil, ujl, false);
+                               theta_i, theta_h, NULL, velx, velx_j, uil, ujl, false);
 
         AssembleCoupledOperator(rho_h, rt_h, exner_h, velz_h, theta_h);
 
