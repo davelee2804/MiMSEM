@@ -1125,6 +1125,8 @@ void M2mat_coupled::assemble_inv(double scale, Umat* Mk) {
     mp12 = mp1*mp1;
     n_dofs_locl = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
 
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
     MatZeroEntries(Minv);
 
     MatGetOwnershipRange(Mk->M, &mi, &mf);
