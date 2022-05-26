@@ -10,6 +10,7 @@
 #include "Topo.h"
 #include "Geom.h"
 #include "ElMats.h"
+#include "Assembly.h"
 #include "Assembly_Coupled.h"
 
 #define RD 287.0
@@ -875,6 +876,12 @@ M2mat_coupled::M2mat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, Lagrang
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*nn*np1, PETSC_NULL, 2*nn*np1, PETSC_NULL);
     MatZeroEntries(M);
+
+    MatCreate(MPI_COMM_WORLD, &Minv);
+    MatSetSizes(Minv, n_dofs_locl, n_dofs_locl, n_dofs_glob, n_dofs_glob);
+    MatSetType(Minv, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(Minv, nn*nn, PETSC_NULL, 0, PETSC_NULL);
+    MatZeroEntries(Minv);
 }
 
 void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool vert_scale) {
@@ -1102,8 +1109,78 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
     delete W;
 }
 
+void M2mat_coupled::assemble_inv(double scale, Umat* Mk) {
+    int kk, mm, mi, mf, nCols, ii, ri, inds[99], *inds_2, *inds_0, mp1, mp12, ex, ey, ei, n_dofs_locl;
+    const int *cols;
+    const double* vals;
+    double val_sum, Q0[99], det;
+    Wii*       Q    = new Wii(l->q, geom);
+    M2_j_xy_i* W    = new M2_j_xy_i(e);
+    double* Wt      = Alloc2D(W->nDofsJ, W->nDofsI);
+    double* WtQ     = Alloc2D(W->nDofsJ, Q->nDofsJ);
+    double* WtQW    = Alloc2D(W->nDofsJ, W->nDofsJ);
+    double* WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
+
+    mp1 = l->n + 1;
+    mp12 = mp1*mp1;
+    n_dofs_locl = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
+
+    MatZeroEntries(Minv);
+
+    MatGetOwnershipRange(Mk->M, &mi, &mf);
+
+    for(kk = 0; kk < topo->nk; kk++) {
+        Mk->assemble(kk, scale, true);
+        for(mm = mi; mm < mf; mm++) {
+            MatGetRow(Mk->M, mm, &nCols, &cols, &vals);
+            val_sum = 0.0;
+            for(ii = 0; ii < nCols; ii++) {
+                val_sum += vals[ii];
+            }
+            MatRestoreRow(Mk->M, mm, &nCols, &cols, &vals);
+
+            ri = topo->pi*n_dofs_locl + mm - mi;
+            MatSetValues(Minv, 1, &ri, 1, &ri, &val_sum, ADD_VALUES);
+        }
+    }
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            inds_2 = topo->elInds2_l(ex, ey);
+            inds_0 = topo->elInds0_l(ex, ey);
+            for(kk = 0; kk < topo->nk-1; kk++) {
+                for(ii = 0; ii < mp12; ii++) {
+                    det = geom->det[ei][ii];
+                    Q0[ii]  = Q->A[ii]*(scale/det);
+                    Q0[ii] *= 0.5*(geom->thick[kk+0][inds_0[ii]] + geom->thick[kk+1][inds_0[ii]]);
+                }
+                Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
+                Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+                Inv(WtQW, WtQWinv, W->nDofsJ);
+
+                for(ii = 0; ii < W->nDofsJ; ii++) {
+                    inds[ii] = topo->pi*n_dofs_locl + topo->nk*topo->n1l + kk*topo->n2l + inds_2[ii];
+                }
+                MatSetValues(Minv, W->nDofsJ, inds, W->nDofsJ, inds, WtQWinv, ADD_VALUES);
+            }
+        }
+    }
+    MatAssemblyBegin(Minv, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  Minv, MAT_FINAL_ASSEMBLY);
+
+    delete Q;
+    delete W;
+    Free2D(W->nDofsJ, Wt);
+    Free2D(W->nDofsJ, WtQ);
+    Free2D(W->nDofsJ, WtQW);
+    Free2D(W->nDofsJ, WtQWinv);
+}
+
 M2mat_coupled::~M2mat_coupled() {
     MatDestroy(&M);
+    MatDestroy(&Minv);
 }
 
 Kmat_coupled::Kmat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e) {

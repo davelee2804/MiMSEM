@@ -47,11 +47,11 @@ VertSolve.o: VertSolve.cpp VertSolve.h HorizSolve.o Assembly.o VertOps.o ElMats.
 HorizSolve.o: HorizSolve.cpp HorizSolve.h Assembly.o VertOps.o ElMats.o L2Vecs.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c HorizSolve.cpp ${CXXFLAGS}
 
+Assembly_Coupled.o: Assembly_Coupled.cpp Assembly_Coupled.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c Assembly_Coupled.cpp ${CXXFLAGS}
+
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}
-
-Assembly_Coupled.o: Assembly_Coupled.cpp Assembly_Coupled.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c Assembly_Coupled.cpp ${CXXFLAGS}
 
 VertOps.o: VertOps.cpp VertOps.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c VertOps.cpp ${CXXFLAGS}
