@@ -383,20 +383,6 @@ int* Topo::elInds_vely_l(int ex, int ey, int lev) {
     return inds_vely_l;
 }
 
-int* Topo::elInds_rho_g(int ex, int ey, int lev) {
-    int jj, nj, qj;
-    int dofs_per_lev = 4;
-
-    nj = elOrd*elOrd;
-
-    elInds2_l(ex, ey);
-    for(jj = 0; jj < nj; jj++) {
-	qj = inds2_l[jj];
-        inds_rho_g[jj] = pi*dofs_per_proc + nk*n1l + (4*nk-1)*qj + dofs_per_lev*lev+0;
-    }
-    return inds_rho_g;
-}
-
 int* Topo::elInds_rho_l(int ex, int ey, int lev) {
     int jj, nj, qj;
     int dofs_per_lev = 4;
@@ -411,18 +397,16 @@ int* Topo::elInds_rho_l(int ex, int ey, int lev) {
     return inds_rho_l;
 }
 
-int* Topo::elInds_theta_g(int ex, int ey, int lev) {
-    int jj, nj, qj;
-    int dofs_per_lev = 4;
+int* Topo::elInds_rho_g(int ex, int ey, int lev) {
+    int jj, nj;
 
     nj = elOrd*elOrd;
 
-    elInds2_l(ex, ey);
+    elInds_rho_l(ex, ey, lev);
     for(jj = 0; jj < nj; jj++) {
-	qj = inds2_l[jj];
-        inds_theta_g[jj] = pi*dofs_per_proc + nk*n1l + (4*nk-1)*qj + dofs_per_lev*lev+1;
+        inds_rho_g[jj] = pi*dofs_per_proc + inds_rho_l[jj];
     }
-    return inds_theta_g;
+    return inds_rho_g;
 }
 
 int* Topo::elInds_theta_l(int ex, int ey, int lev) {
@@ -439,18 +423,16 @@ int* Topo::elInds_theta_l(int ex, int ey, int lev) {
     return inds_theta_l;
 }
 
-int* Topo::elInds_exner_g(int ex, int ey, int lev) {
-    int jj, nj, qj;
-    int dofs_per_lev = 4;
+int* Topo::elInds_theta_g(int ex, int ey, int lev) {
+    int jj, nj;
 
     nj = elOrd*elOrd;
 
-    elInds2_l(ex, ey);
+    elInds_theta_l(ex, ey, lev);
     for(jj = 0; jj < nj; jj++) {
-	qj = inds2_l[jj];
-        inds_exner_g[jj] = pi*dofs_per_proc + nk*n1l + (4*nk-1)*qj + dofs_per_lev*lev+2;
+        inds_theta_g[jj] = pi*dofs_per_proc + inds_theta_l[jj];
     }
-    return inds_exner_g;
+    return inds_theta_g;
 }
 
 int* Topo::elInds_exner_l(int ex, int ey, int lev) {
@@ -467,17 +449,16 @@ int* Topo::elInds_exner_l(int ex, int ey, int lev) {
     return inds_exner_l;
 }
 
-int* Topo::elInds_velz_g(int ex, int ey, int lev) {
-    int jj, nj, qj;
+int* Topo::elInds_exner_g(int ex, int ey, int lev) {
+    int jj, nj;
 
     nj = elOrd*elOrd;
 
-    elInds2_l(ex, ey);
+    elInds_exner_l(ex, ey, lev);
     for(jj = 0; jj < nj; jj++) {
-	qj = inds2_l[jj];
-        inds_velz_g[jj] = pi*dofs_per_proc + nk*n1l + (4*nk-1)*qj + 4*lev+3;
+        inds_exner_g[jj] = pi*dofs_per_proc + inds_exner_l[jj];
     }
-    return inds_velz_g;
+    return inds_exner_g;
 }
 
 int* Topo::elInds_velz_l(int ex, int ey, int lev) {
@@ -491,6 +472,18 @@ int* Topo::elInds_velz_l(int ex, int ey, int lev) {
         inds_velz_l[jj] = nk*n1l + (4*nk-1)*qj + 4*lev+3;
     }
     return inds_velz_l;
+}
+
+int* Topo::elInds_velz_g(int ex, int ey, int lev) {
+    int jj, nj;
+
+    nj = elOrd*elOrd;
+
+    elInds_velz_l(ex, ey, lev);
+    for(jj = 0; jj < nj; jj++) {
+        inds_velz_g[jj] = pi*dofs_per_proc + inds_velz_l[jj];
+    }
+    return inds_velz_g;
 }
 
 void Topo::repack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec _x) {

@@ -906,7 +906,7 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
     n2 = topo->elOrd*topo->elOrd;
     mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
-    dofs_per_proc = geom->nk*topo->n1l + (geom->nk-1)*topo->n2l;
+    dofs_per_proc = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
 
     Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
     Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
@@ -970,9 +970,11 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
                     proc_ind = inds_x[ii]/topo->n1l;
                     dof_ind  = inds_x[ii]%topo->n1l;
                     inds_x_g[ii] = proc_ind*dofs_per_proc + kk*topo->n1l + dof_ind;
+if(kk*topo->n1l+dof_ind>topo->nk*topo->n1l)cout<<"M2 index ERROR!!: "<<inds_x_g[ii]<<"\n";
                     proc_ind = inds_y[ii]/topo->n1l;
                     dof_ind  = inds_y[ii]%topo->n1l;
                     inds_y_g[ii] = proc_ind*dofs_per_proc + kk*topo->n1l + dof_ind;
+if(kk*topo->n1l+dof_ind>topo->nk*topo->n1l)cout<<"M2 index ERROR!!: "<<inds_y_g[ii]<<"\n";
                 }
 
                 Mult_FD_IP(U->nDofsJ, Q->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
@@ -1282,7 +1284,7 @@ Kmat_coupled::~Kmat_coupled() {
 }
 
 void AddM3_Coupled(Topo* topo, int row_ind, int col_ind, Mat M3, Mat M) {
-    int mi, mf, mm, mp, nCols, ri, ci, lev, fce, m3_dofs_per_proc, shift;
+    int mi, mf, mm, mp, nCols, ri, ci, lev, fce, m3_dofs_per_proc, shift, proc_i;
     const int *cols;
     const double* vals;
     int cols2[999];
@@ -1294,14 +1296,17 @@ void AddM3_Coupled(Topo* topo, int row_ind, int col_ind, Mat M3, Mat M) {
     for(mm = mi; mm < mf; mm++) {
         mp  = mm - topo->pi*m3_dofs_per_proc;
         lev = mp / topo->n2l;
+if(lev>=topo->nk)cout<<"AddM3: ERROR (1)!!: "<<lev<<"\t\t";
         fce = mp % topo->n2l;
         ri  = shift + (4*topo->nk-1)*fce + 4*lev + row_ind;
         MatGetRow(M3, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
-            mp  = cols[ci] - topo->pi*m3_dofs_per_proc;
-            lev = mp / topo->n2l;
-            fce = mp % topo->n2l;
-            cols2[ci] = shift + (4*topo->nk-1)*fce + 4*lev + col_ind;
+            proc_i = cols[ci]/m3_dofs_per_proc;
+            mp     = cols[ci] - proc_i*m3_dofs_per_proc;
+            lev    = mp / topo->n2l;
+if(lev>=topo->nk)cout<<"AddM3: ERROR (2)!!: "<<lev<<"\t\t";
+            fce    = mp % topo->n2l;
+            cols2[ci] = proc_i*topo->dofs_per_proc + topo->nk*topo->n1l + (4*topo->nk-1)*fce + 4*lev + col_ind;
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
         MatRestoreRow(M3, mm, &nCols, &cols, &vals);
@@ -1309,10 +1314,14 @@ void AddM3_Coupled(Topo* topo, int row_ind, int col_ind, Mat M3, Mat M) {
 }
 
 void AddM2_Coupled(Topo* topo, Mat M2, Mat M) {
-    int mi, mf, mm, mp, nCols, ri, ci, m2_dofs_per_proc, xy_dofs_per_proc, lev, fce, shift;
+    int mi, mf, mm, mp, nCols, ri, ci, m2_dofs_per_proc, xy_dofs_per_proc, lev, fce, shift, proc_i;
     const int *cols;
     const double* vals;
     int cols2[999];
+//double vals2[999];
+//bool found;
+int rank;
+MPI_Comm_rank(MPI_COMM_WORLD,&rank);
 
     shift            = topo->pi*topo->dofs_per_proc;
     xy_dofs_per_proc = topo->nk*topo->n1l;
@@ -1323,32 +1332,46 @@ void AddM2_Coupled(Topo* topo, Mat M2, Mat M) {
         mp = mm - topo->pi*m2_dofs_per_proc;
 	if(mp < xy_dofs_per_proc) {
             ri  = topo->pi*topo->dofs_per_proc + mp;
+//found=false;
 	} else {
             lev = (mp-xy_dofs_per_proc) / topo->n2l;
+if(lev>=topo->nk-1)cout<<"AddM2: ERROR (1)!!: "<<lev<<"\t\t";
             fce = (mp-xy_dofs_per_proc) % topo->n2l;
             ri  = shift + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
+//found=true;
         }
         MatGetRow(M2, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
-            mp = cols[ci] - topo->pi*m2_dofs_per_proc;
-            if(mp < xy_dofs_per_proc) {
-                cols2[ci] = topo->pi*topo->dofs_per_proc + mp;
+            proc_i = cols[ci]/m2_dofs_per_proc;
+            mp     = cols[ci] - proc_i*m2_dofs_per_proc;
+if(mp<0 && !rank)cout<<"AddM2: ERROR (4)!!: "<<mp<<"\t"<<proc_i<<"\t"<<cols[ci]<<"\t"<<m2_dofs_per_proc<<"\t";//!!!
+           if(mp < xy_dofs_per_proc) {
+                cols2[ci] = proc_i*topo->dofs_per_proc + mp;
+//vals2[ci]=(cols2[ci]==ri)?1.0:0.0;
+//vals2[ci]=(cols[ci]==mm)?1.0:0.0;
+//if(cols[ci]==mm)found=true;
             } else {
                 lev       = (mp-xy_dofs_per_proc) / topo->n2l;
+if(lev>=topo->nk-1)cout<<"AddM2: ERROR (2)!!: "<<lev<<"\t\t";//!!!
                 fce       = (mp-xy_dofs_per_proc) % topo->n2l;
                 cols2[ci] = shift + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
+//vals2[ci]=vals[ci];
             }
         }
+//if(!found)cout<<"DIAGONAL ERROR!!!\n";
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+//MatSetValues(M, 1, &ri, nCols, cols2, vals2, ADD_VALUES);
         MatRestoreRow(M2, mm, &nCols, &cols, &vals);
     }
 }
 
 void AddG_Coupled(Topo* topo, int col_ind, Mat G, Mat M) {
-    int mi, mf, mm, mp, nCols, ri, ci, m2_dofs_per_proc, m3_dofs_per_proc, xy_dofs_per_proc, lev, fce;
+    int mi, mf, mm, mp, nCols, ri, ci, m2_dofs_per_proc, m3_dofs_per_proc, xy_dofs_per_proc, lev, fce, proc_i;
     const int *cols;
     const double* vals;
     int cols2[999];
+//double vals2[999];
+//bool zero_vals;
 
     m3_dofs_per_proc = topo->nk*topo->n2l;
     xy_dofs_per_proc = topo->nk*topo->n1l;
@@ -1359,51 +1382,70 @@ void AddG_Coupled(Topo* topo, int col_ind, Mat G, Mat M) {
         mp = mm - topo->pi*m2_dofs_per_proc;
 	if(mp < xy_dofs_per_proc) {
             ri  = topo->pi*topo->dofs_per_proc + mp;
+//zero_vals=true;
 	} else {
             lev = (mp-xy_dofs_per_proc) / topo->n2l;
+if(lev==topo->nk-1)cout<<"AddG: ERROR (1)!!\t\t";
             fce = (mp-xy_dofs_per_proc) % topo->n2l;
             ri  = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
+//zero_vals=false;
         }
         MatGetRow(G, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
-            mp        = cols[ci] - topo->pi*m3_dofs_per_proc;
+//vals2[ci]=vals[ci];
+//if(zero_vals)
+//vals2[ci]=0.0;
+            proc_i    = cols[ci]/m3_dofs_per_proc;
+            mp        = cols[ci] - proc_i*m3_dofs_per_proc;
             lev       = mp / topo->n2l;
+if(lev>=topo->nk)cout<<"AddG: ERROR (2)!!: "<<lev<<"\t\t";//!!
             fce       = mp % topo->n2l;
-            cols2[ci] = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + col_ind;
+            cols2[ci] = proc_i*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + col_ind;
         }
         MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+//MatSetValues(M, 1, &ri, nCols, cols2, vals2, ADD_VALUES);
         MatRestoreRow(G, mm, &nCols, &cols, &vals);
     }
 }
 
 void AddD_Coupled(Topo* topo, int row_ind, Mat D, Mat M) {
-    int mi, mf, mm, mp, nCols, ri, ci, m2_dofs_per_proc, m3_dofs_per_proc, xy_dofs_per_proc, lev, fce;
+    int mi, mf, mm, mp, nCols, ri, ci, m2_dofs_per_proc, m3_dofs_per_proc, xy_dofs_per_proc, lev, fce, shift, proc_i;
     const int *cols;
     const double* vals;
     int cols2[999];
+//double vals2[999];
 
     m3_dofs_per_proc = topo->nk*topo->n2l;
     xy_dofs_per_proc = topo->nk*topo->n1l;
     m2_dofs_per_proc = xy_dofs_per_proc + (topo->nk-1)*topo->n2l;
+    shift = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc;
 
     MatGetOwnershipRange(D, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         mp  = mm - topo->pi*m3_dofs_per_proc;
         lev = mp / topo->n2l;
+if(lev==topo->nk)cout<<"AddD: ERROR (1)!!\t\t";
         fce = mp % topo->n2l;
-        ri  = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + row_ind;
+        ri  = shift + (4*topo->nk-1)*fce + 4*lev + row_ind;
         MatGetRow(D, mm, &nCols, &cols, &vals);
 	for(ci = 0; ci < nCols; ci++) {
-            mp = cols[ci] - topo->pi*m2_dofs_per_proc;
+//vals2[ci]=vals[ci];
+            proc_i = cols[ci]/m2_dofs_per_proc;
+            mp     = cols[ci] - proc_i*m2_dofs_per_proc;
             if(mp < xy_dofs_per_proc) {
-                cols2[ci] = topo->pi*topo->dofs_per_proc + mp;
+                cols2[ci] = proc_i*topo->dofs_per_proc + mp;
+//if(row_ind)
+//vals2[ci]=0.0;
             } else {
                 lev       = (mp-xy_dofs_per_proc) / topo->n2l;
+if(lev>=topo->nk-1)cout<<"AddD: ERROR (2)!!: "<<lev<<"\t\t";//!!!
                 fce       = (mp-xy_dofs_per_proc) % topo->n2l;
-                cols2[ci] = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
+                cols2[ci] = shift + (4*topo->nk-1)*fce + 4*lev + 3;
+//if(row_ind)vals2[ci]=0.0;
             }
         }
         MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
+//MatSetValues(M, 1, &ri, nCols, cols2, vals2, ADD_VALUES);
         MatRestoreRow(D, mm, &nCols, &cols, &vals);
     }
 }
