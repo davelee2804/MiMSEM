@@ -1338,7 +1338,7 @@ void AddM2_Coupled(Topo* topo, Mat M2, Mat M) {
             } else {
                 lev       = (mp-xy_dofs_per_proc) / topo->n2l;
                 fce       = (mp-xy_dofs_per_proc) % topo->n2l;
-                cols2[ci] = shift + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
+                cols2[ci] = proc_i*topo->dofs_per_proc + xy_dofs_per_proc + (4*topo->nk-1)*fce + 4*lev + 3;
             }
         }
 	MatSetValues(M, 1, &ri, nCols, cols2, vals, ADD_VALUES);
