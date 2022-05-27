@@ -1141,7 +1141,7 @@ void M2mat_coupled::assemble_inv(double scale, Umat* Mk) {
             }
             MatRestoreRow(Mk->M, mm, &nCols, &cols, &vals);
 
-            ri = topo->pi*n_dofs_locl + mm - mi;
+            ri = topo->pi*n_dofs_locl + kk*topo->n1l + mm - mi;
             MatSetValues(Minv, 1, &ri, 1, &ri, &val_sum, ADD_VALUES);
         }
     }
@@ -1370,6 +1370,7 @@ void AddM3_Coupled(Topo* topo, int row_ind, int col_ind, Mat M3, Mat M) {
     m3_dofs_per_proc = topo->nk*topo->n2l;
 
     MatGetOwnershipRange(M3, &mi, &mf);
+if(mi != topo->pi*m3_dofs_per_proc)cout<<"AddM3: ERROR!\t"<<mi<<"\t"<<topo->pi*m3_dofs_per_proc<<"\n";
     for(mm = mi; mm < mf; mm++) {
         mp  = mm - topo->pi*m3_dofs_per_proc;
         lev = mp / topo->n2l;
@@ -1399,6 +1400,7 @@ void AddM2_Coupled(Topo* topo, Mat M2, Mat M) {
     m2_dofs_per_proc = xy_dofs_per_proc + (topo->nk-1)*topo->n2l;
 
     MatGetOwnershipRange(M2, &mi, &mf);
+if(mi != topo->pi*m2_dofs_per_proc)cout<<"AddM2: ERROR!\t"<<mi<<"\t"<<topo->pi*m2_dofs_per_proc<<"\n";
     for(mm = mi; mm < mf; mm++) {
         mp = mm - topo->pi*m2_dofs_per_proc;
 	if(mp < xy_dofs_per_proc) {
@@ -1436,6 +1438,7 @@ void AddG_Coupled(Topo* topo, int col_ind, Mat G, Mat M) {
     m2_dofs_per_proc = xy_dofs_per_proc + (topo->nk-1)*topo->n2l;
 
     MatGetOwnershipRange(G, &mi, &mf);
+if(mi != topo->pi*m2_dofs_per_proc)cout<<"AddG: ERROR!\t"<<mi<<"\t"<<topo->pi*m2_dofs_per_proc<<"\n";
     for(mm = mi; mm < mf; mm++) {
         mp = mm - topo->pi*m2_dofs_per_proc;
 	if(mp < xy_dofs_per_proc) {
@@ -1470,6 +1473,7 @@ void AddD_Coupled(Topo* topo, int row_ind, Mat D, Mat M) {
     shift = topo->pi*topo->dofs_per_proc + xy_dofs_per_proc;
 
     MatGetOwnershipRange(D, &mi, &mf);
+if(mi != topo->pi*m3_dofs_per_proc)cout<<"AddD: ERROR!\t"<<mi<<"\t"<<topo->pi*m3_dofs_per_proc<<"\n";
     for(mm = mi; mm < mf; mm++) {
         mp  = mm - topo->pi*m3_dofs_per_proc;
         lev = mp / topo->n2l;
