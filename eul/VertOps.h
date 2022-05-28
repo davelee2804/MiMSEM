@@ -48,7 +48,6 @@ class VertOps {
         void AssembleLinear(int ex, int ey, Mat B);     // piecewise linear (in vertical) mass matrix
         void AssembleLinCon(int ex, int ey, Mat AB);
         void AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A);
-        void AssembleLinearWithRho(int ex, int ey, Vec* rho, Mat A, bool do_internal);
         void AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_internal);
         void AssembleLinearInv(int ex, int ey, Mat A);
         void AssembleConstWithRhoInv(int ex, int ey, Vec theta, Mat B);
@@ -66,8 +65,6 @@ class VertOps {
         void Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs);
         void Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Vec theta, Mat B);
         // for the density corrections to the schur complement solution
-        void AssembleLinearWithRhoInv(int ex, int ey, Vec rho, Mat A);
-        void AssembleLinearWithW(int ex, int ey, Vec velz, Mat A);
         void AssembleLinearWithRayleighInv(int ex, int ey, double dt_fric, Mat A);
         void AssembleLinearWithThetaInv(int ex, int ey, Vec theta, Mat A);
         void AssembleConstWithRhoInv2(int ex, int ey, Vec theta, Mat B);
