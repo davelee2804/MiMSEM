@@ -885,7 +885,7 @@ M2mat_coupled::M2mat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, Lagrang
 }
 
 void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool vert_scale) {
-    int ex, ey, ei, kk, ii, jj, n2, mp1, mp12, dofs_per_proc, proc_ind, dof_ind, shift, lev;
+    int ex, ey, ei, kk, ii, jj, n2, mp1, mp12, dofs_per_proc, proc_ind, dof_ind, shift;
     int *inds_x, *inds_y, *inds_0, *inds_2, inds_x_g[99], inds_y_g[99], inds_z_g[99];
     Wii* Q = new Wii(l->q, geom);
     M1x_j_xy_i* U = new M1x_j_xy_i(l, e);
@@ -914,6 +914,7 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
     mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
     dofs_per_proc = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
+    shift = topo->pi*dofs_per_proc + topo->nk*topo->n1l;
 
     Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
     Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
@@ -991,7 +992,17 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
                 Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, V->A, UtQV);
                 Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, U->A, VtQU);
                 Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, V->A, VtQV);
-
+/*
+for(ii=0;ii<U->nDofsJ;ii++)
+for(jj=0;jj<U->nDofsJ;jj++)
+UtQU[ii*U->nDofsJ+jj]=
+UtQV[ii*U->nDofsJ+jj]=
+VtQU[ii*U->nDofsJ+jj]=
+VtQV[ii*U->nDofsJ+jj]=0.0;
+for(ii=0;ii<U->nDofsJ;ii++)
+UtQU[ii*U->nDofsJ+ii]=
+VtQV[ii*U->nDofsJ+ii]=1.0;
+*/
                 MatSetValues(M, U->nDofsJ, inds_x_g, U->nDofsJ, inds_x_g, UtQU, ADD_VALUES);
                 MatSetValues(M, U->nDofsJ, inds_x_g, U->nDofsJ, inds_y_g, UtQV, ADD_VALUES);
                 MatSetValues(M, U->nDofsJ, inds_y_g, U->nDofsJ, inds_x_g, VtQU, ADD_VALUES);
@@ -1005,20 +1016,28 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
     }
 
     // vertical vector components
-    shift = topo->pi*dofs_per_proc + topo->nk*topo->n1l;
+/*
     for(kk = 0; kk < geom->nk; kk++) {
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
                 inds_0 = topo->elInds0_l(ex, ey);
+                inds_2 = topo->elInds2_l(ex, ey);
+
+                for(ii = 0; ii < mp12; ii++) {
+                    det = geom->det[ei][ii];
+                    Qaa[ii]  = Q->A[ii]*(SCALE/det);
+                    Qaa[ii] *= 0.5*fac*geom->thick[kk][inds_0[ii]];
+                }
+
                 if(pz) VecGetArray(pz[ei], &pArray);
 		// bottom
 		if(kk > 0) {
                     lev = kk - 1;
                     for(ii = 0; ii < mp12; ii++) {
-                        det = geom->det[ei][ii];
-                        Qaa[ii]  = Q->A[ii]*(scale/det);
-                        Qaa[ii] *= 0.5*fac*geom->thick[lev][inds_0[ii]];
+                        //det = geom->det[ei][ii];
+                        //Qaa[ii]  = Q->A[ii]*(scale/det);
+                        //Qaa[ii] *= 0.5*fac*geom->thick[lev][inds_0[ii]];
 
 		        if(pz && vert_scale) {
                             val = 0.0;
@@ -1027,22 +1046,23 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
                             }
 			    val /= det;
 			    val *= geom->thickInv[lev][inds_0[ii]];
-                            Qaa[ii] *= val;
+                            Qbb[ii] = val*Qaa[ii];
                         } else if(pz) {
                             val = 0.0;
                             for(jj = 0; jj < n2; jj++) {
                                 val += pArray[(lev+1)*n2+jj]*W->A[ii*n2+jj]; // theta has nk+1 levels
                             }
 			    val /= det;
-                            Qaa[ii] *= val;
+                            Qbb[ii] = val*Qaa[ii];
+                        } else {
+                            Qbb[ii] = Qaa[ii];
                         }
                     }
 
-                    inds_2 = topo->elInds2_l(ex, ey);
 		    for(jj = 0; jj < n2; jj++) {
                         inds_z_g[jj] = shift + lev*topo->n2l + inds_2[jj];
                     }
-                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qbb, WtQ);
                     Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
                     MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_z_g, WtQW, ADD_VALUES);
 		}
@@ -1050,9 +1070,9 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
 		if(kk < topo->nk-1) {
                     lev = kk;
                     for(ii = 0; ii < mp12; ii++) {
-                        det = geom->det[ei][ii];
-                        Qaa[ii]  = Q->A[ii]*(scale/det);
-                        Qaa[ii] *= 0.5*fac*geom->thick[lev][inds_0[ii]];
+                        //det = geom->det[ei][ii];
+                        //Qaa[ii]  = Q->A[ii]*(scale/det);
+                        //Qaa[ii] *= 0.5*fac*geom->thick[lev][inds_0[ii]];
 
 		        if(pz && vert_scale) {
                             val = 0.0;
@@ -1061,26 +1081,144 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
                             }
 			    val /= det;
 			    val *= geom->thickInv[lev][inds_0[ii]];
-                            Qaa[ii] *= val;
+                            Qbb[ii] = val*Qaa[ii];
                         } else if(pz) {
                             val = 0.0;
                             for(jj = 0; jj < n2; jj++) {
                                 val += pArray[(lev+1)*n2+jj]*W->A[ii*n2+jj]; // theta has nk+1 levels
                             }
 			    val /= det;
-                            Qaa[ii] *= val;
+                            Qbb[ii] = val*Qaa[ii];
+                        } else {
+                            Qbb[ii] = Qaa[ii];
                         }
                     }
 
-                    inds_2 = topo->elInds2_l(ex, ey);
 		    for(jj = 0; jj < n2; jj++) {
                         inds_z_g[jj] = shift + lev*topo->n2l + inds_2[jj];
                     }
-                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qbb, WtQ);
                     Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
                     MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_z_g, WtQW, ADD_VALUES);
                 }
                 if(pz) VecRestoreArray(pz[ei], &pArray);
+            }
+        }
+    }
+*/
+    if(!pz) {
+        for(kk = 0; kk < geom->nk; kk++) {
+            for(ey = 0; ey < topo->nElsX; ey++) {
+                for(ex = 0; ex < topo->nElsX; ex++) {
+                    ei = ey*topo->nElsX + ex;
+                    inds_0 = topo->elInds0_l(ex, ey);
+                    inds_2 = topo->elInds2_l(ex, ey);
+
+                    for(ii = 0; ii < mp12; ii++) {
+                        det = geom->det[ei][ii];
+                        Qaa[ii]  = Q->A[ii]*(SCALE/det);
+                        Qaa[ii] *= 0.5*fac*geom->thick[kk][inds_0[ii]];
+                    }
+                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+                    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+		    if(kk > 0) {
+                        for(jj = 0; jj < n2; jj++) {
+                            inds_z_g[jj] = shift + (kk-1)*topo->n2l + inds_2[jj];
+                        }
+                        MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_z_g, WtQW, ADD_VALUES);
+                    }
+		    if(kk < topo->nk-1) {
+                        for(jj = 0; jj < n2; jj++) {
+                            inds_z_g[jj] = shift + (kk+0)*topo->n2l + inds_2[jj];
+                        }
+                        MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_z_g, WtQW, ADD_VALUES);
+                    }
+                }
+            }
+        }
+    } else if(vert_scale) {
+        for(kk = 0; kk < geom->nk; kk++) {
+            for(ey = 0; ey < topo->nElsX; ey++) {
+                for(ex = 0; ex < topo->nElsX; ex++) {
+                    ei = ey*topo->nElsX + ex;
+                    inds_0 = topo->elInds0_l(ex, ey);
+                    inds_2 = topo->elInds2_l(ex, ey);
+
+                    VecGetArray(pz[ei], &pArray);
+                    for(ii = 0; ii < mp12; ii++) {
+                        det = geom->det[ei][ii];
+                        Qaa[ii] = Q->A[ii]*(SCALE/det);
+
+                        val = 0.0;
+                        for(jj = 0; jj < n2; jj++) {
+                            val += pArray[kk*n2+jj]*W->A[ii*n2+jj];
+                        }
+                        Qaa[ii] *= 0.5*val/det;
+                    }
+		    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+                    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+		    if(kk > 0) {
+                        for(jj = 0; jj < n2; jj++) {
+                            inds_z_g[jj] = shift + (kk-1)*topo->n2l + inds_2[jj];
+                        }
+                        MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_z_g, WtQW, ADD_VALUES);
+                    }
+		    if(kk < topo->nk-1) {
+                        for(jj = 0; jj < n2; jj++) {
+                            inds_z_g[jj] = shift + (kk+0)*topo->n2l + inds_2[jj];
+                        }
+                        MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_z_g, WtQW, ADD_VALUES);
+                    }
+                    VecRestoreArray(pz[ei], &pArray);
+                }
+            }
+        }
+    } else {
+        for(kk = 0; kk < geom->nk; kk++) {
+            for(ey = 0; ey < topo->nElsX; ey++) {
+                for(ex = 0; ex < topo->nElsX; ex++) {
+                    ei = ey*topo->nElsX + ex;
+                    inds_0 = topo->elInds0_l(ex, ey);
+                    inds_2 = topo->elInds2_l(ex, ey);
+
+                    VecGetArray(pz[ei], &pArray);
+                    for(ii = 0; ii < mp12; ii++) {
+                        det = geom->det[ei][ii];
+                        Qaa[ii]  = Q->A[ii]*(SCALE/det);
+                        Qaa[ii] *= 0.5*geom->thick[kk][inds_0[ii]];
+                        Qbb[ii]  = Qaa[ii];
+
+                        pVal = tVal = 0.0;
+                        for(jj = 0; jj < n2; jj++) {
+                            pVal += pArray[(kk+0)*n2+jj]*W->A[ii*n2+jj];
+                            tVal += pArray[(kk+1)*n2+jj]*W->A[ii*n2+jj];
+                        }
+                        Qaa[ii] *= pVal/det;
+                        Qbb[ii] *= tVal/det;
+                    }
+
+                    // assemble the first basis function
+                    if(kk > 0) {
+                        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+                        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+                        for(jj = 0; jj < n2; jj++) {
+                            inds_z_g[jj] = shift + (kk-1)*topo->n2l + inds_2[jj];
+                        }
+                        MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_z_g, WtQW, ADD_VALUES);
+                    }
+
+                    // assemble the second basis function
+                    if(kk < geom->nk - 1) {
+                        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qbb, WtQ);
+                        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+                        for(jj = 0; jj < n2; jj++) {
+                            inds_z_g[jj] = shift + (kk+0)*topo->n2l + inds_2[jj];
+                        }
+                        MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_z_g, WtQW, ADD_VALUES);
+                    }
+                    VecRestoreArray(pz[ei], &pArray);
+                }
             }
         }
     }

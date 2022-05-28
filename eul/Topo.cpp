@@ -487,7 +487,7 @@ int* Topo::elInds_velz_g(int ex, int ey, int lev) {
 }
 
 void Topo::repack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec _x) {
-    int ii, jj, kk, ex, ey, elOrd2;
+    int ii, jj, kk, ex, ey, elOrd2, shift;
     PetscScalar *xArray, *velxArray, *rhoArray, *thetaArray, *exnerArray, *velzArray;
 
     elOrd2 = elOrd*elOrd;
@@ -503,11 +503,25 @@ void Topo::repack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec _x
     for(ii = 0; ii < nElsX*nElsX; ii++) {
         ex = ii%nElsX;
         ey = ii/nElsX;
+	elInds2_l(ex, ey);
 
         VecGetArray(rho[ii],   &rhoArray);
         VecGetArray(theta[ii], &thetaArray);
         VecGetArray(exner[ii], &exnerArray);
         VecGetArray(velz[ii],  &velzArray);
+
+	for(jj = 0; jj < elOrd2; jj++) {
+	    for(kk = 0; kk < nk; kk++) {
+                shift = nk*n1l + (4*nk-1)*inds2_l[jj] + 4*kk;
+                xArray[shift+0] = rhoArray[kk*elOrd2+jj];
+                xArray[shift+1] = thetaArray[kk*elOrd2+jj];
+                xArray[shift+2] = exnerArray[kk*elOrd2+jj];
+                if(kk < nk-1) {
+                    xArray[shift+3] = velzArray[kk*elOrd2+jj];
+                }
+            }
+        }
+/*
 	for(kk = 0; kk < nk; kk++) {
             elInds_rho_l(ex, ey, kk);
             elInds_theta_l(ex, ey, kk);
@@ -524,6 +538,7 @@ void Topo::repack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec _x
 		}
 	    }
         }
+*/
         VecRestoreArray(rho[ii],   &rhoArray);
         VecRestoreArray(exner[ii], &exnerArray);
         VecRestoreArray(theta[ii], &thetaArray);
@@ -533,7 +548,7 @@ void Topo::repack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec _x
 }
 
 void Topo::unpack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec _x) {
-    int ii, jj, kk, ex, ey, elOrd2;
+    int ii, jj, kk, ex, ey, elOrd2, shift;
     PetscScalar *xArray, *velxArray, *rhoArray, *thetaArray, *exnerArray, *velzArray;
 
     elOrd2 = elOrd*elOrd;
@@ -549,11 +564,25 @@ void Topo::unpack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec _x
     for(ii = 0; ii < nElsX*nElsX; ii++) {
         ex = ii%nElsX;
         ey = ii/nElsX;
+	elInds2_l(ex, ey);
 
         VecGetArray(rho[ii],   &rhoArray);
         VecGetArray(theta[ii], &thetaArray);
         VecGetArray(exner[ii], &exnerArray);
         VecGetArray(velz[ii],  &velzArray);
+
+	for(jj = 0; jj < elOrd2; jj++) {
+	    for(kk = 0; kk < nk; kk++) {
+                shift = nk*n1l + (4*nk-1)*inds2_l[jj] + 4*kk;
+                rhoArray[kk*elOrd2+jj]   = xArray[shift+0];
+                thetaArray[kk*elOrd2+jj] = xArray[shift+1];
+                exnerArray[kk*elOrd2+jj] = xArray[shift+2];
+                if(kk < nk-1) {
+                    velzArray[kk*elOrd2+jj] = xArray[shift+3];
+                }
+            }
+        }
+/*
 	for(kk = 0; kk < nk; kk++) {
             elInds_rho_l(ex, ey, kk);
             elInds_theta_l(ex, ey, kk);
@@ -570,6 +599,7 @@ void Topo::unpack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec _x
                 }
 	    }
         }
+*/
         VecRestoreArray(rho[ii],   &rhoArray);
         VecRestoreArray(exner[ii], &exnerArray);
         VecRestoreArray(theta[ii], &thetaArray);
