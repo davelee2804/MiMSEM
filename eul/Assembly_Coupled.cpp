@@ -1365,7 +1365,7 @@ Kmat_coupled::Kmat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeE
 
 void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
     int ex, ey, ei, ii, jj, kk, n2, mp1, mp12, proc_ind, dof_ind, dofs_per_proc, shift_row, shift_col;
-    int *inds_x, *inds_y, *inds_2, inds_x_g[99], inds_y_g[99], inds_z_g[99], inds_2_g[99];
+    int *inds_x, *inds_y, *inds_0, *inds_2, inds_x_g[99], inds_y_g[99], inds_z_g[99], inds_2_g[99];
     double det, **J, ux[2], val;
     PetscScalar *uArray;
 
@@ -1384,13 +1384,18 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
+                inds_0 = topo->elInds0_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     J = geom->J[ei][ii];
                     geom->interp1_g_t(ex, ey, ii%mp1, ii/mp1, uArray, ux);
+                    ux[0] *= geom->thickInv[kk][inds_0[ii]];
+                    ux[1] *= geom->thickInv[kk][inds_0[ii]];
 
-                    Qaa[ii] = fac*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii]*(scale/det);
-                    Qba[ii] = fac*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii]*(scale/det);
+                    Qaa[ii]  = fac*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii]*(scale/det);
+                    Qba[ii]  = fac*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii]*(scale/det);
+                    Qaa[ii] *= geom->thickInv[kk][inds_0[ii]];
+                    Qba[ii] *= geom->thickInv[kk][inds_0[ii]];
                 }
 
                 Mult_FD_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qaa, UtQaa);
@@ -1428,6 +1433,50 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
             inds_2 = topo->elInds2_l(ex, ey);
             VecGetArray(wl[ei], &uArray);
             for(kk = 0; kk < geom->nk; kk++) {
+                for(jj = 0; jj < W->nDofsJ; jj++) {
+                    inds_2_g[jj] = shift_col + kk*topo->n2l + inds_2[jj];
+                }
+                if(kk > 0) {
+                    for(ii = 0; ii < mp12; ii++) {
+                        det = geom->det[ei][ii];
+                        Qaa[ii] = 0.5*Q->A[ii]*(SCALE/det);
+
+                        val = 0.0;
+                        for(jj = 0; jj < n2; jj++) {
+                            val += uArray[(kk-1)*n2+jj]*W->A[ii*n2+jj];
+                        }
+                        Qaa[ii] *= val/det;
+                    }
+
+                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+                    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+                    for(jj = 0; jj < W->nDofsJ; jj++) {
+                        inds_z_g[jj] = shift_row + (kk-1)*topo->n2l + inds_2[jj];
+                    }
+                    MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_2_g, WtQW, ADD_VALUES);
+                }
+                if(kk < geom->nk - 1) {
+                    for(ii = 0; ii < mp12; ii++) {
+                        det = geom->det[ei][ii];
+                        Qaa[ii] = 0.5*Q->A[ii]*(SCALE/det);
+
+                        val = 0.0;
+                        for(jj = 0; jj < n2; jj++) {
+                            val += uArray[(kk+0)*n2+jj]*W->A[ii*n2+jj];
+                        }
+                        Qaa[ii] *= val/det;
+                    }
+
+                    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
+                    Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
+
+                    for(jj = 0; jj < W->nDofsJ; jj++) {
+                        inds_z_g[jj] = shift_row + (kk+0)*topo->n2l + inds_2[jj];
+                    }
+                    MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_2_g, WtQW, ADD_VALUES);
+                }
+/*
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     Qaa[ii] = 0.5*fac*Q->A[ii]*(scale/det);
@@ -1471,8 +1520,9 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
                     Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
                     MatSetValues(M, W->nDofsJ, inds_z_g, W->nDofsJ, inds_2_g, WtQW, ADD_VALUES);
                 }
+*/
             }
-            VecGetArray(wl[ei], &uArray);
+            VecRestoreArray(wl[ei], &uArray);
         }
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
