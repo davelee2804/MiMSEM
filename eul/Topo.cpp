@@ -549,11 +549,12 @@ void Topo::repack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec _x
 
 void Topo::unpack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec _x) {
     int ii, jj, kk, ex, ey, elOrd2, shift;
-    PetscScalar *xArray, *velxArray, *rhoArray, *thetaArray, *exnerArray, *velzArray;
+    PetscScalar *velxArray, *rhoArray, *thetaArray, *exnerArray, *velzArray;
+    const PetscScalar* xArray;
 
     elOrd2 = elOrd*elOrd;
 
-    VecGetArray(_x, &xArray);
+    VecGetArrayRead(_x, &xArray);
     for(kk = 0; kk < nk; kk++) {
         VecGetArray(velx[kk], &velxArray);
         for(ii = 0; ii < n1l; ii++) {
@@ -605,5 +606,5 @@ void Topo::unpack(Vec* velx, Vec* rho, Vec* theta, Vec* exner, Vec* velz, Vec _x
         VecRestoreArray(theta[ii], &thetaArray);
         VecRestoreArray(velz[ii],  &velzArray);
     }
-    VecRestoreArray(_x, &xArray);
+    VecRestoreArrayRead(_x, &xArray);
 }

@@ -8,6 +8,7 @@
 #include <petscmat.h>
 #include <petscpc.h>
 #include <petscksp.h>
+#include <petscsnes.h>
 
 #include "LinAlg.h"
 #include "Basis.h"
@@ -798,12 +799,10 @@ void Euler_I::CreateCoupledOperator() {
 }
 
 void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* velz, L2Vecs* theta) {
-    int kk, ex, ey, ei, dp_size;
+    int kk, ex, ey, ei;
     Vec theta_h, d_pi, d_pi_l;
     Vec *d_pi_h, *d_pi_z;
     MatReuse reuse_c = (!CE23M3) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
-
-    dp_size = (geom->nk-1)*topo->elOrd*topo->elOrd;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &d_pi);
@@ -814,7 +813,7 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
     }
     d_pi_z = new Vec[topo->nElsX*topo->nElsX];
     for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
-        VecCreateSeq(MPI_COMM_SELF, dp_size, &d_pi_z[ei]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*topo->elOrd*topo->elOrd, &d_pi_z[ei]);
     }
 
     MatZeroEntries(M);
@@ -876,6 +875,19 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
     Rc->assemble(SCALE, 0.5*dt, vert->horiz->fl, M);
     EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
     EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
+/*
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+            vert->assemble_operators(ex, ey, theta->vz[ei], rho->vz[ei], rt->vz[ei], exner->vz[ei], velz->vz[ei]);
+            AddGradz_Coupled(topo, ex, ey, 1, vert->G_rt, M);
+            AddQz_Coupled(topo, ex, ey, 1, 0, vert->Q_rt_rho, M);
+            AddQz_Coupled(topo, ex, ey, 2, 1, vert->N_rt, M);
+            AddQz_Coupled(topo, ex, ey, 2, 2, vert->N_pi, M);
+        }
+    }
+*/
 /*
     for(kk = 0; kk < topo->nk; kk++) {
 	M1->assemble(kk, SCALE, true);
@@ -1170,12 +1182,26 @@ void Euler_I::Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sa
                                rt_i, rt_j, rt_h, exner_i, exner_j, exner_h, 
                                theta_i, theta_h, NULL, velx, velx_j, uil, ujl, false);
 
-        AssembleCoupledOperator(rho_h, rt_h, exner_h, velz_h, theta_h);
-
         AssembleResidual(velx, velx_j, rho_i, rho_j, rt_i, rt_j,
                          exner_i, exner_j, exner_h, velz_i, velz_j, 
 			 theta_i, theta_h, Fz, dFx, dGx, dwdx_i, dwdx_j, 
                          R_u, R_rho, R_rt, R_pi, R_w);
+
+        for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+	    VecZeroEntries(rho_h->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_i->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_j->vz[ii]);
+            VecZeroEntries(rt_h->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_i->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
+            VecZeroEntries(velz_h->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_i->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_j->vz[ii]);
+        }
+        rho_h->VertToHoriz();
+        rt_h->VertToHoriz();
+        velz_h->VertToHoriz();
+        AssembleCoupledOperator(rho_h, rt_h, exner_h, velz_h, theta_h);
 
 	KSPSolve(ksp_c, b, dx);
 	VecNorm(x, NORM_2, &norm_x);
@@ -1234,4 +1260,228 @@ void Euler_I::Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sa
     delete[] R_rt;
     delete[] R_pi;
     delete[] R_w;
+}
+
+PetscErrorCode _snes_function(SNES snes, Vec x, Vec r, void* _ctx) {
+    int kk;
+    euler_ctx *ctx = (euler_ctx*)_ctx;
+
+    ctx->eul->topo->unpack(ctx->velx_j, ctx->rho_j->vz, ctx->rt_j->vz, ctx->exner_j->vz, ctx->velz_j->vz, ctx->eul->x);
+    ctx->rho_j->VertToHoriz();
+    ctx->rt_j->VertToHoriz();
+    ctx->exner_j->VertToHoriz();
+    ctx->velz_j->VertToHoriz();
+    for(kk = 0; kk < ctx->eul->topo->nk; kk++) {
+        VecScatterBegin(ctx->eul->topo->gtol_1, ctx->velx_j[kk], ctx->ujl[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  ctx->eul->topo->gtol_1, ctx->velx_j[kk], ctx->ujl[kk], INSERT_VALUES, SCATTER_FORWARD);
+    }
+
+    ctx->eul->AssembleResidual(ctx->velx_i, ctx->velx_j, ctx->rho_i, ctx->rho_j, ctx->rt_i, ctx->rt_j,
+                               ctx->exner_i, ctx->exner_j, ctx->exner_h, ctx->velz_i, ctx->velz_j, 
+			       ctx->theta_i, ctx->theta_h, ctx->Fz, ctx->dFx, ctx->dGx, ctx->dwdx_i, ctx->dwdx_j, 
+                               ctx->R_u, ctx->R_rho, ctx->R_rt, ctx->R_exner, ctx->R_w);
+
+    return 0;
+}
+
+PetscErrorCode _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* _ctx) {
+    int ii;
+    euler_ctx *ctx = (euler_ctx*)_ctx;
+
+    ctx->eul->topo->unpack(ctx->velx_j, ctx->rho_j->vz, ctx->rt_j->vz, ctx->exner_j->vz, ctx->velz_j->vz, ctx->eul->x);
+    ctx->rho_j->VertToHoriz();
+    ctx->rt_j->VertToHoriz();
+    ctx->exner_j->VertToHoriz();
+    ctx->velz_j->VertToHoriz();
+
+    ctx->eul->vert->diagTheta2(ctx->rho_j->vz, ctx->rt_j->vz, ctx->theta_h->vz);
+    for(ii = 0; ii < ctx->eul->topo->nElsX*ctx->eul->topo->nElsX; ii++) {
+        VecAXPY(ctx->theta_h->vz[ii], 1.0, ctx->theta_i->vz[ii]);
+        VecScale(ctx->theta_h->vz[ii], 0.5);
+	VecZeroEntries(ctx->exner_h->vz[ii]);
+	VecAXPY(ctx->exner_h->vz[ii], 0.5, ctx->exner_i->vz[ii]);
+	VecAXPY(ctx->exner_h->vz[ii], 0.5, ctx->exner_j->vz[ii]);
+	VecZeroEntries(ctx->rho_h->vz[ii]);
+	VecAXPY(ctx->rho_h->vz[ii], 0.5, ctx->rho_i->vz[ii]);
+	VecAXPY(ctx->rho_h->vz[ii], 0.5, ctx->rho_j->vz[ii]);
+	VecZeroEntries(ctx->rt_h->vz[ii]);
+	VecAXPY(ctx->rt_h->vz[ii], 0.5, ctx->rt_i->vz[ii]);
+	VecAXPY(ctx->rt_h->vz[ii], 0.5, ctx->rt_j->vz[ii]);
+	VecZeroEntries(ctx->velz_h->vz[ii]);
+	VecAXPY(ctx->velz_h->vz[ii], 0.5, ctx->velz_i->vz[ii]);
+	VecAXPY(ctx->velz_h->vz[ii], 0.5, ctx->velz_j->vz[ii]);
+    }
+    ctx->theta_h->VertToHoriz();
+    ctx->exner_h->VertToHoriz();
+    ctx->rho_h->VertToHoriz();
+    ctx->rt_h->VertToHoriz();
+    ctx->velz_h->VertToHoriz();
+
+    ctx->eul->AssembleCoupledOperator(ctx->rho_h, ctx->rt_h, ctx->exner_h, ctx->velz_h, ctx->theta_h);
+
+    return 0;
+}
+void Euler_I::Solve_SNES(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
+    int ii, kk, elOrd2;
+    Vec*    velx_j  = _CreateHorizVecs(topo, geom);
+    Vec*    R_u     = _CreateHorizVecs(topo, geom);
+    L2Vecs* velz_i  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* velz_j  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_i   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rho_j   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_i    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_j    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_i = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* velz_h  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_h   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_h    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_h = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* Fz      = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* dFx     = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* dGx     = new L2Vecs(geom->nk, topo, geom);
+    Vec*    dwdx_i  = new Vec[geom->nk-1];
+    Vec*    dwdx_j  = new Vec[geom->nk-1];
+    Vec*    R_rho   = new Vec[topo->nElsX*topo->nElsX];
+    Vec*    R_rt    = new Vec[topo->nElsX*topo->nElsX];
+    Vec*    R_pi    = new Vec[topo->nElsX*topo->nElsX];
+    Vec*    R_w     = new Vec[topo->nElsX*topo->nElsX];
+    SNES      snes;
+    SNESLineSearch linesearch;
+    euler_ctx ctx;
+
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &dwdx_i[kk]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &dwdx_j[kk]);
+    }
+    for(kk = 0; kk < geom->nk; kk++) {
+	VecCopy(velx[kk], velx_j[kk]);
+        VecScatterBegin(topo->gtol_1, velx[kk], uil[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, velx[kk], uil[kk], INSERT_VALUES, SCATTER_FORWARD);
+	VecCopy(uil[kk], ujl[kk]);
+    }
+    velz_i->CopyFromVert(velz);
+    velz_j->CopyFromVert(velz);
+    velz_h->CopyFromVert(velz);
+    velz_i->VertToHoriz();
+    velz_j->VertToHoriz();
+    velz_h->VertToHoriz();
+    rho_i->CopyFromHoriz(rho);
+    rho_j->CopyFromHoriz(rho);
+    rho_h->CopyFromHoriz(rho);
+    rho_i->HorizToVert();
+    rho_j->HorizToVert();
+    rho_h->HorizToVert();
+    rt_i->CopyFromHoriz(rt);
+    rt_j->CopyFromHoriz(rt);
+    rt_h->CopyFromHoriz(rt);
+    rt_i->HorizToVert();
+    rt_j->HorizToVert();
+    rt_h->HorizToVert();
+    exner_i->CopyFromHoriz(exner);
+    exner_j->CopyFromHoriz(exner);
+    exner_h->CopyFromHoriz(exner);
+    exner_i->HorizToVert();
+    exner_j->HorizToVert();
+    exner_h->HorizToVert();
+
+    elOrd2 = topo->elOrd*topo->elOrd;
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &R_rho[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &R_rt[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &R_pi[ii]);
+        VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &R_w[ii]);
+    }
+
+    vert->diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz);
+    theta_i->VertToHoriz();
+    theta_h->CopyFromHoriz(theta_i->vh);
+    theta_h->HorizToVert();
+
+    HorizPotVort(velx, rho_i->vh, uzl_i);
+    vert->horiz->diagVertVort(velz_i->vh, rho_i->vh, dwdx_i);
+
+    ctx.eul     = this;
+    ctx.velx_i  = velx;
+    ctx.velx_j  = velx_j;
+    ctx.uil     = uil;
+    ctx.ujl     = ujl;
+    ctx.rho_i   = rho_i;
+    ctx.rho_j   = rho_j;
+    ctx.rho_h   = rho_h;
+    ctx.rt_i    = rt_i;
+    ctx.rt_j    = rt_j;
+    ctx.rt_h    = rt_h;
+    ctx.exner_i = exner_i;
+    ctx.exner_j = exner_j;
+    ctx.exner_h = exner_h;
+    ctx.velz_i  = velz_i;
+    ctx.velz_j  = velz_j;
+    ctx.velz_h  = velz_h;
+    ctx.theta_i = theta_i;
+    ctx.theta_h = theta_h;
+    ctx.Fz      = Fz;
+    ctx.dFx     = dFx;
+    ctx.dGx     = dGx;
+    ctx.dwdx_i  = dwdx_i;
+    ctx.dwdx_j  = dwdx_j;
+    ctx.R_u     = R_u;
+    ctx.R_rho   = R_rho;
+    ctx.R_rt    = R_rt;
+    ctx.R_exner = R_pi;
+    ctx.R_w     = R_w;
+    SNESCreate(MPI_COMM_WORLD, &snes);
+    SNESSetFunction(snes, b, _snes_function, (void*)&ctx);
+    SNESSetJacobian(snes, M, M, _snes_jacobian, (void*)&ctx);
+    //SNESGetLineSearch(snes, &linesearch);
+    //SNESLineSearchSetType(linesearch, SNESLINESEARCHBASIC);
+    SNESSetFromOptions(snes);
+
+    // precondition....
+    vert->solve_schur_vert(velz_i, velz_j, velz_h, rho_i, rho_j, rho_h, 
+                           rt_i, rt_j, rt_h, exner_i, exner_j, exner_h, 
+                           theta_i, theta_h, NULL, velx, velx_j, uil, ujl, false);
+
+    topo->repack(velx_j, rho_j->vz, rt_j->vz, exner_j->vz, velz_j->vz, x);
+    SNESSolve(snes, NULL, x);
+    topo->unpack(velx_j, rho_j->vz, rt_j->vz, exner_j->vz, velz_j->vz, x);
+
+    _DestroyHorizVecs(velx_j, geom);
+    _DestroyHorizVecs(R_u, geom);
+    delete velz_i;
+    delete velz_j;
+    delete rho_i;
+    delete rho_j;
+    delete rt_i;
+    delete rt_j;
+    delete exner_i;
+    delete exner_j;
+    delete exner_h;
+    delete theta_i;
+    delete velz_h;
+    delete rho_h;
+    delete rt_h;
+    delete theta_h;
+    delete Fz;
+    delete dFx;
+    delete dGx;
+    for(kk = 0; kk < geom->nk-1; kk++) {
+        VecDestroy(&dwdx_i[kk]);
+        VecDestroy(&dwdx_j[kk]);
+    }
+    delete[] dwdx_i;
+    delete[] dwdx_j;
+    for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+        VecDestroy(&R_rho[ii]);
+        VecDestroy(&R_rt[ii]);
+        VecDestroy(&R_pi[ii]);
+        VecDestroy(&R_w[ii]);
+    }
+    delete[] R_rho;
+    delete[] R_rt;
+    delete[] R_pi;
+    delete[] R_w;
+    SNESDestroy(&snes);
 }

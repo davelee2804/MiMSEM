@@ -109,4 +109,37 @@ class Euler_I {
                               Vec* R_u, Vec* R_rho, Vec* R_rt, Vec* R_pi, Vec* R_w);
 
         void Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
+        void Solve_SNES(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 };
+
+typedef struct {
+    Euler_I* eul;
+    Vec*     velx_i;
+    Vec*     velx_j;
+    Vec*     uil;
+    Vec*     ujl;
+    L2Vecs*  rho_i;
+    L2Vecs*  rho_j;
+    L2Vecs*  rho_h;
+    L2Vecs*  rt_i;
+    L2Vecs*  rt_j;
+    L2Vecs*  rt_h;
+    L2Vecs*  exner_i;
+    L2Vecs*  exner_j;
+    L2Vecs*  exner_h;
+    L2Vecs*  velz_i;
+    L2Vecs*  velz_j;
+    L2Vecs*  velz_h;
+    L2Vecs*  theta_i;
+    L2Vecs*  theta_h;
+    L2Vecs*  Fz;
+    L2Vecs*  dFx;
+    L2Vecs*  dGx;
+    Vec*     dwdx_i;
+    Vec*     dwdx_j;
+    Vec*     R_u;
+    Vec*     R_rho;
+    Vec*     R_rt;
+    Vec*     R_exner;
+    Vec*     R_w;
+} euler_ctx;
