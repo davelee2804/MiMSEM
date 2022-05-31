@@ -788,7 +788,7 @@ void M3mat_coupled::assemble(double scale, Vec* p3, bool vert_scale, double fac)
 }
 
 void M3mat_coupled::assemble_inv(double scale, Vec* p3) {
-    int ex, ey, ei, n2, mp1, mp12, ii, jj, kk, *inds, *inds0, inds_g[99], shift;
+    int ex, ey, ei, n2, mp1, mp12, ii, kk, *inds, *inds0, inds_g[99], shift;
     double det, val;
     Wii* Q = new Wii(e->l->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(e);
@@ -819,13 +819,9 @@ void M3mat_coupled::assemble_inv(double scale, Vec* p3) {
                     det = geom->det[ei][ii];
                     Qaa[ii]  = Q->A[ii]*(scale/det);
                     Qaa[ii] *= geom->thickInv[kk][inds0[ii]];
-
 		    if(p3) {
-		        val = 0.0;
-                        for(jj = 0; jj < n2; jj++) {
-                            val += pArray[inds[jj]]*W->A[ii*n2+jj];
-                        }
-                        val *= geom->thickInv[kk][inds0[ii]]/det;
+                        geom->interp2_g(ex, ey, ii%mp1, ii/mp1, pArray, &val);
+                        val *= geom->thickInv[kk][inds0[ii]];
                         Qaa[ii] *= val;
                     }
                 }
@@ -935,7 +931,7 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
                 inds_0 = topo->elInds0_l(ex, ey);
-                if(ph) inds_2 = topo->elInds2_l(ex, ey);
+                //if(ph) inds_2 = topo->elInds2_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     J = geom->J[ei][ii];
@@ -951,14 +947,10 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
 
 		    pVal = tVal = 0.0;
 		    if(pArray) {
-                        for(jj = 0; jj < n2; jj++) {
-                            pVal += pArray[inds_2[jj]]*W->A[ii*n2+jj];
-                        }
+                        geom->interp2_l(ex, ey, ii%mp1, ii/mp1, pArray, &pVal);
                     }
 		    if(tArray) {
-                        for(jj = 0; jj < n2; jj++) {
-                            tVal += tArray[inds_2[jj]]*W->A[ii*n2+jj];
-                        }
+                        geom->interp2_l(ex, ey, ii%mp1, ii/mp1, tArray, &tVal);
                     }
 		    if(ph) {
 			if(vert_scale) {
@@ -1009,10 +1001,8 @@ VtQV[ii*U->nDofsJ+ii]=1.0;
                 MatSetValues(M, U->nDofsJ, inds_y_g, U->nDofsJ, inds_y_g, VtQV, ADD_VALUES);
             }
         }
-        if(ph) {
-            if(tArray) VecRestoreArray(ph[kk+1], &tArray);
-            if(pArray) VecRestoreArray(ph[kk+0], &pArray);
-	}
+        if(tArray) VecRestoreArray(ph[kk+1], &tArray);
+        if(pArray) VecRestoreArray(ph[kk+0], &pArray);
     }
 
     // vertical vector components
