@@ -157,8 +157,8 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     KSPSetOperators(ksp_c, M, M);
     KSPSetTolerances(ksp_c, 1.0e-16, 1.0e-50, PETSC_DEFAULT, 1000);
     KSPSetType(ksp_c, KSPGMRES);
-    KSPGetPC(ksp2, &pc);
-    PCSetType(pc, PCJACOBI);
+    //KSPGetPC(ksp2, &pc);
+    //PCSetType(pc, PCJACOBI);
     KSPSetOptionsPrefix(ksp_c, "ksp_c_");
     KSPSetFromOptions(ksp_c);
 
@@ -773,18 +773,20 @@ void Euler_I::CreateCoupledOperator() {
     EoSc = new EoSmat_coupled(topo, geom, edge);
 }
 
-void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* velz, L2Vecs* theta) {
+void Euler_I::AssembleCoupledOperator(Vec* velx_i, Vec* velx_j, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* velz, L2Vecs* theta) {
     int kk, ex, ey, ei;
     Vec theta_h, d_pi, d_pi_l;
-    Vec *d_pi_h, *d_pi_z;
+    Vec *d_pi_h, *d_pi_z, *wxl, wxg;
     MatReuse reuse_c = (!CE23M3) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &theta_h);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &d_pi);
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &d_pi_l);
     d_pi_h = new Vec[geom->nk];
+    wxl    = new Vec[geom->nk];
     for(kk = 0; kk < geom->nk; kk++) {
         VecCreateSeq(MPI_COMM_SELF, topo->n1, &d_pi_h[kk]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n0, &wxl[kk]);
     }
     d_pi_z = new Vec[topo->nElsX*topo->nElsX];
     for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
@@ -831,20 +833,38 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
     MatMatMult(CM2->Minv, CM2->M, reuse_c, PETSC_DEFAULT, &CM2invM2);
     MatMatMult(CE32->M, CM2invM2, reuse_c, PETSC_DEFAULT, &CE32M2invM2);
     MatMatMult(CM3->M, CE32M2invM2, reuse_c, PETSC_DEFAULT, &CDIV1);
-    AddD_Coupled(topo, 0, CDIV1, M);
+    //AddD_Coupled(topo, 0, CDIV1, M); // ??
 
     CM3->assemble(SCALE, rt->vh, true, LAMBDA*dt);
     MatMatMult(CM3->M, CE32->M, reuse_c, PETSC_DEFAULT, &CDIV2);
-    AddD_Coupled(topo, 1, CDIV2, M);
+    //AddD_Coupled(topo, 1, CDIV2, M); // ??
 
-    CM3->assemble(SCALE, theta->vh, false, LAMBDA*dt);
+    CM3->assemble(SCALE, theta->vh, false, 1.0);
     MatMatMult(CE32->MT, CM3->M, MAT_REUSE_MATRIX, PETSC_DEFAULT, &CE23M3);
     MatMatMult(CM2->Minv, CE23M3, MAT_REUSE_MATRIX, PETSC_DEFAULT, &CM2invE23M3);
-    CK->assemble(ujl, velz->vz, 1.0, SCALE);
-    MatTransposeMatMult(CK->M, CM2invE23M3, reuse_c, PETSC_DEFAULT, &CQ);
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecZeroEntries(d_pi_h[kk]);
+	VecAXPY(d_pi_h[kk], 0.5, uil[kk]);
+	VecAXPY(d_pi_h[kk], 0.5, ujl[kk]);
+    }
+    CK->assemble(d_pi_h, velz->vz, LAMBDA*dt, SCALE);
+    MatMatMult(CK->MT, CM2invE23M3, reuse_c, PETSC_DEFAULT, &CQ);
     AddM3_Coupled(topo, 1, 0, CQ, M);
 
-    Rc->assemble(SCALE, LAMBDA*dt, vert->horiz->fl, M);
+    MatMatMult(CE32->MT, CK->MT, reuse_c, PETSC_DEFAULT, &CE23K);
+    AddM2_Coupled(topo, CE23K, M);
+
+    //Rc->assemble(SCALE, LAMBDA*dt, vert->horiz->fl, M);
+    for(kk = 0; kk < geom->nk; kk++) {
+        VecZeroEntries(d_pi);
+	VecAXPY(d_pi, 0.5, velx_i[kk]);
+	VecAXPY(d_pi, 0.5, velx_j[kk]);
+        vert->horiz->curl(true, d_pi, &wxg, kk, true);
+        VecScatterBegin(topo->gtol_0, wxg, wxl[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_0, wxg, wxl[kk], INSERT_VALUES, SCATTER_FORWARD);
+	VecDestroy(&wxg);
+    }
+    Rc->assemble(SCALE, LAMBDA*dt, wxl, M);
     EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
     EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
 /*
@@ -868,8 +888,10 @@ void Euler_I::AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2
     VecDestroy(&d_pi_l);
     for(kk = 0; kk < geom->nk; kk++) {
         VecDestroy(&d_pi_h[kk]);
+        VecDestroy(&wxl[kk]);
     }
     delete[] d_pi_h;
+    delete[] wxl;
     for(ei = 0; ei < topo->nElsX*topo->nElsX; ei++) {
         VecDestroy(&d_pi_z[ei]);
     }
@@ -947,10 +969,11 @@ void Euler_I::AssembleResidual(Vec* velx_i, Vec* velx_j,
     HorizPotVort(velx_j, rho_j->vh, uzl_j);
     vert->horiz->diagVertVort(velz_j->vh, rho_j->vh, dwdx_j);
     VertMassFlux(velz_i, velz_j, rho_i, rho_j, Fz);
+    vert->horiz->advection_rhs(velx_i, velx_j, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, uil, ujl);
     for(kk = 0; kk < topo->nk; kk++) {
 	vert->horiz->momentum_rhs(kk, theta_h->vh, uzl_i, uzl_j, velz_i->vh, velz_j->vh, exner_h->vh[kk],
                                   velx_i[kk], velx_j[kk], uil[kk], ujl[kk], rho_i->vh[kk], rho_j->vh[kk], 
-				  R_u[kk], Fz->vh, dwdx_i, dwdx_j);
+				  R_u[kk], vert->horiz->Fk[kk], Fz->vh, dwdx_i, dwdx_j);
 
 /*{
 double norm;
@@ -967,7 +990,6 @@ if(!rank)cout<<kk<<"\t|R_u|: "<<dt*norm<<endl;
     }
 
     AssembleVertMomVort(ujl, velz_j); // uuz TOOD: second order in time
-    vert->horiz->advection_rhs(velx_i, velx_j, rho_i->vh, rho_j->vh, theta_h, dFx, dGx, uil, ujl);
     for(ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
         ex = ii%topo->nElsX;
         ey = ii/topo->nElsX;
@@ -1122,12 +1144,13 @@ void Euler_I::Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sa
         rho_h->VertToHoriz();
         rt_h->VertToHoriz();
         velz_h->VertToHoriz();
-        AssembleCoupledOperator(rho_h, rt_h, exner_h, velz_h, theta_h);
+        AssembleCoupledOperator(velx, velx_j, rho_h, rt_h, exner_h, velz_h, theta_h);
 
+	VecScale(b, -1.0);
 	KSPSolve(ksp_c, b, dx);
 	VecNorm(x, NORM_2, &norm_x);
 	VecNorm(dx, NORM_2, &norm_dx);
-	VecAXPY(x, -1.0, dx);
+	VecAXPY(x, +1.0, dx);
         topo->unpack(velx_j, rho_j->vz, rt_j->vz, exner_j->vz, velz_j->vz, x);
 	rho_j->VertToHoriz();
 	rt_j->VertToHoriz();
@@ -1263,7 +1286,7 @@ PetscErrorCode _snes_jacobian(SNES snes, Vec x, Mat J, Mat P, void* _ctx) {
     ctx->rt_h->VertToHoriz();
     ctx->velz_h->VertToHoriz();
 
-    ctx->eul->AssembleCoupledOperator(ctx->rho_h, ctx->rt_h, ctx->exner_h, ctx->velz_h, ctx->theta_h);
+    ctx->eul->AssembleCoupledOperator(ctx->velx_i, ctx->velx_j, ctx->rho_h, ctx->rt_h, ctx->exner_h, ctx->velz_h, ctx->theta_h);
 
     MatScale(J, 1.0e-10);
 

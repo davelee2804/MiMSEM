@@ -73,6 +73,7 @@ class Euler_I {
         Mat             CDIV1;
         Mat             CDIV2;
         Mat             CQ;
+	Mat             CE23K;
 
         VertSolve* vert;
 
@@ -96,7 +97,7 @@ class Euler_I {
         void VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz);
 
 	void CreateCoupledOperator();
-        void AssembleCoupledOperator(L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* velz, L2Vecs* theta);
+        void AssembleCoupledOperator(Vec* velx_i, Vec* velx_j, L2Vecs* rho, L2Vecs* rt, L2Vecs* exner, L2Vecs* velz, L2Vecs* theta);
 
         void AssembleResidual(Vec* velx_i, Vec* velx_j,
                               L2Vecs* rho_i, L2Vecs* rho_j,

@@ -1354,6 +1354,8 @@ Kmat_coupled::Kmat_coupled(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeE
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
+
+    MT = NULL;
 }
 
 void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
@@ -1361,6 +1363,7 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
     int *inds_x, *inds_y, *inds_0, *inds_2, inds_x_g[99], inds_y_g[99], inds_z_g[99], inds_2_g[99];
     double det, **J, ux[2], val;
     PetscScalar *uArray;
+    MatReuse reuse = (MT) ? MAT_REUSE_MATRIX : MAT_INITIAL_MATRIX;
 
     n2 = topo->elOrd*topo->elOrd;
     mp1 = l->n + 1;
@@ -1520,6 +1523,10 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
+    MatTranspose(M, reuse, &MT);
+    MatAssemblyBegin(MT, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  MT, MAT_FINAL_ASSEMBLY);
 }
 
 Kmat_coupled::~Kmat_coupled() {
@@ -1539,6 +1546,7 @@ Kmat_coupled::~Kmat_coupled() {
     delete W;
     delete Q;
     MatDestroy(&M);
+    MatDestroy(&MT);
 }
 
 void AddM3_Coupled(Topo* topo, int row_ind, int col_ind, Mat M3, Mat M) {

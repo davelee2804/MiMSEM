@@ -114,6 +114,7 @@ class Kmat_coupled {
         LagrangeNode* l;
         LagrangeEdge* e;
         Mat M;
+        Mat MT;
         double* UtQWflat;
         double* VtQWflat;
         double* Ut;
