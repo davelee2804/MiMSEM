@@ -34,13 +34,14 @@ class HorizSolve {
         Vec* fg;                 // coriolis vector (global)
         Vec* fl;                 // coriolis vector (local)
         Vec* Fk;
+        Vec* Gk;
         KSP ksp1;
 
         double viscosity();
         void coriolis();
         void grad(bool assemble, Vec phi, Vec* u, int lev); // weak form grad operator
-        void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f, Vec ul);      // weak form curl operator
-        void laplacian(bool assemble, Vec u, Vec* ddu, int lev, Vec ul);       // laplacian operator via helmholtz decomposition
+        void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);      // weak form curl operator
+        void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
 
         void diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi);
 
@@ -53,5 +54,5 @@ class HorizSolve {
         void diagVertVort(Vec* velz, Vec* rho, Vec* dwdx);
 
         void momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi, 
-                          Vec velx1, Vec velx2, Vec uil, Vec ujl, Vec rho1, Vec rho2, Vec fu, Vec* Fz, Vec* dwdx1, Vec* dwdx2);
+                          Vec velx1, Vec velx2, Vec uil, Vec ujl, Vec rho1, Vec rho2, Vec fu, Vec Fx, Vec* Fz, Vec* dwdx1, Vec* dwdx2);
 };
