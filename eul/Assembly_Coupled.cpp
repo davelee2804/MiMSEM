@@ -1275,8 +1275,11 @@ void M2mat_coupled::assemble_inv(double scale, Umat* Mk) {
             MatGetRow(Mk->M, mm, &nCols, &cols, &vals);
             val_sum = 0.0;
             for(ii = 0; ii < nCols; ii++) {
-                val_sum += vals[ii];
+		if(cols[ii]==mm) {
+                    val_sum = vals[ii];
+                }
             }
+            val_sum = 1.0/val_sum;
             MatRestoreRow(Mk->M, mm, &nCols, &cols, &vals);
 
             ri = topo->pi*n_dofs_locl + kk*topo->n1l + mm - mi;

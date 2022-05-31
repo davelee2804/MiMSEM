@@ -50,7 +50,6 @@ class Euler_I {
 	RotMat_coupled* Rc;
 	Wmat_coupled*   M2c;
 	EoSmat_coupled* EoSc;
-	Mat*            M1inv;
 	Mat             GRADx;
 	Mat             M1invGRADx;
 	Mat             M1invM1;
@@ -64,7 +63,6 @@ class Euler_I {
 	M3mat_coupled*  CM3;
 	Kmat_coupled*   CK;
 	E32_Coupled*    CE32;
-	Mat             CM2inv;
         Mat             CE23M3;
         Mat             CM2invE23M3;
 	Mat             CGRAD1;
