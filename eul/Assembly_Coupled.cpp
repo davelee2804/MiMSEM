@@ -1143,7 +1143,7 @@ VtQV[ii*U->nDofsJ+ii]=1.0;
                         for(jj = 0; jj < n2; jj++) {
                             val += pArray[kk*n2+jj]*W->A[ii*n2+jj];
                         }
-                        Qaa[ii] *= 0.5*val/det;
+                        Qaa[ii] *= 0.5*fac*val/det;
                     }
 		    Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Qaa, WtQ);
                     Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
@@ -1176,7 +1176,7 @@ VtQV[ii*U->nDofsJ+ii]=1.0;
                     for(ii = 0; ii < mp12; ii++) {
                         det = geom->det[ei][ii];
                         Qaa[ii]  = Q->A[ii]*(SCALE/det);
-                        Qaa[ii] *= 0.5*geom->thick[kk][inds_0[ii]];
+                        Qaa[ii] *= 0.5*fac*geom->thick[kk][inds_0[ii]];
                         Qbb[ii]  = Qaa[ii];
 
                         pVal = tVal = 0.0;
@@ -1432,7 +1432,7 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
                 if(kk > 0) {
                     for(ii = 0; ii < mp12; ii++) {
                         det = geom->det[ei][ii];
-                        Qaa[ii] = 0.5*Q->A[ii]*(SCALE/det);
+                        Qaa[ii] = 0.5*fac*Q->A[ii]*(SCALE/det);
 
                         val = 0.0;
                         for(jj = 0; jj < n2; jj++) {
@@ -1452,7 +1452,7 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
                 if(kk < geom->nk - 1) {
                     for(ii = 0; ii < mp12; ii++) {
                         det = geom->det[ei][ii];
-                        Qaa[ii] = 0.5*Q->A[ii]*(SCALE/det);
+                        Qaa[ii] = 0.5*fac*Q->A[ii]*(SCALE/det);
 
                         val = 0.0;
                         for(jj = 0; jj < n2; jj++) {
