@@ -833,7 +833,7 @@ void Euler_I::AssembleCoupledOperator(Vec* velx_i, Vec* velx_j, L2Vecs* rho, L2V
     MatMatMult(CM2->Minv, CM2->M, reuse_c, PETSC_DEFAULT, &CM2invM2);
     MatMatMult(CE32->M, CM2invM2, reuse_c, PETSC_DEFAULT, &CE32M2invM2);
     MatMatMult(CM3->M, CE32M2invM2, reuse_c, PETSC_DEFAULT, &CDIV1);
-    //AddD_Coupled(topo, 0, CDIV1, M); // ??
+    AddD_Coupled(topo, 0, CDIV1, M); // ??
 
     CM3->assemble(SCALE, rt->vh, true, LAMBDA*dt);
     MatMatMult(CM3->M, CE32->M, reuse_c, PETSC_DEFAULT, &CDIV2);
@@ -1121,7 +1121,7 @@ void Euler_I::Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sa
 
     do {
         // precondition....
-        if(!it) vert->solve_schur_vert(velz_i, velz_j, velz_h, rho_i, rho_j, rho_h, 
+        /*if(!it)*/ vert->solve_schur_vert(velz_i, velz_j, velz_h, rho_i, rho_j, rho_h, 
                                rt_i, rt_j, rt_h, exner_i, exner_j, exner_h, 
                                theta_i, theta_h, NULL, velx, velx_j, uil, ujl, false);
 
@@ -1168,6 +1168,14 @@ void Euler_I::Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sa
         }
         it++;
     } while(norm > 1.0e-14 && it < 40);
+
+    for(kk = 0; kk < topo->nk; kk++) {
+        VecCopy(velx_j[kk], velx[kk]);
+    }
+    velz_j->CopyToVert(velz);
+    rho_j->CopyToHoriz(rho);
+    rt_j->CopyToHoriz(rt);
+    exner_j->CopyToHoriz(exner);
 
     _DestroyHorizVecs(velx_j, geom);
     _DestroyHorizVecs(R_u, geom);
@@ -1417,7 +1425,15 @@ void Euler_I::Solve_SNES(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bo
 
     topo->repack(velx_j, rho_j->vz, rt_j->vz, exner_j->vz, velz_j->vz, x);
     SNESSolve(snes, NULL, x);
-    topo->unpack(velx_j, rho_j->vz, rt_j->vz, exner_j->vz, velz_j->vz, x);
+    topo->unpack(velx, rho_j->vz, rt_j->vz, exner_j->vz, velz, x);
+
+    rho_j->VertToHoriz();
+    rho_j->CopyToHoriz(rho);
+    rt_j->VertToHoriz();
+    rt_j->CopyToHoriz(rt);
+    exner_j->VertToHoriz();
+    exner_j->CopyToHoriz(exner);
+
 
     _DestroyHorizVecs(velx_j, geom);
     _DestroyHorizVecs(R_u, geom);
