@@ -147,7 +147,7 @@ void RotMat_coupled::assemble(double scale, double fac, Vec* q0, Mat M) {
     double det, **J, vort;
     PetscScalar* q0Array;
 
-    mp1 = l->n + 1;
+    mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
 
     Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
@@ -1249,7 +1249,7 @@ void M2mat_coupled::assemble_inv(double scale, Umat* Mk) {
     double* WtQW    = Alloc2D(W->nDofsJ, W->nDofsJ);
     double* WtQWinv = Alloc2D(W->nDofsJ, W->nDofsJ);
 
-    mp1 = l->n + 1;
+    mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
     n_dofs_locl = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
 
@@ -1366,7 +1366,7 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
     MatReuse reuse = (MT) ? MAT_REUSE_MATRIX : MAT_INITIAL_MATRIX;
 
     n2 = topo->elOrd*topo->elOrd;
-    mp1 = l->n + 1;
+    mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
     dofs_per_proc = geom->nk*topo->n1l + (geom->nk-1)*topo->n2l;
     shift_row = topo->pi*dofs_per_proc + geom->nk*topo->n1l;
