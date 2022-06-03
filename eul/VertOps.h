@@ -58,7 +58,6 @@ class VertOps {
         void Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs, double factor, double exponent);
         void AssembleConLin(int ex, int ey, Mat BA);
         void AssembleLinCon2(int ex, int ey, Mat AB);                // for the diagnosis of theta without boundary conditions
-        void AssembleConLin2(int ex, int ey, Mat BA);
         void AssembleLinearWithRho2(int ex, int ey, Vec rho, Mat A); // for the diagnosis of theta without boundary conditions
         void AssembleConstWithEOS(int ex, int ey, Vec rt, Mat B);
         void AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B);
@@ -66,7 +65,6 @@ class VertOps {
         void Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Vec theta, Mat B);
         // for the density corrections to the schur complement solution
         void AssembleLinearWithRayleighInv(int ex, int ey, double dt_fric, Mat A);
-        void AssembleLinearWithThetaInv(int ex, int ey, Vec theta, Mat A);
         void AssembleLinearWithRho2_up(int ex, int ey, Vec rho, Mat A, double dt, Vec* uhl);
         void AssembleLinCon2_up(int ex, int ey, Mat AB, double dt, Vec* uhl);
         void AssembleTempForcing_HS(int ex, int ey, Vec exner, Vec theta, Vec rho, Vec vec);

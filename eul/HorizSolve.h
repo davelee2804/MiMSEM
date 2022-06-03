@@ -43,8 +43,6 @@ class HorizSolve {
         void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);      // weak form curl operator
         void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
 
-        void diagnose_Pi(int level, Vec rt1, Vec rt2, Vec Pi);
-
         void diagnose_fluxes(int level, Vec u1, Vec u2, Vec h1l, Vec h2l, Vec* theta_l, Vec _F, Vec _G, Vec u1l, Vec u2l);
         void advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* theta, L2Vecs* dF, L2Vecs* dG, Vec* u1l, Vec* u2l);
 

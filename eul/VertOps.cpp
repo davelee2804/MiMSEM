@@ -940,44 +940,6 @@ void VertOps::AssembleConLin(int ex, int ey, Mat BA) {
     MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
 }
 
-void VertOps::AssembleConLin2(int ex, int ey, Mat BA) {
-    int ii, kk, ei, mp1, mp12, rows[99], cols[99];
-    double det;
-
-    mp1   = quad->n + 1;
-    mp12  = mp1*mp1;
-    ei    = ey*topo->nElsX + ex;
-
-    MatZeroEntries(BA);
-
-    for(kk = 0; kk < geom->nk; kk++) {
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Q0[ii] = Q->A[ii]*(SCALE/det);
-            Q0[ii] *= 0.5;
-        }
-
-        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            rows[ii] = ii + (kk+0)*W->nDofsJ;
-        }
-
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            cols[ii] = ii + (kk+0)*W->nDofsJ;
-        }
-        MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQW, ADD_VALUES);
-
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            cols[ii] = ii + (kk+1)*W->nDofsJ;
-        }
-        MatSetValues(BA, W->nDofsJ, rows, W->nDofsJ, cols, WtQW, ADD_VALUES);
-    }
-    MatAssemblyBegin(BA, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
-}
-
 void VertOps::AssembleConstWithEOS(int ex, int ey, Vec rt, Mat B) {
     int ii, jj, kk, ei, mp1, mp12;
     int *inds0;
@@ -1273,47 +1235,6 @@ void VertOps::AssembleLinearWithRayleighInv(int ex, int ey, double dt_fric, Mat 
         }
         MatSetValues(A, W->nDofsJ, rows, W->nDofsJ, rows, WtQWinv, ADD_VALUES);
     }
-    MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-}
-
-void VertOps::AssembleLinearWithThetaInv(int ex, int ey, Vec theta, Mat A) {
-    int kk, ii, jj, rows[99], ei, *inds0, mp1, mp12;
-    double det, rb, rt, gamma;
-    PetscScalar* tArray;
-
-    ei    = ey*topo->nElsX + ex;
-    inds0 = topo->elInds0_l(ex, ey);
-    mp1   = quad->n+1;
-    mp12  = mp1*mp1;
-
-    MatZeroEntries(A);
-
-    VecGetArray(theta, &tArray);
-    for(kk = 0; kk < geom->nk-1; kk++) {
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            rb = rt = 0.0;
-            for(jj = 0; jj < n2; jj++) {
-                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
-                rb += tArray[(kk+0)*n2+jj]*gamma;
-                rt += tArray[(kk+1)*n2+jj]*gamma;
-            }
-            rb *= geom->thick[kk+0][inds0[ii]];
-            rt *= geom->thick[kk+1][inds0[ii]];
-            Q0[ii]  = Q->A[ii]*(SCALE/det);
-            Q0[ii] *= 0.5*(rb + rt)/det;
-        }
-        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        Inv(WtQW, WtQWinv, n2);
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            rows[ii] = ii + kk*W->nDofsJ;
-        }
-        MatSetValues(A, W->nDofsJ, rows, W->nDofsJ, rows, WtQWinv, ADD_VALUES);
-    }
-    VecRestoreArray(theta, &tArray);
-
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
 }
