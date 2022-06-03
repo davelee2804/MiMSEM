@@ -301,17 +301,6 @@ class WhmatInv {
         void assemble(Vec rho, int lev, double scale);
 };
 
-class N_rt_Inv {
-    public:
-        N_rt_Inv(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~N_rt_Inv();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        Mat M;
-        void assemble(Vec rho, int lev, double scale, bool do_inverse);
-};
-
 class PtQUt_mat {
     public:
         PtQUt_mat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
@@ -331,38 +320,6 @@ class PtQUt_mat {
         M1y_j_xy_i* V;
         Wii* Q;
         void assemble(Vec u1, int lev, double scale);
-};
-
-class PtQUmat {
-    public:
-        PtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
-        ~PtQUmat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeNode* l;
-        LagrangeEdge* e;
-        Mat M;
-        double* QUflat;
-        double* QVflat;
-        double* Qaa;
-        double* Qab;
-        double* QU;
-        double* QV;
-        M1x_j_xy_i* U;
-        M1y_j_xy_i* V;
-        Wii* Q;
-        void assemble(Vec u1, int lev, double scale);
-};
-
-class WtQPmat {
-    public:
-        WtQPmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~WtQPmat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        Mat M;
-        void assemble(int lev, double scale);
 };
 
 class Umat_ray {
