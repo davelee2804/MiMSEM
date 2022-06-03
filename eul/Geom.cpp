@@ -22,17 +22,37 @@ using std::string;
 //#define RAD_SPHERE 1.0
 
 Geom::Geom(Topo* _topo, int _nk) {
-    int ii, jj;
+    int ii, jj, quad_ord, n_procs;
     ifstream file;
     char filename[100];
     string line;
     double value;
     int mp1, np1, mi, nj, nn;
     double li, ei, ej;
+    Vec vl, vg;
 
     pi   = _topo->pi;
     topo = _topo;
     nk   = _nk;
+
+    sprintf(filename, "input/grid_res_quad.txt");
+    file.open(filename);
+    std::getline(file, line);
+    quad_ord = atoi(line.c_str());
+    cout << "quadrature order: " << quad_ord << endl;
+    std::getline(file, line);
+    nDofsX = atoi(line.c_str());
+    file.close();
+
+    sprintf(filename, "input/local_sizes_quad_%.4u.txt", pi);
+    file.open(filename);
+    std::getline(file, line);
+    n0l = atoi(line.c_str());
+    file.close();
+
+    MPI_Comm_size(MPI_COMM_WORLD, &n_procs);
+    nDofsX *= quad_ord;
+    nDofs0G = n_procs*nDofsX*nDofsX + 2;
 
     quad = new GaussLobatto(topo->elOrd);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -69,10 +89,31 @@ Geom::Geom(Topo* _topo, int _nk) {
         }
         s[ii][0] = atan2(x[ii][1],x[ii][0]);
         s[ii][1] = asin(x[ii][2]/RAD_SPHERE);
-        //cout << ii << "\t" << x[ii][0] << "\t" << x[ii][1] << "\t" << x[ii][2] << endl;
         ii++;
     }
     file.close();
+
+    // topology of the quadrature points
+    sprintf(filename, "input/quads_%.4u.txt", pi);
+    file.open(filename);
+    n0 = 0;
+    while (std::getline(file, line))
+        ++n0;
+    file.close();
+
+    loc0 = new int[n0];
+    topo->loadObjs(filename, loc0);
+
+    ISCreateGeneral(MPI_COMM_WORLD, n0, loc0, PETSC_COPY_VALUES, &is_g_0);
+    ISCreateStride(MPI_COMM_SELF, n0, 0, 1, &is_l_0);
+    VecCreateSeq(MPI_COMM_SELF, n0, &vl);
+    VecCreateMPI(MPI_COMM_WORLD, n0l, nDofs0G, &vg);
+    VecScatterCreate(vg, is_g_0, vl, is_l_0, &gtol_0);
+    VecDestroy(&vl);
+    VecDestroy(&vg);
+
+    inds0_l = new int[(quad->n+1)*(quad->n+1)];
+    inds0_g = new int[(quad->n+1)*(quad->n+1)];
 
     // update the global coordinates within each element for consistency with the local 
     // coordinates as defined by the Jacobian mapping

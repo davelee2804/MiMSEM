@@ -8,6 +8,16 @@ class Geom {
         int pi;
         int nl;
         int nk;        // number of vertical levels
+	int nDofsX;
+	int nDofs0G;
+	int n0;
+	int n0l;
+	int* loc0;
+	int* inds0_l;
+	int* inds0_g;
+	IS is_l_0;
+	IS is_g_0;
+	VecScatter gtol_0;
         double** x;
         double** s;
         double** det;
