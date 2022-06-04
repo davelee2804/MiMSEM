@@ -1982,11 +1982,13 @@ Umat_ray::~Umat_ray() {
 
 // 0 form mass matrix
 Pmat::Pmat(Topo* _topo, Geom* _geom, LagrangeNode* _node) {
-    M0_j_xy_i* P = new M0_j_xy_i(_node);
+    M0_j_xy_i* P;
 
     topo = _topo;
     geom = _geom;
     node = _node;
+
+    P = new M0_j_xy_i(_node);
 
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
@@ -2012,6 +2014,8 @@ void Pmat::assemble(int lev, double scale) {
     mp1 = node->q->n + 1;
     mp12 = mp1*mp1;
 
+    Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -2022,9 +2026,7 @@ void Pmat::assemble(int lev, double scale) {
                 Qaa[ii]  = scale*Q->A[ii]*det;
                 Qaa[ii] *= geom->thickInv[lev][inds_q[ii]];
             }
-
-            Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
-            Mult_IP(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Qaa, PtQ);
+            Mult_FD_IP(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Qaa, PtQ);
             Mult_IP(P->nDofsJ, P->nDofsJ, Q->nDofsJ, PtQ, P->A, PtQP);
 
             MatSetValues(M, P->nDofsJ, inds_0, P->nDofsJ, inds_0, PtQP, ADD_VALUES);
@@ -2057,6 +2059,8 @@ void Pmat::assemble_h(int lev, double scale, Vec h2) {
     mp1 = node->q->n + 1;
     mp12 = mp1*mp1;
 
+    Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
+
     VecGetArray(h2, &hArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -2072,9 +2076,7 @@ void Pmat::assemble_h(int lev, double scale, Vec h2) {
                 hi *= geom->thickInv[lev][inds_q[ii]];
                 Qaa[ii] *= hi;
             }
-
-            Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
-            Mult_IP(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Qaa, PtQ);
+            Mult_FD_IP(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Qaa, PtQ);
             Mult_IP(P->nDofsJ, P->nDofsJ, Q->nDofsJ, PtQ, P->A, PtQP);
 
             MatSetValues(M, P->nDofsJ, inds_0, P->nDofsJ, inds_0, PtQP, ADD_VALUES);
