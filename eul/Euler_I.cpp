@@ -54,9 +54,6 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
 
-    // 0 form lumped mass matrix (vector)
-    m0 = new Pvec(topo, geom, node);
-
     // 1 form mass matrix
     M1 = new Umat(topo, geom, node, edge);
 
@@ -222,7 +219,6 @@ Euler_I::~Euler_I() {
     MatDestroy(&VA);
     MatDestroy(&VB);
 
-    delete m0;
     delete M1;
     delete M2;
 
@@ -280,47 +276,6 @@ void Euler_I::grad(bool assemble, Vec phi, Vec u, int lev) {
 
     VecDestroy(&Mphi);
     VecDestroy(&dMphi);
-}
-
-void Euler_I::init0(Vec* q, ICfunc3D* func) {
-    int ex, ey, ii, kk, mp1, mp12;
-    int* inds0;
-    PtQmat* PQ = new PtQmat(topo, geom, node);
-    PetscScalar *bArray;
-    Vec bl, bg, PQb;
-
-    mp1 = quad->n + 1;
-    mp12 = mp1*mp1;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PQb);
-
-    for(kk = 0; kk < geom->nk; kk++) {
-        VecZeroEntries(bg);
-        VecGetArray(bl, &bArray);
-
-        for(ey = 0; ey < topo->nElsX; ey++) {
-            for(ex = 0; ex < topo->nElsX; ex++) {
-                inds0 = topo->elInds0_l(ex, ey);
-                for(ii = 0; ii < mp12; ii++) {
-                    bArray[inds0[ii]] = func(geom->x[inds0[ii]], kk);
-                }
-            }
-        }
-        VecRestoreArray(bl, &bArray);
-        VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-        VecScatterEnd(  topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-
-        m0->assemble(kk, 1.0);
-        MatMult(PQ->M, bg, PQb);
-        VecPointwiseDivide(q[kk], PQb, m0->vg);
-    }
-
-    VecDestroy(&bl);
-    VecDestroy(&bg);
-    VecDestroy(&PQb);
-    delete PQ;
 }
 
 void Euler_I::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {

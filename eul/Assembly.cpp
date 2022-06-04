@@ -734,7 +734,7 @@ void WtQmat::assemble() {
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQ);
 
             inds_2 = topo->elInds2_g(ex, ey);
-            inds_0 = topo->elInds0_g(ex, ey);
+            inds_0 = geom->elInds0_g(ex, ey);
 
             MatSetValues(M, W->nDofsJ, inds_2, Q->nDofsJ, inds_0, WtQ, ADD_VALUES);
         }
@@ -792,7 +792,7 @@ void PtQmat::assemble() {
             }
             Mult_FD_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
 
-            inds_0 = topo->elInds0_g(ex, ey);
+            inds_0 = geom->elInds0_g(ex, ey);
             MatSetValues(M, P->nDofsJ, inds_0, Q->nDofsJ, inds_0, PtQ, ADD_VALUES);
         }
     }
@@ -860,7 +860,7 @@ void UtQmat::assemble() {
 
             inds_x = topo->elInds1x_g(ex, ey);
             inds_y = topo->elInds1y_g(ex, ey);
-            inds_0 = topo->elInds0_g(ex, ey);
+            inds_0 = geom->elInds0_g(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 inds_0x[ii] = 2*inds_0[ii]+0;
                 inds_0y[ii] = 2*inds_0[ii]+1;
@@ -1977,6 +1977,123 @@ void Umat_ray::assemble(int lev, double scale, double dt, Vec exner_k, Vec exner
 }
 
 Umat_ray::~Umat_ray() {
+    MatDestroy(&M);
+}
+
+// 0 form mass matrix
+Pmat::Pmat(Topo* _topo, Geom* _geom, LagrangeNode* _node) {
+    M0_j_xy_i* P = new M0_j_xy_i(_node);
+
+    topo = _topo;
+    geom = _geom;
+    node = _node;
+
+    MatCreate(MPI_COMM_WORLD, &M);
+    MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
+    MatSetType(M, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 4*P->nDofsJ, PETSC_NULL);
+    MatZeroEntries(M);
+
+    delete P;
+}
+
+void Pmat::assemble(int lev, double scale) {
+    int ex, ey, ei, mp1, mp12, ii, *inds_0, *inds_q;
+    double det;
+    Wii* Q = new Wii(node->q, geom);
+    M0_j_xy_i* P = new M0_j_xy_i(node);
+    double* Qaa = new double[Q->nDofsI];
+    double* Pt = Alloc2D(P->nDofsJ, P->nDofsI);
+    double* PtQ = Alloc2D(P->nDofsJ, Q->nDofsJ);
+    double* PtQP = Alloc2D(P->nDofsJ, P->nDofsJ);
+
+    MatZeroEntries(M);
+
+    mp1 = node->q->n + 1;
+    mp12 = mp1*mp1;
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            inds_0 = topo->elInds0_g(ex, ey);
+            inds_q = geom->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Qaa[ii]  = scale*Q->A[ii]*det;
+                Qaa[ii] *= geom->thickInv[lev][inds_q[ii]];
+            }
+
+            Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
+            Mult_IP(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Qaa, PtQ);
+            Mult_IP(P->nDofsJ, P->nDofsJ, Q->nDofsJ, PtQ, P->A, PtQP);
+
+            MatSetValues(M, P->nDofsJ, inds_0, P->nDofsJ, inds_0, PtQP, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(P->nDofsJ, Pt);
+    Free2D(P->nDofsJ, PtQ);
+    Free2D(P->nDofsJ, PtQP);
+    delete P;
+    delete Q;
+    delete[] Qaa;
+}
+
+void Pmat::assemble_h(int lev, double scale, Vec h2) {
+    int ex, ey, ei, mp1, mp12, ii, *inds_0, *inds_q;
+    double det, hi;
+    Wii* Q = new Wii(node->q, geom);
+    M0_j_xy_i* P = new M0_j_xy_i(node);
+    double* Qaa = new double[Q->nDofsI];
+    double* Pt = Alloc2D(P->nDofsJ, P->nDofsI);
+    double* PtQ = Alloc2D(P->nDofsJ, Q->nDofsJ);
+    double* PtQP = Alloc2D(P->nDofsJ, P->nDofsJ);
+    PetscScalar* hArray;
+
+    MatZeroEntries(M);
+
+    mp1 = node->q->n + 1;
+    mp12 = mp1*mp1;
+
+    VecGetArray(h2, &hArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            inds_0 = topo->elInds0_g(ex, ey);
+            inds_q = geom->elInds0_l(ex, ey);
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                Qaa[ii]  = scale*Q->A[ii]*det;
+                Qaa[ii] *= geom->thickInv[lev][inds_q[ii]];
+
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &hi);
+                hi *= geom->thickInv[lev][inds_q[ii]];
+                Qaa[ii] *= hi;
+            }
+
+            Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
+            Mult_IP(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Qaa, PtQ);
+            Mult_IP(P->nDofsJ, P->nDofsJ, Q->nDofsJ, PtQ, P->A, PtQP);
+
+            MatSetValues(M, P->nDofsJ, inds_0, P->nDofsJ, inds_0, PtQP, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(h2, &hArray);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(P->nDofsJ, Pt);
+    Free2D(P->nDofsJ, PtQ);
+    Free2D(P->nDofsJ, PtQP);
+    delete P;
+    delete Q;
+    delete[] Qaa;
+}
+
+Pmat::~Pmat() {
     MatDestroy(&M);
 }
 

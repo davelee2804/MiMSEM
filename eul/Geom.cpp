@@ -786,3 +786,31 @@ void Geom::writeColumn(char* filename, int ei, int nv, Vec vec, bool vert_scale)
 
     file.close();
 }
+
+int* Geom::elInds0_l(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < quad->n + 1;  iy++) {
+        for(ix = 0; ix < quad->n + 1; ix++) {
+            inds0_l[kk] = (ey*quad->n + iy)*(nDofsX + 1) + ex*quad->n + ix;
+            kk++;
+        }
+    }
+
+    return inds0_l;
+}
+
+int* Geom::elInds0_g(int ex, int ey) {
+    int ix, iy, kk;
+
+    kk = 0;
+    for(iy = 0; iy < quad->n + 1; iy++) {
+        for(ix = 0; ix < quad->n + 1; ix++) {
+            inds0_g[kk] = loc0[(ey*quad->n + iy)*(nDofsX + 1) + ex*quad->n + ix];
+            kk++;
+        }
+    }
+
+    return inds0_g;
+}

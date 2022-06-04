@@ -334,6 +334,18 @@ class Umat_ray {
         void assemble(int lev, double scale, double dt, Vec exner, Vec exner_s);
 };
 
+class Pmat {
+    public:
+        Pmat(Topo* _topo, Geom* _geom, LagrangeNode* _node);
+        ~Pmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* node;
+        Mat M;
+        void assemble(int lev, double scale);
+        void assemble_h(int lev, double scale, Vec h2);
+};
+
 //////////////////////////////////////////////////////////////////
 class Uvec {
     public:
