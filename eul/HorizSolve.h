@@ -19,6 +19,7 @@ class HorizSolve {
         VertOps* vo;
         Pvec* m0;
         Phvec* m0h;
+        Pmat* M0;
         Umat* M1;
         Wmat* M2;
         E10mat* NtoE;
@@ -36,6 +37,7 @@ class HorizSolve {
         Vec* Fk;
         Vec* Gk;
         KSP ksp1;
+        KSP ksp0;
 
         double viscosity();
         void coriolis();
