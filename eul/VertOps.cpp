@@ -85,16 +85,9 @@ VertOps::VertOps(Topo* _topo, Geom* _geom) {
     MatSetSizes(VR, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2, (geom->nk-1)*n2);
     MatSeqAIJSetPreallocation(VR, 2*N2, PETSC_NULL);
 
-    // for the density and temperature equation preconditioner
-    MatCreate(MPI_COMM_SELF, &VAB_w);
-    MatSetType(VAB_w, MATSEQAIJ);
-    MatSetSizes(VAB_w, (geom->nk-1)*n2, (geom->nk+0)*n2, (geom->nk-1)*n2, (geom->nk+0)*n2);
-    MatSeqAIJSetPreallocation(VAB_w, 4*N2, PETSC_NULL);
-
     // for the diagnosis of theta without boundary conditions
     MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+1)*n2, (geom->nk+1)*n2, N2, NULL, &VA2);
     MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+1)*n2, (geom->nk+0)*n2, 2*N2, NULL, &VAB2);
-    MatCreateSeqAIJ(MPI_COMM_SELF, (geom->nk+0)*n2, (geom->nk+1)*n2, 2*N2, NULL, &VBA2);
 
     vertOps();
 }
@@ -129,11 +122,8 @@ VertOps::~VertOps() {
     MatDestroy(&VBA);
     MatDestroy(&VR);
 
-    MatDestroy(&VAB_w);
-
     MatDestroy(&VA2);
     MatDestroy(&VAB2);
-    MatDestroy(&VBA2);
 }
 
 /*
@@ -348,7 +338,6 @@ void VertOps::AssembleLinCon2(int ex, int ey, Mat AB) {
 
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-        //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQW, WtQWflat);
 
         for(ii = 0; ii < W->nDofsJ; ii++) {
             cols[ii] = ii + kk*W->nDofsJ;
@@ -444,7 +433,6 @@ void VertOps::AssembleLinearInv(int ex, int ey, Mat A) {
         // take the inverse
         Inv(WtQW, WtQWinv, n2);
         // add to matrix
-        //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
         for(ii = 0; ii < W->nDofsJ; ii++) {
             rows[ii] = ii + kk*W->nDofsJ;
         }

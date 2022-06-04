@@ -37,10 +37,8 @@ class VertOps {
         Mat VAB;
         Mat VBA;
         Mat VR;  // rayleigh friction operator
-        Mat VAB_w;
         Mat VA2; // vertical theta mass matrix (no boundary conditions)
         Mat VAB2;
-        Mat VBA2;
 
         void vertOps();
 
