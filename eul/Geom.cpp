@@ -134,16 +134,16 @@ Geom::Geom(Topo* _topo, int _nk) {
     initJacobians();
 
     // initialise vertical level arrays
-    topog = new double[topo->n0];
+    topog = new double[n0];
     levs = new double*[nk+1];
     for(ii = 0; ii < nk + 1; ii++) {
-        levs[ii] = new double[topo->n0];
+        levs[ii] = new double[n0];
     }
     thick = new double*[nk];
     thickInv = new double*[nk];
     for(ii = 0; ii < nk; ii++) {
-        thick[ii] = new double[topo->n0];
-        thickInv[ii] = new double[topo->n0];
+        thick[ii] = new double[n0];
+        thickInv[ii] = new double[n0];
     }
 
     mp1 = quad->n+1;
@@ -422,7 +422,7 @@ void Geom::write0(Vec q, char* fieldname, int tstep, int lev) {
     VecGetArray(qxl, &qxArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 jj = inds0[ii];
                 qxArray[jj] = qArray[jj];
@@ -479,7 +479,7 @@ void Geom::write1(Vec u, char* fieldname, int tstep, int lev) {
     VecGetArray(vxl, &vxArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = elInds0_l(ex, ey);
 
             // loop over quadrature points
             for(ii = 0; ii < mp12; ii++) {
@@ -566,7 +566,7 @@ void Geom::write2(Vec h, char* fieldname, int tstep, int lev, bool vert_scale) {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = elInds0_l(ex, ey);
 
             // loop over quadrature points
             for(ii = 0; ii < mp12; ii++) {
@@ -736,18 +736,18 @@ void Geom::initTopog(TopogFunc* ft, LevelFunc* fl) {
     double zo;
     double max_height = (fl) ? fl(x[0], nk) : 1.0;//TODO: assumes x[0] is at the sea surface, fix later
 
-    for(ii = 0; ii < topo->n0; ii++) {
+    for(ii = 0; ii < n0; ii++) {
         topog[ii] = ft(x[ii]);
     }
 
     for(ii = 0; ii < nk + 1; ii++) {
-        for(jj = 0; jj < topo->n0; jj++) {
+        for(jj = 0; jj < n0; jj++) {
             zo = fl(x[jj], ii);
             levs[ii][jj] = (max_height - topog[jj])*zo/max_height + topog[jj];
         }
     }
     for(ii = 0; ii < nk; ii++) {
-        for(jj = 0; jj < topo->n0; jj++) {
+        for(jj = 0; jj < n0; jj++) {
             thick[ii][jj] = levs[ii+1][jj] - levs[ii][jj];
             thickInv[ii][jj] = 1.0/thick[ii][jj];
         }

@@ -98,7 +98,6 @@ void VertSolve::initGZ() {
     int inds2k[99], inds0k[99];
     Wii* Q = new Wii(node->q, geom);
     M2_j_xy_i* W = new M2_j_xy_i(edge);
-    double* WtQflat = new double[W->nDofsJ*Q->nDofsJ];
     double* Q0 = new double[Q->nDofsI];
     double* Wt = Alloc2D(W->nDofsJ, W->nDofsI);
     double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
@@ -173,7 +172,6 @@ void VertSolve::initGZ() {
     VecDestroy(&gz);
     MatDestroy(&GRAD);
     MatDestroy(&BQ);
-    delete[] WtQflat;
     delete[] Q0;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
