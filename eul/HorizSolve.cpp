@@ -143,11 +143,11 @@ void HorizSolve::coriolis() {
     VecRestoreArray(fxl, &fArray);
 
     // scatter array to global vector
-    VecScatterBegin(topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterBegin(geom->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(  geom->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
 
     // project vector onto 0 forms
-    VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &PtQfxg);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PtQfxg);
     VecZeroEntries(PtQfxg);
     MatMult(PtQ->M, fxg, PtQfxg);
     for(kk = 0; kk < geom->nk; kk++) {
