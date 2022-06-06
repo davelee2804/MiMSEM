@@ -713,10 +713,11 @@ void WtQmat::assemble() {
     double* WtQ = Alloc2D(W->nDofsJ, Q->nDofsJ);
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n2l, topo->n0l, topo->nDofs2G, topo->nDofs0G);
+    MatSetSizes(M, topo->n2l, geom->n0l, topo->nDofs2G, geom->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     //MatMPIAIJSetPreallocation(M, 4*W->nDofsJ, PETSC_NULL, 2*W->nDofsJ, PETSC_NULL);
-    MatMPIAIJSetPreallocation(M, 8*W->nDofsJ, PETSC_NULL, 8*W->nDofsJ, PETSC_NULL);
+    //MatMPIAIJSetPreallocation(M, 8*W->nDofsJ, PETSC_NULL, 8*W->nDofsJ, PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, 4*Q->nDofsJ, PETSC_NULL, 4*Q->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
     mp1 = e->l->q->n + 1;
@@ -765,7 +766,7 @@ PtQmat::PtQmat(Topo* _topo, Geom* _geom, LagrangeNode* _l) {
 
 void PtQmat::assemble() {
     int ex, ey, ei, ii, mp1, mp12;
-    int *inds_0;
+    int *inds_p, *inds_q;
     M0_j_xy_i* P = new M0_j_xy_i(l);
     Wii* Q = new Wii(l->q, geom);
     double* Pt = Tran(P->nDofsI, P->nDofsJ, P->A);
@@ -773,9 +774,9 @@ void PtQmat::assemble() {
     double* Qaa = new double[Q->nDofsI];
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n0l, topo->n0l, topo->nDofs0G, topo->nDofs0G);
+    MatSetSizes(M, topo->n0l, geom->n0l, topo->nDofs0G, geom->nDofs0G);
     MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, 4*P->nDofsJ, PETSC_NULL, 4*P->nDofsJ, PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, 4*Q->nDofsJ, PETSC_NULL, 4*Q->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
     mp1 = l->q->n + 1;
@@ -792,8 +793,9 @@ void PtQmat::assemble() {
             }
             Mult_FD_IP(P->nDofsJ, Q->nDofsJ, Q->nDofsI, Pt, Qaa, PtQ);
 
-            inds_0 = geom->elInds0_g(ex, ey);
-            MatSetValues(M, P->nDofsJ, inds_0, Q->nDofsJ, inds_0, PtQ, ADD_VALUES);
+            inds_p = topo->elInds0_g(ex, ey);
+            inds_q = geom->elInds0_g(ex, ey);
+            MatSetValues(M, P->nDofsJ, inds_p, Q->nDofsJ, inds_q, PtQ, ADD_VALUES);
         }
     }
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
@@ -841,7 +843,7 @@ void UtQmat::assemble() {
     inds_0y = new int[mp12];
 
     MatCreate(MPI_COMM_WORLD, &M);
-    MatSetSizes(M, topo->n1l, 2*topo->n0l, topo->nDofs1G, 2*topo->nDofs0G);
+    MatSetSizes(M, topo->n1l, 2*geom->n0l, topo->nDofs1G, 2*geom->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);

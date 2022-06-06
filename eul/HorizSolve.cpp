@@ -133,11 +133,11 @@ void HorizSolve::coriolis() {
     fl = new Vec[geom->nk];
 
     // evaluate the coriolis term at nodes
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &fxl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &fxg);
+    VecCreateSeq(MPI_COMM_SELF, geom->n0, &fxl);
+    VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &fxg);
     VecZeroEntries(fxg);
     VecGetArray(fxl, &fArray);
-    for(ii = 0; ii < topo->n0; ii++) {
+    for(ii = 0; ii < geom->n0; ii++) {
         fArray[ii] = 2.0*OMEGA*sin(geom->s[ii][1]);
     }
     VecRestoreArray(fxl, &fArray);
@@ -147,7 +147,7 @@ void HorizSolve::coriolis() {
     VecScatterEnd(  topo->gtol_0, fxl, fxg, INSERT_VALUES, SCATTER_REVERSE);
 
     // project vector onto 0 forms
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &PtQfxg);
+    VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &PtQfxg);
     VecZeroEntries(PtQfxg);
     MatMult(PtQ->M, fxg, PtQfxg);
     for(kk = 0; kk < geom->nk; kk++) {
