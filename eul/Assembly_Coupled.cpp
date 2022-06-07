@@ -62,7 +62,7 @@ void Umat_coupled::assemble(double scale, Mat M) {
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
-                inds_0 = topo->elInds0_l(ex, ey);
+                inds_0 = geom->elInds0_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     J = geom->J[ei][ii];
@@ -161,7 +161,7 @@ void RotMat_coupled::assemble(double scale, double fac, Vec* q0, Mat M) {
                 inds_y = topo->elInds_vely_g(ex, ey, kk);
 
                 ei = ey*topo->nElsX + ex;
-                inds_0 = topo->elInds0_l(ex, ey);
+                inds_0 = geom->elInds0_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     J = geom->J[ei][ii];
@@ -250,7 +250,7 @@ void Wmat_coupled::assemble(double scale, int var_ind, Mat M) {
                     inds = topo->elInds_velz_g(ex, ey, kk);
 		}
                 ei = ey*topo->nElsX + ex;
-                inds0 = topo->elInds0_l(ex, ey);
+                inds0 = geom->elInds0_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     Qaa[ii]  = Q->A[ii]*(scale/det);
@@ -310,7 +310,7 @@ void EoSmat_coupled::assemble(double scale, double fac, int col_ind, Vec* p2, Ma
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei    = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
 
             VecGetArray(p2[ei], &pArray);
             for(kk = 0; kk < geom->nk; kk++) {
@@ -368,7 +368,7 @@ void EoSmat_coupled::assemble_rho_inv_mm(double scale, double fac, int lev, Vec 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei    = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             inds2 = topo->elInds2_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
@@ -735,7 +735,7 @@ void M3mat_coupled::assemble(double scale, Vec* p3, bool vert_scale, double fac)
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
-                inds0 = topo->elInds0_l(ex, ey);
+                inds0 = geom->elInds0_l(ex, ey);
                 inds = topo->elInds2_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
@@ -813,7 +813,7 @@ void M3mat_coupled::assemble_inv(double scale, Vec* p3) {
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
-                inds0 = topo->elInds0_l(ex, ey);
+                inds0 = geom->elInds0_l(ex, ey);
                 inds = topo->elInds2_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
@@ -930,7 +930,7 @@ void M2mat_coupled::assemble(double scale, double fac, Vec* ph, Vec* pz, bool ve
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
-                inds_0 = topo->elInds0_l(ex, ey);
+                inds_0 = geom->elInds0_l(ex, ey);
                 //if(ph) inds_2 = topo->elInds2_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
@@ -1011,7 +1011,7 @@ VtQV[ii*U->nDofsJ+ii]=1.0;
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
-                inds_0 = topo->elInds0_l(ex, ey);
+                inds_0 = geom->elInds0_l(ex, ey);
                 inds_2 = topo->elInds2_l(ex, ey);
 
                 for(ii = 0; ii < mp12; ii++) {
@@ -1101,7 +1101,7 @@ VtQV[ii*U->nDofsJ+ii]=1.0;
             for(ey = 0; ey < topo->nElsX; ey++) {
                 for(ex = 0; ex < topo->nElsX; ex++) {
                     ei = ey*topo->nElsX + ex;
-                    inds_0 = topo->elInds0_l(ex, ey);
+                    inds_0 = geom->elInds0_l(ex, ey);
                     inds_2 = topo->elInds2_l(ex, ey);
 
                     for(ii = 0; ii < mp12; ii++) {
@@ -1169,7 +1169,7 @@ VtQV[ii*U->nDofsJ+ii]=1.0;
             for(ey = 0; ey < topo->nElsX; ey++) {
                 for(ex = 0; ex < topo->nElsX; ex++) {
                     ei = ey*topo->nElsX + ex;
-                    inds_0 = topo->elInds0_l(ex, ey);
+                    inds_0 = geom->elInds0_l(ex, ey);
                     inds_2 = topo->elInds2_l(ex, ey);
 
                     VecGetArray(pz[ei], &pArray);
@@ -1281,7 +1281,7 @@ void M2mat_coupled::assemble_inv(double scale, Umat* Mk) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
             inds_2 = topo->elInds2_l(ex, ey);
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(kk = 0; kk < topo->nk-1; kk++) {
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
@@ -1380,7 +1380,7 @@ void Kmat_coupled::assemble(Vec* ul, Vec* wl, double fac, double scale) {
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
                 ei = ey*topo->nElsX + ex;
-                inds_0 = topo->elInds0_l(ex, ey);
+                inds_0 = geom->elInds0_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     det = geom->det[ei][ii];
                     J = geom->J[ei][ii];

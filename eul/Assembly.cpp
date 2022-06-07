@@ -723,15 +723,14 @@ void WtQmat::assemble() {
     mp1 = e->l->q->n + 1;
     mp12 = mp1*mp1;
 
+    Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
+
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             // piecewise constant field in the vertical, so vertical transformation is det/det = 1
             for(ii = 0; ii < mp12; ii++) {
                 Qaa[ii] = Q->A[ii];
             }
-
-            Tran_IP(W->nDofsI, W->nDofsJ, W->A, Wt);
-
             Mult_FD_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQ);
 
             inds_2 = topo->elInds2_g(ex, ey);

@@ -237,7 +237,7 @@ Geom::~Geom() {
 //    Geosci. Model Dev. 7 2803 - 2816
 void Geom::jacobian(int ex, int ey, int px, int py, double** jac) {
     int ii, jj, kk, mp1 = quad->n + 1;
-    int* inds_0 = topo->elInds0_l(ex, ey);
+    int* inds_0 = elInds0_l(ex, ey);
     double* c1 = x[inds_0[0]];
     double* c2 = x[inds_0[mp1-1]];
     double* c3 = x[inds_0[mp1*mp1-1]];
@@ -327,8 +327,6 @@ void Geom::interp0(int ex, int ey, int px, int py, double* vec, double* val) {
     np12 = np1*np1;
     pxy = py*mp1+px;
 
-    //assumes diagonal mass matrix for 0 forms
-    //val[0] = vec[inds0[jj]];
     val[0] = 0.0;
     for(jj = 0; jj < np12; jj++) {
         val[0] += vec[inds0[jj]]*PA[pxy*np12+jj];
@@ -350,8 +348,6 @@ void Geom::interp1_l(int ex, int ey, int px, int py, double* vec, double* val) {
     val[1] = 0.0;
     pxy = py*(quad->n+1)+px;
     for(jj = 0; jj < n2; jj++) {
-        //val[0] += vec[inds1x[jj]]*node->ljxi[px][jj%np1]*edge->ejxi[py][jj/np1];
-        //val[1] += vec[inds1y[jj]]*edge->ejxi[px][jj%nn]*node->ljxi[py][jj/nn];
         val[0] += vec[inds1x[jj]]*UA[pxy*n2+jj];
         val[1] += vec[inds1y[jj]]*VA[pxy*n2+jj];
     }
@@ -367,7 +363,6 @@ void Geom::interp2_l(int ex, int ey, int px, int py, double* vec, double* val) {
 
     val[0] = 0.0;
     for(jj = 0; jj < n2; jj++) {
-        //val[0] += vec[inds2[jj]]*edge->ejxi[px][jj%nn]*edge->ejxi[py][jj/nn];
         val[0] += vec[inds2[jj]]*WA[pxy*n2+jj];
     }
 }
@@ -415,9 +410,10 @@ void Geom::interp2_g(int ex, int ey, int px, int py, double* vec, double* val) {
 }
 
 void Geom::write0(Vec q, char* fieldname, int tstep, int lev) {
-    int ex, ey, ii, jj, mp1, mp12;
+    int ex, ey, ii, mp1, mp12;
     int* inds0;
     char filename[100];
+    double val;
     PetscScalar *qArray, *qxArray;
     Vec ql, qxl, qxg;
     PetscViewer viewer;
@@ -439,11 +435,11 @@ void Geom::write0(Vec q, char* fieldname, int tstep, int lev) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             inds0 = elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
-                jj = inds0[ii];
-                qxArray[jj] = qArray[jj];
+                interp0(ex, ey, ii%mp1, ii/mp1, qArray, &val);
                 // assume piecewise constant in the vertical, so rescale by
                 // the vertical determinant inverse
-                qxArray[jj] *= 1.0/thick[lev][jj];
+                val *= 1.0/thick[lev][inds0[ii]];
+                qxArray[inds0[ii]] = val;
             }
         }
     }
@@ -688,7 +684,7 @@ void Geom::updateGlobalCoords() {
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = elInds0_l(ex, ey);
 
             c1 = x[inds0[0]];
             c2 = x[inds0[mp1-1]];
