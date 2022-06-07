@@ -57,7 +57,6 @@ class VertOps {
         void AssembleConLin(int ex, int ey, Mat BA);
         void AssembleLinCon2(int ex, int ey, Mat AB);                // for the diagnosis of theta without boundary conditions
         void AssembleLinearWithRho2(int ex, int ey, Vec rho, Mat A); // for the diagnosis of theta without boundary conditions
-        void AssembleConstWithEOS(int ex, int ey, Vec rt, Mat B);
         void AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B);
         void Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs);
         void Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Vec theta, Mat B);

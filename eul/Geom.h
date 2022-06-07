@@ -29,6 +29,7 @@ class Geom {
         double* WA;
         double* UA;
         double* VA;
+	double* PA;
         Topo* topo;
         GaussLobatto* quad;
         LagrangeNode* node;

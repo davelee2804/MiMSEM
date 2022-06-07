@@ -95,7 +95,7 @@ void Umat::_assemble(int lev, double scale, bool vert_scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -190,7 +190,7 @@ void Umat::assemble_up(int lev, double scale, double tau, Vec ui, Vec uj) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -343,7 +343,7 @@ void Wmat::_assemble(int lev, double scale, bool vert_scale) {
             inds = topo->elInds2_g(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 Qaa[ii]  = Q->A[ii]*(scale/det);
@@ -428,7 +428,7 @@ void Uhmat::assemble(Vec h2, int lev, bool const_vert, double scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -493,7 +493,7 @@ void Uhmat::assemble_up(Vec h2, int lev, double scale, double dt, Vec u1) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -947,7 +947,7 @@ void WtQUmat::assemble(Vec u1, int lev, double scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -1048,7 +1048,7 @@ void RotMat::assemble(Vec q0, int lev, double scale) {
             inds_y = topo->elInds1y_g(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -1264,7 +1264,7 @@ void Whmat::assemble(Vec rho, int lev, double scale, bool vert_scale_rho) {
             inds = topo->elInds2_g(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
 
@@ -1347,7 +1347,7 @@ void Ut_mat::assemble(int lev, double scale) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -1693,7 +1693,7 @@ void WmatInv::assemble(int lev, double scale) {
             inds = topo->elInds2_g(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 Qaa[ii]  = Q->A[ii]*(scale/det);
@@ -1766,7 +1766,7 @@ void WhmatInv::assemble(Vec rho, int lev, double scale) {
             inds = topo->elInds2_g(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
 
@@ -1910,7 +1910,7 @@ void Umat_ray::assemble(int lev, double scale, double dt, Vec exner_k, Vec exner
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -2140,7 +2140,7 @@ void Uvec::assemble(int lev, double scale, bool vert_scale, Vec vel) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -2217,7 +2217,7 @@ void Uvec::assemble_hu(int lev, double scale, Vec vel, Vec rho, bool zero_and_sc
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -2300,7 +2300,7 @@ void Uvec::assemble_hu_up(int lev, double scale, Vec vel, Vec rho, double fac, d
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -2395,7 +2395,7 @@ void Uvec::assemble_wxu(int lev, double scale, Vec vel, Vec vort) {
             inds_y = topo->elInds1y_l(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
@@ -2472,7 +2472,7 @@ void Wvec::assemble(int lev, double scale, bool vert_scale, Vec rho) {
             inds = topo->elInds2_l(ex, ey);
 
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds0 = geom->elInds0_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 Qaa[ii]  = Q->A[ii]*(scale/det);
@@ -2512,7 +2512,7 @@ void Wvec::assemble_K(int lev, double scale, Vec vel1, Vec vel2) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds_0 = topo->elInds0_l(ex, ey);
+            inds_0 = geom->elInds0_l(ex, ey);
             inds_2 = topo->elInds2_l(ex, ey);
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];

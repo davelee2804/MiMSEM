@@ -192,7 +192,7 @@ void VertOps::AssembleConst(int ex, int ey, Mat B) {
     int inds2k[99];
 
     ei    = ey*topo->nElsX + ex;
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
     MatZeroEntries(B);
@@ -232,7 +232,7 @@ void VertOps::AssembleLinear(int ex, int ey, Mat A) {
     int inds2k[99];
 
     ei    = ey*topo->nElsX + ex;
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
     MatZeroEntries(A);
@@ -413,7 +413,7 @@ void VertOps::AssembleLinearInv(int ex, int ey, Mat A) {
     double det;
 
     ei    = ey*topo->nElsX + ex;
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
 
@@ -450,7 +450,7 @@ void VertOps::AssembleConstWithRhoInv(int ex, int ey, Vec rho, Mat B) {
     PetscScalar* rArray;
 
     ei    = ey*topo->nElsX + ex;
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
@@ -496,7 +496,7 @@ void VertOps::AssembleConstWithRho(int ex, int ey, Vec rho, Mat B) {
     int inds2k[99];
     PetscScalar* rArray;
 
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
@@ -608,7 +608,7 @@ void VertOps::AssembleLinearWithRT(int ex, int ey, Vec rt, Mat A, bool do_intern
     int ii, jj, kk, ei, mp1, mp12;
     double det, rk;
     int inds2k[99];
-    int* inds0 = topo->elInds0_l(ex, ey);
+    int* inds0 = geom->elInds0_l(ex, ey);
     PetscScalar *rArray;
 
     ei    = ey*topo->nElsX + ex;
@@ -673,7 +673,7 @@ void VertOps::AssembleLinearWithTheta(int ex, int ey, Vec theta, Mat A) {
     int inds2k[99];
     PetscScalar *tArray;
 
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
@@ -736,7 +736,7 @@ void VertOps::Assemble_EOS_RHS(int ex, int ey, Vec rt, Vec eos_rhs, double facto
     double rtq[99], rtj[99];
     PetscScalar *rArray, *eArray;
 
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
@@ -793,7 +793,7 @@ void VertOps::AssembleConstInv(int ex, int ey, Mat B) {
     int inds2k[99];
 
     ei    = ey*topo->nElsX + ex;
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
@@ -810,7 +810,6 @@ void VertOps::AssembleConstInv(int ex, int ey, Mat B) {
         Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
         Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
         Inv(WtQW, WtQWinv, n2);
-        //Flat2D_IP(W->nDofsJ, W->nDofsJ, WtQWinv, WtQWflat);
 
         for(ii = 0; ii < W->nDofsJ; ii++) {
             inds2k[ii] = ii + kk*W->nDofsJ;
@@ -831,7 +830,7 @@ void VertOps::AssembleRayleigh(int ex, int ey, Mat A) {
     int inds2k[99];
 
     ei    = ey*topo->nElsX + ex;
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp12  = (quad->n + 1)*(quad->n + 1);
 
     MatZeroEntries(A);
@@ -928,56 +927,6 @@ void VertOps::AssembleConLin(int ex, int ey, Mat BA) {
     MatAssemblyEnd(BA, MAT_FINAL_ASSEMBLY);
 }
 
-void VertOps::AssembleConstWithEOS(int ex, int ey, Vec rt, Mat B) {
-    int ii, jj, kk, ei, mp1, mp12;
-    int *inds0;
-    double det, rk, rtq, gamma;
-    int inds2k[99];
-    PetscScalar* rArray;
-    double fac = CP*pow(RD/P0, RD/CV);
-
-    inds0 = topo->elInds0_l(ex, ey);
-    mp1   = quad->n + 1;
-    mp12  = mp1*mp1;
-    ei    = ey*topo->nElsX + ex;
-
-    MatZeroEntries(B);
-
-    // assemble the matrices
-    VecGetArray(rt, &rArray);
-    for(kk = 0; kk < geom->nk; kk++) {
-        for(ii = 0; ii < mp12; ii++) {
-            det = geom->det[ei][ii];
-            Q0[ii] = Q->A[ii]*(SCALE/det);
-            // for constant field we multiply by the vertical jacobian determinant when integrating, 
-            // then divide by the vertical jacobian for both the trial and the test functions
-            // vertical determinant is dz/2
-            Q0[ii] *= geom->thickInv[kk][inds0[ii]];
-
-            rk = 0.0;
-            for(jj = 0; jj < n2; jj++) {
-                gamma = geom->edge->ejxi[ii%mp1][jj%topo->elOrd]*geom->edge->ejxi[ii/mp1][jj/topo->elOrd];
-                rk += rArray[kk*n2+jj]*gamma;
-            }
-            rk *= 1.0/(det*geom->thick[kk][inds0[ii]]);
-            rtq = fac*pow(rk, RD/CV);
-            Q0[ii] *= rtq;
-        }
-
-        // assemble the piecewise constant mass matrix for level k
-        Mult_FD_IP(W->nDofsJ, Q->nDofsJ, W->nDofsI, Wt, Q0, WtQ);
-        Mult_IP(W->nDofsJ, W->nDofsJ, Q->nDofsJ, WtQ, W->A, WtQW);
-
-        for(ii = 0; ii < W->nDofsJ; ii++) {
-            inds2k[ii] = ii + kk*W->nDofsJ;
-        }
-        MatSetValues(B, W->nDofsJ, inds2k, W->nDofsJ, inds2k, WtQW, ADD_VALUES);
-    }
-    VecRestoreArray(rt, &rArray);
-    MatAssemblyBegin(B, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(B, MAT_FINAL_ASSEMBLY);
-}
-
 void VertOps::AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B) {
     int ii, jj, kk, ei, mp1, mp12;
     int *inds0;
@@ -986,7 +935,7 @@ void VertOps::AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B) {
     PetscScalar* tArray;
 
     ei    = ey*topo->nElsX + ex;
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
 
@@ -1042,7 +991,7 @@ void VertOps::Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_r
     double rtq[99], rtj[99];
     PetscScalar *rArray, *eArray, *fArray;
 
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
@@ -1106,7 +1055,7 @@ void VertOps::Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Vec theta, Mat B) {
     double *B_BinvB = new double[W->nDofsJ*W->nDofsJ];
     PetscScalar *tArray, *_tArray;
 
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp1   = quad->n + 1;
     mp12  = mp1*mp1;
     ei    = ey*topo->nElsX + ex;
@@ -1197,7 +1146,7 @@ void VertOps::AssembleLinearWithRayleighInv(int ex, int ey, double dt_fric, Mat 
     double det;
 
     ei    = ey*topo->nElsX + ex;
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
     mp1   = quad->n+1;
     mp12  = mp1*mp1;
 
@@ -1240,7 +1189,7 @@ void VertOps::AssembleLinearWithRho2_up(int ex, int ey, Vec rho, Mat A, double d
     mp1  = quad->n + 1;
     mp12 = mp1*mp1;
 
-    inds_0 = topo->elInds0_l(ex, ey);
+    inds_0 = geom->elInds0_l(ex, ey);
 
     MatZeroEntries(A);
 
@@ -1318,7 +1267,7 @@ void VertOps::AssembleLinCon2_up(int ex, int ey, Mat AB, double dt, Vec* uhl) {
     mp1  = quad->n + 1;
     mp12 = mp1*mp1;
 
-    inds_0 = topo->elInds0_l(ex, ey);
+    inds_0 = geom->elInds0_l(ex, ey);
 
     MatZeroEntries(AB);
 
@@ -1404,7 +1353,7 @@ void VertOps::AssembleTempForcing_HS(int ex, int ey, Vec exner, Vec theta, Vec r
     int ei     = ey*topo->nElsX + ex;
     int mp1    = quad->n + 1;
     int mp12   = mp1*mp1;
-    int* inds0 = topo->elInds0_l(ex, ey);
+    int* inds0 = geom->elInds0_l(ex, ey);
     double _e[99], _r[99], _tb[99], _tt[99], _es[99], k_t[99], det;
     PetscScalar *eArray, *tArray, *rArray, *vArray;
 
@@ -1498,7 +1447,7 @@ void VertOps::AssembleConLinWithRho(int ex, int ey, Mat BA, Vec rho) {
     ei   = ey*topo->nElsX + ex;
     mp1  = quad->n + 1;
     mp12 = mp1*mp1;
-    inds0 = topo->elInds0_l(ex, ey);
+    inds0 = geom->elInds0_l(ex, ey);
 
     MatZeroEntries(BA);
 

@@ -28,7 +28,7 @@ Geom::Geom(Topo* _topo, int _nk) {
     string line;
     double value;
     int mp1, np1, mi, nj, nn;
-    double li, ei, ej;
+    double li, lj, ei, ej;
     Vec vl, vg;
 
     pi   = _topo->pi;
@@ -151,6 +151,14 @@ Geom::Geom(Topo* _topo, int _nk) {
     nn = node->n;
     mi = mp1*mp1;
     nj = np1*nn;
+    PA = new double[np1*np1*mi];
+    for(jj = 0; jj < np1*np1; jj++) {
+        for(ii = 0; ii < mi; ii++) {
+            li = node->ljxi[ii%mp1][jj%np1];
+            lj = node->ljxi[ii/mp1][jj/np1];
+	    PA[ii*np1*np1+jj] = li*lj;
+        }
+    }
     UA = new double[edge->n*np1*mi];
     for(jj = 0; jj < nj; jj++) {
         for(ii = 0; ii < mi; ii++) {
@@ -184,6 +192,7 @@ Geom::~Geom() {
     delete[] WA;
     delete[] UA;
     delete[] VA;
+    delete[] PA;
 
     for(ii = 0; ii < nl; ii++) {
         delete[] x[ii];
@@ -310,14 +319,20 @@ double Geom::jacDet(int ex, int ey, int px, int py, double** jac) {
 }
 
 void Geom::interp0(int ex, int ey, int px, int py, double* vec, double* val) {
-    int jj, mp1;
+    int jj, mp1, np1, np12, pxy;
     int* inds0 = topo->elInds0_l(ex, ey);
 
     mp1 = quad->n + 1;
-    jj = py*mp1 + px;
+    np1 = node->n + 1;
+    np12 = np1*np1;
+    pxy = py*mp1+px;
 
-    // assumes diagonal mass matrix for 0 forms
-    val[0] = vec[inds0[jj]];
+    //assumes diagonal mass matrix for 0 forms
+    //val[0] = vec[inds0[jj]];
+    val[0] = 0.0;
+    for(jj = 0; jj < np12; jj++) {
+        val[0] += vec[inds0[jj]]*PA[pxy*np12+jj];
+    }
 }
 
 void Geom::interp1_l(int ex, int ey, int px, int py, double* vec, double* val) {
