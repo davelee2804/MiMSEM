@@ -37,7 +37,7 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom) {
     del2 = viscosity();
     step = 0;
 
-    quad = new GaussLobatto(topo->elOrd);
+    quad = new GaussLobatto(geom->quad->n);
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
 

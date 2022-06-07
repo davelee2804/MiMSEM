@@ -54,7 +54,7 @@ Geom::Geom(Topo* _topo, int _nk) {
     nDofsX *= quad_ord;
     nDofs0G = n_procs*nDofsX*nDofsX + 2;
 
-    quad = new GaussLobatto(topo->elOrd);
+    quad = new GaussLobatto(quad_ord);
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
 

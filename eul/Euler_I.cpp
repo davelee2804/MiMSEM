@@ -50,7 +50,7 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    quad = new GaussLobatto(topo->elOrd);
+    quad = new GaussLobatto(geom->quad->n);
     node = new LagrangeNode(topo->elOrd, quad);
     edge = new LagrangeEdge(topo->elOrd, node);
 
@@ -353,45 +353,6 @@ void Euler_I::init2(Vec* h, ICfunc3D* func) {
         M2->assemble(kk, SCALE, true); // this down to machine precision, so rescale the rhs as well
         KSPSolve(ksp2, WQb, h[kk]);
     }
-
-    delete WQ;
-    VecDestroy(&bl);
-    VecDestroy(&bg);
-    VecDestroy(&WQb);
-}
-
-void Euler_I::initTheta(Vec theta, ICfunc3D* func) {
-    int ex, ey, ii, mp1, mp12, *inds0;
-    PetscScalar *bArray;
-    Vec bl, bg, WQb;
-    WtQmat* WQ = new WtQmat(topo, geom, edge);
-
-    mp1 = quad->n + 1;
-    mp12 = mp1*mp1;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
-    VecZeroEntries(bg);
-
-    VecGetArray(bl, &bArray);
-
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            inds0 = topo->elInds0_l(ex, ey);
-            for(ii = 0; ii < mp12; ii++) {
-                bArray[inds0[ii]] = func(geom->x[inds0[ii]], 0);
-            }
-        }
-    }
-    VecRestoreArray(bl, &bArray);
-    VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-    VecScatterEnd(  topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-
-    M2->assemble(0, SCALE, false);
-    MatMult(WQ->M, bg, WQb);
-    VecScale(WQb, SCALE);
-    KSPSolve(ksp2, WQb, theta);
 
     delete WQ;
     VecDestroy(&bl);
