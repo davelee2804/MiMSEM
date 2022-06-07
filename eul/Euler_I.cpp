@@ -164,26 +164,6 @@ Euler_I::Euler_I(Topo* _topo, Geom* _geom, double _dt) {
     CM3  = new M3mat_coupled(topo, geom, edge);
     CE32 = new E32_Coupled(topo);
     CK   = new Kmat_coupled(topo, geom, node, edge);
-/*
-    n_dofs_locl = topo->nk*topo->n1l + (topo->nk-1)*topo->n2l;
-    n_dofs_glob = topo->nk*topo->nDofs1G + (topo->nk-1)*topo->nDofs2G;
-    VecCreateMPI(MPI_COMM_WORLD, n_dofs_locl, n_dofs_glob, &m2tmp1);
-    VecCreateMPI(MPI_COMM_WORLD, n_dofs_locl, n_dofs_glob, &m2tmp2);
-    CM2->assemble(SCALE, 1.0, NULL, NULL, true);
-    MatGetDiagonal(CM2->M, m2tmp1);
-    VecSet(m2tmp2, 1.0);
-    VecPointwiseDivide(m2tmp1, m2tmp2, m2tmp1);
-    MatCreate(MPI_COMM_WORLD, &CM2inv);
-    MatSetSizes(CM2inv, n_dofs_locl, n_dofs_locl, n_dofs_glob, n_dofs_glob);
-    MatSetType(CM2inv, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(CM2inv, 1, PETSC_NULL, 0, PETSC_NULL);
-    MatZeroEntries(CM2inv);
-    MatDiagonalSet(CM2inv, m2tmp1, INSERT_VALUES);
-    MatAssemblyBegin(CM2inv, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(  CM2inv, MAT_FINAL_ASSEMBLY);
-    VecDestroy(&m2tmp1);
-    VecDestroy(&m2tmp2);
-*/
 }
 
 Euler_I::~Euler_I() {
@@ -290,9 +270,9 @@ void Euler_I::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    loc02 = new int[2*topo->n0];
-    VecCreateSeq(MPI_COMM_SELF, 2*topo->n0, &bl);
-    VecCreateMPI(MPI_COMM_WORLD, 2*topo->n0l, 2*topo->nDofs0G, &bg);
+    loc02 = new int[2*geom->n0];
+    VecCreateSeq(MPI_COMM_SELF, 2*geom->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, 2*geom->n0l, 2*geom->nDofs0G, &bg);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &UQb);
 
     for(kk = 0; kk < geom->nk; kk++) {
@@ -301,7 +281,7 @@ void Euler_I::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
 
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
-                inds0 = topo->elInds0_l(ex, ey);
+                inds0 = geom->elInds0_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     bArray[2*inds0[ii]+0] = func_x(geom->x[inds0[ii]], kk);
                     bArray[2*inds0[ii]+1] = func_y(geom->x[inds0[ii]], kk);
@@ -311,12 +291,12 @@ void Euler_I::init1(Vec *u, ICfunc3D* func_x, ICfunc3D* func_y) {
         VecRestoreArray(bl, &bArray);
 
         // create a new vec scatter object to handle vector quantity on nodes
-        for(ii = 0; ii < topo->n0; ii++) {
-            loc02[2*ii+0] = 2*topo->loc0[ii]+0;
-            loc02[2*ii+1] = 2*topo->loc0[ii]+1;
+        for(ii = 0; ii < geom->n0; ii++) {
+            loc02[2*ii+0] = 2*geom->loc0[ii]+0;
+            loc02[2*ii+1] = 2*geom->loc0[ii]+1;
         }
-        ISCreateStride(MPI_COMM_WORLD, 2*topo->n0, 0, 1, &isl);
-        ISCreateGeneral(MPI_COMM_WORLD, 2*topo->n0, loc02, PETSC_COPY_VALUES, &isg);
+        ISCreateStride(MPI_COMM_WORLD, 2*geom->n0, 0, 1, &isl);
+        ISCreateGeneral(MPI_COMM_WORLD, 2*geom->n0, loc02, PETSC_COPY_VALUES, &isg);
         VecScatterCreate(bg, isg, bl, isl, &scat);
         VecScatterBegin(scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
         VecScatterEnd(  scat, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
@@ -347,8 +327,8 @@ void Euler_I::init2(Vec* h, ICfunc3D* func) {
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
 
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &bl);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &bg);
+    VecCreateSeq(MPI_COMM_SELF, geom->n0, &bl);
+    VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &bg);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &WQb);
 
     for(kk = 0; kk < geom->nk; kk++) {
@@ -358,15 +338,15 @@ void Euler_I::init2(Vec* h, ICfunc3D* func) {
 
         for(ey = 0; ey < topo->nElsX; ey++) {
             for(ex = 0; ex < topo->nElsX; ex++) {
-                inds0 = topo->elInds0_l(ex, ey);
+                inds0 = geom->elInds0_l(ex, ey);
                 for(ii = 0; ii < mp12; ii++) {
                     bArray[inds0[ii]] = func(geom->x[inds0[ii]], kk);
                 }
             }
         }
         VecRestoreArray(bl, &bArray);
-        VecScatterBegin(topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
-        VecScatterEnd(  topo->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterBegin(geom->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(  geom->gtol_0, bl, bg, INSERT_VALUES, SCATTER_REVERSE);
 
         MatMult(WQ->M, bg, WQb);
         VecScale(WQb, SCALE);          // have to rescale the M2 operator as the metric terms scale
