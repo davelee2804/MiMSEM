@@ -1302,12 +1302,12 @@ void M2mat_coupled::assemble_inv(double scale, Umat* Mk) {
     MatAssemblyBegin(Minv, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  Minv, MAT_FINAL_ASSEMBLY);
 
-    delete Q;
-    delete W;
     Free2D(W->nDofsJ, Wt);
     Free2D(W->nDofsJ, WtQ);
     Free2D(W->nDofsJ, WtQW);
     Free2D(W->nDofsJ, WtQWinv);
+    delete Q;
+    delete W;
 }
 
 M2mat_coupled::~M2mat_coupled() {
