@@ -651,7 +651,8 @@ void Euler_I::CreateCoupledOperator() {
     MatCreate(MPI_COMM_WORLD, &M);
     MatSetSizes(M, n_locl, n_locl, n_glob, n_glob);
     MatSetType(M, MATMPIAIJ);
-    MatMPIAIJSetPreallocation(M, nnz, PETSC_NULL, nnz/2, PETSC_NULL);
+    //MatMPIAIJSetPreallocation(M, nnz, PETSC_NULL, nnz/2, PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, nnz, PETSC_NULL, nnz, PETSC_NULL);
     MatSetOptionsPrefix(M, "mat_c_");
     MatSetFromOptions(M);
 
@@ -747,11 +748,11 @@ void Euler_I::AssembleCoupledOperator(Vec* velx_i, Vec* velx_j, L2Vecs* rho, L2V
     MatMatMult(CK->MT, CM2invE23M3, reuse_c, PETSC_DEFAULT, &CQ);
     AddM3_Coupled(topo, 1, 0, CQ, M);
 
-    MatMatMult(CE32->MT, CK->MT, reuse_c, PETSC_DEFAULT, &CE23K);
-    AddM2_Coupled(topo, CE23K, M);
+    //MatMatMult(CE32->MT, CK->MT, reuse_c, PETSC_DEFAULT, &CE23K);
+    //AddM2_Coupled(topo, CE23K, M);
 
-    //Rc->assemble(SCALE, LAMBDA*dt, vert->horiz->fl, M);
-    for(kk = 0; kk < geom->nk; kk++) {
+    Rc->assemble(SCALE, LAMBDA*dt, vert->horiz->fl, M);
+    /*for(kk = 0; kk < geom->nk; kk++) {
         VecZeroEntries(d_pi);
 	VecAXPY(d_pi, 0.5, velx_i[kk]);
 	VecAXPY(d_pi, 0.5, velx_j[kk]);
@@ -760,7 +761,7 @@ void Euler_I::AssembleCoupledOperator(Vec* velx_i, Vec* velx_j, L2Vecs* rho, L2V
         VecScatterEnd(  topo->gtol_0, wxg, wxl[kk], INSERT_VALUES, SCATTER_FORWARD);
 	VecDestroy(&wxg);
     }
-    Rc->assemble(SCALE, LAMBDA*dt, wxl, M);
+    Rc->assemble(SCALE, LAMBDA*dt, wxl, M);*/
     EoSc->assemble(SCALE, -1.0*RD/CV, 1, rt->vz, M);
     EoSc->assemble(SCALE, +1.0, 2, exner->vz, M);
 /*

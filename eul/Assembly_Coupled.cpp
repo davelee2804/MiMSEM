@@ -1131,7 +1131,6 @@ VtQV[ii*U->nDofsJ+ii]=1.0;
             for(ey = 0; ey < topo->nElsX; ey++) {
                 for(ex = 0; ex < topo->nElsX; ex++) {
                     ei = ey*topo->nElsX + ex;
-                    inds_0 = topo->elInds0_l(ex, ey);
                     inds_2 = topo->elInds2_l(ex, ey);
 
                     VecGetArray(pz[ei], &pArray);

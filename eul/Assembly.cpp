@@ -845,7 +845,7 @@ void UtQmat::assemble() {
     MatSetSizes(M, topo->n1l, 2*geom->n0l, topo->nDofs1G, 2*geom->nDofs0G);
     MatSetType(M, MATMPIAIJ);
     //MatMPIAIJSetPreallocation(M, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
-    MatMPIAIJSetPreallocation(M, 4*Q->nDofsJ, PETSC_NULL, 2*Q->nDofsJ, PETSC_NULL);
+    MatMPIAIJSetPreallocation(M, 4*Q->nDofsJ, PETSC_NULL, 4*Q->nDofsJ, PETSC_NULL);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {

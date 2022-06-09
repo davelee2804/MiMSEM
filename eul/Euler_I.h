@@ -85,7 +85,6 @@ class Euler_I {
         void grad(bool assemble, Vec phi, Vec u, int lev);            // weak form grad operator
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* p, ICfunc3D* func);
-        void initTheta(Vec theta, ICfunc3D* func);
 
         double int2(Vec ug);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);

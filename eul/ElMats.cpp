@@ -155,10 +155,6 @@ Wii::Wii(GaussLobatto* _quad, Geom* _geom) {
     mp1 = quad->n + 1;
     mi = mp1*mp1;
 
-    J = new double*[2];
-    J[0] = new double[2];
-    J[1] = new double[2];
-
     A = new double[mi*mi];
 
     nDofsI = mi;
@@ -180,7 +176,4 @@ void Wii::assemble() {
 
 Wii::~Wii() {
     delete[] A;
-    delete[] J[0];
-    delete[] J[1];
-    delete[] J;
 }

@@ -46,7 +46,6 @@ class Wii {
         ~Wii();
         int nDofsI;
         int nDofsJ;
-        double** J;
         double* A;
         GaussLobatto* quad;
         Geom* geom;
