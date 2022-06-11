@@ -1064,7 +1064,8 @@ void Euler_I::Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sa
             cout << "iter: " << it << "\t|x|: " << norm_x << "\t|dx|: " << norm_dx << "\t|dx|/|x|: " << norm << endl;
         }
         it++;
-    } while(norm > 1.0e-14 && it < 40);
+    //} while(norm > 1.0e-14 && it < 40);
+    } while(norm > 1.0e-13 && it < 40);
 
     for(kk = 0; kk < topo->nk; kk++) {
         VecCopy(velx_j[kk], velx[kk]);
@@ -1073,6 +1074,42 @@ void Euler_I::Solve(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool sa
     rho_j->CopyToHoriz(rho);
     rt_j->CopyToHoriz(rt);
     exner_j->CopyToHoriz(exner);
+
+    diagnostics(velx, velz, rho, rt, exner);
+
+    // write output
+    if(save) {
+        char fieldname[100];
+	Vec wi;
+        L2Vecs* l2Theta = new L2Vecs(geom->nk+1, topo, geom);
+        vert->diagTheta2(rho_h->vz, rt_h->vz, l2Theta->vz);
+        l2Theta->VertToHoriz();
+        step++;
+        for(int kk = 0; kk < geom->nk+1; kk++) {
+            sprintf(fieldname, "theta");
+            geom->write2(l2Theta->vh[kk], fieldname, step, kk, false);
+        }
+        delete l2Theta;
+
+        for(int kk = 0; kk < geom->nk; kk++) {
+            vert->horiz->curl(true, velx[kk], &wi, kk, false);
+
+            sprintf(fieldname, "vorticity");
+            geom->write0(wi, fieldname, step, kk);
+            sprintf(fieldname, "velocity_h");
+            geom->write1(velx[kk], fieldname, step, kk);
+            sprintf(fieldname, "density");
+            geom->write2(rho[kk], fieldname, step, kk, true);
+            sprintf(fieldname, "rhoTheta");
+            geom->write2(rt[kk], fieldname, step, kk, true);
+            sprintf(fieldname, "exner");
+            geom->write2(exner[kk], fieldname, step, kk, true);
+
+            VecDestroy(&wi);
+        }
+        sprintf(fieldname, "velocity_z");
+        geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
+    }
 
     _DestroyHorizVecs(velx_j, geom);
     _DestroyHorizVecs(R_u, geom);
