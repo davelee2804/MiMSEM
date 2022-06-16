@@ -5,7 +5,7 @@ class Euler {
         Euler(Topo* _topo, Geom* _geom, double _dt);
         ~Euler();
         double dt;
-        double del2;
+        //double del2;
         bool do_visc;
         bool hs_forcing;
         int rank;
@@ -16,6 +16,7 @@ class Euler {
         Topo* topo;
         Geom* geom;
         Pvec* m0;
+        Pmat* M0;
         Umat* M1;
         Wmat* M2;
         E10mat* NtoE;
@@ -30,15 +31,15 @@ class Euler {
         WmatInv* M2inv;
         Umat_ray* M1ray;
         Mat KT;
-        Vec* fg;                 // coriolis vector (global)
+        //Vec* fg;                 // coriolis vector (global)
         bool firstStep;
         double k2i;              // kinetic to internal energy exchange
         double i2k;              // kinetic to internal energy exchange
         double k2i_z;            // kinetic to internal energy exchange
         double i2k_z;            // kinetic to internal energy exchange
         Vec* Kh;                 // kinetic energy vector for each horiztontal layer
-        Vec* gv;
-        Vec* zv;
+        //Vec* gv;
+        //Vec* zv;
         Vec* uz;                 // dudz and dvdz vorticity components
         Vec* uzl;
         Vec* uzl_prev;
@@ -61,32 +62,30 @@ class Euler {
         double* Wt;
         double* WtQ;
 
-        double viscosity();
-        void coriolis();
-        void initGZ();
-        void grad(bool assemble, Vec phi, Vec* u, int lev);            // weak form grad operator
-        void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
-        void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
-        void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux);
-        void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner);
-        void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu, Vec Flux, Vec uzb, Vec uzt, Vec velz_b, Vec velz_t);
-        void thetaBCVec(int ex, int ey, Mat A, Vec* bTheta);
+        //double viscosity();
+        //void coriolis();
+        //void initGZ();
+        //void grad(bool assemble, Vec phi, Vec* u, int lev);            // weak form grad operator
+        //void curl(bool assemble, Vec u, Vec* w, int lev, bool add_f);  // weak form curl operator
+        //void laplacian(bool assemble, Vec u, Vec* ddu, int lev);       // laplacian operator via helmholtz decomposition
+        //void massRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* Flux);
+        //void tempRHS(Vec* uh, Vec* pi, Vec* Fp, Vec* rho_l, Vec* exner);
+        //void horizMomRHS(Vec ui, Vec* theta, Vec exner, int lev, Vec Fu, Vec Flux, Vec uzb, Vec uzt, Vec velz_b, Vec velz_t);
         void diagTheta(Vec* rho, Vec* rt, Vec* theta);
-        void diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs);
+        //void diagTheta_av(Vec* rho, L2Vecs* rt, Vec* theta, L2Vecs* rhs);
         void AssembleKEVecs(Vec* velx);
-        void init0(Vec* q, ICfunc3D* func);
+        //void init0(Vec* q, ICfunc3D* func);
         void init1(Vec* u, ICfunc3D* func_x, ICfunc3D* func_y);
         void init2(Vec* p, ICfunc3D* func);
         void initTheta(Vec theta, ICfunc3D* func);
-        void HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft, Vec* velz);
-        void SolveExner(Vec* rt, Vec* Ft, Vec* exner_i, Vec* exner_f, double _dt);
+        //void HorizRHS(Vec* velx, L2Vecs* rho, L2Vecs* rt, Vec* exner, Vec* Fu, Vec* Fp, Vec* Ft, Vec* velz);
         void Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
         void Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
         double int2(Vec ug);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);
 
-        void DiagExner(Vec* rtz, L2Vecs* exner);
+        //void DiagExner(Vec* rtz, L2Vecs* exner);
 
         void HorizVort(Vec* velx);
         void HorizPotVort(Vec* velx, Vec* rho);
