@@ -229,6 +229,10 @@ Geom::~Geom() {
     }
     delete[] thick;
     delete[] thickInv;
+
+    delete[] loc0;
+    delete[] inds0_l;
+    delete[] inds0_g;
 }
 
 // Local to global Jacobian mapping

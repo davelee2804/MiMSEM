@@ -436,7 +436,7 @@ void HorizSolve::diagnose_Phi(int level, Vec u1, Vec u2, Vec u1l, Vec u2l, Vec* 
     VecDestroy(&_velz2);
 }
 
-void HorizSolve::diagnose_q(int level, bool do_assemble, Vec rho, Vec vel, Vec* qi, Vec ul) {
+void HorizSolve::diagnose_q(int level, Vec rho, Vec* qi, Vec ul) {
     Vec rhs, tmp;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &rhs);
@@ -448,7 +448,7 @@ void HorizSolve::diagnose_q(int level, bool do_assemble, Vec rho, Vec vel, Vec* 
 
     //if(do_assemble) m0->assemble(level, SCALE);
     //VecPointwiseMult(tmp, m0->vg, fg[level]);
-    if(do_assemble) M0->assemble(level, SCALE);
+    M0->assemble(level, SCALE);
     MatMult(M0->M, fg[level], tmp);
     VecAXPY(rhs, 1.0, tmp);
 
@@ -495,13 +495,19 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
     MatMult(EtoF->E12, Phi, fu);
 //VecZeroEntries(fu);
 
-    diagnose_q(level, false, rho1, velx1, &qi, uil);
-    diagnose_q(level, false, rho2, velx2, &qj, ujl);
-    //diagnose_q(level, true, rho1, velx1, &qi, uil);
-    //diagnose_q(level, true, rho2, velx2, &qj, ujl);
-    VecZeroEntries(qh);
-    VecAXPY(qh, 0.5, qi);
-    VecAXPY(qh, 0.5, qj);
+    //diagnose_q(level, rho1, velx1, &qi, uil);
+    //diagnose_q(level, rho2, velx2, &qj, ujl);
+    //VecZeroEntries(qh);
+    //VecAXPY(qh, 0.5, qi);
+    //VecAXPY(qh, 0.5, qj);
+    VecZeroEntries(dudz_h);
+    VecAXPY(dudz_h, 0.5, uil);
+    VecAXPY(dudz_h, 0.5, ujl);
+    VecZeroEntries(velz_h);
+    VecAXPY(velz_h, 0.5, rho1);
+    VecAXPY(velz_h, 0.5, rho2);
+    diagnose_q(level, velz_h, &qi, dudz_h);
+    VecCopy(qi, qh);
     VecScatterBegin(topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);
     R->assemble(ql, level, SCALE);
@@ -603,7 +609,7 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
     VecDestroy(&dudz_h);
     VecDestroy(&velz_h);
     VecDestroy(&qi);
-    VecDestroy(&qj);
+    //VecDestroy(&qj);
     VecDestroy(&qh);
     VecDestroy(&ql);
 }
