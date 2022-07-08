@@ -18,12 +18,13 @@
 #include "Assembly_Coupled.h"
 #include "HorizSolve.h"
 #include "VertSolve.h"
-#include "Euler_I.h"
+#include "Euler_2.h"
+//#include "Euler_I.h"
 
 using namespace std;
 
 #define RAD_EARTH 6371220.0
-#define NK 4
+#define NK 30
 #define P0 100000.0
 #define RD 287.0
 #define GAMMA 0.005
@@ -273,13 +274,14 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 60.0;
-    int nSteps = 10;//12*24*60;
-    int dumpEvery =  2;//1440; //dump evert 24 hours
+    double dt = 75.0;//60.0;
+    int nSteps = 12*24*48;//12*24*60;
+    int dumpEvery = 1152;//1440; //dump evert 24 hours
     ofstream file;
     Topo* topo;
     Geom* geom;
-    Euler_I* eul;
+    Euler* eul;
+    //Euler_I* eul;
     Vec *velx, *velz, *rho, *rt, *exner;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
@@ -294,7 +296,8 @@ int main(int argc, char** argv) {
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
 
-    eul = new Euler_I(topo, geom, dt);
+    eul = new Euler(topo, geom, dt);
+    //eul = new Euler_I(topo, geom, dt);
     eul->step = startStep;
     //pe->vert->horiz->do_visc = false;
 
@@ -350,7 +353,8 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        eul->Solve(velx, velz, rho, rt, exner, dump);
+        eul->Strang(velx, velz, rho, rt, exner, dump);
+        //eul->Solve(velx, velz, rho, rt, exner, dump);
     }
 
     delete eul;

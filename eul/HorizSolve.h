@@ -17,8 +17,6 @@ class HorizSolve {
         Topo* topo;
         Geom* geom;
         VertOps* vo;
-        Pvec* m0;
-        Phvec* m0h;
         Pmat* M0;
         Umat* M1;
         Wmat* M2;
@@ -49,7 +47,7 @@ class HorizSolve {
         void advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* theta, L2Vecs* dF, L2Vecs* dG, Vec* u1l, Vec* u2l);
 
         void diagnose_Phi(int level, Vec u1, Vec u2, Vec u1l, Vec u2l, Vec* velz1, Vec* velz2, Vec* Phi);
-        void diagnose_q(int level, bool do_assemble, Vec rho, Vec vel, Vec* qi, Vec ul);
+        void diagnose_q(int level, Vec rho, Vec ul, Vec* qi);
         void diagHorizVort(Vec* velx, Vec* dudz);
         void diagVertVort(Vec* velz, Vec* rho, Vec* dwdx);
 
