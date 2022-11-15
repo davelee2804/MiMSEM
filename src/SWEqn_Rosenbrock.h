@@ -51,6 +51,7 @@ class SWEqn {
 	double gamma_0;
 	double** alpha_ij;
 	double** gamma_ij;
+	double* bHat_j;
         void coriolis();
         void curl(Vec u, Vec* w);
         void diagnose_F(Vec _h, Vec _u, Vec F);
@@ -69,6 +70,7 @@ class SWEqn {
         void assemble_residual(Vec x, Vec f);
         void assemble_operator(double dt);
         void solve(Vec u, Vec h, double _dt, bool save);
+        void solve_cn(Vec un, Vec hn, double _dt, bool save, int n_its);
         void unpack(Vec x, Vec u, Vec h);
         void repack(Vec x, Vec u, Vec h);
 };

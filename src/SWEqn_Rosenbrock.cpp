@@ -162,6 +162,7 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     ki = new Vec[n_rosenbrock];
     alpha_ij = new double*[n_rosenbrock];
     gamma_ij = new double*[n_rosenbrock];
+    bHat_j   = new double[n_rosenbrock];
     for(ii = 0; ii < n_rosenbrock; ii++) {
         VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &ki[ii]);
 	alpha_ij[ii] = new double[n_rosenbrock];
@@ -169,8 +170,10 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
 	for(jj = 0; jj < n_rosenbrock; jj++) {
 	    alpha_ij[ii][jj] = gamma_ij[ii][jj] = 0.0;
 	}
+	bHat_j[ii] = 0.0;
     }
-    // ROS34PW2
+
+    // ROS34PW2 (450s pass, 480s fail)
     /*
     gamma_0        = 4.3586652150845900e-01;
     alpha_ij[0][0] = 8.7173304301691801e-01;
@@ -187,8 +190,13 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     gamma_ij[3][0] = 2.4212380706095346e-01;
     gamma_ij[3][1] = -1.2232505839045147e+00;
     gamma_ij[3][2] = 5.4526025533510214e-01;
+    bHat_j[0] = 3.7810903145819369e-01;
+    bHat_j[1] = -9.6042292212423178e-02;
+    bHat_j[2] = 0.5;
+    bHat_j[3] = 2.1793326075422950e-01;
     */
-    // ROS34PW3
+    // ROS34PW3 (300s pass, 320s fail)
+    /*
     gamma_0        = 1.0685790213016289e+00;
     alpha_ij[0][0] = 2.5155456020628817e+00;
     alpha_ij[1][0] = 5.0777280103144085e-01;
@@ -206,7 +214,57 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     gamma_ij[3][0] = -4.1731389379448741e-01;
     gamma_ij[3][1] = 4.1091047035857703e-01;
     gamma_ij[3][2] = -1.3558873204765276e+00;
-    // ROSI2Pw (T=0)
+    bHat_j[0] = 3.1300297285209688e-01;
+    bHat_j[1] = -2.8946895245112692e-01;
+    bHat_j[2] = 9.7646597959903003e-01;
+    */
+    // ROS34PRW (540s pass, 600s wrong, 660s fail)
+    /*
+    gamma_0        = 4.3586652150845900e-01;
+    alpha_ij[0][0] = 8.7173304301691801e-01;
+    alpha_ij[1][0] = 1.4722022879435914e+00;
+    alpha_ij[1][1] = -3.1840250568090289e-01;
+    alpha_ij[2][0] = 8.1505192016694938e-01;
+    alpha_ij[2][1] = 0.5;
+    alpha_ij[2][2] = -3.1505192016694938e-01;
+    alpha_ij[3][0] = 3.3303742833830591e-01;
+    alpha_ij[3][1] = 7.1793326075422947e-01;
+    alpha_ij[3][2] = -4.8683721060099439e-01;
+    alpha_ij[3][3] = 4.3586652150845900e-01;
+    gamma_ij[1][0] = -8.7173304301691801e-01;
+    gamma_ij[2][0] = -1.2855347382089872e+00;
+    gamma_ij[2][1] = 5.0507005541550687e-01;
+    gamma_ij[3][0] = -4.8201449182864348e-01;
+    gamma_ij[3][1] = 2.1793326075422950e-01;
+    gamma_ij[3][2] = -1.7178529043404503e-01;
+    bHat_j[0] = 0.25;
+    bHat_j[1] = 7.4276119608319180e-01;
+    bHat_j[2] = -3.1472922970066219e-01;
+    bHat_j[3] = 3.2196803361747034e-01;
+    */
+    // ROS3PRL2 (same as CN4, 450s pass, 480s fail)
+    gamma_0        = 4.3586652150845900e-01;
+    alpha_ij[0][0] = 1.3075995645253771e+00;
+    alpha_ij[1][0] = 0.5;
+    alpha_ij[1][1] = 0.5;
+    alpha_ij[2][0] = 0.5;
+    alpha_ij[2][1] = 0.5;
+    alpha_ij[2][2] = 0.0;
+    alpha_ij[3][0] = 3.4449143192447917e-01;
+    alpha_ij[3][1] = -4.5388516575112231e-01;
+    alpha_ij[3][2] = 6.7352721231818413e-01;
+    alpha_ij[3][3] = 4.3586652150845900e-01;
+    gamma_ij[1][0] = -1.3075995645253771e+00;
+    gamma_ij[2][0] = -7.0988575860972170e-01;
+    gamma_ij[2][1] = -5.5996735960277766e-01;
+    gamma_ij[3][0] = -1.5550856807552085e-01;
+    gamma_ij[3][1] = -9.5388516575112225e-01;
+    gamma_ij[3][2] = 6.7352721231818413e-01;
+    bHat_j[0] = 0.5;
+    bHat_j[1] = -2.5738812086522078e-01;
+    bHat_j[2] = 4.3542008724775044e-01;
+    bHat_j[3] = 3.2196803361747034e-01;
+    // ROSI2Pw (T=0) (360s pass, 420s fail)
     /*
     gamma_0        = 4.3586652150845900e-01;
     alpha_ij[0][0] = 8.7173304301691801e-01;
@@ -225,8 +283,11 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     gamma_ij[3][0] = -3.7964867148089526e-01;
     gamma_ij[3][1] = -8.3490231248017537e+00;
     gamma_ij[3][2] = 8.2928052747741905e+00;
+    bHat_j[0] = 4.4315753191688778e-01;
+    bHat_j[1] = 4.4315753191688778e-01;
+    bHat_j[3] = 1.1368493616622447e-01;
     */
-    // ROSI2PW
+    // ROSI2PW (480s pass, 540s fail)
     /*
     gamma_0        = 4.3586652150845900e-01;
     alpha_ij[0][0] = 8.7173304301691801e-01;
@@ -245,8 +306,11 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     gamma_ij[3][0] = -1.0424832458800504e-01;
     gamma_ij[3][1] = -3.1746327955312481e-01;
     gamma_ij[3][2] = -1.4154917367329144e-02;
+    bHat_j[0] = 4.4315753191688778e-01;
+    bHat_j[1] = 4.4315753191688778e-01;
+    bHat_j[3] = 1.1368493616622447e-01;
     */
-    // ROWDAIND2
+    // ROWDAIND2 (480s pass, 540s fail)
     /*
     gamma_0        = 3.000000000000000e-01;
     alpha_ij[0][0] = 5.000000000000000e-01;
@@ -263,6 +327,9 @@ SWEqn::SWEqn(Topo* _topo, Geom* _geom) {
     gamma_ij[3][0] = 3.866666666666667e-01;
     gamma_ij[3][1] = -7.200000000000000e-01;
     gamma_ij[3][2] = 3.333333333333333e-02;
+    bHat_j[0] = 4.799002800355166e-01;
+    bHat_j[1] = 5.176203811215082e-01;
+    bHat_j[2] = 2.479338842975209e-03;
     */
 }
 
@@ -711,6 +778,13 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
             cout << "iteration: " << ros_i << "\t|x|: " << norm_x << "\t|dx|: " << norm_dx << "\t|dx|/|x|: " << norm << endl; 
         }
     }
+    // construct the lower order solution
+    /*
+    repack(dx, un, hn);
+    for(ros_j = 0; ros_j < n_rosenbrock; ros_j++) {
+        VecAXPY(dx, bHat_j[ros_j], ki[ros_j]);
+    }
+    */
 
     unpack(x, un, hn);
 
@@ -735,6 +809,91 @@ void SWEqn::solve(Vec un, Vec hn, double _dt, bool save) {
     VecDestroy(&f);
     VecDestroy(&dx);
     VecDestroy(&tmp);
+}
+
+void SWEqn::solve_cn(Vec un, Vec hn, double _dt, bool save, int n_its) {
+    int ros_i;
+    double norm = 1.0e+9, norm_dx, norm_x;
+    Vec x, f, dx, tmp, fn, utmp1, utmp2, htmp1, htmp2;
+
+    gamma_0 = 0.5;
+
+    dt = _dt;
+
+    if(!A) assemble_operator(dt);
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &x);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &f);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &dx);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &tmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, &fn);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp2);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp1);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &htmp2);
+
+    // solution vector
+    VecCopy(un, uj);
+    VecCopy(hn, hj);
+    repack(x, un, hn);
+
+    assemble_residual(x, fn);
+    VecScale(fn, 0.5);
+
+    for(ros_i = 0; ros_i < n_its; ros_i++) {
+        assemble_residual(x, f);
+        VecAYPX(f, 0.5, fn);
+
+	VecCopy(un, utmp1);
+	VecAXPY(utmp1, -1.0, uj);
+	MatMult(M1->M, utmp1, utmp2);
+
+	VecCopy(hn, htmp1);
+	VecAXPY(htmp1, -1.0, hj);
+	MatMult(M2->M, htmp1, htmp2);
+	repack(dx, utmp2, htmp2);
+
+        VecAXPY(f, 1.0, dx);
+
+        KSPSolve(kspA, f, dx);
+	VecAXPY(x, 1.0, dx);
+
+        VecNorm(x, NORM_2, &norm_x);
+        VecNorm(dx, NORM_2, &norm_dx);
+        norm = norm_dx/norm_x;
+        if(!rank) {
+            cout << scientific;
+            cout << "iteration: " << ros_i << "\t|x|: " << norm_x << "\t|dx|: " << norm_dx << "\t|dx|/|x|: " << norm << endl; 
+        }
+    }
+    unpack(x, un, hn);
+
+    if(save) {
+        Vec wi;
+        char fieldname[20];
+
+        step++;
+        curl(un, &wi);
+
+        sprintf(fieldname, "vorticity");
+        geom->write0(wi, fieldname, step);
+        sprintf(fieldname, "velocity");
+        geom->write1(un, fieldname, step);
+        sprintf(fieldname, "pressure");
+        geom->write2(hn, fieldname, step);
+
+        VecDestroy(&wi);
+    }
+
+    VecDestroy(&x);
+    VecDestroy(&f);
+    VecDestroy(&dx);
+    VecDestroy(&tmp);
+    VecDestroy(&fn);
+    VecDestroy(&utmp1);
+    VecDestroy(&utmp2);
+    VecDestroy(&htmp1);
+    VecDestroy(&htmp2);
 }
 
 SWEqn::~SWEqn() {
