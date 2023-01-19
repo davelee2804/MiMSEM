@@ -8,6 +8,16 @@ class Geom {
         int pi;
         int nl;
         int nk;        // number of vertical levels
+	int nDofsX;
+	int nDofs0G;
+	int n0;
+	int n0l;
+	int* loc0;
+	int* inds0_l;
+	int* inds0_g;
+	IS is_l_0;
+	IS is_g_0;
+	VecScatter gtol_0;
         double** x;
         double** s;
         double** det;
@@ -19,6 +29,7 @@ class Geom {
         double* WA;
         double* UA;
         double* VA;
+	double* PA;
         Topo* topo;
         GaussLobatto* quad;
         LagrangeNode* node;
@@ -37,6 +48,8 @@ class Geom {
         void updateGlobalCoords();
         void initTopog(TopogFunc* ft, LevelFunc* fl);
         void writeColumn(char* filename, int ei, int nv, Vec vecs, bool vert_scale);
+        int* elInds0_l(int ex, int ey);
+        int* elInds0_g(int ex, int ey);
     private:
         void jacobian(int ex, int ey, int qx, int qy, double** J);
         double jacDet(int ex, int ey, int qx, int qy, double** J);

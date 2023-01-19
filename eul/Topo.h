@@ -1,6 +1,6 @@
 class Topo {
     public:
-        Topo();
+        Topo(int _nk);
         ~Topo();
         int  pi;      // processor index
         int  n0;      // number of local nodes
@@ -47,4 +47,6 @@ class Topo {
         int* elInds1x_g(int ex, int ey);
         int* elInds1y_g(int ex, int ey);
         int* elInds2_g(int ex, int ey);
+
+	int nk;
 };

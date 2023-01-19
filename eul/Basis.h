@@ -13,6 +13,7 @@ class LagrangeNode {
         ~LagrangeNode();
         int n;
         double* a;
+        double* x;
         double** ljxi;
         double** ljxi_t;
         GaussLobatto* q;

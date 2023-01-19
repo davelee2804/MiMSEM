@@ -5,7 +5,6 @@ class VertSolve {
         VertSolve(Topo* _topo, Geom* _geom, double _dt);
         ~VertSolve();
         double dt;
-        double visc;
         int rank;
         int step;
         double k2i_z;
@@ -22,7 +21,6 @@ class VertSolve {
         HorizSolve* horiz;
 
         void initGZ();
-        void viscosity();
 
         void diagTheta2(Vec* rho, Vec* rt, Vec* theta);
         void diagTheta_up(Vec* rho, Vec* rt, Vec* theta, Vec* ul);
@@ -31,25 +29,13 @@ class VertSolve {
         void diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec _F);
         void diagnose_Phi_z(int ex, int ey, Vec velz1, Vec velz2, Vec Phi);
 
-        void solve_coupled(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i);
         void solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, L2Vecs* udwdx
 , double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x, L2Vecs* F_rho_o, L2Vecs* F_rt_o);
         void solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
                               L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing);
-        void solve_schur_3(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
-                              L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing,
-                              L2Vecs* velz_j, L2Vecs* rho_j, L2Vecs* rt_j, L2Vecs* exner_j);
-        void assemble_operator(int ex, int ey, Vec velz, Vec theta, Vec rho, Vec rt, Vec exner, Mat* _PC);
-        void assemble_operator_schur(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, 
-                                     Vec F_w, Vec F_rho, Vec F_rt, Vec F_exner, Vec dw, Vec drho, Vec drt, Vec dexner);
 
         void assemble_residual(int ex, int ey, Vec theta, Vec Pi, 
                                Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
-
-        void repack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
-        void unpack_z(Vec x, Vec u, Vec rho, Vec rt, Vec exner);
-
-        void assemble_pc(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec exner, bool eos_update);
 
         double MaxNorm(Vec dx, Vec x, double max_norm);
 
@@ -58,6 +44,10 @@ class VertSolve {
 
         void AssembleVertMomVort(Vec* ul, L2Vecs* velz, KSP ksp1, Umat* M1, Wmat* M2, E21mat* EtoF, WtQdUdz_mat* Rz, L2Vecs* uuz);
 
+        void solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h, L2Vecs* rho_i, L2Vecs* rho_j, L2Vecs* rho_h, 
+			      L2Vecs* rt_i, L2Vecs* rt_j, L2Vecs* rt_h, L2Vecs* exner_i, L2Vecs* exner_j, L2Vecs* _exner_h, 
+                              L2Vecs* theta_i, L2Vecs* _theta_h, L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, 
+                              bool hs_forcing);
         Mat _PCz;
         Mat pc_LAP;
 
@@ -84,10 +74,10 @@ class VertSolve {
 
         KSP ksp_pi, ksp_rho, ksp_w;
 
+        void assemble_operators(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec pi, Vec velz);
     //private:
         // vertical vectors and matrices
         Vec _Phi_z;
-        Vec _theta_h;
         Mat _V0_invV0_rt;
         // ...coupled preconditioner
         Mat pc_DTV1;

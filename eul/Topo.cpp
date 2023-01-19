@@ -12,14 +12,15 @@
 using namespace std;
 using std::string;
 
-Topo::Topo() {
+Topo::Topo(int _nk) {
     Vec vl, vg;
-
     int ii, n_procs;
     int nLoc[4];
     ifstream file;
     char filename[100];
     string line;
+
+    nk = _nk;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &pi);
 

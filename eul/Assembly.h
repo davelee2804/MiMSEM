@@ -279,41 +279,6 @@ class WtQdUdz_mat {
         void assemble(Vec u1, double scale);
 };
 
-class EoSvec {
-    public:
-        EoSvec(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~EoSvec();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        double* Wt;
-        double* WtQ;
-        M2_j_xy_i* W;
-        Wii* Q;
-        Vec vl;
-        Vec vg;
-        void assemble(Vec rt, int lev, double scale);
-        void assemble_quad(Vec rt1, Vec rt2, int lev, double scale);
-};
-
-class EoSmat {
-    public:
-        EoSmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~EoSmat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        double* Wt;
-        double* WtQ;
-        double* WtQW;
-        double* Qaa;
-        double* WtQWflat;
-        M2_j_xy_i* W;
-        Wii* Q;
-        Mat M;
-        void assemble(Vec rt, int lev, double scale);
-};
-
 class WmatInv {
     public:
         WmatInv(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
@@ -334,17 +299,6 @@ class WhmatInv {
         LagrangeEdge* e;
         Mat M;
         void assemble(Vec rho, int lev, double scale);
-};
-
-class N_rt_Inv {
-    public:
-        N_rt_Inv(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~N_rt_Inv();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        Mat M;
-        void assemble(Vec rho, int lev, double scale, bool do_inverse);
 };
 
 class PtQUt_mat {
@@ -368,71 +322,6 @@ class PtQUt_mat {
         void assemble(Vec u1, int lev, double scale);
 };
 
-class PtQUmat {
-    public:
-        PtQUmat(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
-        ~PtQUmat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeNode* l;
-        LagrangeEdge* e;
-        Mat M;
-        double* QUflat;
-        double* QVflat;
-        double* Qaa;
-        double* Qab;
-        double* QU;
-        double* QV;
-        M1x_j_xy_i* U;
-        M1y_j_xy_i* V;
-        Wii* Q;
-        void assemble(Vec u1, int lev, double scale);
-};
-
-class WtQPmat {
-    public:
-        WtQPmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~WtQPmat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        Mat M;
-        void assemble(int lev, double scale);
-};
-
-class N_RTmat {
-    public:
-        N_RTmat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~N_RTmat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        Mat M;
-        void assemble(int lev, double scale, Vec rt, Vec pi);
-};
-
-class N_PiInv_mat {
-    public:
-        N_PiInv_mat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~N_PiInv_mat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        Mat M;
-        void assemble(int lev, double scale, Vec rt, Vec pi);
-};
-
-class N_RT2_mat {
-    public:
-        N_RT2_mat(Topo* _topo, Geom* _geom, LagrangeEdge* _e);
-        ~N_RT2_mat();
-        Topo* topo;
-        Geom* geom;
-        LagrangeEdge* e;
-        Mat M;
-        void assemble(int lev, double scale, Vec rt);
-};
-
 class Umat_ray {
     public:
         Umat_ray(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _e);
@@ -443,6 +332,18 @@ class Umat_ray {
         LagrangeEdge* e;
         Mat M;
         void assemble(int lev, double scale, double dt, Vec exner, Vec exner_s);
+};
+
+class Pmat {
+    public:
+        Pmat(Topo* _topo, Geom* _geom, LagrangeNode* _node);
+        ~Pmat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeNode* node;
+        Mat M;
+        void assemble(int lev, double scale);
+        void assemble_h(int lev, double scale, Vec h2);
 };
 
 //////////////////////////////////////////////////////////////////

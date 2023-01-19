@@ -272,13 +272,13 @@ int main(int argc, char** argv) {
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    double dt = 60.0;
-    int nSteps = 12*24*60;
-    int dumpEvery = 1440; //dump evert 24 hours
+    double dt = 75.0;//60.0;
+    int nSteps = 12*24*48;//12*24*60;
+    int dumpEvery = 1152;//1440; //dump evert 24 hours
     ofstream file;
     Topo* topo;
     Geom* geom;
-    Euler* pe;
+    Euler* eul;
     Vec *velx, *velz, *rho, *rt, *exner;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
@@ -288,14 +288,13 @@ int main(int argc, char** argv) {
 
     cout << "importing topology for processor: " << rank << " of " << size << endl;
 
-    topo = new Topo();
+    topo = new Topo(NK);
     geom = new Geom(topo, NK);
     // initialise the z coordinate layer heights
     geom->initTopog(f_topog, z_at_level);
 
-    pe   = new Euler(topo, geom, dt);
-    pe->step = startStep;
-    //pe->vert->horiz->do_visc = false;
+    eul = new Euler(topo, geom, dt);
+    eul->step = startStep;
 
     n2 = topo->nElsX*topo->nElsX;
 
@@ -316,10 +315,10 @@ int main(int argc, char** argv) {
     }
 
     if(startStep == 0) {
-        pe->init1(velx, u_init, v_init);
-        pe->init2(rho,   rho_init  );
-        pe->init2(exner, exner_init);
-        pe->init2(rt,    rt_init   );
+        eul->init1(velx, u_init, v_init);
+        eul->init2(rho,   rho_init  );
+        eul->init2(exner, exner_init);
+        eul->init2(rt,    rt_init   );
 
         for(ki = 0; ki < NK; ki++) {
             sprintf(fieldname,"velocity_h");
@@ -349,10 +348,10 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        pe->Strang(velx, velz, rho, rt, exner, dump);
+        eul->Strang(velx, velz, rho, rt, exner, dump);
     }
 
-    delete pe;
+    delete eul;
     delete geom;
     delete topo;
 
