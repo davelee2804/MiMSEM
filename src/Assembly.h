@@ -246,6 +246,7 @@ class RotMat_up {
         Wii* Q;
         void assemble(Vec q0, Vec ul, double tau, double dt);
         void assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Vec qi);
+        void assemble_apvm(Vec q0, Vec ul, Vec dql, double fac, double dt, Vec ds, Vec hl);
 };
 
 class U0mat {

@@ -1818,6 +1818,84 @@ void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Ve
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
 
+void RotMat_up::assemble_apvm(Vec q0, Vec ul, Vec dql, double fac, double dt, Vec ds, Vec hl) {
+    int ex, ey, ei, ii, mp1, mp12;
+    int *inds_x, *inds_y;
+    double det, **J, vort, ux[2], dq[2], vort_i, tmp, tmp2, tau, dsq[2], hq;
+    PetscScalar *q0Array, *u1Array, *dqArray, *dsArray, *hArray;
+
+    mp1 = l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    VecGetArray(q0, &q0Array);
+    VecGetArray(ul, &u1Array);
+    VecGetArray(dql, &dqArray);
+    VecGetArray(ds, &dsArray);
+    VecGetArray(hl, &hArray);
+    MatZeroEntries(M);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, dqArray, dq);
+
+		/*
+                tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1])/(sqrt(det)*fac);
+                //tmp2 = fabs(fac*dt)*(ux[0]*ux[0] + ux[1]*ux[1])/det;
+                tau = 1.0/(1.0/fabs(fac*dt) + tmp);
+                //tau = fabs(fac*dt);
+		*/
+                //geom->interp1_g(ex, ey, ii%mp1, ii/mp1, dsArray, dsq);
+                //geom->interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &hq);
+		//tmp = 0.5*hq*sqrt(dsq[0]*dsq[0] + dsq[1]*dsq[1])/
+		//	(fabs(ux[0]*dq[1]-ux[1]*dq[0])*(ux[0]*ux[0]+ux[1]*ux[1]) + 1.0e-8);
+                //tmp /= 15.322125; // gH/u^2
+		//tau = 1.0/(1.0/fabs(fac*dt) + 1.0/tmp);
+		tau = fabs(fac*dt);
+
+                vort -= tau*(ux[0]*dq[1] - ux[1]*dq[0]);
+
+                Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det;
+                Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det;
+            }
+
+            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+            Tran_IP(U->nDofsI, V->nDofsJ, V->A, Vt);
+
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qab, UtQab);
+            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Qba, VtQba);
+
+            // take cross product by multiplying the x projection of the row vector with
+            // the y component of the column vector and vice versa
+            Mult_IP(U->nDofsJ, U->nDofsJ, U->nDofsI, UtQab, V->A, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, V->nDofsI, VtQba, U->A, VtQU);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(q0, &q0Array);
+    VecRestoreArray(ul, &u1Array);
+    VecRestoreArray(dql, &dqArray);
+    VecRestoreArray(ds, &dsArray);
+    VecRestoreArray(hl, &hArray);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+}
+
 RotMat_up::~RotMat_up() {
     Free2D(U->nDofsJ, Ut);
     Free2D(V->nDofsJ, Vt);
