@@ -6,5 +6,4 @@ double** Mult(int ni, int nj, int nk, double** A, double** B);
 void Mult_IP(int ni, int nj, int nk, double** A, double** B, double** C);
 double** Tran(int ni, int nj, double** A);
 void Tran_IP(int ni, int nj, double** A, double** B);
-void Ax_b(int ni, int nj, double** A, double* x, double* b);
 bool ArcInt(double rad, double* ai, double* af, double* bi, double* bf, double* xo);

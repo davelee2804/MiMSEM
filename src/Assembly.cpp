@@ -444,61 +444,9 @@ void Phmat::assemble(Vec h2) {
     delete[] PtQPflat;
 }
 
-void Phmat::assemble_block(Vec h2, int row_offset, int col_offset, Mat Q2) {
-    int ex, ey, np1, np12, mp1, mp12, ii, jj, *inds, inds_r[99], inds_c[99];
-    double hi;
-    Wii* Q = new Wii(node->q, geom);
-    M0_j_xy_i* P = new M0_j_xy_i(node);
-    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
-    double** Pt = Alloc2D(P->nDofsJ, P->nDofsI);
-    double** PtQ = Alloc2D(P->nDofsJ, Q->nDofsJ);
-    double** PtQP = Alloc2D(P->nDofsJ, P->nDofsJ);
-    double* PtQPflat = new double[P->nDofsJ*P->nDofsJ];
-    PetscScalar* hArray;
-
-    np1 = node->n + 1;
-    np12 = np1*np1;
-    mp1 = node->q->n + 1;
-    mp12 = mp1*mp1;
-
-    VecGetArray(h2, &hArray);
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            inds = topo->elInds0_g(ex, ey);
-            for(ii = 0; ii < mp12; ii++) {
-                // determinant from the integration and the inverse determinant 
-                // from the interpolation of the 2 form cancel
-                geom->interp2_l(ex, ey, ii%mp1, ii/mp1, hArray, &hi);
-                Qaa[ii][ii] = hi*Q->A[ii][ii];
-            }
-	    for(jj = 0; jj < np12; jj++) {
-                inds_r[jj] = 2*inds[jj]+row_offset;
-                inds_c[jj] = 2*inds[jj]+col_offset;
-            }
-
-            Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
-            Mult_IP(P->nDofsJ, Q->nDofsJ, P->nDofsI, Pt, Qaa, PtQ);
-            Mult_IP(P->nDofsJ, P->nDofsJ, Q->nDofsJ, PtQ, P->A, PtQP);
-
-            Flat2D_IP(P->nDofsJ, P->nDofsJ, PtQP, PtQPflat);
-
-            MatSetValues(Q2, P->nDofsJ, inds_r, P->nDofsJ, inds_c, PtQPflat, ADD_VALUES);
-        }
-    }
-    VecRestoreArray(h2, &hArray);
-
-    Free2D(Q->nDofsI, Qaa);
-    Free2D(P->nDofsJ, Pt);
-    Free2D(P->nDofsJ, PtQ);
-    Free2D(P->nDofsJ, PtQP);
-    delete P;
-    delete Q;
-    delete[] PtQPflat;
-}
-
-void Phmat::assemble_up(Vec ul, Vec hl, double fac, double dt) {
+void Phmat::assemble_up(Vec ul, Vec hl, double dt) {
     int ex, ey, ei, mp1, mp12, np1, np12, ii, *inds;
-    double ux[2], lx[99], ly[99], det, **J, ux2[2], hx, tau, tmp, tmp2;
+    double ux[2], lx[99], ly[99], det, **J, ux2[2], hx, uxl[2], bl[2], tau, tmp;
     PetscScalar *uArray, *hArray;
     GaussLobatto* quad = node->q;
     Wii* Q = new Wii(node->q, geom);
@@ -507,6 +455,9 @@ void Phmat::assemble_up(Vec ul, Vec hl, double fac, double dt) {
     double** Pt = Alloc2D(P->nDofsJ, P->nDofsI);
     double** PtQP = Alloc2D(P->nDofsJ, P->nDofsJ);
     double* PtQPflat = new double[P->nDofsJ*P->nDofsJ];
+    double* ones = new double[topo->n1];
+
+    ux2[0] = ux2[1] = 0.0;
 
     np1 = node->n + 1;
     np12 = np1*np1;
@@ -516,6 +467,8 @@ void Phmat::assemble_up(Vec ul, Vec hl, double fac, double dt) {
     MatZeroEntries(M);
 
     Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
+
+    for(ii = 0; ii < topo->n1; ii++) ones[ii] = 1.0;
 
     VecGetArray(hl, &hArray);
     VecGetArray(ul, &uArray);
@@ -532,9 +485,16 @@ void Phmat::assemble_up(Vec ul, Vec hl, double fac, double dt) {
                 ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
                 geom->interp2_l(ex, ey, ii%mp1, ii/mp1, hArray, &hx);
 
-                //tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1])/(sqrt(det)*fac);
-                //tmp2 = dt*(ux[0]*ux[0] + ux[1]*ux[1])/det/fac;
-                tau = 1.0/(1.0/(fac*dt)/* + tmp + tmp2*/);
+                //geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uArray, uxl);
+                //geom->interp1_l(ex, ey, ii%mp1, ii/mp1, ones, bl);
+                //tmp = uxl[0]*bl[0] + uxl[1]*bl[1];
+                //tau = 1.0/(1.0/dt + sqrt(tmp*tmp));
+
+                geom->interp0(ex, ey, ii%mp1, ii/mp1, ones, bl);
+                //tmp = sqrt((ux[0]*ux[0] + ux[1]*ux[1])*(ux[0]*ux[0] + ux[1]*ux[1]));
+                tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1]);
+                tmp *= bl[0]/sqrt(det);
+                tau = 1.0/(1.0/dt + tmp);
 
                 for(int jj = 0; jj < np1; jj++) {
                     lx[jj] = node->eval_q(quad->x[ii%mp1] - tau*ux2[0], jj);
@@ -564,75 +524,7 @@ void Phmat::assemble_up(Vec ul, Vec hl, double fac, double dt) {
     delete P;
     delete Q;
     delete[] PtQPflat;
-}
-
-void Phmat::assemble_up_block(Vec ul, Vec hl, double fac, double dt, int row_offset, int col_offset, Mat Q2) {
-    int ex, ey, ei, mp1, mp12, np1, np12, ii, jj, *inds, inds_r[99], inds_c[99];
-    double ux[2], lx[99], ly[99], det, **J, ux2[2], hx, tau, tmp, tmp2;
-    PetscScalar *uArray, *hArray;
-    GaussLobatto* quad = node->q;
-    Wii* Q = new Wii(node->q, geom);
-    M0_j_xy_i* P = new M0_j_xy_i(node);
-    double** QP = Alloc2D(Q->nDofsI, P->nDofsJ);
-    double** Pt = Alloc2D(P->nDofsJ, P->nDofsI);
-    double** PtQP = Alloc2D(P->nDofsJ, P->nDofsJ);
-    double* PtQPflat = new double[P->nDofsJ*P->nDofsJ];
-
-    np1 = node->n + 1;
-    np12 = np1*np1;
-    mp1 = node->q->n + 1;
-    mp12 = mp1*mp1;
-
-    Tran_IP(P->nDofsI, P->nDofsJ, P->A, Pt);
-
-    VecGetArray(hl, &hArray);
-    VecGetArray(ul, &uArray);
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            ei = ey*topo->nElsX + ex;
-            inds = topo->elInds0_g(ex, ey);
-            for(ii = 0; ii < mp12; ii++) {
-                det = geom->det[ei][ii];
-                J = geom->J[ei][ii];
-
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, ux);
-                ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
-                ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
-                geom->interp2_l(ex, ey, ii%mp1, ii/mp1, hArray, &hx);
-
-                //tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1])/(sqrt(det)*fac);
-                //tmp2 = dt*(ux[0]*ux[0] + ux[1]*ux[1])/det/fac;
-                tau = 1.0/(1.0/(fac*dt)/* + tmp + tmp2*/);
-
-                for(jj = 0; jj < np1; jj++) {
-                    lx[jj] = node->eval_q(quad->x[ii%mp1] - tau*ux2[0], jj);
-                    ly[jj] = node->eval_q(quad->x[ii/mp1] - tau*ux2[1], jj);
-                }
-                // determinant from the integration and the inverse determinant 
-                // from the density cancel
-                for(jj = 0; jj < np12; jj++) {
-                    QP[ii][jj]  = hx * Q->A[ii][ii] * lx[jj%np1] * ly[jj/np1];
-                }
-            }
-	    for(jj = 0; jj < np12; jj++) {
-                inds_r[jj] = 2*inds[jj]+row_offset;
-                inds_c[jj] = 2*inds[jj]+col_offset;
-            }
-
-            Mult_IP(P->nDofsJ, P->nDofsJ, Q->nDofsI, Pt, QP, PtQP);
-            Flat2D_IP(P->nDofsJ, P->nDofsJ, PtQP, PtQPflat);
-            MatSetValues(Q2, P->nDofsJ, inds_r, P->nDofsJ, inds_c, PtQPflat, ADD_VALUES);
-        }
-    }
-    VecRestoreArray(hl, &hArray);
-    VecRestoreArray(ul, &uArray);
-
-    Free2D(P->nDofsJ, Pt);
-    Free2D(Q->nDofsI, QP);
-    Free2D(P->nDofsJ, PtQP);
-    delete P;
-    delete Q;
-    delete[] PtQPflat;
+    delete[] ones;
 }
 
 Phmat::~Phmat() {
@@ -1678,12 +1570,13 @@ RotMat_up::RotMat_up(Topo* _topo, Geom* _geom, LagrangeNode* _l, LagrangeEdge* _
     MatMPIAIJSetPreallocation(M, 4*U->nDofsJ, PETSC_NULL, 2*U->nDofsJ, PETSC_NULL);
 }
 
-void RotMat_up::assemble(Vec q0, Vec ul, double fac, double dt) {
+void RotMat_up::assemble(Vec q0, Vec ul, double dt) {
     int ex, ey, ei, ii, jj, mp1, mp12, np1, np12;
     int *inds_x, *inds_y, *inds_0;
-    double det, **J, vort, ux[2], lx[99], ly[99], ux2[2], tau, tmp, tmp2;
+    double det, **J, vort, ux[2], lx[99], ly[99], ux2[2], tau, uxl[2], bl[2], tmp, tmp2, tau_max = -1.0;
     PetscScalar *q0Array, *u1Array;
     GaussLobatto* quad = l->q;
+    double *ones = new double[topo->n1];
 
     np1 = l->n + 1;
     np12 = np1*np1;
@@ -1693,6 +1586,8 @@ void RotMat_up::assemble(Vec q0, Vec ul, double fac, double dt) {
     VecGetArray(q0, &q0Array);
     VecGetArray(ul, &u1Array);
     MatZeroEntries(M);
+
+    for(ii = 0; ii < topo->n1; ii++) ones[ii] = 1.0;
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -1709,9 +1604,19 @@ void RotMat_up::assemble(Vec q0, Vec ul, double fac, double dt) {
                 ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
                 ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
 
-                //tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1])/(sqrt(det)*fac);
-                //tmp2 = fac*dt*(ux[0]*ux[0] + ux[1]*ux[1])/det;
-                tau = 1.0/(1.0/(fac*dt)/* + tmp + tmp2*/);
+                //geom->interp1_l(ex, ey, ii%mp1, ii/mp1, u1Array, uxl);
+                //geom->interp1_l(ex, ey, ii%mp1, ii/mp1, ones, bl);
+                //tmp = uxl[0]*bl[0] + uxl[1]*bl[1];
+                //tau = 1.0/(1.0/dt + sqrt(tmp*tmp));
+
+                geom->interp0(ex, ey, ii%mp1, ii/mp1, ones, bl);
+                //tmp = sqrt((ux[0]*ux[0] + ux[1]*ux[1])*(ux[0]*ux[0] + ux[1]*ux[1]));
+                tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1]);
+                tmp *= bl[0]/sqrt(det);
+                tmp2 = bl[0]*0.5*dt*(ux[0]*ux[0] + ux[1]*ux[1])/det;
+                tau = 1.0/(1.0/dt + tmp /*+ tmp2*/);
+
+                if(tau > tau_max) tau_max = tau;
 
                 for(jj = 0; jj < np1; jj++) {
                     lx[jj] = l->eval_q(quad->x[ii%mp1] - tau*ux2[0], jj);
@@ -1749,13 +1654,16 @@ void RotMat_up::assemble(Vec q0, Vec ul, double fac, double dt) {
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    delete[] ones;
 }
 
-void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Vec qi) {
+void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double tau, double dt, Vec qi) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y;
-    double det, **J, vort, ux[2], dq[2], vort_i, tmp, tmp2, tau;
+    double det, **J, vort, ux[2], dq[2], vort_i, uxl[2], bl[2], tmp, tau2;
     PetscScalar *q0Array, *u1Array, *dqArray, *qiArray;
+    double* ones = new double[topo->n1];
 
     mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
@@ -1765,6 +1673,8 @@ void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Ve
     VecGetArray(dql, &dqArray);
     VecGetArray(qi, &qiArray);
     MatZeroEntries(M);
+
+    for(ii = 0; ii < topo->n1; ii++) ones[ii] = 1.0;
 
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
@@ -1781,11 +1691,24 @@ void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Ve
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, dqArray, dq);
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, qiArray, &vort_i);
 
-                tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1])/(sqrt(det)*fac);
-                //tmp2 = fabs(fac*dt)*(ux[0]*ux[0] + ux[1]*ux[1])/det;
-                tau = 1.0/(1.0/fabs(fac*dt) + tmp/* + tmp2*/);
+                //ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
+                //ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
+                //dq2[0] = +J[1][1]*dq[0]/det - J[0][1]*dq[1]/det;
+                //dq2[1] = -J[1][0]*dq[0]/det + J[0][0]*dq[1]/det;
+                //vort -= tau*(ux2[0]*dq2[1] - ux2[1]*dq2[0]);
 
-                vort -= tau*(ux[0]*dq[1] - ux[1]*dq[0] + (vort - vort_i)/dt);
+                //geom->interp1_l(ex, ey, ii%mp1, ii/mp1, u1Array, uxl);
+                //geom->interp1_l(ex, ey, ii%mp1, ii/mp1, ones, bl);
+                //tmp = uxl[0]*bl[0] + uxl[1]*bl[1];
+                //tau2 = 1.0/(1.0/tau + 1.0/sqrt(tmp*tmp));
+
+                geom->interp0(ex, ey, ii%mp1, ii/mp1, ones, bl);
+                //tmp = sqrt((ux[0]*ux[0] + ux[1]*ux[1])*(ux[0]*ux[0] + ux[1]*ux[1]));
+                tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1]);
+                tmp *= bl[0]/sqrt(det);
+                tau2 = 1.0/(1.0/tau + tmp);
+
+                vort -= tau2*(ux[0]*dq[1] - ux[1]*dq[0] + (vort - vort_i)/dt);
 
                 Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det;
                 Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det;
@@ -1816,84 +1739,8 @@ void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Ve
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
-}
 
-void RotMat_up::assemble_apvm(Vec q0, Vec ul, Vec dql, double fac, double dt, Vec ds, Vec hl) {
-    int ex, ey, ei, ii, mp1, mp12;
-    int *inds_x, *inds_y;
-    double det, **J, vort, ux[2], dq[2], vort_i, tmp, tmp2, tau, dsq[2], hq;
-    PetscScalar *q0Array, *u1Array, *dqArray, *dsArray, *hArray;
-
-    mp1 = l->q->n + 1;
-    mp12 = mp1*mp1;
-
-    VecGetArray(q0, &q0Array);
-    VecGetArray(ul, &u1Array);
-    VecGetArray(dql, &dqArray);
-    VecGetArray(ds, &dsArray);
-    VecGetArray(hl, &hArray);
-    MatZeroEntries(M);
-
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            inds_x = topo->elInds1x_g(ex, ey);
-            inds_y = topo->elInds1y_g(ex, ey);
-
-            ei = ey*topo->nElsX + ex;
-            for(ii = 0; ii < mp12; ii++) {
-                det = geom->det[ei][ii];
-                J = geom->J[ei][ii];
-
-                geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, dqArray, dq);
-
-		/*
-                tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1])/(sqrt(det)*fac);
-                //tmp2 = fabs(fac*dt)*(ux[0]*ux[0] + ux[1]*ux[1])/det;
-                tau = 1.0/(1.0/fabs(fac*dt) + tmp);
-                //tau = fabs(fac*dt);
-		*/
-                //geom->interp1_g(ex, ey, ii%mp1, ii/mp1, dsArray, dsq);
-                //geom->interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &hq);
-		//tmp = 0.5*hq*sqrt(dsq[0]*dsq[0] + dsq[1]*dsq[1])/
-		//	(fabs(ux[0]*dq[1]-ux[1]*dq[0])*(ux[0]*ux[0]+ux[1]*ux[1]) + 1.0e-8);
-                //tmp /= 15.322125; // gH/u^2
-		//tau = 1.0/(1.0/fabs(fac*dt) + 1.0/tmp);
-		tau = fabs(fac*dt);
-
-                vort -= tau*(ux[0]*dq[1] - ux[1]*dq[0]);
-
-                Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det;
-                Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det;
-            }
-
-            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
-            Tran_IP(U->nDofsI, V->nDofsJ, V->A, Vt);
-
-            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qab, UtQab);
-            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Qba, VtQba);
-
-            // take cross product by multiplying the x projection of the row vector with
-            // the y component of the column vector and vice versa
-            Mult_IP(U->nDofsJ, U->nDofsJ, U->nDofsI, UtQab, V->A, UtQV);
-            Mult_IP(U->nDofsJ, U->nDofsJ, V->nDofsI, VtQba, U->A, VtQU);
-
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
-
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
-        }
-    }
-    VecRestoreArray(q0, &q0Array);
-    VecRestoreArray(ul, &u1Array);
-    VecRestoreArray(dql, &dqArray);
-    VecRestoreArray(ds, &dsArray);
-    VecRestoreArray(hl, &hArray);
-
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+    delete[] ones;
 }
 
 RotMat_up::~RotMat_up() {

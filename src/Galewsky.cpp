@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
     double dt = 360.0;
-    double vort_0, mass_0, ener_0, enst_0;
+    double vort_0, mass_0, ener_0;
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
     Topo* topo;
     Geom* geom;
     SWEqn* sw;
-    Vec ui, hi, wi, qi, vi;
+    Vec ui, hi, wi;
     PetscViewer viewer;
 
     PetscInitialize(&argc, &argv, (char*)0, help);
@@ -105,6 +105,7 @@ int main(int argc, char** argv) {
     geom = new Geom(topo);
     sw = new SWEqn(topo, geom);
     sw->step = startStep;
+    sw->do_visc = false;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &ui);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hi);
@@ -133,24 +134,21 @@ int main(int argc, char** argv) {
     vort_0 = sw->int0(wi);
     mass_0 = sw->int2(hi);
     ener_0 = sw->intE(ui, hi);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &vi);
-    sw->diagnose_q(0.0, ui, sw->uil, hi, &qi);
-    MatMult(sw->M0h->M, qi, vi);
-    VecDot(qi, vi, &enst_0);
     if(!rank) {
-        cout << "w0: " << vort_0 << "\tm0: " << mass_0 << "\tE0: " << ener_0 << "\tZ0" << enst_0 << endl;
+        cout << "w0: " << vort_0 << "\tm0: " << mass_0 << "\tE0: " << ener_0 << endl;
     }
     VecDestroy(&wi);
-    VecDestroy(&qi);
-    VecDestroy(&vi);
 
     for(step = startStep*dumpEvery + 1; step <= nSteps; step++) {
         if(!rank) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        sw->solve(ui, hi, dt, dump, 2, false);
-        sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0, enst_0);
+        //sw->solve(ui, hi, dt, dump);
+        //sw->solve_imex(ui, hi, dt, dump);
+        //sw->solve_rosenbrock(ui, hi, dt, dump);
+        sw->solve(ui, hi, dt, dump);
+        sw->writeConservation(step*dt, ui, hi, mass_0, vort_0, ener_0);
     }
 
     delete sw;
