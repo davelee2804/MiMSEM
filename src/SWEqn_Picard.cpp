@@ -330,7 +330,7 @@ void SWEqn::diagnose_q(double _dt, Vec _ug, Vec _ul, Vec _h, Vec* qi) {
     if(_dt > 1.0e-6) {
         M0h->assemble_up(_ul, _h, UP_TAU, _dt);
     } else {
-    M0h->assemble(_h);
+        M0h->assemble(_h);
     }
     KSPSolve(ksp0h, rhs, *qi);
 
@@ -454,8 +454,13 @@ void SWEqn::assemble_residual(Vec x, Vec f, bool q_exact) {
 #endif
         VecAXPY(fu, 1.0, utmp);
     } else {
+#ifdef UP_VORT
         diagnose_q(dt, ui, uil, hi, &qi);
         diagnose_q(dt, uj, ujl, hj, &qj);
+#else
+        diagnose_q(0.0, ui, uil, hi, &qi);
+        diagnose_q(0.0, uj, ujl, hj, &qj);
+#endif
         VecScatterBegin(topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterEnd(  topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
         VecScatterBegin(topo->gtol_0, qj, qjl, INSERT_VALUES, SCATTER_FORWARD);
