@@ -1590,7 +1590,7 @@ void ThermalSW::writeConservation(double time, double mass0, double vort0, doubl
     // potential enstrophy growth term
     diagnose_ds(false, 0.0);
     MatMult(NtoE->E10, qi, dq);
-    MatMult(M2->M, dq, utmp);
+    MatMult(M1->M, dq, utmp);
     enst_rhs = intK(dq, ds);
 
     if(!rank) {

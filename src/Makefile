@@ -11,6 +11,8 @@ include ${PETSC_DIR}/lib/petsc/conf/rules
 
 CXX = mpicxx
 
+# module load pbs openmpi/4.0.2 fftw3/3.3.8 petsc/3.12.2 hdf5/1.10.5p netcdf/4.7.3
+# module load pbs openmpi/4.1.4 petsc/3.17.4 hdf5/1.10.7 netcdf/4.7.3 fftw3/3.3.8
 CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -O3 -Wall
 
 OBJS = LinAlg.o \
@@ -19,16 +21,22 @@ OBJS = LinAlg.o \
        Geom.o \
        ElMats.o \
        Assembly.o \
-       SWEqn_Picard.o \
-       Galewsky.o
+       ThermalSW.o \
+       GalewskyTSW.o
+#       SWEqn_Rosenbrock.o \
 #       Williamson2.o
 #       RossbyHaurwitz.o
+#       SWEqn_Picard.o \
+#       Galewsky.o
 
 mimsem: ${OBJS}
 	${CXX} -o mimsem ${OBJS} ${PETSC_LIB} ${CXXFLAGS}
 
 Baroclinic.o: Baroclinic.cpp SWEqn_2L.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Baroclinic.cpp ${CXXFLAGS}
+
+GalewskyTSW.o: GalewskyTSW.cpp ThermalSW.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c GalewskyTSW.cpp ${CXXFLAGS}
 
 Galewsky.o: Galewsky.cpp SWEqn_Picard.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Galewsky.cpp ${CXXFLAGS}
@@ -39,8 +47,11 @@ RossbyHaurwitz.o: RossbyHaurwitz.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o T
 Williamson2.o: Williamson2.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Williamson2.cpp ${CXXFLAGS}
 
-SWEqn_Picard.o: SWEqn_Picard.cpp SWEqn_Picard.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c SWEqn_Picard.cpp ${CXXFLAGS}
+ThermalSW.o: ThermalSW.cpp ThermalSW.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c ThermalSW.cpp ${CXXFLAGS}
+
+SWEqn_Rosenbrock.o: SWEqn_Rosenbrock.cpp SWEqn_Rosenbrock.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c SWEqn_Rosenbrock.cpp ${CXXFLAGS}
 
 Assembly.o: Assembly.cpp Assembly.h ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Assembly.cpp ${CXXFLAGS}
