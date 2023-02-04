@@ -20,7 +20,6 @@
 #include "ThermalSW.h"
 
 #define RAD_EARTH 6371220.0
-#define UP_SUPG 1
 #define H_MEAN 1.0e+4
 //#define ROS_ALPHA (1.0 + 0.5*sqrt(2.0))
 #define ROS_ALPHA (0.5)
@@ -78,9 +77,6 @@ ThermalSW::ThermalSW(Topo* _topo, Geom* _geom) {
 
     // kinetic energy operator
     K = new WtQUmat(topo, geom, node, edge);
-
-    // variable buoyancy upwinding
-    //M2tau = new W_tau_mat(topo, geom, edge);
 
     // initialize the linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp);
@@ -193,17 +189,14 @@ double ThermalSW::viscosity() {
 }
 
 void ThermalSW::grad(Vec phi, Vec* _u) {
-    Vec Mphi, dMphi;
+    Vec dMphi;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, _u);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mphi);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dMphi);
 
-    MatMult(M2->M, phi, Mphi);
-    MatMult(EtoF->E12, Mphi, dMphi);
+    MatMult(E12M2, phi, dMphi);
     KSPSolve(ksp, dMphi, *_u);
 
-    VecDestroy(&Mphi);
     VecDestroy(&dMphi);
 }
 
@@ -271,6 +264,9 @@ void ThermalSW::coriolis() {
     VecScatterBegin(topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, fg, fl, INSERT_VALUES, SCATTER_FORWARD);
 
+    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &M0fg);
+    MatMult(M0->M, fg, M0fg);
+
     delete PtQ;
     VecDestroy(&fxl);
     VecDestroy(&fxg);
@@ -305,7 +301,6 @@ void ThermalSW::diagnose_F() {
 
     MatMult(M1h->M, ui, b);
     VecAXPY(hu, 1.0/3.0, b);
-    //VecAXPY(hu, 1.0/2.0, b);
 
     MatMult(M1h->M, uj, b);
     VecAXPY(hu, 1.0/6.0, b);
@@ -317,59 +312,9 @@ void ThermalSW::diagnose_F() {
 
     MatMult(M1h->M, uj, b);
     VecAXPY(hu, 1.0/3.0, b);
-    //VecAXPY(hu, 1.0/2.0, b);
 
     // solve the linear system
     KSPSolve(ksp, hu, F);
-
-    VecDestroy(&hu);
-    VecDestroy(&b);
-}
-
-void ThermalSW::diagnose_F_up(double _dt) {
-    Vec hu, b;
-
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &hu);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &b);
-    VecZeroEntries(F);
-    VecZeroEntries(hu);
-
-    // assemble the nonlinear rhs mass matrix (note that hl is a local vector)
-/*
-    M1->assemble_up(_dt, ul, hi);
-
-    MatMult(M1h->M, ui, b);
-    VecAXPY(hu, 1.0/3.0, b);
-
-    MatMult(M1h->M, uj, b);
-    VecAXPY(hu, 1.0/6.0, b);
-
-    M1->assemble_up(_dt, ul, hj);
-
-    MatMult(M1h->M, ui, b);
-    VecAXPY(hu, 1.0/6.0, b);
-
-    MatMult(M1h->M, uj, b);
-    VecAXPY(hu, 1.0/3.0, b);
-
-    // solve the linear system
-    M1->assemble_up(_dt, ul, NULL);
-    KSPSolve(ksp, hu, *F);
-    M1->assemble();
-*/
-    M1->assemble_up(_dt, uil, hi);
-    MatMult(M1h->M, ui, b);
-    M1->assemble_up(_dt, uil, NULL);
-    KSPSolve(ksp, b, hu);
-    VecAXPY(F, 0.5, hu);
-
-    M1->assemble_up(_dt, ujl, hj);
-    MatMult(M1h->M, uj, b);
-    M1->assemble_up(_dt, ujl, NULL);
-    KSPSolve(ksp, b, hu);
-    VecAXPY(F, 0.5, hu);
-
-    M1->assemble();
 
     VecDestroy(&hu);
     VecDestroy(&b);
@@ -390,7 +335,6 @@ void ThermalSW::diagnose_Phi() {
 
     MatMult(K->M, ui, b);
     VecAXPY(Phi, 1.0/3.0, b);
-    //VecAXPY(Phi, 1.0/2.0, b);
 
     MatMult(K->M, uj, b);
     VecAXPY(Phi, 1.0/3.0, b);
@@ -399,7 +343,6 @@ void ThermalSW::diagnose_Phi() {
 
     MatMult(K->M, uj, b);
     VecAXPY(Phi, 1.0/3.0, b);
-    //VecAXPY(Phi, 1.0/2.0, b);
 
     // sh terms
 #ifdef DO_THERMAL
@@ -407,7 +350,6 @@ void ThermalSW::diagnose_Phi() {
 
     MatMult(M2h->M, si, b);
     VecAXPY(Phi, 1.0/3.0, b);
-    //VecAXPY(Phi, 1.0/2.0, b);
 
     MatMult(M2h->M, sj, b);
     VecAXPY(Phi, 1.0/6.0, b);
@@ -419,7 +361,6 @@ void ThermalSW::diagnose_Phi() {
 
     MatMult(M2h->M, sj, b);
     VecAXPY(Phi, 1.0/3.0, b);
-    //VecAXPY(Phi, 1.0/2.0, b);
 #else
     MatMult(M2->M, hi, b);
     VecAXPY(Phi, 0.5*9.80616, b);
@@ -441,7 +382,6 @@ void ThermalSW::diagnose_T() {
 
     MatMult(M2h->M, hi, b);
     VecAXPY(rhs, 1.0/6.0, b);
-    //VecAXPY(rhs, 1.0/4.0, b);
 
     MatMult(M2h->M, hj, b);
     VecAXPY(rhs, 1.0/6.0, b);
@@ -450,7 +390,6 @@ void ThermalSW::diagnose_T() {
 
     MatMult(M2h->M, hj, b);
     VecAXPY(rhs, 1.0/6.0, b);
-    //VecAXPY(rhs, 1.0/4.0, b);
 
     KSPSolve(ksp2, rhs, T);
 
@@ -458,85 +397,49 @@ void ThermalSW::diagnose_T() {
     VecDestroy(&rhs);
 }
 
-void ThermalSW::diagnose_q(Vec _ug, Vec _h, Vec* qi) {
-    Vec rhs, tmp;
+void ThermalSW::diagnose_q(Vec _u, Vec _h, Vec* qi) {
+    Vec rhs;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &rhs);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, &tmp);
     VecCreateMPI(MPI_COMM_WORLD, topo->n0l, topo->nDofs0G, qi);
 
-    MatMult(M0->M, fg, rhs);
-    MatMult(E01M1, _ug, tmp);
-    VecAXPY(rhs, 1.0, tmp);
+    MatMult(E01M1, _u, rhs);
+    VecAXPY(rhs, 1.0, M0fg);
     M0h->assemble(_h);
     KSPSolve(ksp0h, rhs, *qi);
 
     VecDestroy(&rhs);
-    VecDestroy(&tmp);
 }
 
-void ThermalSW::diagnose_ds(bool do_damping, double _dt) {
-    Vec hh, sh, tmp1, tmp2, rhs, uhl;
+void ThermalSW::diagnose_ds(bool do_damping, double _dt, Vec _uhl) {
+    Vec hh, sh, rhs;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &hh);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &sh);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp1);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp2);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rhs);
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &uhl);
 
     VecZeroEntries(hh);
     VecAXPY(hh, 0.5, hi);
     VecAXPY(hh, 0.5, hj);
-    M1h->assemble(hh);
+    if(do_damping) {
+        M1h->assemble_up(-_dt, _uhl, hh);
+    } else {
+        M1h->assemble(hh);
+    } 
 
     VecZeroEntries(sh);
     VecAXPY(sh, 0.5, si);
     VecAXPY(sh, 0.5, sj);
 
-    // buoyancy damping
-    /*
-    MatMult(EtoF->E21, F, hh);
-    VecAXPY(hh, +1.0/_dt, hj);
-    VecAXPY(hh, -1.0/_dt, hi);
-    VecScale(hh, -tau);
-    VecAXPY(hh, 0.5, si);
-    VecAXPY(hh, 0.5, sj);
-    MatMult(M2->M, hh, tmp);
-    MatMult(EtoF->E12, tmp, rhs);
-    */
-    if(do_damping) {
-/*
-        VecZeroEntries(uhl);
-        VecAXPY(uhl, 0.5, uil);
-        VecAXPY(uhl, 0.5, ujl);
-        MatMult(EtoF->E21, F, tmp1);
-        //VecAXPY(tmp1, +1.0/_dt, hj);
-        //VecAXPY(tmp1, -1.0/_dt, hi);
-        //M2tau->assemble(hh, sh, uhl, tmp1, _dt, 0.025);
-        //M2tau->assemble(hh, sh, uhl, tmp1, _dt, 0.25);
-        M2tau->assemble(hh, sh, uhl, tmp1, _dt, 0.5);
-        MatMult(M2tau->M, tmp1, tmp2);
-        KSPSolve(ksp2, tmp2, tmp1);
-        VecAYPX(tmp1, +1.0, sh);     // generates entropy
-        //VecAYPX(tmp1, -1.0, sh);     // dissipates entropy
-        MatMult(M2->M, tmp1, tmp2);
-*/
-    } else {
-        MatMult(M2->M, sh, tmp2);
-    }
-    MatMult(EtoF->E12, tmp2, rhs);
+    MatMult(E12M2, sh, rhs);
     KSPSolve(ksp1h, rhs, ds);
 
     VecDestroy(&hh);
     VecDestroy(&sh);
-    VecDestroy(&tmp1);
-    VecDestroy(&tmp2);
     VecDestroy(&rhs);
-    VecDestroy(&uhl);
 }
 
-void ThermalSW::rhs_u(Vec uo, double _dt) {
+void ThermalSW::rhs_u(Vec uo, bool do_damping, double _dt, Vec _uhl) {
     Vec tmp, tmph, qi, qj, qil, qjl, dqil, dqjl, dqg;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmp);
@@ -566,41 +469,25 @@ void ThermalSW::rhs_u(Vec uo, double _dt) {
     VecScatterBegin(topo->gtol_1, dqg, dqjl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, dqg, dqjl, INSERT_VALUES, SCATTER_FORWARD);
 
-    R_up->assemble_apvm(qil, uil, dqil, 0.5, _dt, ds, hi);
+    R_up->assemble_supg(qil, uil, dqil, 0.5, -_dt, qjl);
     MatMult(R_up->M, F, tmp);
     VecAXPY(fu, -0.5*_dt, tmp);
-    R_up->assemble_apvm(qjl, ujl, dqjl, 0.5, _dt, ds, hj);
+    R_up->assemble_supg(qjl, ujl, dqjl, 0.5, +_dt, qil);
     MatMult(R_up->M, F, tmp);
     VecAXPY(fu, -0.5*_dt, tmp);
-    /*
-    VecZeroEntries(tmp);
-    VecAXPY(tmp, 0.5, ui);
-    VecAXPY(tmp, 0.5, uj);
-    VecZeroEntries(tmph);
-    VecAXPY(tmph, 0.5, hi);
-    VecAXPY(tmph, 0.5, hj);
-    diagnose_q(tmp, tmph, &qi);
-    VecScatterBegin(topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
-    //R->assemble(qil);
-    //MatMult(R->M, F, tmp);
-    //VecAXPY(fu, -_dt, tmp);
-    VecZeroEntries(dqil);
-    VecAXPY(dqil, 0.5, uil);
-    VecAXPY(dqil, 0.5, ujl);
-    MatMult(NtoE->E10, qi, dqg);
-    VecScatterBegin(topo->gtol_1, dqg, dqjl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_1, dqg, dqjl, INSERT_VALUES, SCATTER_FORWARD);
-    R_up->assemble_apvm(qil, dqil, dqjl, 0.5, _dt);
-    MatMult(R->M, F, tmp);
-    VecAXPY(fu, -_dt, tmp);
-    */
+
 #ifdef DO_THERMAL
-    VecScatterBegin(topo->gtol_1, ds, dqil, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_1, ds, dqil, INSERT_VALUES, SCATTER_FORWARD);
-    K->assemble(dqil);
-    MatMultTranspose(K->M, T, tmp);
-    VecAXPY(fu, +2.0*_dt, tmp); // K includes 0.5 factor
+    if(do_damping) {
+        M1h->assemble_up(-_dt, _uhl, T);
+	MatMult(M1h->M, ds, tmp);
+	VecAXPY(fu, _dt, tmp);
+    } else {
+        VecScatterBegin(topo->gtol_1, ds, dqil, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, ds, dqil, INSERT_VALUES, SCATTER_FORWARD);
+        K->assemble(dqil);
+        MatMultTranspose(K->M, T, tmp);
+        VecAXPY(fu, +2.0*_dt, tmp); // K includes 0.5 factor
+    }
 #endif
 
     VecDestroy(&tmp);
@@ -614,23 +501,19 @@ void ThermalSW::rhs_u(Vec uo, double _dt) {
     VecDestroy(&dqjl);
 }
 
-void ThermalSW::rhs_h(Vec ho, double _dt, bool mul_mat) {
+void ThermalSW::rhs_h(Vec ho, double _dt) {
     Vec tmp;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp);
 
     MatMult(EtoF->E21, F, tmp);
     VecAYPX(tmp, -_dt, ho);
-    if(mul_mat) {
-        MatMult(M2->M, tmp, fh);
-    } else {
-        VecCopy(tmp, fh);
-    }
+    MatMult(M2->M, tmp, fh);
 
     VecDestroy(&tmp);
 }
 
-void ThermalSW::rhs_s(Vec so, double _dt) {
+void ThermalSW::rhs_s(Vec so, bool do_damping, double _dt, Vec _uhl) {
     Vec tmp, dsl;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp);
@@ -639,11 +522,19 @@ void ThermalSW::rhs_s(Vec so, double _dt) {
     MatMult(M2->M, so, fs);
 
 #ifdef DO_THERMAL
-    VecScatterBegin(topo->gtol_1, ds, dsl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_1, ds, dsl, INSERT_VALUES, SCATTER_FORWARD);
-    K->assemble(dsl);
-    MatMult(K->M, F, tmp);
-    VecAXPY(fs, -2.0*_dt, tmp); // K includes 0.5 factor
+    if(do_damping) {
+        VecScatterBegin(topo->gtol_1, F, dsl, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, F, dsl, INSERT_VALUES, SCATTER_FORWARD);
+        K->assemble_up(dsl, -_dt, _uhl);
+        MatMult(K->M, ds, tmp);
+        VecAXPY(fs, -2.0*_dt, tmp); // K includes 0.5 factor
+    } else {
+        VecScatterBegin(topo->gtol_1, ds, dsl, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, ds, dsl, INSERT_VALUES, SCATTER_FORWARD);
+        K->assemble(dsl);
+        MatMult(K->M, F, tmp);
+        VecAXPY(fs, -2.0*_dt, tmp); // K includes 0.5 factor
+    }
 #endif
 
     VecDestroy(&tmp);
@@ -655,7 +546,11 @@ void ThermalSW::unpack(Vec x, Vec u, Vec h, Vec s) {
     PetscScalar *xArray, *uArray, *hArray, *sArray;
     int ii;
 
+#ifdef DO_THERMAL
     VecCreateSeq(MPI_COMM_SELF, topo->n1 + 2*topo->n2, &xl);
+#else
+    VecCreateSeq(MPI_COMM_SELF, topo->n1 + topo->n2, &xl);
+#endif
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
 
     VecScatterBegin(gtol_x, x, xl, INSERT_VALUES, SCATTER_FORWARD);
@@ -664,20 +559,22 @@ void ThermalSW::unpack(Vec x, Vec u, Vec h, Vec s) {
     VecGetArray(xl, &xArray);
     VecGetArray(ul, &uArray);
     VecGetArray(h, &hArray);
-    VecGetArray(s, &sArray);
     for(ii = 0; ii < topo->n1; ii++) {
         uArray[ii] = xArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
         hArray[ii] = xArray[ii+topo->n1];
     }
+#ifdef DO_THERMAL
+    VecGetArray(s, &sArray);
     for(ii = 0; ii < topo->n2; ii++) {
         sArray[ii] = xArray[ii+topo->n1+topo->n2];
     }
+    VecRestoreArray(s, &sArray);
+#endif
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
     VecRestoreArray(h, &hArray);
-    VecRestoreArray(s, &sArray);
 
     VecScatterBegin(topo->gtol_1, ul, u, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(  topo->gtol_1, ul, u, INSERT_VALUES, SCATTER_REVERSE);
@@ -691,7 +588,11 @@ void ThermalSW::repack(Vec x, Vec u, Vec h, Vec s) {
     PetscScalar *xArray, *uArray, *hArray, *sArray;
     int ii;
 
+#ifdef DO_THERMAL
     VecCreateSeq(MPI_COMM_SELF, topo->n1 + 2*topo->n2, &xl);
+#else
+    VecCreateSeq(MPI_COMM_SELF, topo->n1 + topo->n2, &xl);
+#endif
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &ul);
 
     VecScatterBegin(topo->gtol_1, u, ul, INSERT_VALUES, SCATTER_FORWARD);
@@ -700,20 +601,22 @@ void ThermalSW::repack(Vec x, Vec u, Vec h, Vec s) {
     VecGetArray(xl, &xArray);
     VecGetArray(ul, &uArray);
     VecGetArray(h, &hArray);
-    VecGetArray(s, &sArray);
     for(ii = 0; ii < topo->n1; ii++) {
         xArray[ii] = uArray[ii];
     }
     for(ii = 0; ii < topo->n2; ii++) {
         xArray[ii+topo->n1] = hArray[ii];
     }
+#ifdef DO_THERMAL
+    VecGetArray(s, &sArray);
     for(ii = 0; ii < topo->n2; ii++) {
         xArray[ii+topo->n1+topo->n2] = sArray[ii];
     }
+    VecRestoreArray(s, &sArray);
+#endif
     VecRestoreArray(xl, &xArray);
     VecRestoreArray(ul, &uArray);
     VecRestoreArray(h, &hArray);
-    VecRestoreArray(s, &sArray);
 
     VecScatterBegin(gtol_x, xl, x, INSERT_VALUES, SCATTER_REVERSE);
     VecScatterEnd(  gtol_x, xl, x, INSERT_VALUES, SCATTER_REVERSE);
@@ -730,10 +633,19 @@ void ThermalSW::assemble_operator(double _dt) {
     const double* vals;
     int cols2[9999];
     Mat Muh, Mhu;
+#ifdef DO_THERMAL
+    int local_size = topo->n1l + 2*topo->n2l;
+#else
+    int local_size = topo->n1l + topo->n2l;
+#endif
 
     if(!A) {
         MatCreate(MPI_COMM_WORLD, &A);
+#ifdef DO_THERMAL
         MatSetSizes(A, topo->n1l+2*topo->n2l, topo->n1l+2*topo->n2l, topo->nDofs1G+2*topo->nDofs2G, topo->nDofs1G+2*topo->nDofs2G);
+#else
+        MatSetSizes(A, topo->n1l+topo->n2l, topo->n1l+topo->n2l, topo->nDofs1G+topo->nDofs2G, topo->nDofs1G+topo->nDofs2G);
+#endif
         MatSetType(A, MATMPIAIJ);
         MatMPIAIJSetPreallocation(A, 16*n2, PETSC_NULL, 16*n2, PETSC_NULL);
 
@@ -753,10 +665,10 @@ void ThermalSW::assemble_operator(double _dt) {
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(M1->M, mm, &nCols, &cols, &vals);
         dof_proc = mm / topo->n1l;
-        ri = dof_proc * (topo->n1l + 2*topo->n2l) + mm % topo->n1l;
+        ri = dof_proc * local_size + mm % topo->n1l;
         for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n1l;
-            cols2[ci] = dof_proc * (topo->n1l + 2*topo->n2l) + cols[ci] % topo->n1l;
+            cols2[ci] = dof_proc * local_size + cols[ci] % topo->n1l;
         }
         MatSetValues(A, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(M1->M, mm, &nCols, &cols, &vals);
@@ -774,10 +686,10 @@ void ThermalSW::assemble_operator(double _dt) {
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(Muh, mm, &nCols, &cols, &vals);
         dof_proc = mm / topo->n1l;
-        ri = dof_proc * (topo->n1l + 2*topo->n2l) + mm % topo->n1l;
+        ri = dof_proc * local_size + mm % topo->n1l;
         for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n2l;
-            cols2[ci] = dof_proc * (topo->n1l + 2*topo->n2l) + cols[ci] % topo->n2l + topo->n1l;
+            cols2[ci] = dof_proc * local_size + cols[ci] % topo->n2l + topo->n1l;
         }
         MatSetValues(A, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(Muh, mm, &nCols, &cols, &vals);
@@ -793,10 +705,10 @@ void ThermalSW::assemble_operator(double _dt) {
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(Muh, mm, &nCols, &cols, &vals);
         dof_proc = mm / topo->n1l;
-        ri = dof_proc * (topo->n1l + 2*topo->n2l) + mm % topo->n1l;
+        ri = dof_proc * local_size + mm % topo->n1l;
         for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n2l;
-            cols2[ci] = dof_proc * (topo->n1l + 2*topo->n2l) + cols[ci] % topo->n2l + topo->n1l + topo->n2l;
+            cols2[ci] = dof_proc * local_size + cols[ci] % topo->n2l + topo->n1l + topo->n2l;
         }
         MatSetValues(A, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(Muh, mm, &nCols, &cols, &vals);
@@ -813,10 +725,10 @@ void ThermalSW::assemble_operator(double _dt) {
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(Mhu, mm, &nCols, &cols, &vals);
         dof_proc = mm / topo->n2l;
-        ri = dof_proc * (topo->n1l + 2*topo->n2l) + mm % topo->n2l + topo->n1l;
+        ri = dof_proc * local_size + mm % topo->n2l + topo->n1l;
         for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n1l;
-            cols2[ci] = dof_proc * (topo->n1l + 2*topo->n2l) + cols[ci] % topo->n1l;
+            cols2[ci] = dof_proc * local_size + cols[ci] % topo->n1l;
         }
         MatSetValues(A, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(Mhu, mm, &nCols, &cols, &vals);
@@ -827,28 +739,30 @@ void ThermalSW::assemble_operator(double _dt) {
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(M2->M, mm, &nCols, &cols, &vals);
         dof_proc = mm / topo->n2l;
-        ri = dof_proc * (topo->n1l + 2*topo->n2l) + mm % topo->n2l + topo->n1l;
+        ri = dof_proc * local_size + mm % topo->n2l + topo->n1l;
         for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n2l;
-            cols2[ci] = dof_proc * (topo->n1l + 2*topo->n2l) + cols[ci] % topo->n2l + topo->n1l;
+            cols2[ci] = dof_proc * local_size + cols[ci] % topo->n2l + topo->n1l;
         }
         MatSetValues(A, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(M2->M, mm, &nCols, &cols, &vals);
     }
 
     // [s,s] block
+#ifdef DO_THERMAL
     MatGetOwnershipRange(M2->M, &mi, &mf);
     for(mm = mi; mm < mf; mm++) {
         MatGetRow(M2->M, mm, &nCols, &cols, &vals);
         dof_proc = mm / topo->n2l;
-        ri = dof_proc * (topo->n1l + 2*topo->n2l) + mm % topo->n2l + topo->n1l + topo->n2l;
+        ri = dof_proc * local_size + mm % topo->n2l + topo->n1l + topo->n2l;
         for(ci = 0; ci < nCols; ci++) {
             dof_proc = cols[ci] / topo->n2l;
-            cols2[ci] = dof_proc * (topo->n1l + 2*topo->n2l) + cols[ci] % topo->n2l + topo->n1l + topo->n2l;
+            cols2[ci] = dof_proc * local_size + cols[ci] % topo->n2l + topo->n1l + topo->n2l;
         }
         MatSetValues(A, 1, &ri, nCols, cols2, vals, INSERT_VALUES);
         MatRestoreRow(M2->M, mm, &nCols, &cols, &vals);
     }
+#endif
 
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(  A, MAT_FINAL_ASSEMBLY);
@@ -863,16 +777,25 @@ void ThermalSW::solve(double _dt, bool save, int nits) {
     int it = 0;
     double norm = 1.0e+9, norm_dx, norm_x;
     Vec x, f, dx, tmph, tmpu;
+#ifdef DO_THERMAL
+    int local_size = topo->n1l + 2*topo->n2l;
+    int global_size = topo->nDofs1G+2*topo->nDofs2G;
+#else
+    int local_size = topo->n1l + topo->n2l;
+    int global_size = topo->nDofs1G+topo->nDofs2G;
+#endif
+    Vec uhl;
 
     dt = _dt;
 
     if(!A) assemble_operator(dt);
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+2*topo->n2l, topo->nDofs1G+2*topo->nDofs2G, &x);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+2*topo->n2l, topo->nDofs1G+2*topo->nDofs2G, &f);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n1l+2*topo->n2l, topo->nDofs1G+2*topo->nDofs2G, &dx);
+    VecCreateMPI(MPI_COMM_WORLD, local_size, global_size, &x);
+    VecCreateMPI(MPI_COMM_WORLD, local_size, global_size, &f);
+    VecCreateMPI(MPI_COMM_WORLD, local_size, global_size, &dx);
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmph);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmpu);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &uhl);
 
     VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
@@ -884,19 +807,24 @@ void ThermalSW::solve(double _dt, bool save, int nits) {
     VecCopy(si, sj);
     repack(x, ui, hi, si);
 
+    VecZeroEntries(fs);
+
     do {
-        //diagnose_F();
+        VecZeroEntries(uhl);
+	VecAXPY(uhl, 0.5, uil);
+	VecAXPY(uhl, 0.5, ujl);
+
+        diagnose_F();
         diagnose_Phi();
 #ifdef DO_THERMAL
         diagnose_T();
-        diagnose_ds(false, _dt);
+        diagnose_ds(true, _dt, uhl);
 #endif
-
-        diagnose_F();
-        rhs_h(hi, _dt, true);
-        //diagnose_F_up(-0.005*_dt);
-        rhs_u(ui, _dt);
-        rhs_s(si, _dt);
+        rhs_h(hi, _dt);
+        rhs_u(ui, true, _dt, uhl);
+#ifdef DO_THERMAL
+        rhs_s(si, true, _dt, uhl);
+#endif
 
 	MatMult(M1->M, uj, tmpu);
 	VecAYPX(fu, -1.0, tmpu);
@@ -921,8 +849,7 @@ void ThermalSW::solve(double _dt, bool save, int nits) {
             cout << "iteration: " << it << "\t|x|: " << norm_x << "\t|dx|: " << norm_dx << "\t|dx|/|x|: " << norm << endl; 
         }
         it++;
-    //} while(norm > 1.0e-14 and it < nits);
-    } while(norm > 1.0e-16 and it < nits);
+    } while(norm > 1.0e-14 and it < nits);
 
     VecCopy(uj, ui);
     VecCopy(hj, hi);
@@ -953,83 +880,7 @@ void ThermalSW::solve(double _dt, bool save, int nits) {
     VecDestroy(&dx);
     VecDestroy(&tmph);
     VecDestroy(&tmpu);
-}
-
-void ThermalSW::solve_rk2(double _dt, bool save) {
-    VecCopy(ui, uj);
-    VecCopy(hi, hj);
-    VecCopy(si, sj);
-    VecCopy(uil, ujl);
-
-    VecCopy(ui, u_prev);
-    VecCopy(hi, h_prev);
-    VecCopy(si, s_prev);
-
-    // stage 1
-    diagnose_F();
-    diagnose_Phi();
-    diagnose_T();
-    //diagnose_ds(2.0/_dt, _dt);
-    //diagnose_ds(-2.0/_dt, _dt);
-    diagnose_ds(0.0/_dt, _dt);
-
-    if(first_step) {
-        rhs_u(ui, _dt);
-        rhs_h(hi, _dt, false);
-        rhs_s(si, _dt);
-	first_step = false;
-    } else {
-        rhs_u(u_prev, 2.0*_dt);
-        rhs_h(h_prev, 2.0*_dt, false);
-        rhs_s(s_prev, 2.0*_dt);
-    }
-
-    KSPSolve(ksp, fu, uj);
-    VecCopy(fh, hj);
-    KSPSolve(ksp2, fs, sj);
-
-    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
-
-    // stage 2
-    diagnose_F();
-    diagnose_Phi();
-    diagnose_T();
-    //diagnose_ds(2.0/_dt, _dt);
-    //diagnose_ds(-2.0/_dt, _dt);
-    diagnose_ds(0.0/_dt, _dt);
-
-    rhs_u(ui, _dt);
-    rhs_h(hi, _dt, false);
-    rhs_s(si, _dt);
-
-    KSPSolve(ksp, fu, uj);
-    VecCopy(fh, hj);
-    KSPSolve(ksp2, fs, sj);
-
-    VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
-
-    VecCopy(uj, ui);
-    VecCopy(hj, hi);
-    VecCopy(sj, si);
-    VecCopy(ujl, uil);
-
-    if(save) {
-        char fieldname[20];
-
-        step++;
-        curl(ui);
-
-        sprintf(fieldname, "vorticity");
-        geom->write0(wi, fieldname, step);
-        sprintf(fieldname, "velocity");
-        geom->write1(ui, fieldname, step);
-        sprintf(fieldname, "pressure");
-        geom->write2(hi, fieldname, step);
-        sprintf(fieldname, "buoyancy");
-        geom->write2(si, fieldname, step);
-    }
+    VecDestroy(&uhl);
 }
 
 ThermalSW::~ThermalSW() {
@@ -1041,6 +892,7 @@ ThermalSW::~ThermalSW() {
     MatDestroy(&E01M1);
     MatDestroy(&E12M2);
     VecDestroy(&fg);
+    VecDestroy(&M0fg);
     VecDestroy(&fl);
     VecScatterDestroy(&gtol_x);
     VecDestroy(&ui);
@@ -1588,7 +1440,7 @@ void ThermalSW::writeConservation(double time, double mass0, double vort0, doubl
     ener = intE(uil, hi, si);
 
     // potential enstrophy growth term
-    diagnose_ds(false, 0.0);
+    diagnose_ds(false, 0.0, NULL);
     MatMult(NtoE->E10, qi, dq);
     MatMult(M1->M, dq, utmp);
     enst_rhs = intK(dq, ds);
@@ -1639,9 +1491,11 @@ void ThermalSW::diagnose_Phi_inst(Vec _ul, Vec _ug, Vec _h, Vec _s, Vec _Phi) {
     MatMult(K->M, _ug, b);
     VecAXPY(_Phi, 1.0, b);
 
-    M2h->assemble(_h);
-    MatMult(M2h->M, _s, b);
-    VecAXPY(_Phi, 1.0, b);
+    //M2h->assemble(_h);
+    //MatMult(M2h->M, _s, b);
+    //VecAXPY(_Phi, 1.0, b);
+    MatMult(M2->M, _h, b);
+    VecAXPY(_Phi, 9.80616, b);
 
     VecDestroy(&b);
 }
@@ -1651,59 +1505,30 @@ void ThermalSW::diagnose_T_inst(Vec _h, Vec _T) {
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &b);
     VecZeroEntries(_T);
-    //M2h->assemble(_h); already assembled the Phi diagnostic routine
+    M2h->assemble(_h); // already assembled in the Phi diagnostic routine
     MatMult(M2h->M, _h, b);
     VecScale(b, 0.5);
     KSPSolve(ksp2, b, _T);
     VecDestroy(&b);
 }
 
-void ThermalSW::diagnose_ds_inst(bool upwind, double _dt, Vec _hi, Vec _hj, Vec _s, Vec _F, Vec _ul, Vec _ds) {
-    Vec tmp1, tmp2, rhs, dsl;
-    //double tau = -0.5*10.0*_dt/10000.0;
+void ThermalSW::diagnose_ds_inst(Vec _h, Vec _s, Vec _dsl) {
+    Vec rhs;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp1);
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp2);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &rhs);
-    VecCreateSeq(MPI_COMM_SELF, topo->n1, &dsl);
 
-    if(upwind) {
-/*
-        MatMult(EtoF->E21, _F, tmp1);
-        //VecCopy(tmp1, tmp2);
-        VecAXPY(tmp1, +1.0/_dt, _hj);
-        VecAXPY(tmp1, -1.0/_dt, _hi);
-        VecCopy(tmp1, tmp2);
+    MatMult(E12M2, _s, rhs);
+    M1h->assemble(_h); // already assembled in the F diagnostic routine
+    KSPSolve(ksp1h, rhs, ds);
 
-        //VecAYPX(tmp1, tau, _s);
-        //MatMult(M2->M, tmp1, tmp2);
-        //MatMult(EtoF->E12, tmp2, rhs);
+    VecScatterBegin(topo->gtol_1, ds, _dsl, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_1, ds, _dsl, INSERT_VALUES, SCATTER_FORWARD);
+    //K->assemble(_dsl);
 
-        M2tau->assemble(_hi, _s, _ul, tmp2, _dt, 0.5);
-        MatMult(M2tau->M, tmp1, tmp2);
-        KSPSolve(ksp2, tmp2, tmp1);
-        VecAYPX(tmp1, +1.0, _s);
-*/
-    } else {
-        VecCopy(_s, tmp1);
-    }
-    MatMult(M2->M, tmp1, tmp2);
-    MatMult(EtoF->E12, tmp2, rhs);
-
-    //M1h->assemble(_hi); assume this already assembled in the mass flux routine
-    KSPSolve(ksp1h, rhs, _ds);
-
-    VecScatterBegin(topo->gtol_1, _ds, dsl, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_1, _ds, dsl, INSERT_VALUES, SCATTER_FORWARD);
-    K->assemble(dsl);
-
-    VecDestroy(&tmp1);
-    VecDestroy(&tmp2);
     VecDestroy(&rhs);
-    VecDestroy(&dsl);
 }
 
-void ThermalSW::rhs_u_inst(Vec _u, Vec _h, Vec _F, Vec _Phi, Vec _T, Vec _ds, Vec _q, Vec _ql, Vec _qil, Vec _qjl, Vec _ul, Vec _fu, double _dt) {
+void ThermalSW::rhs_u_inst(Vec _u, Vec _h, Vec _F, Vec _Phi, Vec _T, Vec _dsl, Vec _q, Vec _ql, Vec _qil, Vec _ul, Vec _fu) {
     Vec tmp, dql, dqg, d2u, d4u;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &tmp);
@@ -1711,27 +1536,23 @@ void ThermalSW::rhs_u_inst(Vec _u, Vec _h, Vec _F, Vec _Phi, Vec _T, Vec _ds, Ve
     VecCreateSeq(MPI_COMM_SELF, topo->n1, &dql);
 
     MatMult(EtoF->E12, _Phi, _fu);
-/*
+
+    /*
     MatMult(NtoE->E10, _q, dqg);
     VecScatterBegin(topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, dqg, dql, INSERT_VALUES, SCATTER_FORWARD);
-
-    R_up->assemble_supg(_ql, _ul, dql, 0.5, -_dt, _qjl);
+    R_up->assemble_supg(_ql, _ul, dql, 0.5, +dt, _qil);
     MatMult(R_up->M, _F, tmp);
-    VecAXPY(_fu, 0.5, tmp);
-    R_up->assemble_supg(_ql, _ul, dql, 0.5, +_dt, _qil);
-    MatMult(R_up->M, _F, tmp);
-    VecAXPY(_fu, 0.5, tmp);
-*/
+    VecAXPY(_fu, 1.0, tmp);
+    */
     R->assemble(_ql);
     MatMult(R->M, _F, tmp);
     VecAXPY(_fu, 1.0, tmp);
 
-    //VecScatterBegin(topo->gtol_1, _ds, dql, INSERT_VALUES, SCATTER_FORWARD);
-    //VecScatterEnd(  topo->gtol_1, _ds, dql, INSERT_VALUES, SCATTER_FORWARD);
-    //K->assemble(dql); // assembling is ds diagnostic routine
-    MatMultTranspose(K->M, _T, tmp);
-    VecAXPY(_fu, -2.0, tmp); // K includes 0.5 factor
+    // assume K(ds) has already been assembled in the ds diagnostic function
+    //K->assemble(_dsl);
+    //MatMultTranspose(K->M, _T, tmp);
+    //VecAXPY(_fu, -2.0, tmp); // K includes 0.5 factor
 
     laplacian(_u, &d2u);
     laplacian(d2u, &d4u);
@@ -1745,50 +1566,38 @@ void ThermalSW::rhs_u_inst(Vec _u, Vec _h, Vec _F, Vec _Phi, Vec _T, Vec _ds, Ve
     VecDestroy(&dql);
 }
 
-void ThermalSW::rhs_h_inst(Vec _F, Vec _fh, bool mul_mat) {
-    Vec tmp;
+void ThermalSW::rhs_s_inst(Vec _F, Vec _dsl, Vec _s, Vec _fs) {
+    Vec Gs, Ls, MLs;
 
-    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp);
-
-    MatMult(EtoF->E21, _F, tmp);
-    if(mul_mat) {
-        MatMult(M2->M, tmp, _fh);
-    } else {
-        VecCopy(tmp, _fh);
-    }
-
-    VecDestroy(&tmp);
-}
-
-void ThermalSW::rhs_s_inst(Vec _F, Vec _s, Vec _fs) {
-    Vec ds, dds, Mdds;
-
-    // assume K(ds) has already been assembled in the momentum eqn rhs function
+    // assume K(ds) has already been assembled in the ds diagnostic function
+    K->assemble(_dsl);
     MatMult(K->M, _F, _fs);
     VecScale(_fs, 2.0);
 
     if(_s) {
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dds);
-        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Mdds);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &Ls);
+        VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &MLs);
 
-        grad(_s, &ds);
-        MatMult(EtoF->E21, ds, dds);
-	VecDestroy(&ds);
+        grad(_s, &Gs);
+        MatMult(EtoF->E21, Gs, Ls);
+	VecDestroy(&Gs);
 
-	grad(dds, &ds);
-        MatMult(EtoF->E21, ds, dds);
-	VecDestroy(&ds);
+	grad(Ls, &Gs);
+        MatMult(EtoF->E21, Gs, Ls);
+	VecDestroy(&Gs);
 
-	MatMult(M2->M, dds, Mdds);
-	VecAXPY(_fs, del2*del2, Mdds);
+	MatMult(M2->M, Ls, MLs);
+	VecAXPY(_fs, del2*del2, MLs);
 
-	VecDestroy(&dds);
-	VecDestroy(&Mdds);
+	VecDestroy(&Ls);
+	VecDestroy(&MLs);
     }
 }
 
 void ThermalSW::solve_ssp_rk2(double _dt, bool save) {
-    Vec _fu1, _fu2, _fh1, _fh2, _fs1, _fs2, _q1, _q2, _q1l, _q2l, _ql, tmp1, tmp2;
+    Vec _fu1, _fu2, _fh1, _fh2, _fs1, _fs2, _q1, _q2, _q1l, _ql, _dsl, tmp1, tmp2;
+
+    dt = _dt;
 
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_fu1);
     VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &_fu2);
@@ -1800,78 +1609,74 @@ void ThermalSW::solve_ssp_rk2(double _dt, bool save) {
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp2);
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &_ql);
     VecCreateSeq(MPI_COMM_SELF, topo->n0, &_q1l);
-    VecCreateSeq(MPI_COMM_SELF, topo->n0, &_q2l);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &_dsl);
 
     VecCopy(ui, uj);
     VecCopy(hi, hj);
     VecCopy(si, sj);
-    VecCopy(uil, ujl);
 
     // first step
     VecScatterBegin(topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, ui, uil, INSERT_VALUES, SCATTER_FORWARD);
     diagnose_q(ui, hi, &_q1);
-    VecScatterBegin(topo->gtol_0, _q1, _q1l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, _q1, _q1l, INSERT_VALUES, SCATTER_FORWARD);
-    VecCopy(_q1l, _ql);
-    VecCopy(_q1l, _q2l);
+    VecScatterBegin(topo->gtol_0, _q1, _ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, _q1, _ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecCopy(_ql, _q1l);
 
-    diagnose_F_inst(ui, hi, F);
-    diagnose_Phi_inst(uil, ui, hi, si, Phi);
-    diagnose_T_inst(hi, T);
-    diagnose_ds_inst(true, _dt, hi, hj, si, F, uil, ds);
+    diagnose_F_inst(ui, hi, F);                                        // assemble M1(h)
+    diagnose_Phi_inst(uil, ui, hi, si, Phi);                           // assemble M2(h)
+    //diagnose_T_inst(hi, T);
+    //diagnose_ds_inst(hi, si, _dsl);                                    // assemble K(ds)
 
-    rhs_u_inst(ui, hi, F, Phi, T, ds, _q1, _ql, _q1l, _q2l, uil, _fu1, _dt);
-    rhs_h_inst(F, _fh1, false);
-    rhs_s_inst(F, si, _fs1);
+    rhs_u_inst(ui, hi, F, Phi, T, _dsl, _q1, _ql, _q1l, uil, _fu1);
+    MatMult(EtoF->E21, F, _fh1);
+    //rhs_s_inst(F, _dsl, si, _fs1);
 
     MatMult(M1->M, ui, tmp1);
-    VecAXPY(tmp1, -_dt, _fu1);
+    VecAXPY(tmp1, -dt, _fu1);
     KSPSolve(ksp, tmp1, uj);
 
     VecCopy(hi, hj);
-    VecAXPY(hj, -_dt, _fh1);
+    VecAXPY(hj, -dt, _fh1);
 
-    MatMult(M2->M, si, tmp2);
-    VecAXPY(tmp2, -_dt, _fs1);
-    KSPSolve(ksp2, tmp2, sj);
+    //MatMult(M2->M, si, tmp2);
+    //VecAXPY(tmp2, -dt, _fs1);
+    //KSPSolve(ksp2, tmp2, sj);
 
     // second step
     VecScatterBegin(topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_1, uj, ujl, INSERT_VALUES, SCATTER_FORWARD);
     diagnose_q(uj, hj, &_q2);
-    VecScatterBegin(topo->gtol_0, _q2, _q2l, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_0, _q2, _q2l, INSERT_VALUES, SCATTER_FORWARD);
-    VecCopy(_q2l, _ql);
+    VecScatterBegin(topo->gtol_0, _q2, _ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, _q2, _ql, INSERT_VALUES, SCATTER_FORWARD);
 
     diagnose_F_inst(uj, hj, F);
     diagnose_Phi_inst(ujl, uj, hj, sj, Phi);
-    diagnose_T_inst(hj, T);
-    diagnose_ds_inst(true, _dt, hi, hj, sj, F, ujl, ds);
+    //diagnose_T_inst(hj, T);
+    //diagnose_ds_inst(hj, sj, _dsl);
 
-    rhs_u_inst(uj, hj, F, Phi, T, ds, _q2, _ql, _q1l, _q2l, ujl, _fu2, _dt);
-    rhs_h_inst(F, _fh2, false);
-    rhs_s_inst(F, sj, _fs2);
+    rhs_u_inst(uj, hj, F, Phi, T, _dsl, _q2, _ql, _q1l, ujl, _fu2);
+    MatMult(EtoF->E21, F, _fh2);
+    //rhs_s_inst(F, _dsl, sj, _fs2);
 
     MatMult(M1->M, ui, tmp1);
-    VecAXPY(tmp1, -0.5*_dt, _fu1);
-    VecAXPY(tmp1, -0.5*_dt, _fu2);
+    VecAXPY(tmp1, -0.5*dt, _fu1);
+    VecAXPY(tmp1, -0.5*dt, _fu2);
     KSPSolve(ksp, tmp1, uj);
 
     VecCopy(hi, hj);
-    VecAXPY(hj, -0.5*_dt, _fh1);
-    VecAXPY(hj, -0.5*_dt, _fh2);
+    VecAXPY(hj, -0.5*dt, _fh1);
+    VecAXPY(hj, -0.5*dt, _fh2);
 
-    MatMult(M2->M, si, tmp2);
-    VecAXPY(tmp2, -0.5*_dt, _fs1);
-    VecAXPY(tmp2, -0.5*_dt, _fs2);
-    KSPSolve(ksp2, tmp2, sj);
+    //MatMult(M2->M, si, tmp2);
+    //VecAXPY(tmp2, -0.5*dt, _fs1);
+    //VecAXPY(tmp2, -0.5*dt, _fs2);
+    //KSPSolve(ksp2, tmp2, sj);
 
     // udpate
     VecCopy(uj, ui);
     VecCopy(hj, hi);
     VecCopy(sj, si);
-    VecCopy(ujl, uil);
 
     if(save) {
         char fieldname[20];
@@ -1902,7 +1707,7 @@ void ThermalSW::solve_ssp_rk2(double _dt, bool save) {
     VecDestroy(&_q2);
     VecDestroy(&_ql);
     VecDestroy(&_q1l);
-    VecDestroy(&_q2l);
+    VecDestroy(&_dsl);
     VecDestroy(&tmp1);
     VecDestroy(&tmp2);
 }

@@ -75,6 +75,7 @@ class Uhmat {
         LagrangeEdge* e;
         Mat M;
         void assemble(Vec h2);
+        void assemble_up(double dt, Vec u1, Vec h2);
 };
 
 class Pvec {
@@ -150,7 +151,7 @@ class WtQUmat {
         M2_j_xy_i* W;
         Wii* Q;
         void assemble(Vec u1);
-        void assemble_up(Vec u1, double dt);
+        void assemble_up(Vec u1, double dt, Vec u_up);
 };
 
 class RotMat {
@@ -246,7 +247,6 @@ class RotMat_up {
         Wii* Q;
         void assemble(Vec q0, Vec ul, double tau, double dt);
         void assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Vec qi);
-        void assemble_apvm(Vec q0, Vec ul, Vec dql, double fac, double dt, Vec ds, Vec hl);
 };
 
 class U0mat {

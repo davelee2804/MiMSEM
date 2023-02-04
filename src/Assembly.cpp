@@ -733,6 +733,99 @@ void Uhmat::assemble(Vec h2) {
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
 
+void Uhmat::assemble_up(double dt, Vec u1, Vec h2) {
+    int ex, ey, ei, mp1, mp12, n0, np1, ii, jj;
+    int *inds_x, *inds_y;
+    double det, **J, ug[2], ul[2], lx[99], ly[99], _ex[99], _ey[99], _h;
+    PetscScalar *u1Array, *h2Array;
+    GaussLobatto* quad = l->q;
+    double** Uup = Alloc2D(U->nDofsI, U->nDofsJ);
+    double** Vup = Alloc2D(U->nDofsI, U->nDofsJ);
+
+    n0 = l->n;
+    np1 = n0 + 1;
+    mp1 = l->q->n + 1;
+    mp12 = mp1*mp1;
+
+    MatZeroEntries(M);
+    VecGetArray(u1, &u1Array);
+    VecGetArray(h2, &h2Array);
+
+    Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
+    Tran_IP(U->nDofsI, U->nDofsJ, V->A, Vt);
+
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+            for(ii = 0; ii < mp12; ii++) {
+                det = geom->det[ei][ii];
+                J = geom->J[ei][ii];
+
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ug);
+
+                // map velocity to local element coordinates
+                ul[0] = (+J[1][1]*ug[0] - J[0][1]*ug[1])/det;
+                ul[1] = (-J[1][0]*ug[0] + J[0][0]*ug[1])/det;
+                // evaluate the nodal bases at the upwinded locations
+                for(jj = 0; jj < np1; jj++) {
+                    lx[jj] = l->eval_q(quad->x[ii%mp1] + dt*ul[0], jj);
+                    ly[jj] = l->eval_q(quad->x[ii/mp1] + dt*ul[1], jj);
+                }
+                // evaluate the edge bases at the upwinded locations
+                for(jj = 0; jj < n0; jj++) {
+                    _ex[jj] = e->eval(quad->x[ii%mp1], jj);
+                    _ey[jj] = e->eval(quad->x[ii/mp1], jj);
+                }
+                // evaluate the 2 form basis at the upwinded locations
+                for(jj = 0; jj < n0*np1; jj++) {
+                    Uup[ii][jj] = lx[jj%np1]*_ey[jj/np1];
+                    Vup[ii][jj] = _ex[jj%n0]*ly[jj/n0];
+                }
+
+                geom->interp2_g(ex, ey, ii%mp1, ii/mp1, h2Array, &_h);
+
+                Qaa[ii][ii] = _h*(J[0][0]*J[0][0] + J[1][0]*J[1][0])*Q->A[ii][ii]/det;
+                Qab[ii][ii] = _h*(J[0][0]*J[0][1] + J[1][0]*J[1][1])*Q->A[ii][ii]/det;
+                Qbb[ii][ii] = _h*(J[0][1]*J[0][1] + J[1][1]*J[1][1])*Q->A[ii][ii]/det;
+            }
+
+            // reuse the JU and JV matrices for the nonlinear trial function expansion matrices
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qaa, UtQaa);
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Ut, Qab, UtQab);
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qab, VtQba);
+            Mult_IP(U->nDofsJ, U->nDofsI, Q->nDofsJ, Vt, Qbb, VtQbb);
+
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQaa, Uup, UtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, UtQab, Vup, UtQV);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQba, Uup, VtQU);
+            Mult_IP(U->nDofsJ, U->nDofsJ, Q->nDofsJ, VtQbb, Vup, VtQV);
+
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
+
+            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQV, UtQUflat);
+            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(u1, &u1Array);
+    VecRestoreArray(h2, &h2Array);
+
+    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(  M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(U->nDofsI, Uup);
+    Free2D(U->nDofsI, Vup);
+}
+
 Uhmat::~Uhmat() {
     delete[] UtQUflat;
 
@@ -1124,12 +1217,15 @@ void WtQUmat::assemble(Vec u1) {
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
 
-void WtQUmat::assemble_up(Vec u1, double dt) {
+void WtQUmat::assemble_up(Vec u1, double dt, Vec u_up) {
     int ex, ey, ei, ii, jj, mp1, mp12, np1, n0;
     int *inds_x, *inds_y, *inds_2;
-    double det, **J, ux[2], ul[2], lx[99], ly[99], _ex[99], _ey[99];
+    double det, **J, ux[2], ul[2], lx[99], ly[99], _ex[99], _ey[99], u_up_g[2];
     PetscScalar* u1Array;
+    PetscScalar* u_upArray;
     GaussLobatto* quad = l->q;
+    double** Uup = Alloc2D(U->nDofsI, U->nDofsJ);
+    double** Vup = Alloc2D(U->nDofsI, U->nDofsJ);
 
     mp1 = l->q->n + 1;
     mp12 = mp1*mp1;
@@ -1137,6 +1233,7 @@ void WtQUmat::assemble_up(Vec u1, double dt) {
     np1 = l->n + 1;
 
     VecGetArray(u1, &u1Array);
+    VecGetArray(u_up, &u_upArray);
     MatZeroEntries(M);
 
     for(ey = 0; ey < topo->nElsX; ey++) {
@@ -1145,11 +1242,11 @@ void WtQUmat::assemble_up(Vec u1, double dt) {
             for(ii = 0; ii < mp12; ii++) {
                 det = geom->det[ei][ii];
                 J = geom->J[ei][ii];
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u_upArray, u_up_g);
 
                 // map velocity to local element coordinates
-                ul[0] = (+J[1][1]*ux[0] - J[0][1]*ux[1])/det;
-                ul[1] = (-J[1][0]*ux[0] + J[0][0]*ux[1])/det;
+                ul[0] = (+J[1][1]*u_up_g[0] - J[0][1]*u_up_g[1])/det;
+                ul[1] = (-J[1][0]*u_up_g[0] + J[0][0]*u_up_g[1])/det;
                 // evaluate the nodal bases at the upwinded locations
                 for(jj = 0; jj < np1; jj++) {
                     lx[jj] = l->eval_q(quad->x[ii%mp1] + dt*ul[0], jj);
@@ -1157,14 +1254,16 @@ void WtQUmat::assemble_up(Vec u1, double dt) {
                 }
                 // evaluate the edge bases at the upwinded locations
                 for(jj = 0; jj < n0; jj++) {
-                    _ex[jj] = e->eval(quad->x[ii%mp1]/* + dt*ul[0]*/, jj);
-                    _ey[jj] = e->eval(quad->x[ii/mp1]/* + dt*ul[1]*/, jj);
+                    _ex[jj] = e->eval(quad->x[ii%mp1], jj);
+                    _ey[jj] = e->eval(quad->x[ii/mp1], jj);
                 }
                 // evaluate the 2 form basis at the upwinded locations
                 for(jj = 0; jj < n0*np1; jj++) {
-                    U->A[ii][jj] = lx[jj%np1]*_ey[jj/np1];
-                    V->A[ii][jj] = _ex[jj%n0]*ly[jj/n0];
+                    Uup[ii][jj] = lx[jj%np1]*_ey[jj/np1];
+                    Vup[ii][jj] = _ex[jj%n0]*ly[jj/n0];
                 }
+
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
 
                 Qaa[ii][ii] = 0.5*(ux[0]*J[0][0] + ux[1]*J[1][0])*Q->A[ii][ii]/det;
                 Qab[ii][ii] = 0.5*(ux[0]*J[0][1] + ux[1]*J[1][1])*Q->A[ii][ii]/det;
@@ -1174,8 +1273,8 @@ void WtQUmat::assemble_up(Vec u1, double dt) {
             Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qaa, WtQaa);
             Mult_IP(W->nDofsJ, Q->nDofsJ, Q->nDofsI, Wt, Qab, WtQab);
 
-            Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQaa, U->A, WtQU);
-            Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQab, V->A, WtQV);
+            Mult_IP(W->nDofsJ, U->nDofsJ, U->nDofsI, WtQaa, Uup, WtQU);
+            Mult_IP(W->nDofsJ, V->nDofsJ, V->nDofsI, WtQab, Vup, WtQV);
 
             Flat2D_IP(W->nDofsJ, U->nDofsJ, WtQU, WtQUflat);
             Flat2D_IP(W->nDofsJ, V->nDofsJ, WtQV, WtQVflat);
@@ -1189,9 +1288,13 @@ void WtQUmat::assemble_up(Vec u1, double dt) {
         }
     }
     VecRestoreArray(u1, &u1Array);
+    VecRestoreArray(u_up, &u_upArray);
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
+
+    Free2D(U->nDofsI, Uup);
+    Free2D(U->nDofsI, Vup);
 }
 
 WtQUmat::~WtQUmat() {
@@ -1709,8 +1812,6 @@ void RotMat_up::assemble(Vec q0, Vec ul, double fac, double dt) {
                 ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
                 ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
 
-                //tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1])/(sqrt(det)*fac);
-                //tmp2 = fac*dt*(ux[0]*ux[0] + ux[1]*ux[1])/det;
                 tau = 1.0/(1.0/(fac*dt)/* + tmp + tmp2*/);
 
                 for(jj = 0; jj < np1; jj++) {
@@ -1754,7 +1855,7 @@ void RotMat_up::assemble(Vec q0, Vec ul, double fac, double dt) {
 void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Vec qi) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y;
-    double det, **J, vort, ux[2], dq[2], vort_i, tmp, tmp2, tau;
+    double det, **J, vort, ux[2], dq[2], vort_i, tau, bl[2];
     PetscScalar *q0Array, *u1Array, *dqArray, *qiArray;
 
     mp1 = l->q->n + 1;
@@ -1781,9 +1882,23 @@ void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Ve
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, dqArray, dq);
                 geom->interp0(ex, ey, ii%mp1, ii/mp1, qiArray, &vort_i);
 
-                tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1])/(sqrt(det)*fac);
-                //tmp2 = fabs(fac*dt)*(ux[0]*ux[0] + ux[1]*ux[1])/det;
-                tau = 1.0/(1.0/fabs(fac*dt) + tmp/* + tmp2*/);
+                //ux2[0] = +J[1][1]*ux[0]/det - J[0][1]*ux[1]/det;
+                //ux2[1] = -J[1][0]*ux[0]/det + J[0][0]*ux[1]/det;
+                //dq2[0] = +J[1][1]*dq[0]/det - J[0][1]*dq[1]/det;
+                //dq2[1] = -J[1][0]*dq[0]/det + J[0][0]*dq[1]/det;
+                //vort -= tau*(ux2[0]*dq2[1] - ux2[1]*dq2[0]);
+
+                //geom->interp1_l(ex, ey, ii%mp1, ii/mp1, u1Array, uxl);
+                //geom->interp1_l(ex, ey, ii%mp1, ii/mp1, ones, bl);
+                //tmp = uxl[0]*bl[0] + uxl[1]*bl[1];
+                //tau2 = 1.0/(1.0/tau + 1.0/sqrt(tmp*tmp));
+
+                //geom->interp0(ex, ey, ii%mp1, ii/mp1, ones, bl);
+                //tmp = sqrt((ux[0]*ux[0] + ux[1]*ux[1])*(ux[0]*ux[0] + ux[1]*ux[1]));
+                //tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1]);
+                //tmp *= bl[0]/sqrt(det);
+                //tau = 1.0/(1.0/tau + tmp);
+                tau = fabs(fac*dt);
 
                 vort -= tau*(ux[0]*dq[1] - ux[1]*dq[0] + (vort - vort_i)/dt);
 
@@ -1813,84 +1928,6 @@ void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Ve
     VecRestoreArray(ul, &u1Array);
     VecRestoreArray(dql, &dqArray);
     VecRestoreArray(qi, &qiArray);
-
-    MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
-}
-
-void RotMat_up::assemble_apvm(Vec q0, Vec ul, Vec dql, double fac, double dt, Vec ds, Vec hl) {
-    int ex, ey, ei, ii, mp1, mp12;
-    int *inds_x, *inds_y;
-    double det, **J, vort, ux[2], dq[2], vort_i, tmp, tmp2, tau, dsq[2], hq;
-    PetscScalar *q0Array, *u1Array, *dqArray, *dsArray, *hArray;
-
-    mp1 = l->q->n + 1;
-    mp12 = mp1*mp1;
-
-    VecGetArray(q0, &q0Array);
-    VecGetArray(ul, &u1Array);
-    VecGetArray(dql, &dqArray);
-    VecGetArray(ds, &dsArray);
-    VecGetArray(hl, &hArray);
-    MatZeroEntries(M);
-
-    for(ey = 0; ey < topo->nElsX; ey++) {
-        for(ex = 0; ex < topo->nElsX; ex++) {
-            inds_x = topo->elInds1x_g(ex, ey);
-            inds_y = topo->elInds1y_g(ex, ey);
-
-            ei = ey*topo->nElsX + ex;
-            for(ii = 0; ii < mp12; ii++) {
-                det = geom->det[ei][ii];
-                J = geom->J[ei][ii];
-
-                geom->interp0(ex, ey, ii%mp1, ii/mp1, q0Array, &vort);
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, u1Array, ux);
-                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, dqArray, dq);
-
-		/*
-                tmp = sqrt(ux[0]*ux[0] + ux[1]*ux[1])/(sqrt(det)*fac);
-                //tmp2 = fabs(fac*dt)*(ux[0]*ux[0] + ux[1]*ux[1])/det;
-                tau = 1.0/(1.0/fabs(fac*dt) + tmp);
-                //tau = fabs(fac*dt);
-		*/
-                //geom->interp1_g(ex, ey, ii%mp1, ii/mp1, dsArray, dsq);
-                //geom->interp2_g(ex, ey, ii%mp1, ii/mp1, hArray, &hq);
-		//tmp = 0.5*hq*sqrt(dsq[0]*dsq[0] + dsq[1]*dsq[1])/
-		//	(fabs(ux[0]*dq[1]-ux[1]*dq[0])*(ux[0]*ux[0]+ux[1]*ux[1]) + 1.0e-8);
-                //tmp /= 15.322125; // gH/u^2
-		//tau = 1.0/(1.0/fabs(fac*dt) + 1.0/tmp);
-		tau = fabs(fac*dt);
-
-                vort -= tau*(ux[0]*dq[1] - ux[1]*dq[0]);
-
-                Qab[ii][ii] = vort*(-J[0][0]*J[1][1] + J[0][1]*J[1][0])*Q->A[ii][ii]/det;
-                Qba[ii][ii] = vort*(+J[0][0]*J[1][1] - J[0][1]*J[1][0])*Q->A[ii][ii]/det;
-            }
-
-            Tran_IP(U->nDofsI, U->nDofsJ, U->A, Ut);
-            Tran_IP(U->nDofsI, V->nDofsJ, V->A, Vt);
-
-            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Ut, Qab, UtQab);
-            Mult_IP(U->nDofsJ, Q->nDofsJ, Q->nDofsI, Vt, Qba, VtQba);
-
-            // take cross product by multiplying the x projection of the row vector with
-            // the y component of the column vector and vice versa
-            Mult_IP(U->nDofsJ, U->nDofsJ, U->nDofsI, UtQab, V->A, UtQV);
-            Mult_IP(U->nDofsJ, U->nDofsJ, V->nDofsI, VtQba, U->A, VtQU);
-
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, UtQV, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_x, U->nDofsJ, inds_y, UtQUflat, ADD_VALUES);
-
-            Flat2D_IP(U->nDofsJ, U->nDofsJ, VtQU, UtQUflat);
-            MatSetValues(M, U->nDofsJ, inds_y, U->nDofsJ, inds_x, UtQUflat, ADD_VALUES);
-        }
-    }
-    VecRestoreArray(q0, &q0Array);
-    VecRestoreArray(ul, &u1Array);
-    VecRestoreArray(dql, &dqArray);
-    VecRestoreArray(ds, &dsArray);
-    VecRestoreArray(hl, &hArray);
 
     MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);

@@ -89,13 +89,13 @@ double s_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 30.0;
+    double dt = 240.0;
     double vort_0, mass_0, ener_0, enst_0, buoy_0;
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 12*24*120;
-    int dumpEvery = 24*120;
+    int nSteps = 12*24*15;
+    int dumpEvery = 24*15;
     Topo* topo;
     Geom* geom;
     ThermalSW* tsw;
@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        tsw->solve_ssp_rk2(dt, dump);
+        tsw->solve(dt, dump, 40);
         tsw->writeConservation(step*dt, mass_0, vort_0, ener_0, enst_0, buoy_0);
     }
 

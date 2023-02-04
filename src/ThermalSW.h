@@ -28,6 +28,7 @@ class ThermalSW {
         //W_tau_mat* M2tau;
         Vec fg;            // coriolis vector (global)
         Vec fl;            // coriolis vector (local)
+	Vec M0fg;
         Mat E01M1;
         Mat E12M2;
         KSP ksp;           // 1 form mass matrix linear solver
@@ -63,15 +64,13 @@ class ThermalSW {
         void coriolis();
         void curl(Vec u);
         void diagnose_F();
-        void diagnose_F_up(double _dt);
         void diagnose_Phi();
         void diagnose_T();
         void diagnose_q(Vec _ug, Vec _h, Vec* qi);
-        //void diagnose_ds(bool do_damping, double _dt, Vec dq);
-        void diagnose_ds(bool do_damping, double _dt);
-        void rhs_u(Vec uo, double _dt);
-        void rhs_h(Vec ho, double _dt, bool mul_mat);
-        void rhs_s(Vec so, double _dt);
+        void diagnose_ds(bool do_damping, double _dt, Vec _ul);
+        void rhs_u(Vec uo, bool do_damping, double _dt, Vec _uhl);
+        void rhs_h(Vec ho, double _dt);
+        void rhs_s(Vec so, bool do_damping, double _dt, Vec _uhl);
         void init0(Vec q, ICfunc* func);
         void init1(Vec u, ICfunc* func_x, ICfunc* func_y);
         void init2(Vec h, ICfunc* func);
@@ -92,10 +91,9 @@ class ThermalSW {
         void diagnose_F_inst(Vec _u, Vec _h, Vec _F);
         void diagnose_Phi_inst(Vec _ul, Vec _ug, Vec _h, Vec _s, Vec _Phi);
         void diagnose_T_inst(Vec _h, Vec _T);
-        void diagnose_ds_inst(bool upwind, double _dt, Vec _hi, Vec _hj, Vec _s, Vec _F, Vec _ul, Vec _ds);
-        void rhs_u_inst(Vec _u, Vec _h, Vec _F, Vec _Phi, Vec _T, Vec _ds, Vec _q, Vec _ql, Vec _qil, Vec _qjl, Vec _ul, Vec _fu, double _dt);
-        void rhs_h_inst(Vec _F, Vec _fh, bool mul_mat);
-        void rhs_s_inst(Vec _F, Vec _s, Vec _fs);
+        void diagnose_ds_inst(Vec _h, Vec _s, Vec _ds);
+        void rhs_u_inst(Vec _u, Vec _h, Vec _F, Vec _Phi, Vec _T, Vec _ds, Vec _q, Vec _ql, Vec _qil, Vec _ul, Vec _fu);
+        void rhs_s_inst(Vec _F, Vec _dsl, Vec _s, Vec _fs);
         void solve_ssp_rk2(double _dt, bool save);
 
 	double del2;
