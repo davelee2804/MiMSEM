@@ -814,17 +814,25 @@ void ThermalSW::solve(double _dt, bool save, int nits) {
 	VecAXPY(uhl, 0.5, uil);
 	VecAXPY(uhl, 0.5, ujl);
 
+//        diagnose_F();
+//        diagnose_Phi();
+//#ifdef DO_THERMAL
+//        diagnose_T();
+//        diagnose_ds(true, _dt, uhl);
+//#endif
+//        rhs_h(hi, _dt);
+//        rhs_u(ui, true, _dt, uhl);
+//#ifdef DO_THERMAL
+//        rhs_s(si, true, _dt, uhl);
+//#endif
         diagnose_F();
         diagnose_Phi();
-#ifdef DO_THERMAL
         diagnose_T();
-        diagnose_ds(true, _dt, uhl);
-#endif
+        diagnose_ds(false, _dt, uhl);
+        rhs_u(ui, false, _dt, uhl);
         rhs_h(hi, _dt);
-        rhs_u(ui, true, _dt, uhl);
-#ifdef DO_THERMAL
+        diagnose_ds(true, _dt, uhl);
         rhs_s(si, true, _dt, uhl);
-#endif
 
 	MatMult(M1->M, uj, tmpu);
 	VecAYPX(fu, -1.0, tmpu);
@@ -932,7 +940,6 @@ ThermalSW::~ThermalSW() {
     delete M2h;
     delete M0h;
     delete K;
-    //delete M2tau;
 
     delete edge;
     delete node;

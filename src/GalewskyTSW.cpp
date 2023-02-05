@@ -89,13 +89,13 @@ double s_init(double* x) {
 int main(int argc, char** argv) {
     int size, rank, step;
     static char help[] = "petsc";
-    double dt = 240.0;
+    double dt = 300.0;
     double vort_0, mass_0, ener_0, enst_0, buoy_0;
     char fieldname[50];
     bool dump;
     int startStep = atoi(argv[1]);
-    int nSteps = 12*24*15;
-    int dumpEvery = 24*15;
+    int nSteps = 20*24*12;
+    int dumpEvery = 24*12;
     Topo* topo;
     Geom* geom;
     ThermalSW* tsw;
