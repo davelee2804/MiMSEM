@@ -38,6 +38,7 @@ ThermalSW_EEC::ThermalSW_EEC(Topo* _topo, Geom* _geom) {
     omega = 7.292e-5;
     step = 0;
     adv_S = adv_s = true;
+    damp_div = true;
 
     quad = new GaussLobatto(geom->quad->n);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -1146,12 +1147,14 @@ void ThermalSW_EEC::rhs_u(Vec _u, Vec _h, Vec _S, Vec _s, Vec _ul, double _dt) {
     }
 #endif
 
-    MatMult(EtoF->E21, F, htmp);
-    MatMult(M2_ip->M_QW, htmp, tmpq);
-    MatMult(M2_ip->M_Q, tmpq, tmpq2);
-    MatMult(M2_ip->M_WQ, tmpq2, htmp);
-    MatMult(EtoF->E12, htmp, tmp);
-    VecAXPY(fu, 9224893284.699825/H_MEAN, tmp);
+    if(damp_div) {
+        MatMult(EtoF->E21, F, htmp);
+        MatMult(M2_ip->M_QW, htmp, tmpq);
+        MatMult(M2_ip->M_Q, tmpq, tmpq2);
+        MatMult(M2_ip->M_WQ, tmpq2, htmp);
+        MatMult(EtoF->E12, htmp, tmp);
+        VecAXPY(fu, -9224893284.699825/H_MEAN, tmp);
+    }
 
     VecDestroy(&tmp);
     VecDestroy(&qi);

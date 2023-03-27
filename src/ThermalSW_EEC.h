@@ -11,6 +11,7 @@ class ThermalSW_EEC {
         int size;
 	bool adv_S;
 	bool adv_s;
+	bool damp_div;
         GaussLobatto* quad;
         LagrangeNode* node;
         LagrangeEdge* edge;
