@@ -21,7 +21,7 @@ OBJS = LinAlg.o \
        Geom.o \
        ElMats.o \
        Assembly.o \
-       ThermalSW.o \
+       ThermalSW_EEC.o \
        GalewskyTSW.o
 #       SWEqn_Rosenbrock.o \
 #       Williamson2.o
@@ -35,7 +35,7 @@ mimsem: ${OBJS}
 Baroclinic.o: Baroclinic.cpp SWEqn_2L.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Baroclinic.cpp ${CXXFLAGS}
 
-GalewskyTSW.o: GalewskyTSW.cpp ThermalSW.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+GalewskyTSW.o: GalewskyTSW.cpp ThermalSW_EEC.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c GalewskyTSW.cpp ${CXXFLAGS}
 
 Galewsky.o: Galewsky.cpp SWEqn_Picard.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
@@ -47,8 +47,8 @@ RossbyHaurwitz.o: RossbyHaurwitz.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o T
 Williamson2.o: Williamson2.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Williamson2.cpp ${CXXFLAGS}
 
-ThermalSW.o: ThermalSW.cpp ThermalSW.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c ThermalSW.cpp ${CXXFLAGS}
+ThermalSW_EEC.o: ThermalSW_EEC.cpp ThermalSW_EEC.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c ThermalSW_EEC.cpp ${CXXFLAGS}
 
 SWEqn_Rosenbrock.o: SWEqn_Rosenbrock.cpp SWEqn_Rosenbrock.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c SWEqn_Rosenbrock.cpp ${CXXFLAGS}

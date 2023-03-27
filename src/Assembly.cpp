@@ -1855,7 +1855,7 @@ void RotMat_up::assemble(Vec q0, Vec ul, double fac, double dt) {
 void RotMat_up::assemble_supg(Vec q0, Vec ul, Vec dql, double fac, double dt, Vec qi) {
     int ex, ey, ei, ii, mp1, mp12;
     int *inds_x, *inds_y;
-    double det, **J, vort, ux[2], dq[2], vort_i, tau, bl[2];
+    double det, **J, vort, ux[2], dq[2], vort_i, tau;
     PetscScalar *q0Array, *u1Array, *dqArray, *qiArray;
 
     mp1 = l->q->n + 1;
@@ -2074,4 +2074,163 @@ void U0mat::assemble() {
 
 U0mat::~U0mat() {
     MatDestroy(&M);
+}
+
+W_IP_mat::W_IP_mat(Topo* _topo, Geom* _geom, LagrangeEdge* _edge) {
+    int m, mp1, mp12;
+    M2_j_xy_i* W;
+
+    topo = _topo;
+    geom = _geom;
+    edge = _edge;
+
+    W = new M2_j_xy_i(edge);
+
+    m    = edge->l->q->n;
+    mp1  = m + 1;
+    mp12 = mp1*mp1;
+
+    MatCreate(MPI_COMM_WORLD, &M_QW);
+    MatSetSizes(M_QW, geom->n0l, topo->n2l, geom->nDofs0G, topo->nDofs2G);
+    MatSetType(M_QW, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M_QW, 8*W->nDofsJ, PETSC_NULL, 8*W->nDofsJ, PETSC_NULL);
+
+    MatCreate(MPI_COMM_WORLD, &M_Q);
+    MatSetSizes(M_Q, geom->n0l, geom->n0l, geom->nDofs0G, geom->nDofs0G);
+    MatSetType(M_Q, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M_Q, 4*mp12, PETSC_NULL, 4*mp12, PETSC_NULL);
+
+    assemble_QW();
+    MatTranspose(M_QW, MAT_INITIAL_MATRIX, &M_WQ);
+    assemble_Q(NULL);
+
+    delete W;
+}
+
+void W_IP_mat::assemble_QW() {
+    int ex, ey, ei, m, mp1, mp12, ii, jj, *inds_2, *inds_0;
+    M2_j_xy_i* W = new M2_j_xy_i(edge);
+    Wii* Q = new Wii(edge->l->q, geom);
+    double det;
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double** QW = Alloc2D(Q->nDofsJ, W->nDofsJ);
+    double* QWflat = new double[W->nDofsJ*Q->nDofsJ];
+
+    m    = edge->l->q->n;
+    mp1  = m + 1;
+    mp12 = mp1*mp1;
+
+    MatZeroEntries(M_QW);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+	    for(ii = 0; ii < mp12; ii++) Qaa[ii][ii] = 0.0;
+
+            for(jj = 0; jj < mp1; jj++) {
+                // bottom
+                ii    = jj;
+                det   = geom->det[ei][ii];
+		Qaa[ii][ii] += 1.0/det;
+                // top
+                ii    = jj + m*mp1;
+                det   = geom->det[ei][ii];
+		Qaa[ii][ii] -= 1.0/det;
+                // left
+                ii    = jj*mp1;
+                det   = geom->det[ei][ii];
+		Qaa[ii][ii] += 1.0/det;
+                // right
+                ii    = jj*mp1 + m;
+                det   = geom->det[ei][ii];
+		Qaa[ii][ii] -= 1.0/det;
+            }
+            Mult_IP(Q->nDofsJ, W->nDofsJ, Q->nDofsI, Qaa, W->A, QW);
+            Flat2D_IP(Q->nDofsJ, W->nDofsJ, QW, QWflat);
+
+            inds_2 = topo->elInds2_g(ex, ey);
+            inds_0 = geom->elInds0_g(ex, ey);
+
+            MatSetValues(M_QW, Q->nDofsI, inds_0, W->nDofsJ, inds_2, QWflat, ADD_VALUES);
+        }
+    }
+    MatAssemblyBegin(M_QW, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M_QW, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Qaa);
+    Free2D(W->nDofsJ, QW);
+    delete[] QWflat;
+    delete W;
+    delete Q;
+}
+
+void W_IP_mat::assemble_Q(Vec ul) {
+    int ex, ey, ei, m, mp1, mp12, ii, jj, *inds_0;
+    Wii* Q = new Wii(edge->l->q, geom);
+    double **J, det_l, uq[2];
+    double** Qaa = Alloc2D(Q->nDofsI, Q->nDofsJ);
+    double* Qflat = new double[Q->nDofsJ*Q->nDofsJ];
+    double* wts = edge->l->q->w;
+    PetscScalar* uArray;
+
+    m    = edge->l->q->n;
+    mp1  = m + 1;
+    mp12 = mp1*mp1;
+
+    uq[0] = uq[1] = 1.0;
+
+    MatZeroEntries(M_Q);
+    if(ul) VecGetArray(ul, &uArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+	    for(ii = 0; ii < mp12; ii++) Qaa[ii][ii] = 0.0;
+
+            for(jj = 0; jj < mp1; jj++) {
+                // bottom
+                ii           = jj;
+                if(ul) geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                J            = geom->J[ei][ii];
+		det_l        = sqrt(fabs(J[0][0]*J[0][0] + J[1][0]*J[1][0]));
+		Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[1]);
+                // top
+                ii           = jj + m*mp1;
+                if(ul) geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                J            = geom->J[ei][ii];
+		det_l        = sqrt(fabs(J[0][0]*J[0][0] + J[1][0]*J[1][0]));
+		Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[1]);
+                // left
+                ii           = jj*mp1;
+                if(ul) geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                J            = geom->J[ei][ii];
+		det_l        = sqrt(fabs(J[0][1]*J[0][1] + J[1][1]*J[1][1]));
+		Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[0]);
+                // right
+                ii           = jj*mp1 + m;
+                if(ul) geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                J            = geom->J[ei][ii];
+		det_l        = sqrt(fabs(J[0][1]*J[0][1] + J[1][1]*J[1][1]));
+		Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[0]);
+            }
+            Flat2D_IP(Q->nDofsI, Q->nDofsJ, Qaa, Qflat);
+
+            inds_0 = geom->elInds0_g(ex, ey);
+
+            MatSetValues(M_Q, Q->nDofsI, inds_0, Q->nDofsJ, inds_0, Qflat, ADD_VALUES);
+        }
+    }
+    if(ul) VecRestoreArray(ul, &uArray);
+    MatAssemblyBegin(M_Q, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M_Q, MAT_FINAL_ASSEMBLY);
+
+    Free2D(Q->nDofsI, Qaa);
+    delete[] Qflat;
+    delete Q;
+}
+
+W_IP_mat::~W_IP_mat() {
+    MatDestroy(&M_WQ);
+    MatDestroy(&M_QW);
+    MatDestroy(&M_Q);
 }

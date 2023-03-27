@@ -260,3 +260,17 @@ class U0mat {
         Mat M;
         void assemble();
 };
+
+class W_IP_mat {
+    public:
+        W_IP_mat(Topo* _topo, Geom* _geom, LagrangeEdge* _edge);
+        ~W_IP_mat();
+        Topo* topo;
+        Geom* geom;
+        LagrangeEdge* edge;
+        Mat M_QW;
+        Mat M_WQ;
+        Mat M_Q;
+        void assemble_QW();
+        void assemble_Q(Vec ul);
+};
