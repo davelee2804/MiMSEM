@@ -38,7 +38,7 @@ ThermalSW_EEC::ThermalSW_EEC(Topo* _topo, Geom* _geom) {
     omega = 7.292e-5;
     step = 0;
     adv_S = adv_s = true;
-    damp_div = true;
+    damp_div = false;
 
     quad = new GaussLobatto(geom->quad->n);
     node = new LagrangeNode(topo->elOrd, quad);
@@ -556,7 +556,7 @@ void ThermalSW_EEC::err0(Vec ug, ICfunc* fw, ICfunc* fu, ICfunc* fv, double* nor
 
 void ThermalSW_EEC::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* norms) {
     int ex, ey, ei, ii, mp1, mp12;
-    int *inds0;
+    int *inds_q;
     double det, wd, l_inf;
     double un[2], dun[1], ua[2], dua[1];
     double local_1[2], global_1[2], local_2[2], global_2[2], local_i[2], global_i[2]; // first entry is the error, the second is the norm
@@ -585,12 +585,12 @@ void ThermalSW_EEC::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* nor
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds_q = geom->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
                 geom->interp1_g(ex, ey, ii%mp1, ii/mp1, array_1, un);
-                ua[0] = fu(geom->x[inds0[ii]]);
-                ua[1] = fv(geom->x[inds0[ii]]);
+                ua[0] = fu(geom->x[inds_q[ii]]);
+                ua[1] = fv(geom->x[inds_q[ii]]);
 
                 det = geom->det[ei][ii];
                 wd = det*quad->w[ii%mp1]*quad->w[ii/mp1];
@@ -609,7 +609,7 @@ void ThermalSW_EEC::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* nor
  
                 if(fp != NULL) {
                     geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, dun);
-                    dua[0] = fp(geom->x[inds0[ii]]);
+                    dua[0] = fp(geom->x[inds_q[ii]]);
 
                     local_2[0] += wd*(dun[0] - dua[0])*(dun[0] - dua[0]);
                     local_2[1] += wd*dua[0]*dua[0];
@@ -635,14 +635,11 @@ void ThermalSW_EEC::err1(Vec ug, ICfunc* fu, ICfunc* fv, ICfunc* fp, double* nor
 
 void ThermalSW_EEC::err2(Vec ug, ICfunc* fu, double* norms) {
     int ex, ey, ei, ii, mp1, mp12;
-    int *inds0;
+    int *inds_q;
     double det, wd, l_inf;
     double un[1], ua[1];
     double local_1[2], global_1[2], local_2[2], global_2[2], local_i[2], global_i[2]; // first entry is the error, the second is the norm
     PetscScalar *array_2;
-    Vec ul;
-
-    VecCreateSeq(MPI_COMM_SELF, topo->n2, &ul);
 
     mp1 = quad->n + 1;
     mp12 = mp1*mp1;
@@ -656,12 +653,12 @@ void ThermalSW_EEC::err2(Vec ug, ICfunc* fu, double* norms) {
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
-            inds0 = topo->elInds0_l(ex, ey);
+            inds_q = geom->elInds0_l(ex, ey);
 
             for(ii = 0; ii < mp12; ii++) {
-if(fabs(geom->s[inds0[ii]][1]) > 0.45*M_PI) continue;
+if(fabs(geom->s[inds_q[ii]][1]) > 0.45*M_PI) continue;
                 geom->interp2_g(ex, ey, ii%mp1, ii/mp1, array_2, un);
-                ua[0] = fu(geom->x[inds0[ii]]);
+                ua[0] = fu(geom->x[inds_q[ii]]);
 
                 det = geom->det[ei][ii];
                 wd = det*quad->w[ii%mp1]*quad->w[ii/mp1];
@@ -686,8 +683,6 @@ if(fabs(geom->s[inds0[ii]][1]) > 0.45*M_PI) continue;
     MPI_Allreduce(local_1, global_1, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(local_2, global_2, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(local_i, global_i, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-
-    VecDestroy(&ul);
 
     norms[0] = global_1[0]/global_1[1];
     norms[1] = sqrt(global_2[0]/global_2[1]);
@@ -1153,7 +1148,7 @@ void ThermalSW_EEC::rhs_u(Vec _u, Vec _h, Vec _S, Vec _s, Vec _ul, double _dt) {
         MatMult(M2_ip->M_Q, tmpq, tmpq2);
         MatMult(M2_ip->M_WQ, tmpq2, htmp);
         MatMult(EtoF->E12, htmp, tmp);
-        VecAXPY(fu, -4.0*9224893284.699825/H_MEAN, tmp);
+        VecAXPY(fu, -5.0*9224893284.699825/H_MEAN, tmp);
     }
 
     VecDestroy(&tmp);
