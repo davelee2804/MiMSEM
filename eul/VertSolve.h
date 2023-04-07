@@ -17,6 +17,7 @@ class VertSolve {
         Vec* zv;                 // level height vector
         VertOps* vo;
         L2Vecs* theta_h;
+        L2Vecs* theta_l2_h;
         L2Vecs* exner_h;
         HorizSolve* horiz;
 
@@ -24,6 +25,7 @@ class VertSolve {
 
         void diagTheta2(Vec* rho, Vec* rt, Vec* theta);
         void diagTheta_up(Vec* rho, Vec* rt, Vec* theta, Vec* ul);
+        void diagTheta_L2(Vec* rho, Vec* rt, Vec* theta);
         void diagExner(int ex, int ey, Vec rt, Vec pi);
 
         void diagnose_F_z(int ex, int ey, Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec _F);
@@ -32,6 +34,8 @@ class VertSolve {
         void solve_schur(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, L2Vecs* udwdx
 , double del2_x, Umat* M1, Wmat* M2, E21mat* EtoF, KSP ksp_x, L2Vecs* F_rho_o, L2Vecs* F_rt_o);
         void solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
+                              L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing);
+        void solve_schur_ec(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
                               L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing);
 
         void assemble_residual(int ex, int ey, Vec theta, Vec Pi, 

@@ -1343,6 +1343,197 @@ if(!rank)cout<<kk<<"\t"<<norm[0]<<
     delete[] dwdx2;
 }
 
+void Euler::Strang_ec(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save) {
+    char    fieldname[100];
+    Vec     wi, bu;
+    Vec*    Fu_0    = CreateHorizVecs(topo, geom);
+    Vec*    velx_0  = CreateHorizVecs(topo, geom);
+    L2Vecs* velz_0  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_0   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_0    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_0 = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* velz_h  = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_h   = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_h    = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_0 = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* Fz      = new L2Vecs(geom->nk-1, topo, geom);
+    Vec*    dwdx1   = new Vec[geom->nk-1];
+    Vec*    dwdx2   = new Vec[geom->nk-1];
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &bu);
+    for(int kk = 0; kk < geom->nk-1; kk++) {
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &dwdx1[kk]);
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &dwdx2[kk]);
+    }
+
+    // 0.  Copy initial fields
+    for(int kk = 0; kk < geom->nk; kk++) VecCopy(velx[kk], velx_0[kk]);
+    velz_0->CopyFromVert(velz);    velz_0->VertToHoriz();
+    rho_0->CopyFromHoriz(rho);     rho_0->HorizToVert();
+    rt_0->CopyFromHoriz(rt);       rt_0->HorizToVert();
+    exner_0->CopyFromHoriz(exner); exner_0->HorizToVert();
+
+    //AssembleVertMomVort(velz_0);
+
+    if(firstStep) {
+        vert->diagTheta_L2(rho_0->vz, rt_0->vz, vert->theta_l2_h->vz);
+        vert->theta_l2_h->VertToHoriz();
+        for(int kk = 0; kk < geom->nk; kk++) {
+            VecScatterBegin(topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+            VecScatterEnd(  topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+        }
+    } else {
+        for(int kk = 0; kk < geom->nk-1; kk++) {
+            VecCopy(uzl[kk], uzl_prev[kk]);
+        }
+    }
+
+    for(int kk = 0; kk < geom->nk; kk++) {
+        VecCopy(ul[kk], ul_prev[kk]);
+
+        VecCopy(u_curr[kk], u_prev[kk]);
+        VecCopy(velx_0[kk], u_curr[kk]);
+    }
+
+    // 1.  Explicit horizontal momentum solve (predictor)
+    if(!rank) cout << "horiztonal step (1).................." << endl;
+    vert->diagTheta_L2(rho_0->vz, rt_0->vz, theta_0->vz);
+    theta_0->VertToHoriz();
+    HorizPotVort(velx, rho);
+    vert->horiz->diagVertVort(velz_0->vh, rho_0->vh, dwdx1);
+    if(firstStep) for(int kk = 0; kk < geom->nk-1; kk++) VecCopy(uzl[kk], uzl_prev[kk]);
+    VertMassFlux(velz_0, velz_0, rho_0, rho_0, Fz);
+    for(int kk = 0; kk < geom->nk; kk++) {
+        vert->horiz->momentum_rhs_ec(kk, theta_0->vh[kk], uzl, uzl, velz_0->vh, velz_0->vh, exner_0->vh[kk],
+                                  velx[kk], velx[kk], ul[kk], ul[kk], rho_0->vh[kk], rho_0->vh[kk], Fu_0[kk], NULL, Fz->vh, dwdx1, dwdx1);
+
+        M1->assemble(kk, SCALE, true);
+
+        if(firstStep) {
+            MatMult(M1->M, velx_0[kk], bu);
+            VecAXPY(bu, -dt, Fu_0[kk]);
+            if(hs_forcing) {
+                M1ray->assemble(kk, SCALE, dt, exner_0->vh[kk], exner_0->vh[0]);
+            }
+        } else {
+            MatMult(M1->M, u_prev[kk], bu);
+            VecAXPY(bu, -2.0*dt, Fu_0[kk]);
+            if(hs_forcing) {
+                M1ray->assemble(kk, SCALE, 2.0*dt, exner_0->vh[kk], exner_0->vh[0]);
+            }
+        }
+        // add the boundary layer friction
+        if(hs_forcing) {
+            MatAXPY(M1->M, 1.0, M1ray->M, DIFFERENT_NONZERO_PATTERN);
+            MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+            MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+        }
+
+        KSPSolve(ksp1, bu, velx[kk]);
+
+        VecScatterBegin(topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+    }
+
+    // 2.  Implicit vertical solve
+    if(!rank) cout << "  vertical step (2).................." << endl;
+    velz_h->CopyFromHoriz(velz_0->vh);
+    rho_h->CopyFromHoriz(rho_0->vh);
+    rt_h->CopyFromHoriz(rt_0->vh);
+    exner_h->CopyFromHoriz(exner_0->vh);
+
+    vert->solve_schur_ec(velz_h, rho_h, rt_h, exner_h, NULL, velx_0, velx, ul_prev, ul, hs_forcing);
+
+    // 3.  Explicit horiztonal solve
+    if(!rank) cout << "horiztonal step (3).................." << endl;
+    HorizPotVort(velx, rho_h->vh);
+    vert->horiz->diagVertVort(velz_h->vh, rho_h->vh, dwdx2);
+    VertMassFlux(velz_0, velz_h, rho_0, rho_h, Fz);
+    for(int kk = 0; kk < geom->nk; kk++) {
+        vert->horiz->momentum_rhs_ec(kk, vert->theta_l2_h->vh[kk], uzl, uzl_prev, velz_h->vh, velz_0->vh, vert->exner_h->vh[kk],
+                                  velx_0[kk], velx[kk], ul[kk], ul_prev[kk], rho_0->vh[kk], rho_h->vh[kk], Fu_0[kk], NULL, Fz->vh, dwdx1, dwdx2);
+
+        M1->assemble(kk, SCALE, true);
+        MatMult(M1->M, velx_0[kk], bu);
+
+        // add the boundary layer friction
+        if(hs_forcing) {
+            M1ray->assemble(kk, SCALE, dt, exner_h->vh[kk], exner_h->vh[0]);
+            MatAXPY(M1->M, 1.0, M1ray->M, DIFFERENT_NONZERO_PATTERN);
+            MatAssemblyBegin(M1->M, MAT_FINAL_ASSEMBLY);
+            MatAssemblyEnd(  M1->M, MAT_FINAL_ASSEMBLY);
+        }
+
+        VecAXPY(bu, -dt, Fu_0[kk]);
+        KSPSolve(ksp1, bu, velx[kk]);
+
+        VecScatterBegin(topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, velx[kk], ul[kk], INSERT_VALUES, SCATTER_FORWARD);
+    }
+
+    // update input vectors
+    velz_h->CopyToVert(velz);
+    rho_h->CopyToHoriz(rho);
+    rt_h->CopyToHoriz(rt);
+    exner_h->CopyToHoriz(exner);
+
+    diagnostics(velx, velz, rho, rt, exner);
+
+    // write output
+    if(save) {
+        step++;
+
+        L2Vecs* l2Theta = new L2Vecs(geom->nk, topo, geom);
+        vert->diagTheta_L2(rho_h->vz, rt_h->vz, l2Theta->vz);
+        l2Theta->VertToHoriz();
+        for(int kk = 0; kk < geom->nk; kk++) {
+            sprintf(fieldname, "theta");
+            geom->write2(l2Theta->vh[kk], fieldname, step, kk, false);
+
+            vert->horiz->curl(true, velx[kk], &wi, kk, false);
+
+            sprintf(fieldname, "vorticity");
+            geom->write0(wi, fieldname, step, kk);
+            sprintf(fieldname, "velocity_h");
+            geom->write1(velx[kk], fieldname, step, kk);
+            sprintf(fieldname, "density");
+            geom->write2(rho[kk], fieldname, step, kk, true);
+            sprintf(fieldname, "rhoTheta");
+            geom->write2(rt[kk], fieldname, step, kk, true);
+            sprintf(fieldname, "exner");
+            geom->write2(exner[kk], fieldname, step, kk, true);
+
+            VecDestroy(&wi);
+        }
+        delete l2Theta;
+        sprintf(fieldname, "velocity_z");
+        geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
+    }
+
+    firstStep = false;
+
+    VecDestroy(&bu);
+    DestroyHorizVecs(Fu_0, geom);
+    DestroyHorizVecs(velx_0, geom);
+    delete velz_0;
+    delete rho_0;
+    delete rt_0;
+    delete exner_0;
+    delete velz_h;
+    delete rho_h;
+    delete rt_h;
+    delete exner_h;
+    delete theta_0;
+    delete Fz;
+    for(int kk = 0; kk < geom->nk-1; kk++) {
+        VecDestroy(&dwdx1[kk]);
+        VecDestroy(&dwdx2[kk]);
+    }
+    delete[] dwdx1;
+    delete[] dwdx2;
+}
+
 void Euler::VertMassFlux(L2Vecs* velz1, L2Vecs* velz2, L2Vecs* rho1, L2Vecs* rho2, L2Vecs* Fz) {
     int ex, ey;
 

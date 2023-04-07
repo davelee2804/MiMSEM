@@ -64,6 +64,7 @@ class Euler {
         void initTheta(Vec theta, ICfunc3D* func);
         void Trapazoidal(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
         void Strang(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
+        void Strang_ec(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool save);
 
         double int2(Vec ug);
         void diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner);

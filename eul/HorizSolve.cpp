@@ -33,7 +33,7 @@ HorizSolve::HorizSolve(Topo* _topo, Geom* _geom) {
     geom = _geom;
 
     do_visc = true;
-    do_temp_visc = true;
+    do_temp_visc = false;
     del2 = viscosity();
     step = 0;
 
@@ -282,7 +282,7 @@ void HorizSolve::laplacian(bool assemble, Vec ui, Vec* ddu, int lev) {
     VecDestroy(&Du);
 }
 
-void HorizSolve::diagnose_fluxes(int level, Vec u1, Vec u2, Vec h1l, Vec h2l, Vec* theta_l, Vec _F, Vec _G, Vec u1l, Vec u2l) {
+void HorizSolve::diagnose_fluxes(int level, Vec u1, Vec u2, Vec h1l, Vec h2l, Vec* theta_l, Vec _F, Vec _G, Vec u1l, Vec u2l, bool theta_in_Wt) {
     Vec hu, b, tmp2l, tmp1l;
 
     //VecCreateSeq(MPI_COMM_SELF, topo->n2, &tmp2l);
@@ -310,10 +310,14 @@ void HorizSolve::diagnose_fluxes(int level, Vec u1, Vec u2, Vec h1l, Vec h2l, Ve
     KSPSolve(ksp1, hu, _F);
 
     // diagnose the corresponding temperature flux
-    VecZeroEntries(tmp2l);
-    VecAXPY(tmp2l, 0.5, theta_l[level+0]);
-    VecAXPY(tmp2l, 0.5, theta_l[level+1]);
-    F->assemble(tmp2l, level, false, SCALE);
+    if(theta_in_Wt) {
+        VecZeroEntries(tmp2l);
+        VecAXPY(tmp2l, 0.5, theta_l[level+0]);
+        VecAXPY(tmp2l, 0.5, theta_l[level+1]);
+        F->assemble(tmp2l, level, false, SCALE);
+    } else {
+        F->assemble(theta_l[level], level, true, SCALE);
+    }
     MatMult(F->M, _F, hu);
     KSPSolve(ksp1, hu, _G);
 
@@ -332,7 +336,7 @@ void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* the
     VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &tmp2);
 
     for(int kk = 0; kk < geom->nk; kk++) {
-        diagnose_fluxes(kk, u1[kk], u2[kk], h1l[kk], h2l[kk], theta->vh, Fk[kk], Gk[kk], u1l[kk], u2l[kk]);
+        diagnose_fluxes(kk, u1[kk], u2[kk], h1l[kk], h2l[kk], theta->vh, Fk[kk], Gk[kk], u1l[kk], u2l[kk], true);
 
         if(do_temp_visc) {
             VecZeroEntries(tmp2);
@@ -368,6 +372,48 @@ void HorizSolve::advection_rhs(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, L2Vecs* the
     VecDestroy(&rho_dTheta_1);
     VecDestroy(&rho_dTheta_2);
     VecDestroy(&tmp2);
+}
+
+// include the entropy conserving corrections for the temperature flux
+// note that - the resulting RHS terms include the integral over the L2 test functions
+//           - here \theta is in L2 for entropy conservation
+void HorizSolve::advection_rhs_ec(Vec* u1, Vec* u2, Vec* h1l, Vec* h2l, Vec* theta, L2Vecs* dF, L2Vecs* dG, Vec* u1l, Vec* u2l) {
+    Vec dTheta, dTheta_l, dFk, dGk;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dFk);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &dGk);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &dTheta_l);
+
+    for(int kk = 0; kk < geom->nk; kk++) {
+        diagnose_fluxes(kk, u1[kk], u2[kk], h1l[kk], h2l[kk], theta, Fk[kk], Gk[kk], u1l[kk], u2l[kk], false);
+
+        M2->assemble(kk, SCALE, true);
+
+        MatMult(EtoF->E21, Fk[kk], dFk);
+	MatMult(M2->M, dFk, dF->vh[kk]);
+
+        MatMult(EtoF->E21, Gk[kk], dGk);
+	MatMult(M2->M, dGk, dG->vh[kk]);
+	VecScale(dG->vh[kk], 0.5);
+
+        M2h_mat->assemble(theta[kk], kk, SCALE, true);
+	MatMult(M2h_mat->M, dFk, dGk);
+	VecAXPY(dG->vh[kk], 0.5, dGk);
+
+        grad(false, theta[kk], &dTheta, kk);
+        VecScatterBegin(topo->gtol_1, dTheta, dTheta_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, dTheta, dTheta_l, INSERT_VALUES, SCATTER_FORWARD);
+        VecDestroy(&dTheta);
+	K->assemble(dTheta_l, kk, SCALE); // inc. 0.5 factor
+        MatMult(K->M, Fk[kk], dGk);
+	VecAXPY(dG->vh[kk], 1.0, dGk);
+    }
+    dF->HorizToVert();
+    dG->HorizToVert();
+
+    VecDestroy(&dFk);
+    VecDestroy(&dGk);
+    VecDestroy(&dTheta_l);
 }
 
 void HorizSolve::diagnose_Phi(int level, Vec u1, Vec u2, Vec u1l, Vec u2l, Vec* velz1, Vec* velz2, Vec* Phi) {
@@ -581,6 +627,151 @@ void HorizSolve::momentum_rhs(int level, Vec* theta, Vec* dudz1, Vec* dudz2, Vec
     VecDestroy(&Phi);
     VecDestroy(&dPi);
     VecDestroy(&theta_h);
+    VecDestroy(&dp);
+    VecDestroy(&dudz_h);
+    VecDestroy(&velz_h);
+    VecDestroy(&qh);
+    VecDestroy(&ql);
+}
+
+// entropy conserving - theta is in L2
+void HorizSolve::momentum_rhs_ec(int level, Vec theta, Vec* dudz1, Vec* dudz2, Vec* velz1, Vec* velz2, Vec Pi, 
+                              Vec velx1, Vec velx2, Vec uil, Vec ujl, Vec rho1, Vec rho2, Vec fu, Vec Fx, Vec* Fz, Vec* dwdx1, Vec* dwdx2)
+{
+    double k2i_l;
+    Vec Phi, dPi, dTheta, utmp, d2u, d4u;
+    Vec dp, dudz_h, velz_h, qh, ql;
+
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &utmp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n1l, topo->nDofs1G, &dp);
+    VecCreateMPI(MPI_COMM_WORLD, topo->n2l, topo->nDofs2G, &velz_h);
+    VecCreateSeq(MPI_COMM_SELF, topo->n0, &ql);
+    VecCreateSeq(MPI_COMM_SELF, topo->n1, &dudz_h);
+
+    M1->assemble(level, SCALE, true);
+    M2->assemble(level, SCALE, true);
+
+    VecZeroEntries(fu);
+
+    // assemble in the skew-symmetric parts of the vector
+    diagnose_Phi(level, velx1, velx2, uil, ujl, velz1, velz2, &Phi);
+    grad(false, Pi, &dPi, level);
+    grad(false, theta, &dTheta, level);
+
+    MatMult(EtoF->E12, Phi, fu);
+
+    VecZeroEntries(dudz_h);
+    VecAXPY(dudz_h, 0.5, uil);
+    VecAXPY(dudz_h, 0.5, ujl);
+    VecZeroEntries(velz_h);
+    VecAXPY(velz_h, 0.5, rho1);
+    VecAXPY(velz_h, 0.5, rho2);
+    diagnose_q(level, velz_h, dudz_h, &qh);
+    VecScatterBegin(topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  topo->gtol_0, qh, ql, INSERT_VALUES, SCATTER_FORWARD);
+    R->assemble(ql, level, SCALE);
+    if(!Fx) {
+        VecZeroEntries(dp);
+        VecZeroEntries(m1->vl);
+        VecZeroEntries(m1->vg);
+        m1->assemble_hu(level, SCALE, uil, rho1, false, 1.0/3.0);
+        m1->assemble_hu(level, SCALE, ujl, rho1, false, 1.0/6.0);
+        m1->assemble_hu(level, SCALE, uil, rho2, false, 1.0/6.0);
+        m1->assemble_hu(level, SCALE, ujl, rho2, false, 1.0/3.0);
+        VecScatterBegin(topo->gtol_1, m1->vl, m1->vg, ADD_VALUES, SCATTER_REVERSE);
+        VecScatterEnd(  topo->gtol_1, m1->vl, m1->vg, ADD_VALUES, SCATTER_REVERSE);
+        VecAXPY(dp, 1.0, m1->vg);
+        KSPSolve(ksp1, dp, utmp);
+        MatMult(R->M, utmp, dp);
+    } else {
+        MatMult(R->M, Fx, dp);
+    }
+    VecAXPY(fu, 1.0, dp);
+
+    // add the pressure gradient force
+    F->assemble(theta, level, true, SCALE);
+    MatMult(F->M, dPi, dp);
+    VecAXPY(fu, +0.5, dp);
+    F->assemble(Pi, level, true, SCALE);
+    MatMult(F->M, dTheta, dp);
+    VecAXPY(fu, -0.5, dp);
+    // this term is technically part of the potential
+    M2h_mat->assemble(Pi, level, SCALE, true);
+    MatMult(M2h_mat->M, theta, velz_h);
+    MatMult(EtoF->E12, velz_h, dp);
+    VecAXPY(fu, +0.5, dp);
+
+    // update the horizontal kinetic to internal energy exchange
+    if(level == 0) k2i = 0.0;
+    VecDot(Fk[level], dp, &k2i_l);
+    k2i_l /= SCALE;
+    k2i   += k2i_l;
+
+    // second voritcity term
+    if(level > 0) {
+        VecZeroEntries(dudz_h);
+        VecAXPY(dudz_h, 0.5, dudz1[level-1]);
+        VecAXPY(dudz_h, 0.5, dudz2[level-1]);
+        if(dwdx1) {
+            VecAXPY(dudz_h, -0.5, dwdx1[level-1]);
+            VecAXPY(dudz_h, -0.5, dwdx2[level-1]);
+        }
+
+        Rh->assemble(dudz_h, SCALE);
+        if(Fz) {
+            MatMult(Rh->M, Fz[level-1], dp);
+        } else {
+            VecZeroEntries(velz_h);
+            VecAXPY(velz_h, 0.5, velz1[level-1]);
+            VecAXPY(velz_h, 0.5, velz2[level-1]);
+
+            MatMult(Rh->M, velz_h, dp);
+        }
+        VecAXPY(fu, 0.5, dp);
+    }
+    if(level < geom->nk-1) {
+        VecZeroEntries(dudz_h);
+        VecAXPY(dudz_h, 0.5, dudz1[level+0]);
+        VecAXPY(dudz_h, 0.5, dudz2[level+0]);
+        if(dwdx1) {
+            VecAXPY(dudz_h, -0.5, dwdx1[level+0]);
+            VecAXPY(dudz_h, -0.5, dwdx2[level+0]);
+        }
+
+        Rh->assemble(dudz_h, SCALE);
+        if(Fz) {
+            MatMult(Rh->M, Fz[level+0], dp);
+        } else {
+            VecZeroEntries(velz_h);
+            VecAXPY(velz_h, 0.5, velz1[level+0]);
+            VecAXPY(velz_h, 0.5, velz2[level+0]);
+
+            MatMult(Rh->M, velz_h, dp);
+        }
+        VecAXPY(fu, 0.5, dp);
+    }
+
+    if(do_visc) {
+        VecZeroEntries(utmp);
+        VecAXPY(utmp, 0.5, velx1);
+        VecAXPY(utmp, 0.5, velx2);
+        VecZeroEntries(dudz_h);
+        VecAXPY(dudz_h, 0.5, uil);
+        VecAXPY(dudz_h, 0.5, ujl);
+        M0->assemble(level, SCALE);
+        laplacian(false, utmp, &d2u, level);
+        laplacian(false, d2u, &d4u, level);
+        MatMult(M1->M, d4u, d2u);
+        VecAXPY(fu, 1.0, d2u);
+        VecDestroy(&d2u);
+        VecDestroy(&d4u);
+    }
+
+    // clean up
+    VecDestroy(&utmp);
+    VecDestroy(&Phi);
+    VecDestroy(&dPi);
+    VecDestroy(&dTheta);
     VecDestroy(&dp);
     VecDestroy(&dudz_h);
     VecDestroy(&velz_h);

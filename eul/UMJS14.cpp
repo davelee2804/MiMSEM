@@ -295,6 +295,7 @@ int main(int argc, char** argv) {
 
     eul = new Euler(topo, geom, dt);
     eul->step = startStep;
+    eul->vert->horiz->do_temp_visc = false;
 
     n2 = topo->nElsX*topo->nElsX;
 
@@ -348,7 +349,7 @@ int main(int argc, char** argv) {
             cout << "doing step:\t" << step << ", time (days): \t" << step*dt/60.0/60.0/24.0 << endl;
         }
         dump = (step%dumpEvery == 0) ? true : false;
-        eul->Strang(velx, velz, rho, rt, exner, dump);
+        eul->Strang_ec(velx, velz, rho, rt, exner, dump);
     }
 
     delete eul;
