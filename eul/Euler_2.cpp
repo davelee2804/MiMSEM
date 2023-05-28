@@ -601,7 +601,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     char filename[80];
     ofstream file;
     int kk, ex, ey, ei, n2;
-    double keh, kev, pe, ie, k2p, p2k, mass;
+    double keh, kev, pe, ie, k2p, p2k, mass, entr;
     double dot, loc1, loc2, loc3;
     Vec hu, M2Pi, w2, gRho, gi, zi;
     Mat BA;
@@ -694,6 +694,25 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
     k2i   = vert->horiz->k2i;
     i2k = i2k_z = 0.0;
 
+    // entropy
+    {
+        L2Vecs* l2_rt    = new L2Vecs(geom->nk, topo, geom);
+        L2Vecs* l2_theta = new L2Vecs(geom->nk, topo, geom);
+        l2_rt->CopyFromHoriz(rt);
+        l2_rt->HorizToVert();
+        vert->diagTheta_L2(l2_rho->vz, l2_rt->vz, l2_theta->vz);
+        l2_theta->VertToHoriz();
+	entr = 0.0;
+        for(kk = 0; kk < geom->nk; kk++) {
+            M2->assemble(kk, SCALE, true);
+	    MatMult(M2->M, l2_rt->vh[kk], M2Pi);
+	    VecDot(M2Pi, l2_theta->vh[kk], &dot);
+	    entr += 0.5*dot/SCALE;
+        }
+	delete l2_rt;
+	delete l2_theta;
+    }
+
     if(!rank) {
         sprintf(filename, "output/energetics.dat");
         file.open(filename, ios::out | ios::app);
@@ -709,6 +728,7 @@ void Euler::diagnostics(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner) {
         file << k2i_z << "\t";
         file << i2k_z << "\t";
         file << mass << "\t";
+        file << entr << "\t";
         file << endl;
         file.close();
     }
