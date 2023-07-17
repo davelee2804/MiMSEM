@@ -1057,12 +1057,14 @@ void ThermalSW_EEC_2::rhs_u(Vec _u, Vec _h, Vec _S, Vec _s, Vec _ul, double _dt)
     diagnose_q(_u, _h, &qi);
     VecScatterBegin(topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(  topo->gtol_0, qi, qil, INSERT_VALUES, SCATTER_FORWARD);
-    MatMult(NtoE->E10, qi, dqg);
-    VecScatterBegin(topo->gtol_1, dqg, dqil, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  topo->gtol_1, dqg, dqil, INSERT_VALUES, SCATTER_FORWARD);
+    //MatMult(NtoE->E10, qi, dqg);
+    //VecScatterBegin(topo->gtol_1, dqg, dqil, INSERT_VALUES, SCATTER_FORWARD);
+    //VecScatterEnd(  topo->gtol_1, dqg, dqil, INSERT_VALUES, SCATTER_FORWARD);
 
-    R_up->assemble_supg(qil, _ul, dqil, 0.5, _dt, qil); // apvm
-    MatMult(R_up->M, F, tmp);
+    //R_up->assemble_supg(qil, _ul, dqil, 0.5, _dt, qil); // apvm
+    //MatMult(R_up->M, F, tmp);
+    R->assemble(qil);
+    MatMult(R->M, F, tmp);
     VecAXPY(fu, 1.0, tmp);
 
 #ifdef DO_THERMAL

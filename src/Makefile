@@ -14,6 +14,7 @@ CXX = mpicxx
 # module load pbs openmpi/4.0.2 fftw3/3.3.8 petsc/3.12.2 hdf5/1.10.5p netcdf/4.7.3
 # module load pbs openmpi/4.1.4 petsc/3.17.4 hdf5/1.10.7 netcdf/4.7.3 fftw3/3.3.8
 CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -O3 -Wall
+#CXXFLAGS = ${MPI_INCLUDE} ${HDF5_INCLUDE} ${PETSC_INCLUDE} ${PETSC_INCLUDE_2} -g -Wall -fsanitize=address
 
 OBJS = LinAlg.o \
        Basis.o \
@@ -21,8 +22,8 @@ OBJS = LinAlg.o \
        Geom.o \
        ElMats.o \
        Assembly.o \
-       ThermalSW_EEC.o \
-       GalewskyTSW.o
+       ThermalSW_EEC_2.o \
+       GalewskyTSW_2.o
 #       SWEqn_Rosenbrock.o \
 #       Williamson2.o
 #       RossbyHaurwitz.o
@@ -35,8 +36,8 @@ mimsem: ${OBJS}
 Baroclinic.o: Baroclinic.cpp SWEqn_2L.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Baroclinic.cpp ${CXXFLAGS}
 
-GalewskyTSW.o: GalewskyTSW.cpp ThermalSW_EEC.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c GalewskyTSW.cpp ${CXXFLAGS}
+GalewskyTSW_2.o: GalewskyTSW_2.cpp ThermalSW_EEC_2.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c GalewskyTSW_2.cpp ${CXXFLAGS}
 
 Galewsky.o: Galewsky.cpp SWEqn_Picard.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Galewsky.cpp ${CXXFLAGS}
@@ -47,8 +48,11 @@ RossbyHaurwitz.o: RossbyHaurwitz.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o T
 Williamson2.o: Williamson2.cpp Test.o SWEqn.o Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c Williamson2.cpp ${CXXFLAGS}
 
-ThermalSW_EEC.o: ThermalSW_EEC.cpp ThermalSW_EEC.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
-	${CXX} -c ThermalSW_EEC.cpp ${CXXFLAGS}
+ThermalSW.o: ThermalSW.cpp ThermalSW.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c ThermalSW.cpp ${CXXFLAGS}
+
+ThermalSW_EEC_2.o: ThermalSW_EEC_2.cpp ThermalSW_EEC_2.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
+	${CXX} -c ThermalSW_EEC_2.cpp ${CXXFLAGS}
 
 SWEqn_Rosenbrock.o: SWEqn_Rosenbrock.cpp SWEqn_Rosenbrock.h Assembly.o ElMats.o Geom.o Topo.o Basis.o LinAlg.o
 	${CXX} -c SWEqn_Rosenbrock.cpp ${CXXFLAGS}
