@@ -70,6 +70,8 @@ ThermalSW_EEC_2::ThermalSW_EEC_2(Topo* _topo, Geom* _geom) {
     // kinetic energy operator
     K = new WtQUmat(topo, geom, node, edge);
 
+    M2_ip = new W_IP_mat(topo, geom, edge);
+
     // initialize the linear solver
     KSPCreate(MPI_COMM_WORLD, &ksp);
     KSPSetOperators(ksp, M1->M, M1->M);
@@ -321,6 +323,7 @@ ThermalSW_EEC_2::~ThermalSW_EEC_2() {
     delete M2h;
     delete M0h;
     delete K;
+    delete M2_ip;
 
     delete edge;
     delete node;
@@ -1112,6 +1115,29 @@ void ThermalSW_EEC_2::rhs_S() {
     K->assemble(dsl); // inc. 0.5
     MatMult(K->M, F, tmph1);
     VecAXPY(fS, 1.0, tmph1);
+
+    // upwdind penalty
+    if (0) {
+        Vec tmpq1, tmpq2, Fl;
+
+        VecCreateSeq(MPI_COMM_SELF, topo->n1, &Fl);
+        VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &tmpq1);
+        VecCreateMPI(MPI_COMM_WORLD, geom->n0l, geom->nDofs0G, &tmpq2);
+
+        VecScatterBegin(topo->gtol_1, F, Fl, INSERT_VALUES, SCATTER_FORWARD);
+        VecScatterEnd(  topo->gtol_1, F, Fl, INSERT_VALUES, SCATTER_FORWARD);
+
+        M2_ip->assemble_Q(Fl);
+        MatMult(M2_ip->M_QW, S_on_h, tmpq1);
+        MatMult(M2_ip->M_Q, tmpq1, tmpq2);
+        MatMult(M2_ip->M_WQ, tmpq2, tmph1);
+
+	VecAXPY(fS, 0.5, tmph1);
+
+	VecDestroy(&tmpq1);
+	VecDestroy(&tmpq2);
+	VecDestroy(&Fl);
+    }
 
     VecDestroy(&tmph1);
     VecDestroy(&tmph2);

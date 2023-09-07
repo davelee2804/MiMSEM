@@ -1504,13 +1504,16 @@ void Euler::Strang_ec(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool 
     if(save) {
         step++;
 
-        L2Vecs* l2Theta = new L2Vecs(geom->nk, topo, geom);
-        vert->diagTheta_L2(rho_h->vz, rt_h->vz, l2Theta->vz);
+        L2Vecs* l2Theta = new L2Vecs(geom->nk+1, topo, geom);
+        vert->diagTheta2(rho_h->vz, rt_h->vz, l2Theta->vz);
         l2Theta->VertToHoriz();
-        for(int kk = 0; kk < geom->nk; kk++) {
+        for(int kk = 0; kk < geom->nk+1; kk++) {
             sprintf(fieldname, "theta");
             geom->write2(l2Theta->vh[kk], fieldname, step, kk, false);
+        }
+        delete l2Theta;
 
+        for(int kk = 0; kk < geom->nk; kk++) {
             vert->horiz->curl(true, velx[kk], &wi, kk, false);
 
             sprintf(fieldname, "vorticity");
@@ -1526,7 +1529,6 @@ void Euler::Strang_ec(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool 
 
             VecDestroy(&wi);
         }
-        delete l2Theta;
         sprintf(fieldname, "velocity_z");
         geom->writeVertToHoriz(velz, fieldname, step, geom->nk-1);
     }

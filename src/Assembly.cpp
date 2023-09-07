@@ -2079,12 +2079,14 @@ U0mat::~U0mat() {
 W_IP_mat::W_IP_mat(Topo* _topo, Geom* _geom, LagrangeEdge* _edge) {
     int m, mp1, mp12;
     M2_j_xy_i* W;
+    M1x_j_xy_i* U;
 
     topo = _topo;
     geom = _geom;
     edge = _edge;
 
     W = new M2_j_xy_i(edge);
+    U = new M1x_j_xy_i(edge->l, edge);
 
     m    = edge->l->q->n;
     mp1  = m + 1;
@@ -2102,9 +2104,14 @@ W_IP_mat::W_IP_mat(Topo* _topo, Geom* _geom, LagrangeEdge* _edge) {
 
     assemble_QW();
     MatTranspose(M_QW, MAT_INITIAL_MATRIX, &M_WQ);
-    assemble_Q(NULL);
+
+    MatCreate(MPI_COMM_WORLD, &M_UtQ);
+    MatSetSizes(M_UtQ, topo->n1l, geom->n0l, topo->nDofs1G, geom->nDofs0G);
+    MatSetType(M_UtQ, MATMPIAIJ);
+    MatMPIAIJSetPreallocation(M_UtQ, 8*U->nDofsJ, PETSC_NULL, 8*U->nDofsJ, PETSC_NULL);
 
     delete W;
+    delete U;
 }
 
 void W_IP_mat::assemble_QW() {
@@ -2164,6 +2171,19 @@ void W_IP_mat::assemble_QW() {
     delete Q;
 }
 
+void global_norm(double** J, int dim, double* norm_g) {
+    double norm_sq, norm_inv;
+
+    norm_g[0] = J[0][dim];
+    norm_g[1] = J[1][dim];
+
+    norm_sq = norm_g[0]*norm_g[0] + norm_g[1]*norm_g[1];
+    norm_inv = 1.0/sqrt(norm_sq);
+
+    norm_g[0] = norm_inv*norm_g[0];
+    norm_g[1] = norm_inv*norm_g[1];
+}
+
 void W_IP_mat::assemble_Q(Vec ul) {
     int ex, ey, ei, m, mp1, mp12, ii, jj, *inds_0;
     Wii* Q = new Wii(edge->l->q, geom);
@@ -2172,6 +2192,7 @@ void W_IP_mat::assemble_Q(Vec ul) {
     double* Qflat = new double[Q->nDofsJ*Q->nDofsJ];
     double* wts = edge->l->q->w;
     PetscScalar* uArray;
+    double norm_g[2];
 
     m    = edge->l->q->n;
     mp1  = m + 1;
@@ -2180,7 +2201,7 @@ void W_IP_mat::assemble_Q(Vec ul) {
     uq[0] = uq[1] = 1.0;
 
     MatZeroEntries(M_Q);
-    if(ul) VecGetArray(ul, &uArray);
+    VecGetArray(ul, &uArray);
     for(ey = 0; ey < topo->nElsX; ey++) {
         for(ex = 0; ex < topo->nElsX; ex++) {
             ei = ey*topo->nElsX + ex;
@@ -2190,28 +2211,32 @@ void W_IP_mat::assemble_Q(Vec ul) {
             for(jj = 0; jj < mp1; jj++) {
                 // bottom
                 ii           = jj;
-                if(ul) geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, uq);
                 J            = geom->J[ei][ii];
-		det_l        = sqrt(fabs(J[0][0]*J[0][0] + J[1][0]*J[1][0]));
-		Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[1]);
+                global_norm(J, 1, norm_g);
+                det_l        = sqrt(fabs(J[0][0]*J[0][0] + J[1][0]*J[1][0]));
+                Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[0]*norm_g[0] + uq[1]*norm_g[1]);
                 // top
                 ii           = jj + m*mp1;
-                if(ul) geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, uq);
                 J            = geom->J[ei][ii];
-		det_l        = sqrt(fabs(J[0][0]*J[0][0] + J[1][0]*J[1][0]));
-		Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[1]);
+                global_norm(J, 1, norm_g);
+                det_l        = sqrt(fabs(J[0][0]*J[0][0] + J[1][0]*J[1][0]));
+                Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[0]*norm_g[0] + uq[1]*norm_g[1]);
                 // left
                 ii           = jj*mp1;
-                if(ul) geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, uq);
                 J            = geom->J[ei][ii];
-		det_l        = sqrt(fabs(J[0][1]*J[0][1] + J[1][1]*J[1][1]));
-		Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[0]);
+                global_norm(J, 0, norm_g);
+                det_l        = sqrt(fabs(J[0][1]*J[0][1] + J[1][1]*J[1][1]));
+                Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[0]*norm_g[0] + uq[1]*norm_g[1]);
                 // right
                 ii           = jj*mp1 + m;
-                if(ul) geom->interp1_l(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, uq);
                 J            = geom->J[ei][ii];
-		det_l        = sqrt(fabs(J[0][1]*J[0][1] + J[1][1]*J[1][1]));
-		Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[0]);
+                global_norm(J, 0, norm_g);
+                det_l        = sqrt(fabs(J[0][1]*J[0][1] + J[1][1]*J[1][1]));
+                Qaa[ii][ii] += 0.5*wts[jj]*det_l*fabs(uq[0]*norm_g[0] + uq[1]*norm_g[1]);
             }
             Flat2D_IP(Q->nDofsI, Q->nDofsJ, Qaa, Qflat);
 
@@ -2220,7 +2245,7 @@ void W_IP_mat::assemble_Q(Vec ul) {
             MatSetValues(M_Q, Q->nDofsI, inds_0, Q->nDofsJ, inds_0, Qflat, ADD_VALUES);
         }
     }
-    if(ul) VecRestoreArray(ul, &uArray);
+    VecRestoreArray(ul, &uArray);
     MatAssemblyBegin(M_Q, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M_Q, MAT_FINAL_ASSEMBLY);
 
@@ -2229,7 +2254,133 @@ void W_IP_mat::assemble_Q(Vec ul) {
     delete Q;
 }
 
+void W_IP_mat::assemble_UtQ(Vec ul, Vec b_jump) {
+    int ex, ey, ei, m, mp1, mp12, ii, jj, kk, *inds_0, *inds_x, *inds_y;
+    double **J, det_l, uq[2], fac, det;
+    double* wts = edge->l->q->w;
+    PetscScalar* uArray;
+    PetscScalar* bArray;
+    double norm_g[2];
+    M1x_j_xy_i* U = new M1x_j_xy_i(edge->l, edge);
+    M1y_j_xy_i* V = new M1y_j_xy_i(edge->l, edge);
+    double** UtQ = Alloc2D(U->nDofsJ, U->nDofsI);
+    double** VtQ = Alloc2D(U->nDofsJ, U->nDofsI);
+    double* UtQflat = new double[U->nDofsI*U->nDofsJ];
+    double* VtQflat = new double[U->nDofsI*U->nDofsJ];
+    double sgn, F_dot_n;
+
+    m    = edge->l->q->n;
+    mp1  = m + 1;
+    mp12 = mp1*mp1;
+
+    uq[0] = uq[1] = 1.0;
+
+    MatZeroEntries(M_UtQ);
+    VecGetArray(ul, &uArray);
+    VecGetArray(b_jump, &bArray);
+    for(ey = 0; ey < topo->nElsX; ey++) {
+        for(ex = 0; ex < topo->nElsX; ex++) {
+            ei = ey*topo->nElsX + ex;
+
+	    for(ii = 0; ii < mp12; ii++) {
+                for(jj = 0; jj < U->nDofsJ; jj++) {
+                    UtQ[jj][ii] = 0.0;
+                    VtQ[jj][ii] = 0.0;
+                }
+            }
+
+            for(jj = 0; jj < mp1; jj++) {
+                // bottom
+                ii           = jj;
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                J            = geom->J[ei][ii];
+                det          = geom->det[ei][ii];
+                global_norm(J, 1, norm_g);
+                F_dot_n      = uq[0]*norm_g[0] + uq[1]*norm_g[1];
+                sgn          = (F_dot_n > 0.0) ? 1.0 : -1.0;
+                det_l        = sqrt(fabs(J[0][0]*J[0][0] + J[1][0]*J[1][0]));
+                fac          = 0.5*wts[jj]*det_l*sgn*bArray[ii]/det;
+                // U^T * J^T/|J| * n^ * sgn(F.n)
+                for(kk = 0; kk < U->nDofsJ; kk++) {
+                    UtQ[kk][ii] += fac*U->A[ii][kk]*(J[0][0]*norm_g[0] + J[1][0]*norm_g[1]);
+                    VtQ[kk][ii] += fac*V->A[ii][kk]*(J[0][1]*norm_g[0] + J[1][1]*norm_g[1]);
+                }
+
+                // top
+                ii           = jj + m*mp1;
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                J            = geom->J[ei][ii];
+                det          = geom->det[ei][ii];
+                global_norm(J, 1, norm_g);
+                F_dot_n      = uq[0]*norm_g[0] + uq[1]*norm_g[1];
+                sgn          = (F_dot_n > 0.0) ? 1.0 : -1.0;
+                det_l        = sqrt(fabs(J[0][0]*J[0][0] + J[1][0]*J[1][0]));
+                fac          = 0.5*wts[jj]*det_l*sgn*bArray[ii]/det;
+                // U^T * J^T/|J| * n^ * sgn(F.n)
+                for(kk = 0; kk < U->nDofsJ; kk++) {
+                    UtQ[kk][ii] += fac*U->A[ii][kk]*(J[0][0]*norm_g[0] + J[1][0]*norm_g[1]);
+                    VtQ[kk][ii] += fac*V->A[ii][kk]*(J[0][1]*norm_g[0] + J[1][1]*norm_g[1]);
+                }
+
+                // left
+                ii           = jj*mp1;
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                J            = geom->J[ei][ii];
+                det          = geom->det[ei][ii];
+                global_norm(J, 0, norm_g);
+                F_dot_n      = uq[0]*norm_g[0] + uq[1]*norm_g[1];
+                sgn          = (F_dot_n > 0.0) ? 1.0 : -1.0;
+                det_l        = sqrt(fabs(J[0][1]*J[0][1] + J[1][1]*J[1][1]));
+                fac          = 0.5*wts[jj]*det_l*sgn*bArray[ii]/det;
+                // U^T * J^T/|J| * n^ * sgn(F.n)
+                for(kk = 0; kk < U->nDofsJ; kk++) {
+                    UtQ[kk][ii] += fac*U->A[ii][kk]*(J[0][0]*norm_g[0] + J[1][0]*norm_g[1]);
+                    VtQ[kk][ii] += fac*V->A[ii][kk]*(J[0][1]*norm_g[0] + J[1][1]*norm_g[1]);
+                }
+
+                // right
+                ii           = jj*mp1 + m;
+                geom->interp1_g(ex, ey, ii%mp1, ii/mp1, uArray, uq);
+                J            = geom->J[ei][ii];
+                det          = geom->det[ei][ii];
+                global_norm(J, 0, norm_g);
+                F_dot_n      = uq[0]*norm_g[0] + uq[1]*norm_g[1];
+                sgn          = (F_dot_n > 0.0) ? 1.0 : -1.0;
+                det_l        = sqrt(fabs(J[0][1]*J[0][1] + J[1][1]*J[1][1]));
+                fac          = 0.5*wts[jj]*det_l*sgn*bArray[ii]/det;
+                // U^T * J^T/|J| * n^ * sgn(F.n)
+                for(kk = 0; kk < U->nDofsJ; kk++) {
+                    UtQ[kk][ii] += fac*U->A[ii][kk]*(J[0][0]*norm_g[0] + J[1][0]*norm_g[1]);
+                    VtQ[kk][ii] += fac*V->A[ii][kk]*(J[0][1]*norm_g[0] + J[1][1]*norm_g[1]);
+                }
+            }
+
+            Flat2D_IP(U->nDofsJ, U->nDofsI, UtQ, UtQflat);
+            Flat2D_IP(V->nDofsJ, U->nDofsI, VtQ, VtQflat);
+
+            inds_0 = geom->elInds0_g(ex, ey);
+            inds_x = topo->elInds1x_g(ex, ey);
+            inds_y = topo->elInds1y_g(ex, ey);
+
+            MatSetValues(M_UtQ, U->nDofsJ, inds_x, U->nDofsI, inds_0, UtQflat, ADD_VALUES);
+            MatSetValues(M_UtQ, U->nDofsJ, inds_y, U->nDofsI, inds_0, VtQflat, ADD_VALUES);
+        }
+    }
+    VecRestoreArray(ul, &uArray);
+    VecRestoreArray(b_jump, &bArray);
+    MatAssemblyBegin(M_Q, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(M_Q, MAT_FINAL_ASSEMBLY);
+
+    Free2D(U->nDofsJ, UtQ);
+    Free2D(U->nDofsJ, VtQ);
+    delete[] UtQflat;
+    delete[] VtQflat;
+    delete U;
+    delete V;
+}
+
 W_IP_mat::~W_IP_mat() {
+    MatDestroy(&M_UtQ);
     MatDestroy(&M_WQ);
     MatDestroy(&M_QW);
     MatDestroy(&M_Q);

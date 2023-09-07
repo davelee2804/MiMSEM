@@ -24,9 +24,10 @@ class ThermalSW_EEC_2 {
         Whmat* M2h;
         Phmat* M0h;
         WtQUmat* K;
+        W_IP_mat* M2_ip;
         Vec fg;            // coriolis vector (global)
         Vec fl;            // coriolis vector (local)
-	Vec M0fg;
+        Vec M0fg;
         Mat E01M1;
         Mat E12M2;
         KSP ksp;           // 1 form mass matrix linear solver

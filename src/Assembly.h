@@ -271,6 +271,8 @@ class W_IP_mat {
         Mat M_QW;
         Mat M_WQ;
         Mat M_Q;
+        Mat M_UtQ;
         void assemble_QW();
         void assemble_Q(Vec ul);
+        void assemble_UtQ(Vec ul, Vec b_jump);
 };
