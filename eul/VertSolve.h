@@ -40,6 +40,8 @@ class VertSolve {
 
         void assemble_residual(int ex, int ey, Vec theta, Vec Pi, 
                                Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
+        void assemble_residual_ec(int ex, int ey, Vec theta, Vec Pi, 
+                               Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G, Vec f_theta_corr);
 
         double MaxNorm(Vec dx, Vec x, double max_norm);
 

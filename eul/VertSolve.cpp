@@ -439,6 +439,78 @@ void VertSolve::assemble_residual(int ex, int ey, Vec theta, Vec Pi,
 #endif
 }
 
+void VertSolve::assemble_residual_ec(int ex, int ey, Vec theta, Vec Pi, 
+                                  Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G, Vec f_theta_corr) 
+{
+    double dot = 0.0;
+
+    // diagnose the hamiltonian derivatives
+    diagnose_F_z(ex, ey, velz1, velz2, rho1, rho2, _F);
+    diagnose_Phi_z(ex, ey, velz1, velz2, _Phi_z);
+
+    // assemble the momentum equation residual
+    vo->AssembleLinear(ex, ey, vo->VA);
+    MatMult(vo->VA, velz2, fw);
+
+    MatMult(vo->VA, velz1, _tmpA1);
+    VecAXPY(fw, -1.0, _tmpA1);
+
+    MatMult(vo->V01, _Phi_z, _tmpA1);
+    VecAXPY(fw, +dt, _tmpA1); // bernoulli function term
+
+    vo->AssembleConst(ex, ey, vo->VB);
+    MatMult(vo->VB, Pi, _tmpB1);
+    MatMult(vo->V01, _tmpB1, _tmpA1);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    MatMult(vo->VA_inv, _tmpA1, _tmpA2); // pressure gradient
+    vo->AssembleLinearWithRT(ex, ey, theta, vo->VA, true);
+    MatMult(vo->VA, _tmpA2, _tmpA1);
+    //VecAXPY(fw, +dt, _tmpA1); // pressure gradient term
+    VecAXPY(fw, +0.5*dt, _tmpA1); // pressure gradient term
+
+    // compute the kinetic to internal energy power
+    VecDot(_F, _tmpA1, &dot);
+    k2i_z += dot / SCALE;
+
+    // update the temperature equation flux
+    MatMult(vo->VA, _F, _tmpA1); // includes theta
+    MatMult(vo->VA_inv, _tmpA1, _G);
+
+    // add the rayleigh friction
+#ifdef RAYLEIGH
+    vo->AssembleRayleigh(ex, ey, vo->VA);
+    MatMult(vo->VA, velz2, _tmpA1);
+    VecAXPY(fw, 0.5*dt*RAYLEIGH, _tmpA1);
+    MatMult(vo->VA, velz1, _tmpA1);
+    VecAXPY(fw, 0.5*dt*RAYLEIGH, _tmpA1);
+#endif
+
+    // additional terms to ensure conservation of entropy
+    MatMult(vo->VB, theta, _tmpB1);
+    MatMult(vo->V01, _tmpB1, _tmpA1);
+    MatMult(vo->VA_inv, _tmpA1, _tmpA2); // theta gradient
+
+    vo->AssembleConstWithRho(ex, ey, theta, vo->VB);
+    vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
+
+    // entropy conserving pressure gradient terms (these terms cause convergence problems)
+    MatMult(vo->VB, Pi, _tmpB1);
+    MatMult(vo->V01, _tmpB1, _tmpA1);
+    VecAXPY(fw, +0.5*dt, _tmpA1);
+
+    MatMultTranspose(vo->VBA, Pi, _tmpA1);
+    VecAXPY(fw, -0.5*dt, _tmpA1);
+
+    // entropy conserving temperature transport terms
+    VecZeroEntries(f_theta_corr);
+    MatMult(vo->V10, _F, _tmpB1); // DIV(F)
+    MatMult(vo->VB, _tmpB1, _tmpB2);
+    VecAXPY(f_theta_corr, 0.5*dt, _tmpB2);
+
+    MatMult(vo->VBA, _F, _tmpB1);
+    VecAXPY(f_theta_corr, 0.5*dt, _tmpB1);
+}
+
 void VertSolve::solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                                    Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, int itt) 
 {
@@ -1111,7 +1183,7 @@ void VertSolve::solve_schur_ec(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
     L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
-    Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F_z, G_z, dF_z, dG_z, d_theta;
+    Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F_z, G_z, dF_z, dG_z, d_theta, F_theta_corr;
     L2Vecs* dFx = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* dGx = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* theta_l2_i = new L2Vecs(geom->nk, topo, geom);
@@ -1133,6 +1205,7 @@ void VertSolve::solve_schur_ec(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*elOrd2, &d_theta);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_theta_corr);
 
     velz_i->HorizToVert();
     rho_i->HorizToVert();
@@ -1178,16 +1251,21 @@ void VertSolve::solve_schur_ec(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
             ey = ii/topo->nElsX;
 
             // assemble the residual vectors
-            assemble_residual(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
-                              rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z);
+            //assemble_residual(ex, ey, theta_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
+            //                  rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z);
+            assemble_residual_ec(ex, ey, theta_l2_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
+                              rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z, F_theta_corr);
 
             if(udwdx) VecAXPY(F_w, dt, udwdx->vz[ii]);
             vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
             vo->AssembleConst(ex, ey, vo->VB);
             MatMult(vo->V10, F_z, dF_z);
             MatMult(vo->V10, G_z, dG_z);
+
             VecAYPX(dF_z, dt, rho_j->vz[ii]);
-            VecAYPX(dG_z, dt, rt_j->vz[ii]);
+            //VecAYPX(dG_z, dt, rt_j->vz[ii]);
+            VecAYPX(dG_z, 0.5*dt, rt_j->vz[ii]);
+
             VecAXPY(dF_z, -1.0, rho_i->vz[ii]);
             VecAXPY(dG_z, -1.0, rt_i->vz[ii] );
 
@@ -1196,6 +1274,9 @@ void VertSolve::solve_schur_ec(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
             VecAXPY(F_rho, dt, dFx->vz[ii]);
             MatMult(vo->VB, dG_z, F_rt);
             VecAXPY(F_rt, dt, dGx->vz[ii]);
+
+	    //
+	    VecAXPY(F_rt, 1.0, F_theta_corr);
 
             if(hs_forcing) {
                 vo->AssembleTempForcing_HS(ex, ey, exner_h->vz[ii], theta_h->vz[ii], rho_h->vz[ii], dG_z);
@@ -1304,6 +1385,7 @@ void VertSolve::solve_schur_ec(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Ve
     VecDestroy(&dF_z);
     VecDestroy(&dG_z);
     VecDestroy(&d_theta);
+    VecDestroy(&F_theta_corr);
 }
 
 void VertSolve::assemble_operators(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec pi, Vec velz) {
