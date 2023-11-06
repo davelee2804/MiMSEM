@@ -56,19 +56,21 @@ Optional stabilisation/forcing terms include:
 <sub>Potential temperature for the 3D rising bubble test case in planar geometry without dissipation and with energetically consistent variational upwinding at times 200s (left) and 400s (right)</sub>
 
 ## References ##
-Lee, D, Martin, A, Bladwell, C and Badia, S (2022) [A comparison of variational upwinding schemes for geophysical fluids, and their application to potential enstrophy conserving discretisations in space and time](https://arxiv.org/abs/2203.04629) arXiv:2203.04629
+Ricardo, K., Lee, D. and Duru, K. (2024) [Entropy and energy conservation for thermal atmospheric dynamics using mixed compatible finite elements](https://www.sciencedirect.com/science/article/abs/pii/S0021999123007003) _J. Comp. Phys. 496 112605
 
-Lee, D and Palha, A (2021) [Exact spatial and temporal balance of energy exchanges within a horizontally explicit/vertically implicit non-hydrostatic atmosphere](https://www.sciencedirect.com/science/article/pii/S0021999121003272) _J. Comp. Phys._ 440 110432
+Lee, D., Martin, A., Bladwell, C. and Badia, S. (2022) [A comparison of variational upwinding schemes for geophysical fluids, and their application to potential enstrophy conserving discretisations in space and time](https://arxiv.org/abs/2203.04629) arXiv:2203.04629
 
-Lee, D (2021) [An energetically balanced, quasi-Newton integrator for non-hydrostatic vertical atmospheric dynamics](https://www.sciencedirect.com/science/article/pii/S0021999120307622) _J. Comp. Phys._ 429 109988
+Lee, D. and Palha, A. (2021) [Exact spatial and temporal balance of energy exchanges within a horizontally explicit/vertically implicit non-hydrostatic atmosphere](https://www.sciencedirect.com/science/article/pii/S0021999121003272) _J. Comp. Phys._ 440 110432
 
-Lee, D (2021) [Petrov-Galerkin flux upwinding for mixed mimetic spectral elements, and its application to geophysical flow problems](https://www.sciencedirect.com/science/article/pii/S0898122121000651) Comput. Math. Appl. 89 68-77
+Lee, D. (2021) [An energetically balanced, quasi-Newton integrator for non-hydrostatic vertical atmospheric dynamics](https://www.sciencedirect.com/science/article/pii/S0021999120307622) _J. Comp. Phys._ 429 109988
 
-Lee, D and Palha. A (2020) [A mixed mimetic spectral element model of the 3D compressible Euler equations on the cubed sphere](https://www.sciencedirect.com/science/article/pii/S0021999119306989) _J. Comp. Phys._ 401 108993
+Lee, D. (2021) [Petrov-Galerkin flux upwinding for mixed mimetic spectral elements, and its application to geophysical flow problems](https://www.sciencedirect.com/science/article/pii/S0898122121000651) Comput. Math. Appl. 89 68-77
 
-Lee, D and Palha, A (2018) [A mixed mimetic spectral element model of the rotating shallow water equations on the cubed sphere](https://www.sciencedirect.com/science/article/pii/S0021999118305734) _J. Comp. Phys._ 375 240-262
+Lee, D. and Palha, A. (2020) [A mixed mimetic spectral element model of the 3D compressible Euler equations on the cubed sphere](https://www.sciencedirect.com/science/article/pii/S0021999119306989) _J. Comp. Phys._ 401 108993
 
-Lee, D, Palha, A and Gerritsma, M (2018) [Discrete conservation properties for shallow water flows using mixed mimetic spectral elements](https://www.sciencedirect.com/science/article/pii/S0021999117309166) _J. Comp. Phys._ 357 282-304
+Lee, D. and Palha, A. (2018) [A mixed mimetic spectral element model of the rotating shallow water equations on the cubed sphere](https://www.sciencedirect.com/science/article/pii/S0021999118305734) _J. Comp. Phys._ 375 240-262
+
+Lee, D., Palha, A. and Gerritsma, M. (2018) [Discrete conservation properties for shallow water flows using mixed mimetic spectral elements](https://www.sciencedirect.com/science/article/pii/S0021999117309166) _J. Comp. Phys._ 357 282-304
 
 ## Comments? Questions? Like to Contribute? ##
 Email Dave Lee at davelee2804@gmail.com
