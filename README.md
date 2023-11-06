@@ -56,7 +56,7 @@ Optional stabilisation/forcing terms include:
 <sub>Potential temperature for the 3D rising bubble test case in planar geometry without dissipation and with energetically consistent variational upwinding at times 200s (left) and 400s (right)</sub>
 
 ## References ##
-Ricardo, K., Lee, D. and Duru, K. (2024) [Entropy and energy conservation for thermal atmospheric dynamics using mixed compatible finite elements](https://www.sciencedirect.com/science/article/abs/pii/S0021999123007003) _J. Comp. Phys. 496 112605
+Ricardo, K., Lee, D. and Duru, K. (2024) [Entropy and energy conservation for thermal atmospheric dynamics using mixed compatible finite elements](https://www.sciencedirect.com/science/article/abs/pii/S0021999123007003) _J. Comp. Phys._ 496 112605
 
 Lee, D., Martin, A., Bladwell, C. and Badia, S. (2022) [A comparison of variational upwinding schemes for geophysical fluids, and their application to potential enstrophy conserving discretisations in space and time](https://arxiv.org/abs/2203.04629) arXiv:2203.04629
 
