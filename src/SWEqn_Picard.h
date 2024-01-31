@@ -69,11 +69,11 @@ class SWEqn {
         void err2(Vec u, ICfunc* fu, double* norms);
         double int0(Vec u);
         double int2(Vec u);
-        double intE(Vec u, Vec h);
-        void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0, double enst0);
-        void assemble_residual(Vec x, Vec f, bool q_exact);
+        double intE(Vec u, Vec h, Vec b);
+        void writeConservation(double time, Vec u, Vec h, double mass0, double vort0, double ener0, double enst0, Vec b);
+        void assemble_residual(Vec x, Vec f, bool q_exact, Vec bot);
         void assemble_operator(double dt);
-        void solve(Vec u, Vec h, double _dt, bool save, int nits, bool q_exact);
+        void solve(Vec u, Vec h, double _dt, bool save, int nits, bool q_exact, Vec bot);
         void unpack(Vec x, Vec u, Vec h);
         void repack(Vec x, Vec u, Vec h);
 };
