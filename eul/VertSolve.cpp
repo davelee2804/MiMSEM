@@ -788,13 +788,6 @@ void VertSolve::solve_schur_column_eta(int ex, int ey, Vec theta, Vec velz, Vec 
     KSPSetFromOptions(ksp_pi);
     KSPSolve(ksp_pi, F_pi, d_pi);
 
-/*{double norm_pi, norm_dpi;
-VecNorm(pi,NORM_2,&norm_pi);
-VecNorm(d_pi,NORM_2,&norm_dpi);
-if(!rank && !ex && !ey){
-cout << "|Pi|: " << norm_pi << "\t|dPi|: " << norm_dpi << "\t|dPi|/|Pi|: " << norm_dpi/norm_pi << endl;
-}}*/
-
     // Back substitute for updates
     MatMult(G_pi, d_pi, _tmpA2);
     VecAXPY(F_u, 1.0, _tmpA2);
@@ -816,26 +809,10 @@ cout << "|Pi|: " << norm_pi << "\t|dPi|: " << norm_dpi << "\t|dPi|/|Pi|: " << no
     VecScale(F_eta, -1.0);
     MatMult(vo->VB_inv, F_eta, d_eta);
 
-
-/*{double norm_pi, norm_dpi;
-VecNorm(eta,NORM_2,&norm_pi);
-VecNorm(d_eta,NORM_2,&norm_dpi);
-if(!rank && !ex && !ey){
-cout << "|eta|: " << norm_pi << "\t|deta|: " << norm_dpi << "\t|deta|/|eta|: " << norm_dpi/norm_pi << endl;
-}}*/
-
     MatMult(D_rho, d_u, _tmpB1);
     VecAXPY(F_rho, 1.0, _tmpB1);
     VecScale(F_rho, -1.0);
     MatMult(vo->VB_inv, F_rho, d_rho);
-
-
-/*{double norm_pi, norm_dpi;
-VecNorm(rho,NORM_2,&norm_pi);
-VecNorm(d_rho,NORM_2,&norm_dpi);
-if(!rank && !ex && !ey){
-cout << "|rho|: " << norm_pi << "\t|drho|: " << norm_dpi << "\t|drho|/|rho|: " << norm_dpi/norm_pi << endl;
-}}*/
 
     KSPDestroy(&ksp_pi);
     MatDestroy(&pc_G_etaV1_inv);
@@ -1874,19 +1851,6 @@ void VertSolve::solve_schur_eta(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2V
             vo->AssembleConstInv(ex, ey, vo->VB_inv);
 	    MatMult(vo->VB_inv, _tmpB1, eta);
 
-/*{double norm_rt, norm_drt;
-//VecNorm(_tmpB1,NORM_2,&norm_drt);
-//if(!rank && !ii)cout<<"|log(theta)|: "<<norm_drt<<endl;
-vo->AssembleConstWithRhoExpEta(ex, ey, rho_h->vz[ii], eta, _tmpB1);
-//VecNorm(_tmpB1,NORM_2,&norm_drt);
-//if(!rank && !ii)cout<<"|rho e^{eta}|: "<<norm_drt<<endl;
-MatMult(vo->VB_inv, _tmpB1, _tmpB2);
-VecAXPY(_tmpB2,-1.0,rt_h->vz[ii]);
-VecNorm(_tmpB2,NORM_2,&norm_drt);
-VecNorm(rt_h->vz[ii],NORM_2,&norm_rt);
-if(!rank && !ii)cout<<"|rt|: " << norm_rt << "\t|drt|: " << norm_drt << "\t|drt|/|rt|: " << norm_drt/norm_rt << endl;
-}*/
-
 	    // TODO: use theta_in_W3 here?
             //solve_schur_column_eta(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], eta, exner_h->vz[ii],
             solve_schur_column_eta(ex, ey, theta_in_W3, velz_h->vz[ii], rho_h->vz[ii], eta, exner_h->vz[ii],
@@ -1956,7 +1920,8 @@ if(!rank && !ii)cout<<"|rt|: " << norm_rt << "\t|drt|: " << norm_drt << "\t|drt|
 
         itt++;
 
-        if(max_norm_exner < 1.0e-12 && max_norm_rho < 1.0e-12 && max_norm_rt < 1.0e-12) done = true;
+        //if(max_norm_exner < 1.0e-12 && max_norm_rho < 1.0e-12 && max_norm_rt < 1.0e-12) done = true;
+        if(max_norm_exner < 1.0e-12 && max_norm_rho < 1.0e-12) done = true;
         if(!rank) cout << "\t" << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
                                  "\t|d_w|/|w|: "          << max_norm_w     <<
                                  "\t|d_rho|/|rho|: "      << max_norm_rho   <<
