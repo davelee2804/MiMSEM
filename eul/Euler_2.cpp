@@ -1463,7 +1463,7 @@ void Euler::Strang_ec(Vec* velx, Vec* velz, Vec* rho, Vec* rt, Vec* exner, bool 
     rt_h->CopyFromHoriz(rt_0->vh);
     exner_h->CopyFromHoriz(exner_0->vh);
 
-    vert->solve_schur_ec(velz_h, rho_h, rt_h, exner_h, NULL, velx_0, velx, ul_prev, ul, hs_forcing);
+    vert->solve_schur_eta(velz_h, rho_h, rt_h, exner_h, NULL, velx_0, velx, ul_prev, ul, hs_forcing);
 
     // 3.  Explicit horiztonal solve
     if(!rank) cout << "horiztonal step (3).................." << endl;

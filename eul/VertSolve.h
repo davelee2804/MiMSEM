@@ -37,6 +37,8 @@ class VertSolve {
                               L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing);
         void solve_schur_ec(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
                               L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing);
+        void solve_schur_eta(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
+                              L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing);
 
         void assemble_residual(int ex, int ey, Vec theta, Vec Pi, 
                                Vec velz1, Vec velz2, Vec rho1, Vec rho2, Vec rt1, Vec rt2, Vec fw, Vec _F, Vec _G);
@@ -47,6 +49,8 @@ class VertSolve {
 
         void solve_schur_column_3(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec rt, Vec pi, 
                                    Vec F_u, Vec F_rho, Vec F_rt, Vec F_pi, Vec d_u, Vec d_rho, Vec d_rt, Vec d_pi, int ii);
+        void solve_schur_column_eta(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec eta, Vec pi,
+                                   Vec F_u, Vec F_rho, Vec F_eta, Vec F_pi, Vec d_u, Vec d_rho, Vec d_eta, Vec d_pi);
 
         void AssembleVertMomVort(Vec* ul, L2Vecs* velz, KSP ksp1, Umat* M1, Wmat* M2, E21mat* EtoF, WtQdUdz_mat* Rz, L2Vecs* uuz);
 
@@ -64,7 +68,7 @@ class VertSolve {
 
         Mat M_u_inv, M_rho, M_rt_inv, G_rho, G_pi, D_rho, D_rt, D_rho_M_u_inv, D_rt_M_u_inv, L_rho_rho, L_rho_pi, L_rt_rho, L_rt_pi, N_pi, N_rt;
         Mat N_rt_M_rt_inv, LL_inv, LL_invL, L_rho_rho_inv;
-        Mat M_rt, G_rt, N_pi_inv, N_rt_inv, L_pi_rt, L_rt_pi_N_pi_inv, L_rho_rt, L_rt_rt, M_rho_inv, N_pi_invN_rt;
+        Mat M_rt, G_rt, N_pi_inv, N_rt_inv, L_pi_rt, L_rt_pi_N_pi_inv, L_rho_rt, L_rt_rt, M_rho_inv, N_pi_invN_rt, N_rho_inv;
 
         Mat pc_V1_invV1, pc_V01V1_invV1, pc_V0_invV01V1_invV1, pc_DV0_invV01V1_invV1, pc_V1DV0_invV01V1_invV1, pc_V01VBA, pc_V1D;
         Mat pc_V1D_2, pc_V1_invV1_2, pc_V01V1_invV1_2, pc_V1DV0_invV01V1_invV1_2;
@@ -81,7 +85,6 @@ class VertSolve {
         KSP ksp_pi, ksp_rho, ksp_w;
 
         void assemble_operators(int ex, int ey, Vec theta, Vec rho, Vec rt, Vec pi, Vec velz);
-    //private:
         // vertical vectors and matrices
         Vec _Phi_z;
         Mat _V0_invV0_rt;
@@ -114,4 +117,10 @@ class VertSolve {
         Mat pc_VISC;
         // .....density correction (velocity equation)
         Mat pc_V0_invV0_rt_DT;
+	Mat pc_G_etaV1_inv;
+	Mat pc_C_rhoM1_inv;
+	Mat A_eta;
+	Mat pc_DIV;
+	Mat L_eta;
+	Mat L_pi;
 };
