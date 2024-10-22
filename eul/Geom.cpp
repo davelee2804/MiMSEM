@@ -213,6 +213,13 @@ Geom::~Geom() {
     delete[] J;
     delete[] det;
 
+    delete[] loc0;
+    delete[] inds0_l;
+    delete[] inds0_g;
+    VecScatterDestroy(&gtol_0);
+    ISDestroy(&is_g_0);
+    ISDestroy(&is_l_0);
+
     delete edge;
     delete node;
     delete quad;

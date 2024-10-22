@@ -151,6 +151,7 @@ LagrangeNode::~LagrangeNode() {
     int ii;
 
     delete[] a;
+    delete[] x;
 
     for(ii = 0; ii <= q->n; ii++) {
         delete[] ljxi[ii];

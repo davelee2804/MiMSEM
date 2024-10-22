@@ -1732,7 +1732,7 @@ void VertSolve::solve_schur_eta(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2V
     L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
     L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
-    Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_exner, F_z, G_z, dF_z, dG_z, d_theta, F_theta_corr;
+    Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_exner, F_z, G_z, dF_z, dG_z, F_theta_corr;
     Vec F_eta, d_eta, eta, theta_in_W3;
     L2Vecs* dFx = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* dGx = new L2Vecs(geom->nk, topo, geom);
@@ -1755,7 +1755,6 @@ void VertSolve::solve_schur_eta(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2V
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
-    VecCreateSeq(MPI_COMM_SELF, (geom->nk+1)*elOrd2, &d_theta);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_theta_corr);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &eta);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &theta_in_W3);
@@ -1968,7 +1967,6 @@ void VertSolve::solve_schur_eta(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2V
     VecDestroy(&G_z);
     VecDestroy(&dF_z);
     VecDestroy(&dG_z);
-    VecDestroy(&d_theta);
     VecDestroy(&F_theta_corr);
     VecDestroy(&eta);
     VecDestroy(&theta_in_W3);

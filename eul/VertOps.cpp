@@ -1230,7 +1230,6 @@ void VertOps::AssembleConstWithLogThetaPlusEta(int ex, int ey, Vec theta, Vec et
             for(jj = 0; jj < n2; jj++) {
                 tb += tArray[kk*n2+jj]*W->A[ii*n2+jj];
 	    }
-//if(tb<0.0){tb=1.0e-8;cout<<"ERROR! -ve theta in eta rhs: "<<ek<<endl;}
 	    fac = log(tb/(geom->thick[kk][inds0[ii]]*det));
 	    if (eta) {
                 for(jj = 0; jj < n2; jj++) {
@@ -1289,7 +1288,6 @@ void VertOps::AssembleConstWithRhoExpEta(int ex, int ey, Vec rho, Vec eta, Vec r
 	    //ek *= 1.0/(geom->thick[kk][inds0[ii]]*det);
 	    rk *= 1.0/(geom->thick[kk][inds0[ii]]*det);
 	    ek *= 1.0/(geom->thick[kk][inds0[ii]]*det);
-//if(ek<0.0){ek=1.0e-8;cout<<"ERROR! -ve eta in theta rhs: "<<ek<<endl;}
             rtq[ii] *= ( SCALE*rk*exp(ek) );
         }
 
