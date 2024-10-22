@@ -60,6 +60,11 @@ class VertOps {
         void AssembleConstWithTheta(int ex, int ey, Vec theta, Mat B);
         void Assemble_EOS_Residual(int ex, int ey, Vec rt, Vec exner, Vec eos_rhs);
         void Assemble_EOS_BlockInv(int ex, int ey, Vec rt, Vec theta, Mat B);
+	// for the dry entropy preconditioning
+        void Assemble_EOS_Block(int ex, int ey, Vec rt, Mat B);
+        void AssembleConstWithLogThetaPlusEta(int ex, int ey, Vec theta, Vec eta, Vec rhs);
+        void AssembleConstWithRhoExpEta(int ex, int ey, Vec rho, Vec eta, Vec rhs);
+        void AssembleConLinWithRhodPi(int ex, int ey, Vec theta, Vec dpi, Mat BA);
         // for the density corrections to the schur complement solution
         void AssembleLinearWithRayleighInv(int ex, int ey, double dt_fric, Mat A);
         void AssembleLinearWithRho2_up(int ex, int ey, Vec rho, Mat A, double dt, Vec* uhl);

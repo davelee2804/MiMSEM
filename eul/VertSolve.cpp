@@ -35,7 +35,6 @@ using namespace std;
 
 VertSolve::VertSolve(Topo* _topo, Geom* _geom, double _dt) {
     int ii, elOrd2;
-    PC pc;
 
     dt = _dt;
     topo = _topo;
@@ -67,23 +66,17 @@ VertSolve::VertSolve(Topo* _topo, Geom* _geom, double _dt) {
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &_tmpB1);
     VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &_tmpB2);
 
-    _PCz = NULL;
     pc_A_rt = NULL;
     _V0_invV0_rt = NULL;
-    ksp_pi = ksp_rho = NULL;
     pc_V01VBA = NULL;
     G_rho = G_rt = NULL;
     pc_VB_rt_invVB_pi = NULL;
     UdotGRAD = NULL;
     M_u_inv = NULL;
     N_pi = NULL;
-
-    KSPCreate(MPI_COMM_SELF, &ksp_w);
-    KSPSetOperators(ksp_w, vo->VA, vo->VA);
-    KSPGetPC(ksp_w, &pc);
-    PCSetType(pc, PCLU);
-    KSPSetOptionsPrefix(ksp_w, "ksp_w_");
-    KSPSetFromOptions(ksp_w);
+    N_pi_inv = NULL;
+    N_rho_inv = NULL;
+    A_eta = NULL;
 
     theta_h = new L2Vecs(geom->nk+1, topo, geom);
     theta_l2_h = new L2Vecs(geom->nk, topo, geom);
@@ -200,11 +193,6 @@ VertSolve::~VertSolve() {
     delete node;
     delete quad;
 
-    if(_PCz)    MatDestroy(&_PCz);
-    if(ksp_w)   KSPDestroy(&ksp_w);
-    if(ksp_pi)  KSPDestroy(&ksp_pi);
-    if(ksp_rho) KSPDestroy(&ksp_rho);
-
     delete theta_h;
     delete theta_l2_h;
     delete exner_h;
@@ -228,11 +216,13 @@ VertSolve::~VertSolve() {
         MatDestroy(&N_pi_inv);
         MatDestroy(&N_rt);
         MatDestroy(&M_rt);
-        MatDestroy(&M_u_inv);
         MatDestroy(&M_rho_inv);
         MatDestroy(&G_pi);
         MatDestroy(&G_rt);
     }
+    if(A_eta)     MatDestroy(&A_eta);
+    if(M_u_inv)   MatDestroy(&M_u_inv);
+    if(N_rho_inv) MatDestroy(&N_rho_inv);
 }
 
 double VertSolve::MaxNorm(Vec dx, Vec x, double max_norm) {
@@ -677,23 +667,159 @@ vo->AssembleConLinWithW(ex, ey, velz, vo->VBA);
     VecAXPY(F_rho, 1.0, _tmpB1);
     VecScale(F_rho, -1.0);
     MatMult(M_rho_inv, F_rho, d_rho);
-/*{
-double Amag[3];
-VecSet(_tmpB1,1.0);
-MatMult(M_rho_inv,_tmpB1,_tmpB2);
-VecDot(_tmpB1,_tmpB2,&Amag[0]);
-MatMult(N_pi_inv,_tmpB1,_tmpB2);
-VecDot(_tmpB1,_tmpB2,&Amag[1]);
-VecSet(_tmpA1,1.0);
-MatMult(M_u_inv,_tmpA1,_tmpA2);
-VecDot(_tmpA1,_tmpA2,&Amag[2]);
-cout<<rank<<"\t"<<ex<<"\t"<<ey<<"\t||A||: "<<Amag[0]<<"\t"<<Amag[1]<<"\t"<<Amag[2]<<endl;
-}*/
 
-MatDestroy(&G_pi_N_pi_inv_N_rt);
-MatDestroy(&Q_rt_rho_M_rho_inv_D_rho);
-MatDestroy(&L_rt_rt);
-KSPDestroy(&ksp_pi);
+    MatDestroy(&G_pi_N_pi_inv_N_rt);
+    MatDestroy(&Q_rt_rho_M_rho_inv_D_rho);
+    MatDestroy(&L_rt_rt);
+    KSPDestroy(&ksp_pi);
+}
+
+void VertSolve::solve_schur_column_eta(int ex, int ey, Vec theta, Vec velz, Vec rho, Vec eta, Vec pi,
+                                   Vec F_u, Vec F_rho, Vec F_eta, Vec F_pi, Vec d_u, Vec d_rho, Vec d_eta, Vec d_pi) 
+{
+    int n2 = topo->elOrd*topo->elOrd;
+    MatReuse reuse = (!G_rt) ? MAT_INITIAL_MATRIX : MAT_REUSE_MATRIX;
+    PC pc;
+
+    if(!N_pi_inv) {
+        MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &N_pi_inv);
+        MatCreateSeqAIJ(MPI_COMM_SELF, geom->nk*n2, geom->nk*n2, n2, NULL, &N_rho_inv);
+    }
+
+    // assemble the operators for the coupled system
+    vo->AssembleConst(ex, ey, vo->VB);
+    vo->AssembleLinearInv(ex, ey, vo->VA_inv);
+    vo->AssembleConstInv(ex, ey, vo->VB_inv);
+
+    MatMatMult(vo->V01, vo->VB, reuse, PETSC_DEFAULT, &pc_DTV1);
+    MatMatMult(vo->VA_inv, pc_DTV1, reuse, PETSC_DEFAULT, &pc_V0_invDTV1);
+    MatAssemblyBegin(pc_V0_invDTV1, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (pc_V0_invDTV1, MAT_FINAL_ASSEMBLY); // grad operator
+
+    // [u,\eta]   block
+    MatMult(pc_V0_invDTV1, pi, _tmpA2); // pressure gradient
+    vo->AssembleConLinWithRhodPi(ex, ey, theta, _tmpA2, vo->VBA);
+    MatTranspose(vo->VBA, reuse, &G_rt);
+    MatScale(G_rt, 0.5*dt);
+    MatAssemblyBegin(G_rt, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (G_rt, MAT_FINAL_ASSEMBLY);
+
+    // [u,\Pi]    block
+    //vo->AssembleLinearWithTheta(ex, ey, theta, vo->VA);
+    vo->AssembleLinearWithRT(ex, ey, theta, vo->VA, true);
+    MatMatMult(vo->VA, pc_V0_invDTV1, reuse, PETSC_DEFAULT, &G_pi);
+    MatScale(G_pi, 0.5*dt);
+    MatAssemblyBegin(G_pi, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (G_pi, MAT_FINAL_ASSEMBLY);
+
+    // [\rho,u]   block
+    vo->AssembleLinearWithRT(ex, ey, rho, vo->VA, true);
+    MatMatMult(vo->VA_inv, vo->VA, reuse, PETSC_DEFAULT, &pc_V0_invV0_rt);
+    MatAssemblyBegin(pc_V0_invV0_rt, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (pc_V0_invV0_rt, MAT_FINAL_ASSEMBLY);
+    MatMatMult(vo->V10, pc_V0_invV0_rt, reuse, PETSC_DEFAULT, &pc_DV0_invV0_rt);
+    MatAssemblyBegin(pc_DV0_invV0_rt, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (pc_DV0_invV0_rt, MAT_FINAL_ASSEMBLY);
+    MatMatMult(vo->VB, pc_DV0_invV0_rt, reuse, PETSC_DEFAULT, &D_rho);
+    MatScale(D_rho, 0.5*dt);
+    MatAssemblyBegin(D_rho, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (D_rho, MAT_FINAL_ASSEMBLY);
+
+    // [\eta,u]   block
+    MatMult(pc_V0_invDTV1, eta, _tmpA2); // entropy gradient
+    vo->AssembleConLinWithW(ex, ey, _tmpA2, vo->VBA);
+    MatScale(vo->VBA, 0.5*dt);
+    MatAssemblyBegin(vo->VBA, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (vo->VBA, MAT_FINAL_ASSEMBLY);
+
+    // [\Pi,\Pi]  block
+    vo->Assemble_EOS_Block(ex, ey, pi, N_pi_inv);
+
+    // [\Pi,\rho] block (must be scaled by -Rd/Cv)
+    vo->Assemble_EOS_Block(ex, ey, rho, N_rho_inv);
+
+    // Assemble _M_ = M0 - G_eta M1^{-1} A_eta
+    MatMatMult(G_rt, vo->VB_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &pc_G_etaV1_inv);
+    MatMatMult(pc_G_etaV1_inv, vo->VBA, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &L_eta);
+    vo->AssembleLinear(ex, ey, vo->VA);
+    MatAYPX(L_eta, -1.0, vo->VA, DIFFERENT_NONZERO_PATTERN);
+    MatAssemblyBegin(L_eta, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (L_eta, MAT_FINAL_ASSEMBLY);
+    // ...and get the lumped inverse of _M_
+    MatGetDiagonal(L_eta, _tmpA1);
+    VecSet(_tmpA2, 1.0);
+    VecPointwiseDivide(_tmpA1, _tmpA2, _tmpA1);
+
+    // Assemble C_{\rho}M1^{-1}
+    MatMatMult(N_rho_inv, vo->VB_inv, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &pc_C_rhoM1_inv);
+    MatAssemblyBegin(pc_C_rhoM1_inv, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (pc_C_rhoM1_inv, MAT_FINAL_ASSEMBLY);
+
+    // Assemble [C_{\rho}M1^{-1}D_u - (Rd/Cv)A_u][M0 - G_eta M1^{-1} A_eta]^{-1}
+    MatMatMult(pc_C_rhoM1_inv, D_rho, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &pc_DIV);
+    MatAXPY(pc_DIV, +1.0, vo->VBA, DIFFERENT_NONZERO_PATTERN);
+    MatDiagonalScale(pc_DIV, NULL, _tmpA1);
+    MatAssemblyBegin(pc_DIV, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (pc_DIV, MAT_FINAL_ASSEMBLY);
+
+    // Assemble the Helmholtz operator
+    MatMatMult(pc_DIV, G_pi, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &L_pi); // scale by -Rd/Cv for the EoS terms
+    MatAYPX(L_pi, -1.0*RD/CV, N_pi_inv, DIFFERENT_NONZERO_PATTERN);
+    MatAssemblyBegin(L_pi, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd  (L_pi, MAT_FINAL_ASSEMBLY);
+
+    // Update the residuals
+    MatMult(pc_G_etaV1_inv, F_eta, _tmpA2);
+    VecAXPY(F_u, -1.0, _tmpA2);
+
+    VecScale(F_pi, -1.0);
+    MatMult(pc_DIV, F_u, _tmpB1); // scale by -Rd/Cv for the EoS terms
+    VecAXPY(F_pi, +1.0*RD/CV, _tmpB1);
+    MatMult(pc_C_rhoM1_inv, F_rho, _tmpB1);
+    VecAXPY(F_pi, -1.0*RD/CV, _tmpB1);
+    VecAXPY(F_pi, -1.0*RD/CV, F_eta);
+
+    // Helmholtz solve
+    KSPCreate(MPI_COMM_SELF, &ksp_pi);
+    KSPSetOperators(ksp_pi, L_pi, L_pi);
+    KSPGetPC(ksp_pi, &pc);
+    PCSetType(pc, PCLU);
+    KSPSetOptionsPrefix(ksp_pi, "ksp_pi_");
+    KSPSetFromOptions(ksp_pi);
+    KSPSolve(ksp_pi, F_pi, d_pi);
+
+    // Back substitute for updates
+    MatMult(G_pi, d_pi, _tmpA2);
+    VecAXPY(F_u, 1.0, _tmpA2);
+    VecScale(F_u, -1.0);
+    VecPointwiseMult(d_u, _tmpA1, F_u);
+    /*
+    KSPCreate(MPI_COMM_SELF, &ksp_w);
+    KSPSetOperators(ksp_w, L_eta, L_eta);
+    KSPGetPC(ksp_w, &pc);
+    PCSetType(pc, PCLU);
+    KSPSetOptionsPrefix(ksp_w, "ksp_w_");
+    KSPSetFromOptions(ksp_w);
+    KSPSolve(ksp_w, F_u, d_u);
+    KSPDestroy(&ksp_w);
+    */
+
+    MatMult(vo->VBA, d_u, _tmpB1);
+    VecAXPY(F_eta, 1.0, _tmpB1);
+    VecScale(F_eta, -1.0);
+    MatMult(vo->VB_inv, F_eta, d_eta);
+
+    MatMult(D_rho, d_u, _tmpB1);
+    VecAXPY(F_rho, 1.0, _tmpB1);
+    VecScale(F_rho, -1.0);
+    MatMult(vo->VB_inv, F_rho, d_rho);
+
+    KSPDestroy(&ksp_pi);
+    MatDestroy(&pc_G_etaV1_inv);
+    MatDestroy(&pc_C_rhoM1_inv);
+    MatDestroy(&pc_DIV);
+    MatDestroy(&L_eta);
+    MatDestroy(&L_pi);
 }
 
 void VertSolve::solve_schur(
@@ -1055,23 +1181,6 @@ void VertSolve::solve_schur_2(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vec
             VecZeroEntries(rt_h->vz[ii]);
             VecAXPY(rt_h->vz[ii], 0.5, rt_i->vz[ii]);
             VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
-
-/*{
-double norm[5];
-//VecNorm(rho_j->vz[ii],NORM_2,&norm[1]);
-//VecNorm(rt_j->vz[ii],NORM_2,&norm[2]);
-//VecNorm(exner_j->vz[ii],NORM_2,&norm[3]);
-//VecNorm(velz_j->vz[ii],NORM_2,&norm[4]);
-VecNorm(d_rho,NORM_2,&norm[1]);
-VecNorm(d_rt,NORM_2,&norm[2]);
-VecNorm(d_exner,NORM_2,&norm[3]);
-VecNorm(d_w,NORM_2,&norm[4]);
-cout<<rank<<"\t"<<ii<<"\t"<<norm[1]<<
-	           "\t"<<norm[2]<<
-	           "\t"<<norm[3]<<
-	           "\t"<<norm[4]<<endl;
-}*/
-
         }
 
         diagTheta2(rho_j->vz, rt_j->vz, theta_j->vz);
@@ -1095,25 +1204,6 @@ cout<<rank<<"\t"<<ii<<"\t"<<norm[1]<<
                                  "\t|d_w|/|w|: "          << max_norm_w     <<
                                  "\t|d_rho|/|rho|: "      << max_norm_rho   <<
                                  "\t|d_rt|/|rt|: "        << max_norm_rt    << endl;
-/*{
-    velz_j->VertToHoriz();
-    rho_j->VertToHoriz();
-    rt_j->VertToHoriz();
-    exner_j->VertToHoriz();
-for(int kk=0;kk<geom->nk;kk++){
-double norm[5];
-VecNorm(velx2[kk],NORM_2,&norm[0]);
-VecNorm(rho_j->vh[kk],NORM_2,&norm[1]);
-VecNorm(rt_j->vh[kk],NORM_2,&norm[2]);
-VecNorm(exner_j->vh[kk],NORM_2,&norm[3]);
-if(kk<geom->nk-1)VecNorm(velz_j->vh[kk],NORM_2,&norm[4]);
-if(!rank)cout<<kk<<"\t"<<norm[0]<<
-	           "\t"<<norm[1]<<
-	           "\t"<<norm[2]<<
-	           "\t"<<norm[3]<<
-	           "\t"<<norm[4]<<endl;
-}
-}*/
     } while(!done);
 
     velz_i->CopyFromVert(velz_j->vz);
@@ -1128,20 +1218,6 @@ if(!rank)cout<<kk<<"\t"<<norm[0]<<
 
     theta_h->VertToHoriz();
     exner_h->VertToHoriz();
-
-/*for(int kk=0;kk<geom->nk;kk++){
-double norm[5];
-VecNorm(velx2[kk],NORM_2,&norm[0]);
-VecNorm(rho_i->vh[kk],NORM_2,&norm[1]);
-VecNorm(rt_i->vh[kk],NORM_2,&norm[2]);
-VecNorm(exner_i->vh[kk],NORM_2,&norm[3]);
-if(kk<geom->nk-1)VecNorm(velz_i->vh[kk],NORM_2,&norm[4]);
-if(!rank)cout<<kk<<"\t"<<norm[0]<<
-	           "\t"<<norm[1]<<
-	           "\t"<<norm[2]<<
-	           "\t"<<norm[3]<<
-	           "\t"<<norm[4]<<endl;
-}*/
 
     delete velz_j;
     delete rho_j;
@@ -1491,10 +1567,6 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
     Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, F_z, G_z, dF_z, dG_z;
     L2Vecs* dFx = new L2Vecs(geom->nk, topo, geom);
     L2Vecs* dGx = new L2Vecs(geom->nk, topo, geom);
-    //L2Vecs* velz_p  = new L2Vecs(geom->nk-1, topo, geom);
-    //L2Vecs* rho_p   = new L2Vecs(geom->nk, topo, geom);
-    //L2Vecs* rt_p    = new L2Vecs(geom->nk, topo, geom);
-    //L2Vecs* exner_p = new L2Vecs(geom->nk, topo, geom);
 
     elOrd2 = topo->elOrd*topo->elOrd;
     VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_w);
@@ -1535,11 +1607,6 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
     _exner_h->VertToHoriz();
     _theta_h->VertToHoriz();
 
-    //velz_p->CopyFromVert(velz_j->vz);
-    //rho_p->CopyFromVert(rho_j->vz);
-    //rt_p->CopyFromVert(rt_j->vz);
-    //exner_p->CopyFromVert(exner_j->vz);
-
     do {
         k2i_z = 0.0;
         max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
@@ -1556,19 +1623,14 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
             // assemble the residual vectors
             assemble_residual(ex, ey, _theta_h->vz[ii], _exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
                               rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z);
-            //assemble_residual(ex, ey, _theta_h->vz[ii], _exner_h->vz[ii], velz_i->vz[ii], velz_p->vz[ii], rho_i->vz[ii], rho_p->vz[ii], 
-              //                rt_i->vz[ii], rt_p->vz[ii], F_w, F_z, G_z);
 
             if(udwdx) VecAXPY(F_w, dt, udwdx->vz[ii]);
             vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
-            //vo->Assemble_EOS_Residual(ex, ey, rt_p->vz[ii], exner_p->vz[ii], F_exner);
             vo->AssembleConst(ex, ey, vo->VB);
             MatMult(vo->V10, F_z, dF_z);
             MatMult(vo->V10, G_z, dG_z);
             VecAYPX(dF_z, dt, rho_j->vz[ii]);
             VecAYPX(dG_z, dt, rt_j->vz[ii]);
-            //VecAYPX(dF_z, dt, rho_p->vz[ii]);
-            //VecAYPX(dG_z, dt, rt_p->vz[ii]);
             VecAXPY(dF_z, -1.0, rho_i->vz[ii]);
             VecAXPY(dG_z, -1.0, rt_i->vz[ii] );
 
@@ -1583,18 +1645,6 @@ void VertSolve::solve_schur_vert(L2Vecs* velz_i, L2Vecs* velz_j, L2Vecs* velz_h,
                 vo->AssembleTempForcing_HS(ex, ey, _exner_h->vz[ii], _theta_h->vz[ii], rho_h->vz[ii], dG_z);
                 VecAXPY(F_rt, dt, dG_z);
             }
-/*{
-double norm[4];
-VecNorm(F_rho,NORM_2,&norm[0]);
-VecNorm(F_rt,NORM_2,&norm[1]);
-VecNorm(F_exner,NORM_2,&norm[2]);
-VecNorm(F_w,NORM_2,&norm[3]);
-if(!rank && !ii)cout<<ii<<"\t|F_rho|: "<<norm[0]<<"\t"
-                 <<"\t|F_rt|: "<<norm[1]<<"\t"
-                 <<"\t|F_pi|: "<<norm[2]<<"\t"
-                 <<"\t|F_w|: "<<norm[3]<<"\n";
-}*/
-
 
             solve_schur_column_3(ex, ey, _theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], rt_h->vz[ii], _exner_h->vz[ii], 
                                F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_rt, d_exner, itt);
@@ -1603,43 +1653,30 @@ if(!rank && !ii)cout<<ii<<"\t|F_rho|: "<<norm[0]<<"\t"
             VecAXPY(rho_j->vz[ii],   1.0, d_rho);
             VecAXPY(rt_j->vz[ii],    1.0, d_rt);
             VecAXPY(exner_j->vz[ii], 1.0, d_exner);
-            //VecAXPY(velz_p->vz[ii],  1.0, d_w);
-            //VecAXPY(rho_p->vz[ii],   1.0, d_rho);
-            //VecAXPY(rt_p->vz[ii],    1.0, d_rt);
-            //VecAXPY(exner_p->vz[ii], 1.0, d_exner);
 
             max_norm_exner = MaxNorm(d_exner, exner_j->vz[ii], max_norm_exner);
             max_norm_w     = MaxNorm(d_w,     velz_j->vz[ii],  max_norm_w    );
             max_norm_rho   = MaxNorm(d_rho,   rho_j->vz[ii],   max_norm_rho  );
             max_norm_rt    = MaxNorm(d_rt,    rt_j->vz[ii],    max_norm_rt   );
-            //max_norm_exner = MaxNorm(d_exner, exner_p->vz[ii], max_norm_exner);
-            //max_norm_w     = MaxNorm(d_w,     velz_p->vz[ii],  max_norm_w    );
-            //max_norm_rho   = MaxNorm(d_rho,   rho_p->vz[ii],   max_norm_rho  );
-            //max_norm_rt    = MaxNorm(d_rt,    rt_p->vz[ii],    max_norm_rt   );
 
             VecZeroEntries(_exner_h->vz[ii]);
             VecAXPY(_exner_h->vz[ii], 0.5, exner_i->vz[ii]);
             VecAXPY(_exner_h->vz[ii], 0.5, exner_j->vz[ii]);
-            //VecAXPY(_exner_h->vz[ii], 0.5, exner_p->vz[ii]);
 
             VecZeroEntries(velz_h->vz[ii]);
             VecAXPY(velz_h->vz[ii], 0.5, velz_i->vz[ii]);
             VecAXPY(velz_h->vz[ii], 0.5, velz_j->vz[ii]);
-            //VecAXPY(velz_h->vz[ii], 0.5, velz_p->vz[ii]);
 
             VecZeroEntries(rho_h->vz[ii]);
             VecAXPY(rho_h->vz[ii], 0.5, rho_i->vz[ii]);
             VecAXPY(rho_h->vz[ii], 0.5, rho_j->vz[ii]);
-            //VecAXPY(rho_h->vz[ii], 0.5, rho_p->vz[ii]);
 
             VecZeroEntries(rt_h->vz[ii]);
             VecAXPY(rt_h->vz[ii], 0.5, rt_i->vz[ii]);
             VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
-            //VecAXPY(rt_h->vz[ii], 0.5, rt_p->vz[ii]);
         }
 
         diagTheta2(rho_j->vz, rt_j->vz, _theta_h->vz);
-        //diagTheta2(rho_p->vz, rt_p->vz, _theta_h->vz);
         for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
             VecScale(_theta_h->vz[ii], 0.5);
             VecAXPY(_theta_h->vz[ii], 0.5, theta_i->vz[ii]);
@@ -1659,18 +1696,6 @@ if(!rank && !ii)cout<<ii<<"\t|F_rho|: "<<norm[0]<<"\t"
                                  "\t|d_rho|/|rho|: "      << max_norm_rho   <<
                                  "\t|d_rt|/|rt|: "        << max_norm_rt    << endl;
     } while(!done);
-/*
-    if(update) {
-        velz_j->CopyFromVert(velz_p->vz);
-        rho_j->CopyFromVert(rho_p->vz);
-        rt_j->CopyFromVert(rt_p->vz);
-        exner_j->CopyFromVert(exner_p->vz);
-*/
-//        velz_j->VertToHoriz();
-//        rho_j->VertToHoriz();
-//        rt_j->VertToHoriz();
-//        exner_j->VertToHoriz();
-//    }
 
     velz_h->VertToHoriz();
     rho_h->VertToHoriz();
@@ -1679,10 +1704,6 @@ if(!rank && !ii)cout<<ii<<"\t|F_rho|: "<<norm[0]<<"\t"
 
     delete dFx;
     delete dGx;
-    //delete velz_p;
-    //delete rho_p;
-    //delete rt_p;
-    //delete exner_p;
     VecDestroy(&F_w);
     VecDestroy(&F_rho);
     VecDestroy(&F_rt);
@@ -1695,4 +1716,258 @@ if(!rank && !ii)cout<<ii<<"\t|F_rho|: "<<norm[0]<<"\t"
     VecDestroy(&G_z);
     VecDestroy(&dF_z);
     VecDestroy(&dG_z);
+}
+
+void VertSolve::solve_schur_eta(L2Vecs* velz_i, L2Vecs* rho_i, L2Vecs* rt_i, L2Vecs* exner_i, 
+                              L2Vecs* udwdx, Vec* velx1, Vec* velx2, Vec* u1l, Vec* u2l, bool hs_forcing) {
+    bool done = false;
+    int ex, ey, elOrd2, itt = 0;
+    double norm_x, max_norm_w, max_norm_exner, max_norm_rho, max_norm_rt;
+    L2Vecs* velz_j = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* velz_h = new L2Vecs(geom->nk-1, topo, geom);
+    L2Vecs* rho_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* rt_h = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* exner_j = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_i = new L2Vecs(geom->nk+1, topo, geom);
+    L2Vecs* theta_j = new L2Vecs(geom->nk+1, topo, geom);
+    Vec F_w, F_rho, F_rt, F_exner, d_w, d_rho, d_exner, F_z, G_z, dF_z, dG_z, F_theta_corr;
+    Vec F_eta, d_eta, eta, theta_in_W3;
+    L2Vecs* dFx = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* dGx = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_l2_i = new L2Vecs(geom->nk, topo, geom);
+    L2Vecs* theta_l2_j = new L2Vecs(geom->nk, topo, geom);
+
+    step++;
+
+    elOrd2 = topo->elOrd*topo->elOrd;
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_w);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_rho);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_rt);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_eta);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_exner);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &d_w);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &d_rho);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &d_eta);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &d_exner);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &F_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk-1)*elOrd2, &G_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dF_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &dG_z);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &F_theta_corr);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &eta);
+    VecCreateSeq(MPI_COMM_SELF, (geom->nk+0)*elOrd2, &theta_in_W3);
+
+    velz_i->HorizToVert();
+    rho_i->HorizToVert();
+    rt_i->HorizToVert();
+    exner_i->HorizToVert();
+
+    velz_j->CopyFromVert(velz_i->vz);
+    rho_j->CopyFromVert(rho_i->vz);
+    rt_j->CopyFromVert(rt_i->vz);
+    exner_j->CopyFromVert(exner_i->vz);
+
+    // diagnose the potential temperature
+    diagTheta2(rho_i->vz, rt_i->vz, theta_i->vz);
+    theta_i->VertToHoriz();
+    theta_h->CopyFromVert(theta_i->vz);
+    theta_h->VertToHoriz();
+    theta_j->CopyFromVert(theta_i->vz);
+    theta_j->VertToHoriz();
+
+    diagTheta_L2(rho_i->vz, rt_i->vz, theta_l2_i->vz);
+    theta_l2_i->VertToHoriz();
+    theta_l2_h->CopyFromVert(theta_l2_i->vz);
+    theta_l2_h->VertToHoriz();
+    theta_l2_j->CopyFromVert(theta_l2_i->vz);
+    theta_l2_j->VertToHoriz();
+
+    exner_h->CopyFromHoriz(exner_i->vh);
+    exner_h->HorizToVert();
+
+    velz_h->CopyFromVert(velz_i->vz);
+    rho_h->CopyFromVert(rho_i->vz);
+    rt_h->CopyFromVert(rt_i->vz);
+
+    do {
+        k2i_z = 0.0;
+        max_norm_w = max_norm_exner = max_norm_rho = max_norm_rt = 0.0;
+
+        rho_j->VertToHoriz();
+        horiz->advection_rhs_ec(velx1, velx2, rho_i->vh, rho_j->vh, theta_l2_h->vh, dFx, dGx, u1l, u2l);
+
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            ex = ii%topo->nElsX;
+            ey = ii/topo->nElsX;
+
+            // assemble the residual vectors
+            assemble_residual_ec(ex, ey, theta_l2_h->vz[ii], exner_h->vz[ii], velz_i->vz[ii], velz_j->vz[ii], rho_i->vz[ii], rho_j->vz[ii], 
+                              rt_i->vz[ii], rt_j->vz[ii], F_w, F_z, G_z, F_theta_corr);
+
+            if(udwdx) VecAXPY(F_w, dt, udwdx->vz[ii]);
+            vo->Assemble_EOS_Residual(ex, ey, rt_j->vz[ii], exner_j->vz[ii], F_exner);
+            vo->AssembleConst(ex, ey, vo->VB);
+            MatMult(vo->V10, F_z, dF_z);
+            MatMult(vo->V10, G_z, dG_z);
+
+            VecAYPX(dF_z, dt, rho_j->vz[ii]);
+            VecAYPX(dG_z, 0.5*dt, rt_j->vz[ii]);
+
+            VecAXPY(dF_z, -1.0, rho_i->vz[ii]);
+            VecAXPY(dG_z, -1.0, rt_i->vz[ii] );
+
+            // add the horizontal forcing
+            MatMult(vo->VB, dF_z, F_rho);
+            VecAXPY(F_rho, dt, dFx->vz[ii]);
+            MatMult(vo->VB, dG_z, F_rt);
+            VecAXPY(F_rt, dt, dGx->vz[ii]);
+
+	    //
+	    VecAXPY(F_rt, 1.0, F_theta_corr);
+
+            if(hs_forcing) {
+                vo->AssembleTempForcing_HS(ex, ey, exner_h->vz[ii], theta_h->vz[ii], rho_h->vz[ii], dG_z);
+                VecAXPY(F_rt, dt, dG_z);
+            }
+
+	    // derive the entropy residual from the density weighted potential temperature and the density residuals
+            vo->AssembleConstWithRhoInv(ex, ey, rt_h->vz[ii], vo->VB_inv);
+	    MatMult(vo->VB_inv, F_rt, _tmpB1);
+            vo->AssembleConstWithRhoInv(ex, ey, rho_h->vz[ii], vo->VB_inv);
+	    MatMult(vo->VB_inv, F_rho, _tmpB2);
+	    VecAXPY(_tmpB1, -1.0, _tmpB2);
+            vo->AssembleConst(ex, ey, vo->VB);
+	    MatMult(vo->VB, _tmpB1, F_eta);
+
+	    // diagnose theta_h
+	    MatMult(vo->VB, rt_h->vz[ii], _tmpB1);
+            vo->AssembleConstWithRhoInv(ex, ey, rho_h->vz[ii], vo->VB_inv);
+	    MatMult(vo->VB_inv, _tmpB1, theta_in_W3);
+	    // diagnose eta_h
+	    vo->AssembleConstWithLogThetaPlusEta(ex, ey, theta_in_W3, NULL, _tmpB1);
+            vo->AssembleConstInv(ex, ey, vo->VB_inv);
+	    MatMult(vo->VB_inv, _tmpB1, eta);
+
+	    // TODO: use theta_in_W3 here?
+            //solve_schur_column_eta(ex, ey, theta_h->vz[ii], velz_h->vz[ii], rho_h->vz[ii], eta, exner_h->vz[ii],
+            solve_schur_column_eta(ex, ey, theta_in_W3, velz_h->vz[ii], rho_h->vz[ii], eta, exner_h->vz[ii],
+                               F_w, F_rho, F_eta, F_exner, d_w, d_rho, d_eta, d_exner);
+
+	    // diagnose theta_j (prior to the latest solve)
+            vo->AssembleConst(ex, ey, vo->VB);
+	    MatMult(vo->VB, rt_j->vz[ii], _tmpB1);
+            vo->AssembleConstWithRhoInv(ex, ey, rho_j->vz[ii], vo->VB_inv);
+	    MatMult(vo->VB_inv, _tmpB1, theta_in_W3);
+	    // diagnose eta_j
+	    vo->AssembleConstWithLogThetaPlusEta(ex, ey, theta_in_W3, d_eta, _tmpB1);
+            vo->AssembleConstInv(ex, ey, vo->VB_inv);
+	    MatMult(vo->VB_inv, _tmpB1, eta);
+
+            VecAXPY(velz_j->vz[ii],  1.0, d_w);
+            VecAXPY(rho_j->vz[ii],   1.0, d_rho);
+            VecAXPY(exner_j->vz[ii], 1.0, d_exner);
+	    // back out the density weighted potential temperature at the new time level
+            vo->AssembleConstWithRhoExpEta(ex, ey, rho_j->vz[ii], eta, _tmpB1);
+	    MatMult(vo->VB_inv, _tmpB1, rt_j->vz[ii]);
+
+            max_norm_exner = MaxNorm(d_exner, exner_j->vz[ii], max_norm_exner);
+            max_norm_w     = MaxNorm(d_w,     velz_j->vz[ii],  max_norm_w    );
+            max_norm_rho   = MaxNorm(d_rho,   rho_j->vz[ii],   max_norm_rho  );
+            max_norm_rt    = MaxNorm(d_eta,   eta,             max_norm_rt   );
+
+            VecZeroEntries(exner_h->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_i->vz[ii]);
+            VecAXPY(exner_h->vz[ii], 0.5, exner_j->vz[ii]);
+
+            VecZeroEntries(velz_h->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_i->vz[ii]);
+            VecAXPY(velz_h->vz[ii], 0.5, velz_j->vz[ii]);
+
+            VecZeroEntries(rho_h->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_i->vz[ii]);
+            VecAXPY(rho_h->vz[ii], 0.5, rho_j->vz[ii]);
+
+            VecZeroEntries(rt_h->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_i->vz[ii]);
+            VecAXPY(rt_h->vz[ii], 0.5, rt_j->vz[ii]);
+        }
+
+        diagTheta2(rho_j->vz, rt_j->vz, theta_j->vz);
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            VecZeroEntries(theta_h->vz[ii]);
+            VecAXPY(theta_h->vz[ii], 0.5, theta_j->vz[ii]);
+            VecAXPY(theta_h->vz[ii], 0.5, theta_i->vz[ii]);
+        }
+        theta_h->VertToHoriz();
+        theta_j->VertToHoriz();
+
+        diagTheta_L2(rho_j->vz, rt_j->vz, theta_l2_j->vz);
+        for(int ii = 0; ii < topo->nElsX*topo->nElsX; ii++) {
+            VecZeroEntries(theta_l2_h->vz[ii]);
+            VecAXPY(theta_l2_h->vz[ii], 0.5, theta_l2_j->vz[ii]);
+            VecAXPY(theta_l2_h->vz[ii], 0.5, theta_l2_i->vz[ii]);
+        }
+        theta_l2_h->VertToHoriz();
+        theta_l2_j->VertToHoriz();
+
+        MPI_Allreduce(&max_norm_exner, &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_exner = norm_x;
+        MPI_Allreduce(&max_norm_w,     &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_w     = norm_x;
+        MPI_Allreduce(&max_norm_rho,   &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rho   = norm_x;
+        MPI_Allreduce(&max_norm_rt,    &norm_x, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); max_norm_rt    = norm_x;
+
+        itt++;
+
+        //if(max_norm_exner < 1.0e-12 && max_norm_rho < 1.0e-12 && max_norm_rt < 1.0e-12) done = true;
+        if(max_norm_exner < 1.0e-12 && max_norm_rho < 1.0e-12) done = true;
+        if(!rank) cout << "\t" << itt << ":\t|d_exner|/|exner|: " << max_norm_exner << 
+                                 "\t|d_w|/|w|: "          << max_norm_w     <<
+                                 "\t|d_rho|/|rho|: "      << max_norm_rho   <<
+                                 "\t|d_eta|/|eta|: "      << max_norm_rt    << endl;
+    } while(!done);
+
+    velz_i->CopyFromVert(velz_j->vz);
+    rho_i->CopyFromVert(rho_j->vz);
+    rt_i->CopyFromVert(rt_j->vz);
+    exner_i->CopyFromVert(exner_j->vz);
+
+    velz_i->VertToHoriz();
+    rho_i->VertToHoriz();
+    rt_i->VertToHoriz();
+    exner_i->VertToHoriz();
+
+    theta_h->VertToHoriz();
+    theta_l2_h->VertToHoriz();
+    exner_h->VertToHoriz();
+
+    delete velz_j;
+    delete rho_j;
+    delete rt_j;
+    delete exner_j;
+    delete theta_i;
+    delete theta_j;
+    delete velz_h;
+    delete rho_h;
+    delete rt_h;
+    delete dFx;
+    delete dGx;
+    delete theta_l2_i;
+    delete theta_l2_j;
+    VecDestroy(&F_w);
+    VecDestroy(&F_rho);
+    VecDestroy(&F_rt);
+    VecDestroy(&F_eta);
+    VecDestroy(&F_exner);
+    VecDestroy(&d_w);
+    VecDestroy(&d_rho);
+    VecDestroy(&d_eta);
+    VecDestroy(&d_exner);
+    VecDestroy(&F_z);
+    VecDestroy(&G_z);
+    VecDestroy(&dF_z);
+    VecDestroy(&dG_z);
+    VecDestroy(&F_theta_corr);
+    VecDestroy(&eta);
+    VecDestroy(&theta_in_W3);
 }
